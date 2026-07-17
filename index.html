@@ -492,7 +492,7 @@
       <span id="ts-prices">prices 30s · —</span>
       <span id="ts-flow">flow as of —</span>
     </div>
-    <div class="universe-line" id="universe-line">scanning — stocks</div>
+    <div class="universe-line" id="universe-line">watching — names</div>
     <div id="banner-slot"></div>
   </div>
 </header>
@@ -600,7 +600,7 @@
     "tip-target": "Target reference = entry price plus 105%. A reference level, not a recommendation.",
     "tip-rr": "Reward-to-risk ratio between the stop and target references. Fixed at 3.5 by design.",
     "tip-earnings": "This stock has an earnings report scheduled before the suggested contract expires. Earnings moves are a coin-flip event, not part of the flow signal.",
-    "tip-universe": "How many stocks the scanner actually screened this cycle, out of the full watch list.",
+    "tip-universe": "How many names are on the curated watch list this cycle — your watchlist plus the sector-index ETFs. Flow Desk no longer screens the whole market.",
     "tip-flowtime": "When this options-flow snapshot was last generated (Central time). Options data itself is 15 minutes delayed.",
     "tip-pricetime": "Stock prices refresh automatically about every 30 seconds while this page is open."
   };
@@ -788,12 +788,14 @@
     document.getElementById("stat-highconv").textContent = fmtInt(stats.high_conviction);
 
     var universe = (data && data.universe) || {};
-    var screened = num(universe.screened);
+    // "watched" is the curated pinned-list size; fall back to legacy "screened".
+    var watched = num(universe.watched);
+    if (watched === null) watched = num(universe.screened);
     var uniLine = document.getElementById("universe-line");
     clear(uniLine);
     uniLine.setAttribute("data-tip", "tip-universe");
     uniLine.title = TIPS["tip-universe"];
-    uniLine.appendChild(text("scanning " + (screened === null ? "—" : screened.toLocaleString("en-US")) + " stocks"));
+    uniLine.appendChild(text("watching " + (watched === null ? "—" : watched.toLocaleString("en-US")) + " names"));
 
     var flowTs = document.getElementById("ts-flow");
     clear(flowTs);
