@@ -583,13 +583,13 @@
     "tip-gain": "How much the stock price has moved since this ticker first appeared on this board today. Not shown if it's new this cycle.",
     "tip-price": "Live stock price, updated roughly every 30 seconds from a free real-time feed.",
     "tip-change": "Stock price change on the day.",
-    "tip-change5d": "Stock price change over roughly the last 5 trading sessions (~1 week), shown as a percentage and its equal dollar-per-share move.",
     "tip-netflow": "Net flow = call premium traded minus put premium traded (options volume x last price x 100). Free data can't see which side (buyer or seller) initiated a trade — this is dollars of premium changing hands, not confirmed directional order flow.",
     "tip-cpratio": "Call option volume divided by put option volume today, for 0-7 day options only. Above 1x means more call-side activity.",
     "tip-rvol": "Today's trading volume compared with this stock's normal 10-day average. Above 1.5x is flagged as unusually heavy.",
     "tip-popcontract": "The single options contract, within 20% of the current stock price and expiring in 0-7 days, with the most dollars traded today.",
     "tip-persist": "How many of the last 5 trading days this name's options flow leaned the same direction (bullish or bearish).",
     "tip-flow5d": "Total net options premium (calls minus puts) added up over the last up-to-5 trading sessions.",
+    "tip-flow5dpct": "The same 5-day net flow expressed as a percentage of all option premium (calls + puts) that traded over those sessions — i.e. how one-sided the flow was. +100% = every dollar leaned bullish, -100% = all bearish, 0% = evenly split.",
     "tip-oibuild": "Day-over-day change in open interest (contracts still open, not yet closed) in the flow's direction. A positive build suggests positions are being held, not just day-traded.",
     "tip-trend": "Whether the stock price is above its 20- and 50-day moving averages (UP), below both (DOWN), or split between them (MIXED).",
     "tip-ivrank": "Where today's option prices (implied volatility) sit versus this stock's own past year of history. High = options are relatively expensive right now. Needs 20+ sessions of history to calculate; until then it shows the raw IV instead.",
@@ -655,12 +655,6 @@
     else if (abs >= 1e3) out = "$" + (abs/1e3).toFixed(0) + "K";
     else out = "$" + abs.toFixed(0);
     return sign + out;
-  }
-  function fmtDollarSigned(v){
-    var n = num(v);
-    if (n === null) return "—";
-    var sign = n < 0 ? "-" : "+";
-    return sign + "$" + Math.abs(n).toFixed(2);
   }
   function fmtPctSigned(v, digits){
     var n = num(v);
@@ -963,13 +957,6 @@
     priceBlock.appendChild(el("div", {className:"price-label", tip:"tip-price", text:"PRICE"}));
     var priceVal = el("div", {className:"price-value", text: fmtPrice(card.spot)});
     priceBlock.appendChild(priceVal);
-    var chg5 = num(card.change_5d_pct);
-    if (chg5 !== null){
-      var chg5Val = el("div", {className:"price-change", tip:"tip-change5d"});
-      chg5Val.classList.add(chg5 < 0 ? "down" : "up");
-      chg5Val.appendChild(text("5D " + fmtPctSigned(card.change_5d_pct) + " · " + fmtDollarSigned(card.change_5d_usd)));
-      priceBlock.appendChild(chg5Val);
-    }
     top.appendChild(priceBlock);
     root.appendChild(top);
 
@@ -1013,9 +1000,13 @@
     metrics.appendChild(pMetric);
 
     var f5 = num(card.flow_5d);
+    var f5pct = num(card.flow_5d_pct);
     var fMetric = el("div", {className:"metric"});
     fMetric.appendChild(el("div", {className:"metric-label", tip:"tip-flow5d", text:"5-DAY FLOW"}));
     fMetric.appendChild(el("div", {className:"metric-value " + (f5 !== null && f5 < 0 ? "neg" : "pos"), text: fmtMoneySigned(card.flow_5d)}));
+    if (f5pct !== null){
+      fMetric.appendChild(el("div", {className:"metric-value " + (f5pct < 0 ? "neg" : "pos"), tip:"tip-flow5dpct", style:"font-size:0.78rem;margin-top:1px;", text: fmtPctSigned(card.flow_5d_pct, 0) + " net"}));
+    }
     metrics.appendChild(fMetric);
 
     var oiMetric = el("div", {className:"metric"});
