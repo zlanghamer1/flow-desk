@@ -583,6 +583,7 @@
     "tip-gain": "How much the stock price has moved since this ticker first appeared on this board today. Not shown if it's new this cycle.",
     "tip-price": "Live stock price, updated roughly every 30 seconds from a free real-time feed.",
     "tip-change": "Stock price change on the day.",
+    "tip-change5d": "Stock price change over roughly the last 5 trading sessions (~1 week), shown as a percentage and its equal dollar-per-share move.",
     "tip-netflow": "Net flow = call premium traded minus put premium traded (options volume x last price x 100). Free data can't see which side (buyer or seller) initiated a trade — this is dollars of premium changing hands, not confirmed directional order flow.",
     "tip-cpratio": "Call option volume divided by put option volume today, for 0-7 day options only. Above 1x means more call-side activity.",
     "tip-rvol": "Today's trading volume compared with this stock's normal 10-day average. Above 1.5x is flagged as unusually heavy.",
@@ -654,6 +655,12 @@
     else if (abs >= 1e3) out = "$" + (abs/1e3).toFixed(0) + "K";
     else out = "$" + abs.toFixed(0);
     return sign + out;
+  }
+  function fmtDollarSigned(v){
+    var n = num(v);
+    if (n === null) return "—";
+    var sign = n < 0 ? "-" : "+";
+    return sign + "$" + Math.abs(n).toFixed(2);
   }
   function fmtPctSigned(v, digits){
     var n = num(v);
@@ -956,6 +963,13 @@
     priceBlock.appendChild(el("div", {className:"price-label", tip:"tip-price", text:"PRICE"}));
     var priceVal = el("div", {className:"price-value", text: fmtPrice(card.spot)});
     priceBlock.appendChild(priceVal);
+    var chg5 = num(card.change_5d_pct);
+    if (chg5 !== null){
+      var chg5Val = el("div", {className:"price-change", tip:"tip-change5d"});
+      chg5Val.classList.add(chg5 < 0 ? "down" : "up");
+      chg5Val.appendChild(text("5D " + fmtPctSigned(card.change_5d_pct) + " · " + fmtDollarSigned(card.change_5d_usd)));
+      priceBlock.appendChild(chg5Val);
+    }
     top.appendChild(priceBlock);
     root.appendChild(top);
 
