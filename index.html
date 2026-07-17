@@ -1,0 +1,1267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flow Desk — Live Options Flow</title>
+<style>
+  :root{
+    --bg:#08090d;
+    --bg-2:#0d0f16;
+    --card:#12141c;
+    --card-2:#171a24;
+    --border:rgba(255,255,255,0.09);
+    --border-strong:rgba(255,255,255,0.16);
+    --ink:#f5f6f8;
+    --ink-2:#c3c2b7;
+    --muted:#898781;
+    --good:#1fcf5c;
+    --good-dim:#0ca30c;
+    --bad:#ef5354;
+    --bad-dim:#d03b3b;
+    --warn:#fab219;
+    --purple:#9d8cf1;
+    --blue:#3987e5;
+    --radius:14px;
+    --radius-sm:10px;
+    --shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 24px rgba(0,0,0,0.35);
+    color-scheme: dark;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: radial-gradient(1200px 800px at 50% -10%, #131722 0%, var(--bg) 45%, #050506 100%);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100dvh;
+  }
+  a{ color: inherit; }
+  button{ font-family: inherit; }
+
+  .wrap{
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 14px 48px;
+  }
+
+  /* ---------- Header ---------- */
+  header.site-header{
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: rgba(8,9,13,0.86);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .header-inner{
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 12px 14px 10px;
+  }
+  .header-top{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 10px;
+  }
+  .brand{
+    display:flex; align-items:center; gap:10px;
+    font-weight:700; font-size: 1.15rem; letter-spacing: -0.01em;
+  }
+  .brand .mark{
+    width: 26px; height: 26px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--purple), var(--blue));
+    display:flex; align-items:center; justify-content:center;
+    font-size: 14px; font-weight: 800; color:#0a0a0a;
+    flex: none;
+  }
+  .live-pill{
+    display:flex; align-items:center; gap:6px;
+    font-size: 0.72rem; font-weight:700; letter-spacing: 0.06em;
+    color: var(--good);
+    padding: 4px 9px 4px 7px;
+    border: 1px solid rgba(31,207,92,0.35);
+    border-radius: 999px;
+    background: rgba(31,207,92,0.08);
+    flex: none;
+  }
+  .live-dot{
+    width:7px; height:7px; border-radius:50%;
+    background: var(--good);
+    box-shadow: 0 0 0 0 rgba(31,207,92,0.6);
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow: 0 0 0 0 rgba(31,207,92,0.55); }
+    70%{ box-shadow: 0 0 0 7px rgba(31,207,92,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(31,207,92,0); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .live-dot{ animation: none; }
+  }
+  .timestamps{
+    margin-top: 8px;
+    display:flex; flex-wrap:wrap; gap: 6px 16px;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .timestamps b{ color: var(--ink-2); font-weight:600; }
+  .universe-line{
+    margin-top: 4px;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .banner{
+    margin-top: 10px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    border: 1px solid;
+    display:flex; align-items:center; gap:8px;
+  }
+  .banner.closed{
+    color:#dcd7ff; background: rgba(157,140,241,0.10); border-color: rgba(157,140,241,0.30);
+  }
+  .banner.stale{
+    color:#ffe1a8; background: rgba(250,178,25,0.10); border-color: rgba(250,178,25,0.35);
+  }
+  .banner.error{
+    color:#ffc2c2; background: rgba(239,83,84,0.10); border-color: rgba(239,83,84,0.35);
+  }
+
+  /* ---------- Stat tiles ---------- */
+  .stats-grid{
+    margin-top: 16px;
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .stat-tile{
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 14px 12px;
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow:hidden;
+  }
+  .stat-tile::before{
+    content:"";
+    position:absolute; inset:0;
+    opacity: 0.5;
+    background: radial-gradient(120px 80px at 15% 0%, var(--tile-glow, transparent), transparent 70%);
+    pointer-events:none;
+  }
+  .stat-label{
+    font-size: 0.68rem; font-weight:700; letter-spacing:0.07em;
+    color: var(--muted); text-transform: uppercase;
+    display:flex; align-items:center; gap:5px;
+    cursor: help;
+  }
+  .stat-value{
+    margin-top: 6px;
+    font-size: clamp(1.6rem, 6vw, 2.1rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    font-variant-numeric: proportional-nums;
+  }
+  .stat-tile.bull{ --tile-glow: rgba(31,207,92,0.35); }
+  .stat-tile.bull .stat-value{ color: var(--good); }
+  .stat-tile.bear{ --tile-glow: rgba(239,83,84,0.35); }
+  .stat-tile.bear .stat-value{ color: var(--bad); }
+  .stat-tile.fire{ --tile-glow: rgba(250,178,25,0.35); }
+  .stat-tile.fire .stat-value{ color: var(--warn); }
+  .stat-tile.conv{ --tile-glow: rgba(157,140,241,0.35); }
+  .stat-tile.conv .stat-value{ color: var(--purple); }
+
+  @media (min-width: 640px){
+    .stats-grid{ gap: 12px; }
+    .stat-tile{ padding: 18px 18px 16px; }
+  }
+
+  /* ---------- Jump pills ---------- */
+  .jump-row{
+    margin-top: 14px;
+    display:flex; gap:10px;
+    flex-wrap: wrap;
+  }
+  .jump-pill{
+    flex: 1 1 140px;
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--card-2);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 0.82rem;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    text-decoration: none;
+    transition: transform 150ms ease, background 150ms ease, border-color 150ms ease;
+    touch-action: manipulation;
+    min-height: 44px;
+  }
+  .jump-pill:hover, .jump-pill:focus-visible{
+    transform: translateY(-1px);
+  }
+  .jump-pill.conviction{ border-color: rgba(157,140,241,0.45); }
+  .jump-pill.conviction:hover{ background: rgba(157,140,241,0.12); }
+  .jump-pill.swing{ border-color: rgba(31,207,92,0.45); }
+  .jump-pill.swing:hover{ background: rgba(31,207,92,0.12); }
+  .jump-pill .arrow{ color: var(--muted); font-weight: 400; }
+
+  /* ---------- Section intro ---------- */
+  .section-block{ margin-top: 30px; }
+  .section-eyebrow{
+    font-size: 0.72rem; font-weight: 800; letter-spacing: 0.10em;
+    text-transform: uppercase;
+  }
+  .section-eyebrow.conviction-c{ color: var(--purple); }
+  .section-eyebrow.swing-c{ color: var(--good); }
+  .section-heading{
+    margin: 4px 0 10px;
+    font-size: clamp(1.3rem, 4.2vw, 1.6rem);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .section-intro{
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    padding: 14px 16px;
+    font-size: 0.88rem;
+    color: var(--ink-2);
+  }
+  .section-intro strong{ color: var(--ink); }
+
+  /* ---------- Card grid ---------- */
+  .card-grid{
+    margin-top: 14px;
+    display:grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  @media (min-width: 720px){
+    .card-grid{ grid-template-columns: 1fr 1fr; }
+  }
+  @media (min-width: 1080px){
+    .card-grid{ grid-template-columns: 1fr 1fr 1fr; }
+  }
+
+  .flow-card{
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: var(--radius);
+    padding: 14px 15px 15px;
+    box-shadow: var(--shadow);
+  }
+  .flow-card.bull{ border-left-color: var(--good); }
+  .flow-card.bear{ border-left-color: var(--bad); }
+
+  .card-top{
+    display:flex; align-items:flex-start; justify-content:space-between; gap: 10px;
+  }
+  .ticker-row{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  }
+  .ticker{
+    font-size: 1.25rem; font-weight: 800; letter-spacing: -0.01em;
+  }
+  .chip{
+    display:inline-flex; align-items:center; gap:4px;
+    font-size: 0.68rem; font-weight: 800; letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .chip.bull{ color: var(--good); background: rgba(31,207,92,0.10); border-color: rgba(31,207,92,0.35); }
+  .chip.bear{ color: var(--bad); background: rgba(239,83,84,0.10); border-color: rgba(239,83,84,0.35); }
+  .chip.fire{ color: var(--warn); background: rgba(250,178,25,0.12); border-color: rgba(250,178,25,0.4); }
+  .chip.earn{ color: var(--warn); background: rgba(250,178,25,0.10); border-color: rgba(250,178,25,0.35); }
+  .chip.gain-up{ color: var(--good); background: rgba(31,207,92,0.08); border-color: rgba(31,207,92,0.3); }
+  .chip.gain-down{ color: var(--bad); background: rgba(239,83,84,0.08); border-color: rgba(239,83,84,0.3); }
+  .chip.neutral{ color: var(--ink-2); background: rgba(255,255,255,0.05); border-color: var(--border); }
+
+  .price-block{
+    text-align: right;
+    flex: none;
+  }
+  .price-label{
+    font-size: 0.65rem; color: var(--muted); font-weight:700; letter-spacing:0.05em; text-transform:uppercase;
+    cursor: help;
+  }
+  .price-value{
+    font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .price-change{
+    font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .price-change.up{ color: var(--good); }
+  .price-change.down{ color: var(--bad); }
+
+  .gain-row{ margin-top: 8px; }
+
+  .score-row{
+    margin-top: 12px;
+    display:flex; align-items:center; gap: 12px;
+  }
+  .score-label{
+    font-size: 0.68rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--muted);
+    cursor: help;
+    flex: none;
+  }
+  .score-num{
+    font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums;
+    flex: none;
+    min-width: 2.2ch;
+  }
+  .score-bar-track{
+    flex: 1;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.07);
+    overflow: hidden;
+    min-width: 60px;
+  }
+  .score-bar-fill{
+    height: 100%;
+    border-radius: 999px;
+    transition: width 400ms ease;
+  }
+
+  .metric-grid{
+    margin-top: 12px;
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+  }
+  .metric{
+    min-width: 0;
+  }
+  .metric-label{
+    font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--muted);
+    cursor: help;
+    display:inline-flex; align-items:center; gap:4px;
+  }
+  .metric-value{
+    margin-top: 2px;
+    font-size: 0.95rem; font-weight: 700; font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  .metric-value.pos{ color: var(--good); }
+  .metric-value.neg{ color: var(--bad); }
+  .metric-value.flag{ color: var(--warn); }
+  .metric-value.info{ color: var(--blue); }
+  .metric-value.muted{ color: var(--muted); font-weight: 500; }
+
+  .divider{
+    margin: 12px 0 10px;
+    border: none;
+    border-top: 1px dashed var(--border-strong);
+  }
+
+  .contract-label{
+    font-size: 0.66rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--muted);
+    cursor: help;
+    margin-bottom: 6px;
+  }
+  .contract-chip{
+    display:flex; flex-wrap: wrap; align-items:center; gap: 6px 8px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong);
+    background: var(--card-2);
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .contract-chip .side{
+    font-weight: 800; font-size: 0.72rem; letter-spacing: 0.03em;
+    padding: 2px 7px; border-radius: 6px;
+  }
+  .contract-chip .side.call{ color: var(--good); background: rgba(31,207,92,0.12); }
+  .contract-chip .side.put{ color: var(--bad); background: rgba(239,83,84,0.12); }
+  .contract-chip .piece{ color: var(--ink-2); }
+  .contract-chip .piece.strong{ color: var(--ink); font-weight: 700; }
+  .contract-none{
+    font-size: 0.82rem; color: var(--muted); font-style: italic;
+    padding: 8px 10px;
+  }
+
+  .trade-chips{
+    margin-top: 8px;
+    display:flex; flex-wrap: wrap; gap: 6px;
+  }
+  .trade-chip{
+    font-size: 0.72rem; font-weight: 700;
+    padding: 4px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--card-2);
+    color: var(--ink-2);
+    cursor: help;
+  }
+  .trade-chip.entry{ color: var(--purple); border-color: rgba(157,140,241,0.4); }
+  .trade-chip.stop{ color: var(--bad); border-color: rgba(239,83,84,0.35); }
+  .trade-chip.target{ color: var(--good); border-color: rgba(31,207,92,0.35); }
+  .trade-chip.rr{ color: var(--ink); }
+
+  .earn-badge-row{ margin-top: 8px; }
+
+  /* skeleton */
+  .skeleton-card{
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    height: 220px;
+    position: relative;
+    overflow: hidden;
+  }
+  .skeleton-card::after{
+    content:"";
+    position:absolute; inset:0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+    transform: translateX(-100%);
+    animation: shimmer 1.4s infinite;
+  }
+  @keyframes shimmer{ 100%{ transform: translateX(100%); } }
+  @media (prefers-reduced-motion: reduce){
+    .skeleton-card::after{ animation: none; }
+  }
+
+  .board-msg{
+    padding: 20px;
+    text-align: center;
+    color: var(--muted);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+  }
+  .board-msg.error{ color: var(--bad); }
+
+  footer.site-footer{
+    margin-top: 40px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    font-size: 0.74rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  /* ---------- Tooltip bubble ---------- */
+  .tooltip-bubble{
+    position: fixed;
+    max-width: 260px;
+    background: #1d2029;
+    color: var(--ink);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    z-index: 100;
+    pointer-events: none;
+  }
+  .tooltip-bubble[hidden]{ display:none; }
+
+  [data-tip]{ -webkit-tap-highlight-color: transparent; }
+
+  ::selection{ background: rgba(157,140,241,0.35); }
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-top">
+      <div class="brand"><span class="mark">FD</span><span>Flow Desk</span></div>
+      <div class="live-pill"><span class="live-dot" aria-hidden="true"></span>LIVE</div>
+    </div>
+    <div class="timestamps">
+      <span id="ts-prices">prices 30s · —</span>
+      <span id="ts-flow">flow as of —</span>
+    </div>
+    <div class="universe-line" id="universe-line">scanning — stocks</div>
+    <div id="banner-slot"></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="stats-grid" id="stats-grid" aria-label="Summary stats">
+    <div class="stat-tile bull">
+      <div class="stat-label" data-tip="tip-bullish">▲ BULLISH FLOW</div>
+      <div class="stat-value" id="stat-bullish">—</div>
+    </div>
+    <div class="stat-tile bear">
+      <div class="stat-label" data-tip="tip-bearish">▼ BEARISH FLOW</div>
+      <div class="stat-value" id="stat-bearish">—</div>
+    </div>
+    <div class="stat-tile fire">
+      <div class="stat-label" data-tip="tip-firing">🔥 FIRING SETUPS</div>
+      <div class="stat-value" id="stat-firing">—</div>
+    </div>
+    <div class="stat-tile conv">
+      <div class="stat-label" data-tip="tip-highconv">★ HIGH CONVICTION ≥60</div>
+      <div class="stat-value" id="stat-highconv">—</div>
+    </div>
+  </section>
+
+  <nav class="jump-row" aria-label="Jump to board">
+    <a class="jump-pill conviction" href="#conviction-section">#CONVICTION <span class="arrow">→</span></a>
+    <a class="jump-pill swing" href="#swing-section">#SWING <span class="arrow">→</span></a>
+  </nav>
+
+  <section class="section-block" id="conviction-section">
+    <div class="section-eyebrow conviction-c">LIVE CONVICTION BOARD · 0–7 DTE</div>
+    <h2 class="section-heading">Where today's short-dated flow is loudest</h2>
+    <div class="section-intro">
+      These are the names with the strongest <strong>0–7 day</strong> options activity right now,
+      ranked by a score that blends unusual stock &amp; options volume, price momentum, and the
+      call/put mix. Built on <strong>free, 15-minute-delayed</strong> options data — this shows
+      where activity is loud, not where price is guaranteed to go.
+    </div>
+    <div class="card-grid" id="conviction-grid" aria-label="Conviction cards"></div>
+  </section>
+
+  <section class="section-block" id="swing-section">
+    <div class="section-eyebrow swing-c">SWING BOARD · 14D–6MO</div>
+    <h2 class="section-heading">Multi-day setups, ranked by persistence</h2>
+    <div class="section-intro">
+      A slower board. Names here are ranked on how <strong>persistently</strong> money has flowed
+      one direction over the last 5 sessions, for contracts expiring <strong>2 weeks to 6 months</strong>
+      out. Same free-data caveats as above — context for your own research, not a trade signal.
+    </div>
+    <div class="card-grid" id="swing-grid" aria-label="Swing cards"></div>
+  </section>
+
+  <footer class="site-footer">
+    Flow Desk is informational only and is not financial advice or a recommendation to buy or
+    sell any security. Options data is 15-minute delayed (free CBOE feed); stock prices update
+    roughly every 30 seconds. "Net flow" is a premium-traded proxy — call premium traded minus
+    put premium traded (volume × last × 100) — free data cannot see which side of a trade was
+    the buyer or seller, so it reflects dollars of premium changing hands, not confirmed
+    directional order flow. Nothing on this page is investment advice.
+  </footer>
+</div>
+
+<div class="tooltip-bubble" id="tooltip-bubble" role="tooltip" hidden></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ===================== CONFIG ===================== */
+  var RAW_DATA_URL = "https://raw.githubusercontent.com/zlanghamer1/flow-desk/data/data.json";
+  var LOCAL_DATA_URL = "./data/data.json";
+  var TV_SCANNER_URL = "https://scanner.tradingview.com/america/scan";
+  var POLL_MS = 30000;
+  var STALE_MS = 30 * 60 * 1000;
+
+  var isLocalHost = (location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "");
+  var DATA_URL = isLocalHost ? LOCAL_DATA_URL : RAW_DATA_URL;
+
+  /* ===================== TOOLTIP TEXT ===================== */
+  var TIPS = {
+    "tip-bullish": "Number of names on either board right now with net-bullish options flow (calls outweighing puts in dollars traded).",
+    "tip-bearish": "Number of names on either board right now with net-bearish options flow (puts outweighing calls in dollars traded).",
+    "tip-firing": "Setups where the conviction score is 80 or higher, or flow is accelerating fast versus the last check — getting louder, not a guaranteed move.",
+    "tip-highconv": "Names scoring 60 or higher on the 0-100 conviction scale, across both boards.",
+    "tip-score-conviction": "0-100 score blending how unusual the stock and options volume is with price momentum, call/put mix, and volume vs open interest — higher = stronger signal, not a guarantee.",
+    "tip-score-swing": "0-100 score for the swing board, weighted toward flow persistence over the last 5 sessions plus trend alignment and IV rank — higher = stronger signal, not a guarantee.",
+    "tip-firing-badge": "Score is 80+, or this ticker's flow has clearly sped up since the last refresh.",
+    "tip-gain": "How much the stock price has moved since this ticker first appeared on this board today. Not shown if it's new this cycle.",
+    "tip-price": "Live stock price, updated roughly every 30 seconds from a free real-time feed.",
+    "tip-change": "Stock price change on the day.",
+    "tip-netflow": "Net flow = call premium traded minus put premium traded (options volume x last price x 100). Free data can't see which side (buyer or seller) initiated a trade — this is dollars of premium changing hands, not confirmed directional order flow.",
+    "tip-cpratio": "Call option volume divided by put option volume today, for 0-7 day options only. Above 1x means more call-side activity.",
+    "tip-rvol": "Today's trading volume compared with this stock's normal 10-day average. Above 1.5x is flagged as unusually heavy.",
+    "tip-popcontract": "The single options contract, within 20% of the current stock price and expiring in 0-7 days, with the most dollars traded today.",
+    "tip-persist": "How many of the last 5 trading days this name's options flow leaned the same direction (bullish or bearish).",
+    "tip-flow5d": "Total net options premium (calls minus puts) added up over the last up-to-5 trading sessions.",
+    "tip-oibuild": "Day-over-day change in open interest (contracts still open, not yet closed) in the flow's direction. A positive build suggests positions are being held, not just day-traded.",
+    "tip-trend": "Whether the stock price is above its 20- and 50-day moving averages (UP), below both (DOWN), or split between them (MIXED).",
+    "tip-ivrank": "Where today's option prices (implied volatility) sit versus this stock's own past year of history. High = options are relatively expensive right now. Needs 20+ sessions of history to calculate; until then it shows the raw IV instead.",
+    "tip-cpskew": "Call premium traded divided by put premium traded over the multi-day window (2 weeks to 6 months). Above 1x means more call-side dollars.",
+    "tip-suggested": "The highest-premium contract with a delta between 0.30 and 0.60, expiring 2 weeks to 6 months out — a middle-of-the-road strike, not a lottery ticket.",
+    "tip-entry": "Entry reference = this contract's last traded price.",
+    "tip-stop": "Stop reference = 30% below the entry price. A reference level, not a recommendation.",
+    "tip-target": "Target reference = entry price plus 105%. A reference level, not a recommendation.",
+    "tip-rr": "Reward-to-risk ratio between the stop and target references. Fixed at 3.5 by design.",
+    "tip-earnings": "This stock has an earnings report scheduled before the suggested contract expires. Earnings moves are a coin-flip event, not part of the flow signal.",
+    "tip-universe": "How many stocks the scanner actually screened this cycle, out of the full watch list.",
+    "tip-flowtime": "When this options-flow snapshot was last generated (Central time). Options data itself is 15 minutes delayed.",
+    "tip-pricetime": "Stock prices refresh automatically about every 30 seconds while this page is open."
+  };
+
+  /* ===================== STATE ===================== */
+  var state = {
+    lastGeneratedAt: null,
+    convictionCards: [],   // {ticker, tvSymbol, direction, spotAtAlert, refs:{...}}
+    swingCards: [],
+    pollTimer: null,
+    priceTickTimer: null,
+    lastPriceUpdateTs: null
+  };
+
+  /* ===================== DOM HELPERS ===================== */
+  function el(tag, opts, children){
+    var node = document.createElement(tag);
+    opts = opts || {};
+    if (opts.className) node.className = opts.className;
+    if (opts.text !== undefined && opts.text !== null) node.textContent = String(opts.text);
+    if (opts.title) node.title = opts.title;
+    if (opts.tip){
+      node.setAttribute("data-tip", opts.tip);
+      if (TIPS[opts.tip]) node.title = TIPS[opts.tip];
+    }
+    if (opts.attrs){
+      for (var k in opts.attrs){
+        if (Object.prototype.hasOwnProperty.call(opts.attrs, k)) node.setAttribute(k, opts.attrs[k]);
+      }
+    }
+    if (opts.style) node.setAttribute("style", opts.style);
+    (children || []).forEach(function(c){ if (c) node.appendChild(c); });
+    return node;
+  }
+  function text(t){ return document.createTextNode(t == null ? "" : String(t)); }
+  function clear(node){ while (node.firstChild) node.removeChild(node.firstChild); }
+
+  /* ===================== SAFE NUMBER / FORMAT HELPERS ===================== */
+  function num(v){
+    if (v === null || v === undefined) return null;
+    var n = Number(v);
+    return isFinite(n) ? n : null;
+  }
+  function fmtMoneySigned(v){
+    var n = num(v);
+    if (n === null) return "—";
+    var sign = n < 0 ? "-" : "+";
+    var abs = Math.abs(n);
+    var out;
+    if (abs >= 1e9) out = "$" + (abs/1e9).toFixed(2) + "B";
+    else if (abs >= 1e6) out = "$" + (abs/1e6).toFixed(2) + "M";
+    else if (abs >= 1e3) out = "$" + (abs/1e3).toFixed(0) + "K";
+    else out = "$" + abs.toFixed(0);
+    return sign + out;
+  }
+  function fmtPctSigned(v, digits){
+    var n = num(v);
+    if (n === null) return "—";
+    digits = digits === undefined ? 2 : digits;
+    var sign = n > 0 ? "+" : (n < 0 ? "" : "+");
+    return sign + n.toFixed(digits) + "%";
+  }
+  function fmtPrice(v){
+    var n = num(v);
+    if (n === null) return "—";
+    return "$" + (n >= 1000 ? n.toFixed(2) : n.toFixed(2));
+  }
+  function fmtRatio(v){
+    var n = num(v);
+    if (n === null) return "—";
+    return n.toFixed(2) + "x";
+  }
+  function fmtInt(v){
+    var n = num(v);
+    if (n === null) return "—";
+    return Math.round(n).toLocaleString("en-US");
+  }
+  function fmtSignedInt(v){
+    var n = num(v);
+    if (n === null) return "—";
+    var sign = n > 0 ? "+" : "";
+    return sign + Math.round(n).toLocaleString("en-US");
+  }
+  function fmtIvPct(v){
+    var n = num(v);
+    if (n === null) return "—";
+    return Math.round(n * 100) + "%";
+  }
+  function safeStr(v, fallback){
+    if (v === null || v === undefined) return fallback === undefined ? "—" : fallback;
+    return String(v);
+  }
+  function scoreColor(score){
+    var n = num(score);
+    if (n === null) return "var(--muted)";
+    if (n >= 80) return "var(--good)";
+    if (n >= 60) return "var(--good-dim)";
+    if (n >= 40) return "var(--warn)";
+    return "var(--bad)";
+  }
+
+  /* ===================== TOOLTIP (mobile + desktop) ===================== */
+  var tipBubble = document.getElementById("tooltip-bubble");
+  function showTip(target){
+    var key = target.getAttribute("data-tip");
+    var msg = TIPS[key];
+    if (!msg) return;
+    tipBubble.textContent = msg;
+    tipBubble.hidden = false;
+    var rect = target.getBoundingClientRect();
+    var top = rect.bottom + 8;
+    var left = rect.left;
+    var maxLeft = window.innerWidth - 270;
+    if (left > maxLeft) left = Math.max(8, maxLeft);
+    if (top > window.innerHeight - 80) top = rect.top - tipBubble.offsetHeight - 8;
+    tipBubble.style.top = top + "px";
+    tipBubble.style.left = left + "px";
+  }
+  function hideTip(){ tipBubble.hidden = true; }
+  document.addEventListener("click", function(ev){
+    var t = ev.target.closest ? ev.target.closest("[data-tip]") : null;
+    if (t){
+      ev.stopPropagation();
+      if (!tipBubble.hidden && tipBubble._for === t){ hideTip(); tipBubble._for = null; return; }
+      showTip(t);
+      tipBubble._for = t;
+    } else {
+      hideTip();
+      tipBubble._for = null;
+    }
+  });
+  document.addEventListener("mouseover", function(ev){
+    var t = ev.target.closest ? ev.target.closest("[data-tip]") : null;
+    if (t) showTip(t);
+  });
+  document.addEventListener("mouseout", function(ev){
+    var t = ev.target.closest ? ev.target.closest("[data-tip]") : null;
+    if (t) hideTip();
+  });
+
+  /* ===================== CT TIME HELPERS ===================== */
+  function getCTParts(d){
+    d = d || new Date();
+    var fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Chicago",
+      weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false
+    });
+    var parts = fmt.formatToParts(d);
+    var out = {};
+    parts.forEach(function(p){ out[p.type] = p.value; });
+    var hour = parseInt(out.hour, 10);
+    if (hour === 24) hour = 0;
+    return { weekday: out.weekday, hour: hour, minute: parseInt(out.minute, 10) };
+  }
+  function isMarketHoursCT(){
+    var p = getCTParts();
+    var weekdays = ["Mon","Tue","Wed","Thu","Fri"];
+    if (weekdays.indexOf(p.weekday) === -1) return false;
+    var mins = p.hour * 60 + p.minute;
+    return mins >= (8*60+30) && mins <= (15*60);
+  }
+
+  /* ===================== BANNERS ===================== */
+  var bannerSlot = document.getElementById("banner-slot");
+  function renderBanners(data){
+    clear(bannerSlot);
+    var inSession = isMarketHoursCT();
+    if (!inSession){
+      bannerSlot.appendChild(el("div", {className:"banner closed", text:"Market closed — showing last session's data."}));
+    }
+    if (data && data.generated_at){
+      var t = Date.parse(data.generated_at);
+      if (!isNaN(t) && inSession && (Date.now() - t) > STALE_MS){
+        bannerSlot.appendChild(el("div", {className:"banner stale", text:"Flow data delayed — last refresh was more than 30 minutes ago."}));
+      }
+    }
+  }
+
+  /* ===================== RENDER: HEADER STATS ===================== */
+  function renderStats(data){
+    var stats = (data && data.stats) || {};
+    document.getElementById("stat-bullish").textContent = fmtInt(stats.bullish_flow);
+    document.getElementById("stat-bearish").textContent = fmtInt(stats.bearish_flow);
+    document.getElementById("stat-firing").textContent = fmtInt(stats.firing);
+    document.getElementById("stat-highconv").textContent = fmtInt(stats.high_conviction);
+
+    var universe = (data && data.universe) || {};
+    var screened = num(universe.screened);
+    var uniLine = document.getElementById("universe-line");
+    clear(uniLine);
+    uniLine.setAttribute("data-tip", "tip-universe");
+    uniLine.title = TIPS["tip-universe"];
+    uniLine.appendChild(text("scanning " + (screened === null ? "—" : screened.toLocaleString("en-US")) + " stocks"));
+
+    var flowTs = document.getElementById("ts-flow");
+    clear(flowTs);
+    flowTs.setAttribute("data-tip", "tip-flowtime");
+    flowTs.title = TIPS["tip-flowtime"];
+    var ctStr = (data && data.generated_at_ct) ? data.generated_at_ct : "—";
+    flowTs.appendChild(el("b", {text: "flow "})); flowTs.appendChild(text("as of " + ctStr));
+  }
+
+  /* ===================== PRICE TIMESTAMP TICKER ===================== */
+  function updatePricesTimestamp(){
+    var elTs = document.getElementById("ts-prices");
+    clear(elTs);
+    elTs.setAttribute("data-tip", "tip-pricetime");
+    elTs.title = TIPS["tip-pricetime"];
+    if (!state.lastPriceUpdateTs){
+      elTs.appendChild(text("prices 30s · waiting for first update…"));
+      return;
+    }
+    var secs = Math.max(0, Math.round((Date.now() - state.lastPriceUpdateTs) / 1000));
+    elTs.appendChild(el("b", {text:"prices 30s"}));
+    elTs.appendChild(text(" · updated " + secs + "s ago"));
+  }
+
+  /* ===================== CONTRACT CHIP BUILDER ===================== */
+  function buildContractChip(c, tipKey){
+    if (!c || typeof c !== "object"){
+      return el("div", {className:"contract-none", text:"no liquid contract"});
+    }
+    var side = (c.side === "PUT") ? "PUT" : (c.side === "CALL" ? "CALL" : null);
+    var chip = el("div", {className:"contract-chip", tip: tipKey});
+    if (side){
+      chip.appendChild(el("span", {className:"side " + side.toLowerCase(), text: side}));
+    }
+    var strike = num(c.strike);
+    if (strike !== null) chip.appendChild(el("span", {className:"piece strong", text: "$" + strike}));
+    var expiry = safeStr(c.expiry, null);
+    if (expiry) chip.appendChild(el("span", {className:"piece", text: expiry}));
+    var dte = num(c.dte);
+    if (dte !== null) chip.appendChild(el("span", {className:"piece", text: "(" + Math.round(dte) + "d)"}));
+    var last = num(c.last !== undefined ? c.last : c.entry);
+    if (last !== null) chip.appendChild(el("span", {className:"piece strong", text: "@ $" + last.toFixed(2)}));
+    var delta = num(c.delta);
+    if (delta !== null) chip.appendChild(el("span", {className:"piece", text: "Δ" + delta.toFixed(2)}));
+    var iv = num(c.iv);
+    if (iv !== null) chip.appendChild(el("span", {className:"piece", text: "IV " + Math.round(iv*100) + "%"}));
+    return chip;
+  }
+
+  /* ===================== CONVICTION CARD ===================== */
+  function buildConvictionCard(card){
+    var direction = card.direction === "BEAR" ? "BEAR" : (card.direction === "BULL" ? "BULL" : null);
+    var dirClass = direction === "BEAR" ? "bear" : "bull";
+    var ticker = safeStr(card.ticker, "?");
+    var tvSymbol = safeStr(card.tv_symbol, null);
+
+    var root = el("article", {className: "flow-card " + dirClass, attrs:{"data-ticker": ticker}});
+
+    var top = el("div", {className:"card-top"});
+    var tRow = el("div", {className:"ticker-row"});
+    tRow.appendChild(el("span", {className:"ticker", text: ticker}));
+    if (direction) tRow.appendChild(el("span", {className:"chip " + dirClass, text: direction}));
+    if (card.firing){
+      tRow.appendChild(el("span", {className:"chip fire", tip:"tip-firing-badge", text:"🔥 FIRING"}));
+    }
+    top.appendChild(tRow);
+
+    var priceBlock = el("div", {className:"price-block"});
+    priceBlock.appendChild(el("div", {className:"price-label", tip:"tip-price", text:"PRICE"}));
+    var priceVal = el("div", {className:"price-value", text: fmtPrice(card.spot)});
+    priceBlock.appendChild(priceVal);
+    var changeVal = el("div", {className:"price-change", tip:"tip-change"});
+    var chg = num(card.change_pct);
+    changeVal.classList.add(chg !== null && chg < 0 ? "down" : "up");
+    changeVal.appendChild(text(fmtPctSigned(card.change_pct)));
+    priceBlock.appendChild(changeVal);
+    top.appendChild(priceBlock);
+    root.appendChild(top);
+
+    var spotAtAlert = num(card.spot_at_alert);
+    var gainRow = el("div", {className:"gain-row"});
+    var gainChip = null;
+    if (spotAtAlert !== null && spotAtAlert !== 0){
+      var spot = num(card.spot);
+      var gainPct = spot !== null ? ((spot - spotAtAlert) / spotAtAlert) * 100 : null;
+      gainChip = el("span", {className:"chip " + (gainPct !== null && gainPct < 0 ? "gain-down" : "gain-up"), tip:"tip-gain"});
+      gainChip.appendChild(text("GAIN SINCE ALERT " + fmtPctSigned(gainPct)));
+      gainRow.appendChild(gainChip);
+      root.appendChild(gainRow);
+    }
+
+    var scoreRow = el("div", {className:"score-row"});
+    scoreRow.appendChild(el("span", {className:"score-label", tip:"tip-score-conviction", text:"CONVICTION"}));
+    var scoreN = num(card.score);
+    var scoreNum = el("span", {className:"score-num", text: scoreN === null ? "—" : Math.round(scoreN)});
+    scoreNum.style.color = scoreColor(scoreN);
+    scoreRow.appendChild(scoreNum);
+    var track = el("div", {className:"score-bar-track"});
+    var fill = el("div", {className:"score-bar-fill"});
+    fill.style.width = (scoreN === null ? 0 : Math.max(0, Math.min(100, scoreN))) + "%";
+    fill.style.background = scoreColor(scoreN);
+    track.appendChild(fill);
+    scoreRow.appendChild(track);
+    root.appendChild(scoreRow);
+
+    var metrics = el("div", {className:"metric-grid"});
+    // NET FLOW
+    var nf = num(card.net_flow);
+    var nfMetric = el("div", {className:"metric"});
+    nfMetric.appendChild(el("div", {className:"metric-label", tip:"tip-netflow", text:"NET FLOW"}));
+    var nfVal = el("div", {className:"metric-value " + (nf !== null && nf < 0 ? "neg" : "pos"), text: fmtMoneySigned(card.net_flow)});
+    nfMetric.appendChild(nfVal);
+    metrics.appendChild(nfMetric);
+    // C/P
+    var cpMetric = el("div", {className:"metric"});
+    cpMetric.appendChild(el("div", {className:"metric-label", tip:"tip-cpratio", text:"C/P"}));
+    cpMetric.appendChild(el("div", {className:"metric-value", text: fmtRatio(card.cp_ratio)}));
+    metrics.appendChild(cpMetric);
+    // RVOL
+    var rvolN = num(card.rvol);
+    var rvolMetric = el("div", {className:"metric"});
+    rvolMetric.appendChild(el("div", {className:"metric-label", tip:"tip-rvol", text:"RVOL"}));
+    var rvolVal = el("div", {className:"metric-value" + (rvolN !== null && rvolN > 1.5 ? " flag" : ""), text: rvolN === null ? "—" : rvolN.toFixed(2) + "x"});
+    rvolMetric.appendChild(rvolVal);
+    metrics.appendChild(rvolMetric);
+    root.appendChild(metrics);
+
+    root.appendChild(el("hr", {className:"divider"}));
+    root.appendChild(el("div", {className:"contract-label", tip:"tip-popcontract", text:"MOST POPULAR CONTRACT"}));
+    root.appendChild(buildContractChip(card.popular_contract, "tip-popcontract"));
+
+    var refs = {
+      root: root,
+      priceVal: priceVal,
+      changeVal: changeVal,
+      rvolVal: rvolVal,
+      gainRowEl: gainRow,
+      gainChip: gainChip,
+      spotAtAlert: spotAtAlert,
+      dirClass: dirClass
+    };
+    return { node: root, tvSymbol: tvSymbol, refs: refs };
+  }
+
+  /* ===================== SWING CARD ===================== */
+  function buildSwingCard(card){
+    var direction = card.direction === "BEAR" ? "BEAR" : (card.direction === "BULL" ? "BULL" : null);
+    var dirClass = direction === "BEAR" ? "bear" : "bull";
+    var ticker = safeStr(card.ticker, "?");
+    var tvSymbol = safeStr(card.tv_symbol, null);
+
+    var root = el("article", {className: "flow-card " + dirClass, attrs:{"data-ticker": ticker}});
+
+    var top = el("div", {className:"card-top"});
+    var tRow = el("div", {className:"ticker-row"});
+    tRow.appendChild(el("span", {className:"ticker", text: ticker}));
+    if (direction) tRow.appendChild(el("span", {className:"chip " + dirClass, text: direction}));
+    top.appendChild(tRow);
+
+    var priceBlock = el("div", {className:"price-block"});
+    priceBlock.appendChild(el("div", {className:"price-label", tip:"tip-price", text:"PRICE"}));
+    var priceVal = el("div", {className:"price-value", text: fmtPrice(card.spot)});
+    priceBlock.appendChild(priceVal);
+    top.appendChild(priceBlock);
+    root.appendChild(top);
+
+    var spotAtAlert = num(card.spot_at_alert);
+    var gainRow = el("div", {className:"gain-row"});
+    var gainChip = null;
+    if (spotAtAlert !== null && spotAtAlert !== 0){
+      var spot = num(card.spot);
+      var gainPct = spot !== null ? ((spot - spotAtAlert) / spotAtAlert) * 100 : null;
+      gainChip = el("span", {className:"chip " + (gainPct !== null && gainPct < 0 ? "gain-down" : "gain-up"), tip:"tip-gain"});
+      gainChip.appendChild(text("GAIN SINCE ALERT " + fmtPctSigned(gainPct)));
+      gainRow.appendChild(gainChip);
+    }
+    if (card.earnings_in_window){
+      var ed = num(card.earnings_days);
+      gainRow.appendChild(el("span", {className:"chip earn", tip:"tip-earnings", text: "⚠ ER in " + (ed === null ? "—" : Math.round(ed)) + "d"}));
+    }
+    if (gainRow.childNodes.length) root.appendChild(gainRow);
+
+    var scoreRow = el("div", {className:"score-row"});
+    scoreRow.appendChild(el("span", {className:"score-label", tip:"tip-score-swing", text:"SWING SCORE"}));
+    var scoreN = num(card.score);
+    var scoreNum = el("span", {className:"score-num", text: scoreN === null ? "—" : Math.round(scoreN)});
+    scoreNum.style.color = scoreColor(scoreN);
+    scoreRow.appendChild(scoreNum);
+    var track = el("div", {className:"score-bar-track"});
+    var fill = el("div", {className:"score-bar-fill"});
+    fill.style.width = (scoreN === null ? 0 : Math.max(0, Math.min(100, scoreN))) + "%";
+    fill.style.background = scoreColor(scoreN);
+    track.appendChild(fill);
+    scoreRow.appendChild(track);
+    root.appendChild(scoreRow);
+
+    var metrics = el("div", {className:"metric-grid"});
+
+    var persistN = num(card.persist);
+    var persistMax = num(card.persist_max);
+    var pMetric = el("div", {className:"metric"});
+    pMetric.appendChild(el("div", {className:"metric-label", tip:"tip-persist", text:"PERSIST"}));
+    pMetric.appendChild(el("div", {className:"metric-value", text: (persistN===null?"—":Math.round(persistN)) + "/" + (persistMax===null?"5":Math.round(persistMax))}));
+    metrics.appendChild(pMetric);
+
+    var f5 = num(card.flow_5d);
+    var fMetric = el("div", {className:"metric"});
+    fMetric.appendChild(el("div", {className:"metric-label", tip:"tip-flow5d", text:"5-DAY FLOW"}));
+    fMetric.appendChild(el("div", {className:"metric-value " + (f5 !== null && f5 < 0 ? "neg" : "pos"), text: fmtMoneySigned(card.flow_5d)}));
+    metrics.appendChild(fMetric);
+
+    var oiMetric = el("div", {className:"metric"});
+    oiMetric.appendChild(el("div", {className:"metric-label", tip:"tip-oibuild", text:"OI BUILD"}));
+    if (card.oi_build === null || card.oi_build === undefined){
+      oiMetric.appendChild(el("div", {className:"metric-value muted", text:"collecting"}));
+    } else {
+      var oiN = num(card.oi_build);
+      oiMetric.appendChild(el("div", {className:"metric-value " + (oiN !== null && oiN < 0 ? "neg" : "pos"), text: fmtSignedInt(card.oi_build)}));
+    }
+    metrics.appendChild(oiMetric);
+
+    var trendMetric = el("div", {className:"metric"});
+    trendMetric.appendChild(el("div", {className:"metric-label", tip:"tip-trend", text:"TREND"}));
+    var trendStr = safeStr(card.trend, null);
+    var trendArrow = trendStr === "UP" ? "▲" : (trendStr === "DOWN" ? "▼" : (trendStr === "MIXED" ? "↔" : ""));
+    var trendClass = trendStr === "UP" ? "pos" : (trendStr === "DOWN" ? "neg" : "muted");
+    trendMetric.appendChild(el("div", {className:"metric-value " + trendClass, text: (trendStr || "—") + (trendArrow ? " " + trendArrow : "")}));
+    metrics.appendChild(trendMetric);
+
+    var ivMetric = el("div", {className:"metric"});
+    ivMetric.appendChild(el("div", {className:"metric-label", tip:"tip-ivrank", text:"IV RANK"}));
+    if (card.iv_collecting){
+      var box = el("div", {className:"metric-value muted"});
+      box.appendChild(text("collecting history"));
+      var iv30 = num(card.iv30);
+      if (iv30 !== null){
+        var small = el("div", {className:"metric-value muted", style:"font-size:0.78rem;margin-top:2px;"});
+        small.appendChild(text("IV30 " + Math.round(iv30*100) + "%"));
+        ivMetric.appendChild(box);
+        ivMetric.appendChild(small);
+      } else {
+        ivMetric.appendChild(box);
+      }
+    } else {
+      var ivr = num(card.iv_rank);
+      ivMetric.appendChild(el("div", {className:"metric-value", text: ivr === null ? "—" : Math.round(ivr)}));
+    }
+    metrics.appendChild(ivMetric);
+
+    var skewMetric = el("div", {className:"metric"});
+    skewMetric.appendChild(el("div", {className:"metric-label", tip:"tip-cpskew", text:"C/P SKEW"}));
+    skewMetric.appendChild(el("div", {className:"metric-value", text: fmtRatio(card.cp_skew)}));
+    metrics.appendChild(skewMetric);
+
+    root.appendChild(metrics);
+    root.appendChild(el("hr", {className:"divider"}));
+    root.appendChild(el("div", {className:"contract-label", tip:"tip-suggested", text:"SUGGESTED CONTRACT"}));
+    var sc = card.suggested_contract;
+    root.appendChild(buildContractChip(sc, "tip-suggested"));
+
+    if (sc && typeof sc === "object"){
+      var tradeRow = el("div", {className:"trade-chips"});
+      var entry = num(sc.entry);
+      var stop = num(sc.stop);
+      var target = num(sc.target);
+      var rr = num(sc.rr);
+      if (entry !== null) tradeRow.appendChild(el("span", {className:"trade-chip entry", tip:"tip-entry", text:"ENTRY $" + entry.toFixed(2)}));
+      if (stop !== null) tradeRow.appendChild(el("span", {className:"trade-chip stop", tip:"tip-stop", text:"STOP $" + stop.toFixed(2)}));
+      if (target !== null) tradeRow.appendChild(el("span", {className:"trade-chip target", tip:"tip-target", text:"TARGET $" + target.toFixed(2)}));
+      if (rr !== null) tradeRow.appendChild(el("span", {className:"trade-chip rr", tip:"tip-rr", text:"R:R " + rr.toFixed(1)}));
+      if (tradeRow.childNodes.length) root.appendChild(tradeRow);
+    }
+
+    var refs = {
+      root: root,
+      priceVal: priceVal,
+      gainChip: gainChip,
+      gainRowEl: gainRow,
+      spotAtAlert: spotAtAlert,
+      dirClass: dirClass
+    };
+    return { node: root, tvSymbol: tvSymbol, refs: refs };
+  }
+
+  /* ===================== BOARD RENDER ===================== */
+  function renderSkeleton(container, n){
+    clear(container);
+    for (var i=0;i<n;i++) container.appendChild(el("div", {className:"skeleton-card"}));
+  }
+  function renderBoard(container, cards, builderFn, kind){
+    clear(container);
+    var results = [];
+    if (!Array.isArray(cards) || cards.length === 0){
+      container.appendChild(el("div", {className:"board-msg", text: "No " + kind + " setups on the board right now."}));
+      return results;
+    }
+    cards.forEach(function(c){
+      if (!c || typeof c !== "object") return;
+      try {
+        var built = builderFn(c);
+        container.appendChild(built.node);
+        results.push({
+          ticker: safeStr(c.ticker, "?"),
+          tvSymbol: built.tvSymbol,
+          refs: built.refs
+        });
+      } catch (e){
+        /* skip malformed card, never break the page */
+      }
+    });
+    return results;
+  }
+
+  /* ===================== MAIN RENDER ===================== */
+  function renderData(data){
+    renderBanners(data);
+    renderStats(data);
+    state.convictionCards = renderBoard(document.getElementById("conviction-grid"), data.conviction, buildConvictionCard, "conviction");
+    state.swingCards = renderBoard(document.getElementById("swing-grid"), data.swing, buildSwingCard, "swing");
+    state.lastPriceUpdateTs = Date.now();
+    updatePricesTimestamp();
+  }
+
+  function renderLoadError(msg){
+    var cg = document.getElementById("conviction-grid");
+    var sg = document.getElementById("swing-grid");
+    clear(cg); clear(sg);
+    cg.appendChild(el("div", {className:"board-msg error", text: msg}));
+    sg.appendChild(el("div", {className:"board-msg error", text: msg}));
+  }
+
+  /* ===================== DATA FETCH ===================== */
+  function fetchData(){
+    var url = DATA_URL + (DATA_URL.indexOf("?") === -1 ? "?" : "&") + "t=" + Date.now();
+    return fetch(url, { cache: "no-store" })
+      .then(function(res){
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function(data){
+        if (!data || typeof data !== "object") throw new Error("bad payload");
+        var changed = data.generated_at !== state.lastGeneratedAt;
+        if (changed || !state.lastGeneratedAt){
+          state.lastGeneratedAt = data.generated_at || null;
+          renderData(data);
+        } else {
+          // still refresh banners/market-state-sensitive bits
+          renderBanners(data);
+        }
+        return data;
+      })
+      .catch(function(err){
+        if (!state.lastGeneratedAt){
+          renderLoadError("Couldn't load flow data. Will keep trying every 30 seconds.");
+        }
+        return null;
+      });
+  }
+
+  /* ===================== TV LIVE PRICE POLL ===================== */
+  function collectDisplayedSymbolMap(){
+    var map = {}; // tvSymbol -> [cardEntry, ...]
+    state.convictionCards.concat(state.swingCards).forEach(function(entry){
+      if (!entry.tvSymbol || entry.tvSymbol === "—") return;
+      if (!map[entry.tvSymbol]) map[entry.tvSymbol] = [];
+      map[entry.tvSymbol].push(entry);
+    });
+    return map;
+  }
+
+  function applyLivePrice(entry, rtc, changePct, rvol){
+    var refs = entry.refs;
+    if (!refs) return;
+    var spot = num(rtc);
+    if (spot !== null && refs.priceVal){
+      refs.priceVal.textContent = fmtPrice(spot);
+    }
+    if (refs.changeVal){
+      var chg = num(changePct);
+      refs.changeVal.textContent = fmtPctSigned(changePct);
+      refs.changeVal.classList.remove("up","down");
+      refs.changeVal.classList.add(chg !== null && chg < 0 ? "down" : "up");
+    }
+    if (refs.rvolVal){
+      var rv = num(rvol);
+      refs.rvolVal.textContent = rv === null ? "—" : rv.toFixed(2) + "x";
+      refs.rvolVal.classList.remove("flag");
+      if (rv !== null && rv > 1.5) refs.rvolVal.classList.add("flag");
+    }
+    // live gain-since-alert
+    if (refs.spotAtAlert !== null && refs.spotAtAlert !== undefined && refs.spotAtAlert !== 0 && spot !== null){
+      var gainPct = ((spot - refs.spotAtAlert) / refs.spotAtAlert) * 100;
+      if (refs.gainChip){
+        refs.gainChip.textContent = "";
+        refs.gainChip.appendChild(text("GAIN SINCE ALERT " + fmtPctSigned(gainPct)));
+        refs.gainChip.classList.remove("gain-up","gain-down");
+        refs.gainChip.classList.add(gainPct < 0 ? "gain-down" : "gain-up");
+      }
+    }
+  }
+
+  var tvPollFailed = false;
+  function pollTvPrices(){
+    var map = collectDisplayedSymbolMap();
+    var symbols = Object.keys(map);
+    if (symbols.length === 0) return Promise.resolve(false);
+    var body = JSON.stringify({
+      symbols: { tickers: symbols, query: { types: [] } },
+      columns: ["rtc", "change", "relative_volume_10d_calc"]
+    });
+    return fetch(TV_SCANNER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: body
+    })
+      .then(function(res){
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function(json){
+        var rows = (json && Array.isArray(json.data)) ? json.data : [];
+        rows.forEach(function(row){
+          if (!row || !row.s || !Array.isArray(row.d)) return;
+          var entries = map[row.s];
+          if (!entries) return;
+          var rtc = row.d[0];
+          var chg = row.d[1];
+          var rvol = row.d[2];
+          entries.forEach(function(entry){ applyLivePrice(entry, rtc, chg, rvol); });
+        });
+        state.lastPriceUpdateTs = Date.now();
+        updatePricesTimestamp();
+        tvPollFailed = false;
+        return true;
+      })
+      .catch(function(err){
+        tvPollFailed = true;
+        return false;
+      });
+  }
+
+  /* ===================== POLL LOOP ===================== */
+  function tick(){
+    fetchData();
+    pollTvPrices();
+  }
+
+  function start(){
+    renderSkeleton(document.getElementById("conviction-grid"), 3);
+    renderSkeleton(document.getElementById("swing-grid"), 3);
+    updatePricesTimestamp();
+    fetchData().then(function(){
+      pollTvPrices();
+    });
+    state.pollTimer = setInterval(tick, POLL_MS);
+    state.priceTickTimer = setInterval(updatePricesTimestamp, 1000);
+    // re-check market-hours banner periodically too
+    setInterval(function(){ if (state.lastGeneratedAt) renderBanners({generated_at: state._lastRawGeneratedAt}); }, 60000);
+  }
+
+  if (document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
+
+  // expose for test/debug harnesses only (no sensitive data)
+  window.__flowDeskDebug = { fetchData: fetchData, pollTvPrices: pollTvPrices, state: state };
+})();
+</script>
+</body>
+</html>
