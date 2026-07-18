@@ -576,9 +576,9 @@
     "tip-bullish": "Number of names on either board right now with net-bullish options flow (calls outweighing puts in dollars traded).",
     "tip-bearish": "Number of names on either board right now with net-bearish options flow (puts outweighing calls in dollars traded).",
     "tip-firing": "Setups where the conviction score is 80 or higher, or flow is accelerating fast versus the last check — getting louder, not a guaranteed move.",
-    "tip-highconv": "Names scoring 60 or higher on the 0-100 conviction scale, across both boards.",
-    "tip-score-conviction": "0-100 score blending how unusual the stock and options volume is with price momentum, call/put mix, and volume vs open interest — higher = stronger signal, not a guarantee.",
-    "tip-score-swing": "0-100 score for the swing board, weighted toward flow persistence over the last 5 sessions plus trend alignment and IV rank — higher = stronger signal, not a guarantee.",
+    "tip-highconv": "Names on the conviction board scoring 60 or higher on the 0-100 conviction scale. Swing-only names aren't counted.",
+    "tip-score-conviction": "0-100 score, six parts: RVOL 25, momentum 20, flow magnitude 25, call/put extremity 15, volume-vs-OI 10, contract concentration 5. Then the aggressor tilt nudges it ±5 if the sampled buy/sell lean agrees or disagrees. Higher = stronger signal, not a guarantee.",
+    "tip-score-swing": "0-100 score: persistence 35, 5-day flow magnitude 20, OI build 15, trend alignment 15, IV rank 10 (inverted — cheap vol scores higher), call/put skew 5. Then OI-confirm nudges it +5 (OPENING) or -10 (CLOSING) when yesterday's side matches today's direction. Higher = stronger signal, not a guarantee.",
     "tip-firing-badge": "Score is 80+, or this ticker's flow has clearly sped up since the last refresh.",
     "tip-gain": "How much the stock price has moved since this ticker first appeared on this board today. Not shown if it's new this cycle.",
     "tip-price": "Live stock price, updated roughly every 30 seconds from a free real-time feed.",
@@ -610,6 +610,8 @@
   /* ===================== STATE ===================== */
   var state = {
     lastGeneratedAt: null,
+    lastData: null,
+    consecutiveFailures: 0,
     convictionCards: [],   // {ticker, tvSymbol, direction, spotAtAlert, refs:{...}}
     swingCards: [],
     pollTimer: null,
@@ -668,7 +670,7 @@
   function fmtPrice(v){
     var n = num(v);
     if (n === null) return "—";
-    return "$" + (n >= 1000 ? n.toFixed(2) : n.toFixed(2));
+    return "$" + n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
   }
   function fmtRatio(v){
     var n = num(v);
@@ -767,15 +769,40 @@
 
   /* ===================== BANNERS ===================== */
   var bannerSlot = document.getElementById("banner-slot");
+  function marketStateOf(data){
+    if (data && typeof data.market_state === "string") return data.market_state;
+    return isMarketHoursCT() ? "open" : "closed";   // fall back to local clock only if field missing
+  }
+  function dataAgeLabel(data){
+    var wd = null;
+    if (data && data.session_date){
+      var d = new Date(data.session_date + "T12:00:00Z");
+      if (!isNaN(d.getTime())){
+        wd = new Intl.DateTimeFormat("en-US", {weekday:"short", timeZone:"UTC"}).format(d);
+      }
+    }
+    // generated_at_ct already carries the date ("2026-07-18 12:33 CT"), so
+    // prefix just the weekday; fall back to session_date when it's absent.
+    if (data && data.generated_at_ct) return (wd ? wd + " " : "") + data.generated_at_ct;
+    if (data && data.session_date) return (wd ? wd + " " : "") + data.session_date;
+    return "";
+  }
   function renderBanners(data){
     clear(bannerSlot);
-    var inSession = isMarketHoursCT();
-    if (!inSession){
-      bannerSlot.appendChild(el("div", {className:"banner closed", text:"Market closed — showing last session's data."}));
+    var mstate = marketStateOf(data);
+    var localOpen = isMarketHoursCT();
+    var believesOpen = (mstate === "open") || localOpen;
+    if (mstate === "premarket"){
+      bannerSlot.appendChild(el("div", {className:"banner closed", text:"Pre-market — showing the latest snapshot; the regular session opens at 8:30 AM CT."}));
+    } else if (mstate === "afterhours"){
+      bannerSlot.appendChild(el("div", {className:"banner closed", text:"After hours — showing today's closing snapshot."}));
+    } else if (mstate === "closed" && !localOpen){
+      var age = dataAgeLabel(data);
+      bannerSlot.appendChild(el("div", {className:"banner closed", text:"Market closed — showing data from " + (age || "the last session") + "."}));
     }
     if (data && data.generated_at){
       var t = Date.parse(data.generated_at);
-      if (!isNaN(t) && inSession && (Date.now() - t) > STALE_MS){
+      if (!isNaN(t) && believesOpen && (Date.now() - t) > STALE_MS){
         bannerSlot.appendChild(el("div", {className:"banner stale", text:"Flow data delayed — last refresh was more than 30 minutes ago."}));
       }
     }
@@ -819,7 +846,7 @@
     }
     var secs = Math.max(0, Math.round((Date.now() - state.lastPriceUpdateTs) / 1000));
     elTs.appendChild(el("b", {text:"prices 30s"}));
-    elTs.appendChild(text(" · updated " + secs + "s ago"));
+    elTs.appendChild(text(" · updated " + secs + "s ago" + (tvPollFailed ? " · live prices unavailable" : "")));
   }
 
   /* ===================== CONTRACT CHIP BUILDER ===================== */
@@ -850,7 +877,7 @@
   /* ===================== CONVICTION CARD ===================== */
   function buildConvictionCard(card){
     var direction = card.direction === "BEAR" ? "BEAR" : (card.direction === "BULL" ? "BULL" : null);
-    var dirClass = direction === "BEAR" ? "bear" : "bull";
+    var dirClass = direction === "BEAR" ? "bear" : (direction === "BULL" ? "bull" : "");
     var ticker = safeStr(card.ticker, "?");
     var tvSymbol = safeStr(card.tv_symbol, null);
 
@@ -959,7 +986,7 @@
   /* ===================== SWING CARD ===================== */
   function buildSwingCard(card){
     var direction = card.direction === "BEAR" ? "BEAR" : (card.direction === "BULL" ? "BULL" : null);
-    var dirClass = direction === "BEAR" ? "bear" : "bull";
+    var dirClass = direction === "BEAR" ? "bear" : (direction === "BULL" ? "bull" : "");
     var ticker = safeStr(card.ticker, "?");
     var tvSymbol = safeStr(card.tv_symbol, null);
 
@@ -1038,9 +1065,36 @@
     // OI-CONFIRM sub-line: did yesterday's swing flow open or close positions?
     var oic = safeStr(card.oi_confirm, null);
     if (oic === "OPENING" || oic === "CLOSING" || oic === "CHURN"){
-      var oicClass = oic === "OPENING" ? "pos" : (oic === "CLOSING" ? "neg" : "muted");
-      var oicMark = oic === "OPENING" ? " ✓" : (oic === "CLOSING" ? " ✗" : "");
-      oiMetric.appendChild(el("div", {className:"metric-value " + oicClass, tip:"tip-oiconfirm", style:"font-size:0.78rem;margin-top:1px;", text: oic + oicMark}));
+      // The confirm only validates/invalidates today's thesis when it was
+      // measured on the side that matches the card's direction.
+      var oicSide = safeStr(card.oi_confirm_side, null);
+      var sideMatches = (oicSide === "CALL" && direction === "BULL") ||
+                        (oicSide === "PUT"  && direction === "BEAR");
+      var oicClass, oicText;
+      if (!sideMatches){
+        // opposite-side (or unknown-side) confirm — render neutrally, no ✓/✗
+        oicClass = "muted";
+        oicText = oic + " · opp-side";
+      } else {
+        oicClass = oic === "OPENING" ? "pos" : (oic === "CLOSING" ? "neg" : "muted");
+        oicText = oic + (oic === "OPENING" ? " ✓" : (oic === "CLOSING" ? " ✗" : ""));
+      }
+      oiMetric.appendChild(el("div", {className:"metric-value " + oicClass, tip:"tip-oiconfirm", style:"font-size:0.78rem;margin-top:1px;", text: oicText}));
+      // NOTE: the custom tooltip bubble (showTip()) re-reads TIPS[key] by id
+      // and ignores any per-element .title, so a dynamic hover string can't
+      // ride on tip:"tip-oiconfirm" here. Surface the opp-side explanation
+      // and the frac as a small muted note under the badge instead.
+      var oicNoteParts = [];
+      if (!sideMatches){
+        oicNoteParts.push("opposite side — doesn't confirm/deny today's thesis");
+      }
+      var oicFrac = num(card.oi_confirm_frac);
+      if (oicFrac !== null){
+        oicNoteParts.push("OI " + fmtPctSigned(oicFrac * 100, 0) + " of yesterday's vol");
+      }
+      if (oicNoteParts.length){
+        oiMetric.appendChild(el("div", {className:"metric-value muted", style:"font-size:0.7rem;margin-top:1px;", text: oicNoteParts.join(", ")}));
+      }
     }
     metrics.appendChild(oiMetric);
 
@@ -1164,6 +1218,8 @@
       })
       .then(function(data){
         if (!data || typeof data !== "object") throw new Error("bad payload");
+        state.consecutiveFailures = 0;
+        state.lastData = data;
         var changed = data.generated_at !== state.lastGeneratedAt;
         if (changed || !state.lastGeneratedAt){
           state.lastGeneratedAt = data.generated_at || null;
@@ -1175,8 +1231,13 @@
         return data;
       })
       .catch(function(err){
+        state.consecutiveFailures += 1;
         if (!state.lastGeneratedAt){
           renderLoadError("Couldn't load flow data. Will keep trying every 30 seconds.");
+        } else if (state.consecutiveFailures >= 3){
+          // We have data on screen but refreshes keep failing — surface it.
+          clear(bannerSlot);
+          bannerSlot.appendChild(el("div", {className:"banner error", text: "Flow data hasn't refreshed — the last " + state.consecutiveFailures + " updates failed. Showing the most recent snapshot."}));
         }
         return null;
       });
@@ -1266,8 +1327,7 @@
 
   /* ===================== POLL LOOP ===================== */
   function tick(){
-    fetchData();
-    pollTvPrices();
+    fetchData().then(pollTvPrices);
   }
 
   function start(){
@@ -1280,7 +1340,7 @@
     state.pollTimer = setInterval(tick, POLL_MS);
     state.priceTickTimer = setInterval(updatePricesTimestamp, 1000);
     // re-check market-hours banner periodically too
-    setInterval(function(){ if (state.lastGeneratedAt) renderBanners({generated_at: state._lastRawGeneratedAt}); }, 60000);
+    setInterval(function(){ if (state.lastData) renderBanners(state.lastData); }, 60000);
   }
 
   if (document.readyState === "loading"){
