@@ -591,6 +591,8 @@
     "tip-flow5d": "Total net options premium (calls minus puts) added up over the last up-to-5 trading sessions.",
     "tip-flow5dpct": "The same 5-day net flow expressed as a percentage of all option premium (calls + puts) that traded over those sessions — i.e. how one-sided the flow was. +100% = every dollar leaned bullish, -100% = all bearish, 0% = evenly split.",
     "tip-oibuild": "Day-over-day change in open interest (contracts still open, not yet closed) in the flow's direction. A positive build suggests positions are being held, not just day-traded.",
+    "tip-tilt": "Aggressor tilt: each refresh, contracts that traded are checked against their bid/ask — trades near the ask count as bought, near the bid as sold. Calls bought + puts sold = bullish premium; calls sold + puts bought = bearish. +100% = everything classified leaned bullish. This samples one trade per contract per refresh (~7 min) — a rough proxy for who's initiating, not the full tape. Shows 'sampling' until enough trades classify.",
+    "tip-oiconfirm": "Did yesterday's 2wk-6mo flow OPEN new positions or close them? OPENING = open interest grew by at least 25% of yesterday's volume on the flow's side (positions being held — conviction). CLOSING = it shrank that much (unwinding). CHURN = day-traded or rolled. Needs 2 days of data and real volume to show.",
     "tip-trend": "Whether the stock price is above its 20- and 50-day moving averages (UP), below both (DOWN), or split between them (MIXED).",
     "tip-ivrank": "Where today's option prices (implied volatility) sit versus this stock's own past year of history. High = options are relatively expensive right now. Needs 20+ sessions of history to calculate; until then it shows the raw IV instead.",
     "tip-cpskew": "Call premium traded divided by put premium traded over the multi-day window (2 weeks to 6 months). Above 1x means more call-side dollars.",
@@ -921,6 +923,20 @@
     var rvolVal = el("div", {className:"metric-value" + (rvolN !== null && rvolN > 1.5 ? " flag" : ""), text: rvolN === null ? "—" : rvolN.toFixed(2) + "x"});
     rvolMetric.appendChild(rvolVal);
     metrics.appendChild(rvolMetric);
+    // AGGRESSOR TILT (sampled buy/sell proxy; null until anything classifies)
+    var tiltN = num(card.tilt);
+    var tiltMetric = el("div", {className:"metric"});
+    tiltMetric.appendChild(el("div", {className:"metric-label", tip:"tip-tilt", text:"AGGR TILT"}));
+    if (tiltN === null){
+      tiltMetric.appendChild(el("div", {className:"metric-value muted", text:"sampling"}));
+    } else {
+      tiltMetric.appendChild(el("div", {className:"metric-value " + (tiltN < 0 ? "neg" : "pos"), text: fmtPctSigned(tiltN * 100, 0)}));
+      var tp = num(card.tilt_prem);
+      if (tp !== null && tp > 0){
+        tiltMetric.appendChild(el("div", {className:"metric-value muted", tip:"tip-tilt", style:"font-size:0.78rem;margin-top:1px;", text:"on " + fmtMoneySigned(tp).slice(1) + " sampled"}));
+      }
+    }
+    metrics.appendChild(tiltMetric);
     root.appendChild(metrics);
 
     root.appendChild(el("hr", {className:"divider"}));
@@ -1018,6 +1034,13 @@
     } else {
       var oiN = num(card.oi_build);
       oiMetric.appendChild(el("div", {className:"metric-value " + (oiN !== null && oiN < 0 ? "neg" : "pos"), text: fmtSignedInt(card.oi_build)}));
+    }
+    // OI-CONFIRM sub-line: did yesterday's swing flow open or close positions?
+    var oic = safeStr(card.oi_confirm, null);
+    if (oic === "OPENING" || oic === "CLOSING" || oic === "CHURN"){
+      var oicClass = oic === "OPENING" ? "pos" : (oic === "CLOSING" ? "neg" : "muted");
+      var oicMark = oic === "OPENING" ? " ✓" : (oic === "CLOSING" ? " ✗" : "");
+      oiMetric.appendChild(el("div", {className:"metric-value " + oicClass, tip:"tip-oiconfirm", style:"font-size:0.78rem;margin-top:1px;", text: oic + oicMark}));
     }
     metrics.appendChild(oiMetric);
 
