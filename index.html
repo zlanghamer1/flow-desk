@@ -184,6 +184,49 @@
     .stat-tile{ padding: 18px 18px 16px; }
   }
 
+  /* ---------- Semi ETF flows context card ---------- */
+  .etf-flows-card{
+    margin-top: 12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 12px 14px 13px;
+  }
+  .etf-flows-head{
+    display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+    flex-wrap: wrap;
+  }
+  .etf-flows-title{
+    font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--blue);
+    cursor: help;
+  }
+  .etf-flows-asof{
+    font-size: 0.72rem; color: var(--muted);
+  }
+  .etf-flow-rows{
+    margin-top: 8px;
+    display: grid;
+    gap: 6px;
+  }
+  .etf-flow-row{
+    display:flex; align-items:center; gap: 10px;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+    flex-wrap: wrap;
+  }
+  .etf-flow-ticker{
+    font-weight: 800; letter-spacing: -0.01em;
+    min-width: 3.4em;
+  }
+  .etf-flow-1m{
+    margin-left: auto;
+    font-size: 0.76rem; color: var(--muted);
+    white-space: nowrap;
+  }
+
   /* ---------- Jump pills ---------- */
   .jump-row{
     margin-top: 14px;
@@ -517,6 +560,8 @@
     </div>
   </section>
 
+  <section id="etf-flows-slot" aria-label="Semi ETF flows" hidden></section>
+
   <nav class="jump-row" aria-label="Jump to board">
     <a class="jump-pill conviction" href="#conviction-section">#CONVICTION <span class="arrow">→</span></a>
     <a class="jump-pill swing" href="#swing-section">#SWING <span class="arrow">→</span></a>
@@ -602,6 +647,7 @@
     "tip-target": "Target reference = entry price plus 105%. A reference level, not a recommendation.",
     "tip-rr": "Reward-to-risk ratio between the stop and target references. Fixed at 3.5 by design.",
     "tip-earnings": "This stock has an earnings report scheduled before the suggested contract expires. Earnings moves are a coin-flip event, not part of the flow signal.",
+    "tip-etfflows": "Real invested money entering or leaving each semiconductor ETF, estimated as the day-over-day change in the fund's shares outstanding times its NAV (ETFs create and destroy shares as money moves in and out). One reading per session — slower than the options boards, and it mixes retail and institutional money. The 1M figure is the fund's trailing one-month net flow. Context only; it doesn't affect any score.",
     "tip-universe": "How many names are on the curated watch list this cycle — your watchlist plus the sector-index ETFs. Flow Desk no longer screens the whole market.",
     "tip-flowtime": "When this options-flow snapshot was last generated (Central time). Options data itself is 15 minutes delayed.",
     "tip-pricetime": "Stock prices refresh automatically about every 30 seconds while this page is open."
@@ -832,6 +878,49 @@
     flowTs.title = TIPS["tip-flowtime"];
     var ctStr = (data && data.generated_at_ct) ? data.generated_at_ct : "—";
     flowTs.appendChild(el("b", {text: "flow "})); flowTs.appendChild(text("as of " + ctStr));
+  }
+
+  /* ===================== RENDER: SEMI ETF FLOWS CARD ===================== */
+  function renderEtfFlows(data){
+    var slot = document.getElementById("etf-flows-slot");
+    if (!slot) return;
+    clear(slot);
+    var ef = data && data.etf_flows;
+    var funds = (ef && Array.isArray(ef.funds)) ? ef.funds : [];
+    if (funds.length === 0){ slot.hidden = true; return; }
+    slot.hidden = false;
+
+    var card = el("div", {className:"etf-flows-card"});
+    var head = el("div", {className:"etf-flows-head"});
+    head.appendChild(el("span", {className:"etf-flows-title", tip:"tip-etfflows", text:"SEMI ETF FLOWS · DAILY"}));
+    var asOf = safeStr(ef.as_of_session, null);
+    if (asOf) head.appendChild(el("span", {className:"etf-flows-asof", text:"as of " + asOf}));
+    card.appendChild(head);
+
+    var rows = el("div", {className:"etf-flow-rows"});
+    funds.forEach(function(f){
+      if (!f || typeof f !== "object") return;
+      var row = el("div", {className:"etf-flow-row"});
+      row.appendChild(el("span", {className:"etf-flow-ticker", text: safeStr(f.ticker, "?")}));
+      var fd = num(f.flow_1d);
+      if (fd === null){
+        row.appendChild(el("span", {className:"metric-value muted", tip:"tip-etfflows", text:"collecting"}));
+      } else {
+        row.appendChild(el("span", {className:"metric-value " + (fd < 0 ? "neg" : "pos"), tip:"tip-etfflows", text: fmtMoneySigned(fd)}));
+        var st = num(f.streak);
+        if (st !== null && st >= 2){
+          row.appendChild(el("span", {className:"chip " + (fd < 0 ? "gain-down" : "gain-up"), tip:"tip-etfflows",
+                                       text: Math.round(st) + "d " + (fd < 0 ? "outflow" : "inflow")}));
+        }
+      }
+      var f1m = num(f.flow_1m);
+      if (f1m !== null){
+        row.appendChild(el("span", {className:"etf-flow-1m", tip:"tip-etfflows", text:"1M " + fmtMoneySigned(f1m)}));
+      }
+      rows.appendChild(row);
+    });
+    card.appendChild(rows);
+    slot.appendChild(card);
   }
 
   /* ===================== PRICE TIMESTAMP TICKER ===================== */
@@ -1194,6 +1283,7 @@
   function renderData(data){
     renderBanners(data);
     renderStats(data);
+    renderEtfFlows(data);
     state.convictionCards = renderBoard(document.getElementById("conviction-grid"), data.conviction, buildConvictionCard, "conviction");
     state.swingCards = renderBoard(document.getElementById("swing-grid"), data.swing, buildSwingCard, "swing");
     state.lastPriceUpdateTs = Date.now();
