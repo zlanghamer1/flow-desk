@@ -390,6 +390,9 @@
   .metric{
     min-width: 0;
   }
+  .metric-wide{
+    grid-column: 1 / -1;
+  }
   .metric-label{
     font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
     color: var(--muted);
@@ -630,6 +633,7 @@
     "tip-change": "Stock price change on the day.",
     "tip-netflow": "Net flow = call premium traded minus put premium traded (options volume x last price x 100). Free data can't see which side (buyer or seller) initiated a trade — this is dollars of premium changing hands, not confirmed directional order flow.",
     "tip-cpratio": "Call option volume divided by put option volume today, for 0-7 day options only. Above 1x means more call-side activity.",
+    "tip-flowpct": "The premium-weighted put/call split for 0-7 day options — of every dollar of option premium traded today, the share that went to the busier side. Shown as '73% PUT' or '69% CALL'. C/P above counts contracts; this counts dollars, and the two disagree when one side's options are much more expensive (a near-money put on a high-priced, high-volatility stock can cost several times the call). A put-heavy day can hide behind a balanced contract ratio, which is what this catches. Display only — it doesn't move the score.",
     "tip-rvol": "Today's trading volume compared with this stock's normal 10-day average. Above 1.5x is flagged as unusually heavy.",
     "tip-popcontract": "The single options contract, within 20% of the current stock price and expiring in 0-7 days, with the most dollars traded today.",
     "tip-persist": "How many of the last 5 trading days this name's options flow leaned the same direction (bullish or bearish).",
@@ -1032,6 +1036,20 @@
     cpMetric.appendChild(el("div", {className:"metric-label", tip:"tip-cpratio", text:"C/P"}));
     cpMetric.appendChild(el("div", {className:"metric-value", text: fmtRatio(card.cp_ratio)}));
     metrics.appendChild(cpMetric);
+    // FLOW % — premium-weighted put/call split, dominant side (InsiderFinance style)
+    var fpN = num(card.flow_pct);
+    var fpSide = card.flow_side;
+    var fpMetric = el("div", {className:"metric"});
+    fpMetric.appendChild(el("div", {className:"metric-label", tip:"tip-flowpct", text:"FLOW %"}));
+    if (fpN === null || !fpSide){
+      fpMetric.appendChild(el("div", {className:"metric-value muted", text:"—"}));
+    } else {
+      fpMetric.appendChild(el("div", {
+        className:"metric-value " + (fpSide === "PUT" ? "neg" : "pos"),
+        text: fpN.toFixed(0) + "% " + fpSide
+      }));
+    }
+    metrics.appendChild(fpMetric);
     // RVOL
     var rvolN = num(card.rvol);
     var rvolMetric = el("div", {className:"metric"});
@@ -1041,7 +1059,9 @@
     metrics.appendChild(rvolMetric);
     // AGGRESSOR TILT (sampled buy/sell proxy; null until anything classifies)
     var tiltN = num(card.tilt);
-    var tiltMetric = el("div", {className:"metric"});
+    // spans both columns — it's the odd 5th cell in a 2-up grid, and it's the
+    // only metric with a second line under it
+    var tiltMetric = el("div", {className:"metric metric-wide"});
     tiltMetric.appendChild(el("div", {className:"metric-label", tip:"tip-tilt", text:"AGGR TILT"}));
     if (tiltN === null){
       tiltMetric.appendChild(el("div", {className:"metric-value muted", text:"sampling"}));
