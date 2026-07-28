@@ -633,7 +633,7 @@
     "tip-change": "Stock price change on the day.",
     "tip-netflow": "Net flow = call premium traded minus put premium traded (options volume x last price x 100). Free data can't see which side (buyer or seller) initiated a trade — this is dollars of premium changing hands, not confirmed directional order flow.",
     "tip-cpratio": "Call option volume divided by put option volume today, for 0-7 day options only. Above 1x means more call-side activity.",
-    "tip-flowpct": "The premium-weighted put/call split for 0-7 day options — of every dollar of option premium traded today, the share that went to the busier side. Shown as '73% PUT' or '69% CALL'. C/P above counts contracts; this counts dollars, and the two disagree when one side's options are much more expensive (a near-money put on a high-priced, high-volatility stock can cost several times the call). A put-heavy day can hide behind a balanced contract ratio, which is what this catches. Display only — it doesn't move the score.",
+    "tip-flowpct": "The premium-weighted put/call split for 0-7 day options — of every dollar of option premium traded today on strikes NEAR the current price (within 20% either way), the share that went to the busier side. Shown as '73% PUT' or '69% CALL'. C/P above counts contracts; this counts dollars, and the two disagree when one side's options are much more expensive (a near-money put on a high-priced, high-volatility stock can cost several times the call). A put-heavy day can hide behind a balanced contract ratio, which is what this catches. Why only near-the-money: an option deep in the money costs almost exactly what it's already worth, so a few of those contracts carry enormous 'premium' without being a bet on anything — they're a way of holding the stock. Counting them buried the real signal (LLY on Jul 27 2026 read 84% CALL purely because of seven such strikes 35% below the price; the honest number was 60%). Shows a dash when nothing traded near the money. Display only — it doesn't move the score.",
     "tip-rvol": "Today's trading volume compared with this stock's normal 10-day average. Above 1.5x is flagged as unusually heavy.",
     "tip-popcontract": "The single options contract, within 20% of the current stock price and expiring in 0-7 days, with the most dollars traded today.",
     "tip-persist": "How many of the last 5 trading days this name's options flow leaned the same direction (bullish or bearish).",
@@ -651,7 +651,7 @@
     "tip-target": "Target reference = entry price plus 105%. A reference level, not a recommendation.",
     "tip-rr": "Reward-to-risk ratio between the stop and target references. Fixed at 3.5 by design.",
     "tip-earnings": "This stock has an earnings report scheduled before the suggested contract expires. Earnings moves are a coin-flip event, not part of the flow signal.",
-    "tip-etfflows": "Real invested money entering or leaving each semiconductor ETF, estimated as the day-over-day change in the fund's shares outstanding times its NAV (ETFs create and destroy shares as money moves in and out). One reading per session — slower than the options boards, and it mixes retail and institutional money. The 1M figure is the fund's trailing one-month net flow. Context only; it doesn't affect any score.",
+    "tip-etfflows": "Real invested money entering or leaving each semiconductor ETF, estimated as the day-over-day change in the fund's shares outstanding times its NAV (ETFs create and destroy shares as money moves in and out). One reading per session — slower than the options boards, and it mixes retail and institutional money. The 1M figure is the fund's trailing one-month net flow. Shows 'split — n/a' when a fund split that day: a split changes the share count without any money moving, so the day's flow is unknowable rather than zero (SOXL and SOXS reverse-split routinely, and reading one naively would print an outflow of most of the fund on a day nobody moved a dollar). Context only; it doesn't affect any score.",
     "tip-universe": "How many names are on the curated watch list this cycle — your watchlist plus the sector-index ETFs. Flow Desk no longer screens the whole market.",
     "tip-flowtime": "When this options-flow snapshot was last generated (Central time). Options data itself is 15 minutes delayed.",
     "tip-pricetime": "Stock prices refresh automatically about every 30 seconds while this page is open."
@@ -908,7 +908,10 @@
       row.appendChild(el("span", {className:"etf-flow-ticker", text: safeStr(f.ticker, "?")}));
       var fd = num(f.flow_1d);
       if (fd === null){
-        row.appendChild(el("span", {className:"metric-value muted", tip:"tip-etfflows", text:"collecting"}));
+        // A split changed the share count without any money moving, so the
+        // day's flow is unknowable rather than zero — say which it is.
+        row.appendChild(el("span", {className:"metric-value muted", tip:"tip-etfflows",
+                                     text: f.split_suppressed ? "split — n/a" : "collecting"}));
       } else {
         row.appendChild(el("span", {className:"metric-value " + (fd < 0 ? "neg" : "pos"), tip:"tip-etfflows", text: fmtMoneySigned(fd)}));
         var st = num(f.streak);
