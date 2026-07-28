@@ -897,8 +897,12 @@
     var card = el("div", {className:"etf-flows-card"});
     var head = el("div", {className:"etf-flows-head"});
     head.appendChild(el("span", {className:"etf-flows-title", tip:"tip-etfflows", text:"SEMI ETF FLOWS · DAILY"}));
-    var asOf = safeStr(ef.as_of_session, null);
-    if (asOf) head.appendChild(el("span", {className:"etf-flows-asof", text:"as of " + asOf}));
+    // Label with the session the flow actually belongs to, not the capture
+    // date — fund share counts are published with a one-session lag, so the
+    // capture date overstated freshness by a day. Older payloads carry only
+    // as_of_session; fall back to it rather than dropping the label.
+    var asOf = safeStr(ef.flow_session, null) || safeStr(ef.as_of_session, null);
+    if (asOf) head.appendChild(el("span", {className:"etf-flows-asof", text:"session " + asOf}));
     card.appendChild(head);
 
     var rows = el("div", {className:"etf-flow-rows"});
