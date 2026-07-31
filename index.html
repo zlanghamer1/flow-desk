@@ -1017,12 +1017,19 @@
     var slot = document.getElementById("big-orders-slot");
     if (!slot) return;
     clear(slot);
-    var rows = (data && Array.isArray(data.big_orders)) ? data.big_orders : [];
+    // Two different empty states, and conflating them would put a false claim
+    // about the market on the page. A snapshot written before this board
+    // existed has NO big_orders key — that is a stale-feed fact, not a quiet
+    // session — whereas an empty array genuinely means nothing cleared the
+    // premium floor. Same discipline as FLOW %'s em dash on pre-fix snapshots
+    // and the ETF card's "collecting" vs "split — n/a".
+    var hasKey = data && Array.isArray(data.big_orders);
+    var rows = hasKey ? data.big_orders : [];
     if (rows.length === 0){
-      // Old snapshots have no big_orders key at all — say "nothing cleared the
-      // floor", never render an empty frame that reads as a dead feed.
-      slot.appendChild(el("div", {className:"board-msg",
-        text:"No contract has traded enough today to make this board."}));
+      slot.appendChild(el("div", {className:"board-msg", text: hasKey
+        ? "No contract has traded enough today to make this board."
+        : "Waiting for the next data refresh — this board arrives with the "
+          + "fetcher's next cycle."}));
       return;
     }
     var card = el("div", {className:"big-orders-card"});
