@@ -227,6 +227,57 @@
     white-space: nowrap;
   }
 
+  /* ---------- Biggest orders board ---------- */
+  .big-orders-card{
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 4px 0 6px;
+    overflow-x: auto;
+  }
+  .big-order-row{
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.86rem;
+    white-space: nowrap;
+  }
+  .big-order-row:last-child{ border-bottom: 0; }
+  .big-order-rank{
+    color: var(--muted); font-size: 0.72rem; font-weight: 700;
+    min-width: 1.6em; text-align: right;
+  }
+  .big-order-ticker{
+    font-weight: 800; letter-spacing: -0.01em; min-width: 3.6em;
+  }
+  .big-order-side{
+    font-weight: 800; font-size: 0.7rem; letter-spacing: 0.03em;
+    padding: 2px 7px; border-radius: 6px;
+  }
+  .big-order-side.call{ color: var(--good); background: rgba(31,207,92,0.12); }
+  .big-order-side.put{ color: var(--bad); background: rgba(239,83,84,0.12); }
+  .big-order-strike{ font-weight: 700; color: var(--ink); }
+  .big-order-exp{ color: var(--muted); font-size: 0.78rem; }
+  .big-order-prem{
+    margin-left: auto; font-weight: 800; color: var(--ink);
+    padding-left: 10px;
+  }
+  .big-order-vol{
+    color: var(--muted); font-size: 0.74rem;
+    min-width: 6.5em; text-align: right;
+  }
+  /* Narrow screens: the dollar figure is the whole point of this board, so it
+     must never be the thing that scrolls off. Wrap the expiry onto a second
+     line and drop the contract count instead of letting the row overflow. */
+  @media (max-width: 560px){
+    .big-order-row{ flex-wrap: wrap; white-space: normal; row-gap: 2px; }
+    .big-order-prem{ order: 1; }                 /* end of line 1 (margin-left:auto) */
+    .big-order-exp{ order: 2; flex-basis: 100%; margin-left: 2.4em; }
+    .big-order-vol{ display: none; }
+  }
+
   /* ---------- Jump pills ---------- */
   .jump-row{
     margin-top: 14px;
@@ -568,6 +619,7 @@
   <nav class="jump-row" aria-label="Jump to board">
     <a class="jump-pill conviction" href="#conviction-section">#CONVICTION <span class="arrow">→</span></a>
     <a class="jump-pill swing" href="#swing-section">#SWING <span class="arrow">→</span></a>
+    <a class="jump-pill" href="#big-orders-section">#BIGGEST <span class="arrow">→</span></a>
   </nav>
 
   <section class="section-block" id="conviction-section">
@@ -591,6 +643,22 @@
       out. Same free-data caveats as above — context for your own research, not a trade signal.
     </div>
     <div class="card-grid" id="swing-grid" aria-label="Swing cards"></div>
+  </section>
+
+  <section class="section-block" id="big-orders-section">
+    <div class="section-eyebrow" data-tip="tip-bigorders">BIGGEST ORDERS TODAY · WHOLE WATCH LIST</div>
+    <h2 class="section-heading">Where the most option dollars traded</h2>
+    <div class="section-intro">
+      The individual contracts with the most <strong>money traded through them today</strong>,
+      ranked across every name on the watch list. Strikes within 20% of the stock price,
+      expiring inside 6 months.
+      <strong>Each line is one contract's whole day, not a single order.</strong>
+      Free data publishes daily totals per contract, not a trade-by-trade tape — so paid
+      services showing "a $6M sweep hit the tape" are seeing something this cannot.
+      And as everywhere else here, there is no buyer/seller side: a big put line can be a
+      hedge, a bearish bet, or someone <em>selling</em> puts.
+    </div>
+    <div id="big-orders-slot" aria-label="Biggest orders today"></div>
   </section>
 
   <footer class="site-footer">
@@ -652,6 +720,7 @@
     "tip-rr": "Reward-to-risk ratio between the stop and target references. Fixed at 3.5 by design.",
     "tip-earnings": "This stock has an earnings report scheduled before the suggested contract expires. Earnings moves are a coin-flip event, not part of the flow signal.",
     "tip-etfflows": "Real invested money entering or leaving each semiconductor ETF, estimated as the day-over-day change in the fund's shares outstanding times its NAV (ETFs create and destroy shares as money moves in and out). One reading per session — slower than the options boards, and it mixes retail and institutional money. The 1M figure is the fund's trailing one-month net flow. Shows 'split — n/a' when a fund split that day: a split changes the share count without any money moving, so the day's flow is unknowable rather than zero (SOXL and SOXS reverse-split routinely, and reading one naively would print an outflow of most of the fund on a day nobody moved a dollar). Context only; it doesn't affect any score.",
+    "tip-bigorders": "The single options contracts with the most dollars traded today, ranked across the whole watch list. Dollars = contracts traded × the contract's last price × 100. IMPORTANT: each line is one contract's ENTIRE SESSION, not one order. Free data publishes a daily total per contract, never a trade-by-trade tape, so a single $6M block or sweep is invisible here — that is what paid flow services sell, and it is why their numbers are far smaller than these. Only strikes within 20% of the stock price count, and only expiries inside 6 months: an option deep in the money costs almost exactly what it's already worth, so a few of those carry huge 'dollars' while betting on nothing, and unfiltered they would own the top of this list permanently. Same blind spot as everything else on this page — there is no buy/sell side in free data, so a big put line can be a hedge, a bearish bet, or someone selling puts to collect income. Display only; it doesn't move any score.",
     "tip-universe": "How many names are on the curated watch list this cycle — your watchlist plus the sector-index ETFs. Flow Desk no longer screens the whole market.",
     "tip-flowtime": "When this options-flow snapshot was last generated (Central time). Options data itself is 15 minutes delayed.",
     "tip-pricetime": "Stock prices refresh automatically about every 30 seconds while this page is open."
@@ -709,6 +778,15 @@
     else if (abs >= 1e3) out = "$" + (abs/1e3).toFixed(0) + "K";
     else out = "$" + abs.toFixed(0);
     return sign + out;
+  }
+  function fmtMoneyAbs(v){
+    var n = num(v);
+    if (n === null) return "—";
+    var abs = Math.abs(n);
+    if (abs >= 1e9) return "$" + (abs/1e9).toFixed(2) + "B";
+    if (abs >= 1e6) return "$" + (abs/1e6).toFixed(2) + "M";
+    if (abs >= 1e3) return "$" + (abs/1e3).toFixed(0) + "K";
+    return "$" + abs.toFixed(0);
   }
   function fmtPctSigned(v, digits){
     var n = num(v);
@@ -931,6 +1009,49 @@
       rows.appendChild(row);
     });
     card.appendChild(rows);
+    slot.appendChild(card);
+  }
+
+  /* ===================== BIGGEST ORDERS BOARD ===================== */
+  function renderBigOrders(data){
+    var slot = document.getElementById("big-orders-slot");
+    if (!slot) return;
+    clear(slot);
+    var rows = (data && Array.isArray(data.big_orders)) ? data.big_orders : [];
+    if (rows.length === 0){
+      // Old snapshots have no big_orders key at all — say "nothing cleared the
+      // floor", never render an empty frame that reads as a dead feed.
+      slot.appendChild(el("div", {className:"board-msg",
+        text:"No contract has traded enough today to make this board."}));
+      return;
+    }
+    var card = el("div", {className:"big-orders-card"});
+    rows.forEach(function(r, i){
+      if (!r || typeof r !== "object") return;
+      var row = el("div", {className:"big-order-row"});
+      row.appendChild(el("span", {className:"big-order-rank", text: String(i+1)}));
+      row.appendChild(el("span", {className:"big-order-ticker", text: safeStr(r.ticker, "?")}));
+      var side = (r.side === "PUT") ? "PUT" : (r.side === "CALL" ? "CALL" : null);
+      if (side){
+        row.appendChild(el("span", {className:"big-order-side " + side.toLowerCase(), text: side}));
+      }
+      var strike = num(r.strike);
+      if (strike !== null){
+        row.appendChild(el("span", {className:"big-order-strike", text: "$" + strike}));
+      }
+      var expiry = safeStr(r.expiry, null);
+      var dte = num(r.dte);
+      if (expiry){
+        row.appendChild(el("span", {className:"big-order-exp",
+          text: expiry + (dte === null ? "" : "  (" + Math.round(dte) + "d)")}));
+      }
+      var vol = num(r.volume);
+      if (vol !== null){
+        row.appendChild(el("span", {className:"big-order-vol", text: fmtInt(vol) + " ct"}));
+      }
+      row.appendChild(el("span", {className:"big-order-prem", text: fmtMoneyAbs(r.premium)}));
+      card.appendChild(row);
+    });
     slot.appendChild(card);
   }
 
@@ -1311,6 +1432,7 @@
     renderBanners(data);
     renderStats(data);
     renderEtfFlows(data);
+    renderBigOrders(data);
     state.convictionCards = renderBoard(document.getElementById("conviction-grid"), data.conviction, buildConvictionCard, "conviction");
     state.swingCards = renderBoard(document.getElementById("swing-grid"), data.swing, buildSwingCard, "swing");
     state.lastPriceUpdateTs = Date.now();
