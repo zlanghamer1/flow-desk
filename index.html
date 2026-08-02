@@ -278,6 +278,13 @@
     .big-order-vol{ display: none; }
   }
 
+  .big-orders-capnote{
+    margin-top: 8px;
+    font-size: 0.76rem; color: var(--muted);
+    line-height: 1.45;
+    cursor: help;
+  }
+
   /* ---------- Jump pills ---------- */
   .jump-row{
     margin-top: 14px;
@@ -720,7 +727,7 @@
     "tip-rr": "Reward-to-risk ratio between the stop and target references. Fixed at 3.5 by design.",
     "tip-earnings": "This stock has an earnings report scheduled before the suggested contract expires. Earnings moves are a coin-flip event, not part of the flow signal.",
     "tip-etfflows": "Real invested money entering or leaving each semiconductor ETF, estimated as the day-over-day change in the fund's shares outstanding times its NAV (ETFs create and destroy shares as money moves in and out). One reading per session — slower than the options boards, and it mixes retail and institutional money. The 1M figure is the fund's trailing one-month net flow. Shows 'split — n/a' when a fund split that day: a split changes the share count without any money moving, so the day's flow is unknowable rather than zero (SOXL and SOXS reverse-split routinely, and reading one naively would print an outflow of most of the fund on a day nobody moved a dollar). Context only; it doesn't affect any score.",
-    "tip-bigorders": "The single options contracts with the most dollars traded today, ranked across the whole watch list. Dollars = contracts traded × the contract's last price × 100. IMPORTANT: each line is one contract's ENTIRE SESSION, not one order. Free data publishes a daily total per contract, never a trade-by-trade tape, so a single $6M block or sweep is invisible here — that is what paid flow services sell, and it is why their numbers are far smaller than these. Only strikes within 20% of the stock price count, and only expiries inside 6 months: an option deep in the money costs almost exactly what it's already worth, so a few of those carry huge 'dollars' while betting on nothing, and unfiltered they would own the top of this list permanently. Same blind spot as everything else on this page — there is no buy/sell side in free data, so a big put line can be a hedge, a bearish bet, or someone selling puts to collect income. Display only; it doesn't move any score.",
+    "tip-bigorders": "The single options contracts with the most dollars traded today, ranked across the whole watch list. Dollars = contracts traded × the contract's last price × 100. IMPORTANT: each line is one contract's ENTIRE SESSION, not one order. Free data publishes a daily total per contract, never a trade-by-trade tape, so a single $6M block or sweep is invisible here — that is what paid flow services sell, and it is why their numbers are far smaller than these. Only strikes within 20% of the stock price count, and only expiries inside 6 months: an option deep in the money costs almost exactly what it's already worth, so a few of those carry huge 'dollars' while betting on nothing, and unfiltered they would own the top of this list permanently. Same blind spot as everything else on this page — there is no buy/sell side in free data, so a big put line can be a hedge, a bearish bet, or someone selling puts to collect income. At most 3 rows per ticker, so one busy name can't say the same thing five times — on the first live cycle 0-DTE QQQ calls held 5 of the top 12 at strikes a dollar apart. Any name that earned more rows than it shows is named in the line under the board, so the cap is never silent. Display only; it doesn't move any score.",
     "tip-universe": "How many names are on the curated watch list this cycle — your watchlist plus the sector-index ETFs. Flow Desk no longer screens the whole market.",
     "tip-flowtime": "When this options-flow snapshot was last generated (Central time). Options data itself is 15 minutes delayed.",
     "tip-pricetime": "Stock prices refresh automatically about every 30 seconds while this page is open."
@@ -1060,6 +1067,25 @@
       card.appendChild(row);
     });
     slot.appendChild(card);
+
+    // Disclose the per-ticker cap. A bounded board that doesn't say what it
+    // dropped reads as "this is everything" — so any name that earned more of
+    // the top rows than it was allowed to show gets named right here.
+    var capped = (data && Array.isArray(data.big_orders_capped)) ? data.big_orders_capped : [];
+    if (capped.length){
+      var parts = [];
+      capped.forEach(function(c){
+        if (!c || typeof c !== "object") return;
+        var earned = num(c.earned), shownN = num(c.shown);
+        if (earned === null || shownN === null) return;
+        parts.push(safeStr(c.ticker, "?") + " earned " + Math.round(earned)
+                   + " of these rows, showing " + Math.round(shownN));
+      });
+      if (parts.length){
+        slot.appendChild(el("div", {className:"big-orders-capnote", tip:"tip-bigorders",
+          text: parts.join(" · ") + " — capped so one busy name can't fill the board."}));
+      }
+    }
   }
 
   /* ===================== PRICE TIMESTAMP TICKER ===================== */
