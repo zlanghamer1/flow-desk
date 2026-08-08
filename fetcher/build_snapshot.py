@@ -287,6 +287,11 @@ MAX_ETF_SO_SESSIONS = 60     # history cap, same horizon as sessions/iv_history
 WATCHLIST = [
     # Zach's canonical picks (vault, 2026-06-10)
     "MU", "CRWD", "COHR", "LLY", "V", "XOM",
+    # Photonics subset plays alongside COHR (Zach's call, 2026-08-08). Both
+    # verified to have usable CBOE chains that day: AXTI 1,540 contracts /
+    # 65,320 volume; TSEM 1,598 contracts / 7,696 volume.
+    "AXTI",                       # AXT — indium phosphide substrates
+    "TSEM",                       # Tower Semiconductor — SiPh foundry
     # Semiconductor / memory cluster off his TradingView watchlist
     "SMH", "SOXL", "SOXS",        # semi ETFs (broad + 3x bull/bear)
     "MUU",                        # Direxion 2x Long MU
