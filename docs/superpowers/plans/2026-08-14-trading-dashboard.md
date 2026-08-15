@@ -229,6 +229,52 @@ findings that survive into this plan:
 8. Symbol-cascade interaction (click a ticker → highlight it everywhere)
    lands in Phase 3.
 
+### The v2 interactive prototype (same day, after Zach's design review)
+
+Zach rejected the v1 card-grid look ("redundant, AI slop") and pointed at the
+Wall-Street-cockpit reference (mcpmarket `trading-analysis-dashboard-template`:
+dense panels, light/dark switching, chart interactions, demo/live playback,
+keyboard command palette, single-file HTML). The mockup was rebuilt as a
+working prototype — `2026-08-14-trading-dashboard-mockup.html` is now the
+**binding layout and interaction spec for Phase 2**, verified interactive in
+Chromium at 1440px and 390px, both themes, zero console errors.
+
+**Design language (v2):** one continuous surface with hairline dividers — rows,
+not repeated cards; a three-column cockpit (watchlist rail / analysis column /
+catalysts+news rail) over a pinned tape; one restrained steel-blue accent with
+green/red reserved for direction; tabular numerals everywhere; full light and
+dark themes driven by one token set (dark native, light equal-quality); area
+sparklines with endpoint markers.
+
+**Interactions implemented in the prototype, each traced to research:**
+
+1. **Ticker focus cascade + detail drawer** — click any symbol anywhere (or
+   pick in the palette): every board highlights it, others dim, news and
+   catalysts filter, and a drawer opens with a segmented 1D/1W/1M/3M chart
+   (crosshair readout), quote/levels, its board stats, its catalysts, its
+   headlines. (Screen-setup transcripts: "type one ticker once, every panel
+   re-points"; SMB's timeframe ladder.)
+2. **Command palette** — ⌘K / Ctrl-K / `/`: fuzzy tickers + actions (focus,
+   jump to section, collapse/expand all, theme, replay). (Reference template.)
+3. **Live catalyst countdowns** with approaching → imminent (<48h, amber) →
+   cleared states, plus type filters (Econ/Earnings/Memory/OpEx) and a
+   HIGH-only toggle. (TTrades impact tiers.)
+4. **Forecast / prior / actual** on econ rows. (TTrades: the surprise is the
+   signal.)
+5. **Sortable boards** — one reusable table renderer, click-to-sort on score,
+   flows, premium, expiry. (CryptoPulse reusable DataTable pattern.)
+6. **Collapsible sections** with persisted state; palette carries
+   collapse/expand-all. (Every screen tour: prune ruthlessly.)
+7. **Theme toggle** — light/dark tokens, explicit choice beats OS preference.
+   (Reference template.)
+8. **Demo replay** — animates the tape to preview live 30s behavior, clearly
+   labeled, disabled under reduced-motion. (Reference template's demo/live
+   playback.)
+9. **Tooltip layer** — hover/tap definitions carrying the TIPS honesty copy on
+   every metric. (House rule + dataviz interaction spec.)
+10. **Watchdog status chip** in the rail — alerts summarized where attention
+    lands, not another panel. (TraderTV: alerts replace staring.)
+
 ---
 
 ## Part C — Technical architecture
@@ -408,9 +454,12 @@ tests green, screenshots taken, then merge to main per the standing rule.
 
 ### Phase 2 — The page (`index.html` v2)
 
-- Full rebuild to the approved mockup: layout, dark theme, typography with
-  tabular numerals, density per the mockup; all CSS/JS stays inline in the
-  single file.
+- Full rebuild to the approved v2 prototype (this folder) — **the prototype is
+  the binding layout + interaction spec**: cockpit columns, focus cascade,
+  drawer, command palette, countdown states, sortable tables, collapsibles,
+  light/dark tokens, tooltip layer. Build = swap its sample-data object for
+  `data.json`/`brief`/`catalysts`/`news` renderers; all CSS/JS stays inline in
+  the single file.
 - Existing renderers (cards, big-orders board, ETF card, tooltips) are ported,
   not rewritten — their copy and TIPS entries move verbatim.
 - New renderers: brief hero + sector board + havens + Core Five; catalyst
