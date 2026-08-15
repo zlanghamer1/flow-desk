@@ -311,7 +311,7 @@ footer b{color:var(--ink2)}
     <div class="mark">THE<em>DESK</em><small>FLOW · BRIEF · CATALYSTS</small></div>
     <span class="rl"><span class="lamp"></span><b>OPEN</b></span>
     <span class="rl clock tn" id="clock">Fri Aug 14 · 9:47:12 AM CT</span>
-    <span class="rl" data-tip="The Morning Brief engine's synthesis score, computed once pre-market — same number the 6:23 AM email reports. Most of its measured edge is the overnight gap.">verdict <b>NEUTRAL +1</b></span>
+    <span class="rl" data-tip="The Morning Brief engine's synthesis score, computed once pre-market — same number the 6:23 AM brief computes. Most of its measured edge is the overnight gap.">verdict <b>NEUTRAL +1</b></span>
     <span class="rl opt" data-tip="Six level/trend readings: 10Y, real yield, MOVE, crude, HY spread, 2s10s. Display-only.">backdrop <b>NEUTRAL</b></span>
     <div class="grow"></div>
     <button class="kbtn" id="palopen"><span>Search tickers, actions…</span><kbd>⌘K</kbd></button>
@@ -339,7 +339,7 @@ footer b{color:var(--ink2)}
     <!-- ======= middle ======= -->
     <main class="mid">
       <section id="s-brief">
-        <div class="sh" data-collapse="s-brief"><span class="car">▼</span><h2>Morning Brief</h2><span class="st tn">today 6:23 AM CT · same engine as the email</span></div>
+        <div class="sh" data-collapse="s-brief"><span class="car">▼</span><h2>Morning Brief</h2><span class="st tn">today 6:23 AM CT · replaces the emailed brief</span></div>
         <div class="sb brief">
           <div class="verdict"><span class="v">NEUTRAL</span><span class="sc tn">score +1 · Fri Aug 14</span></div>
           <p>Futures drifted flat overnight. Yields are steady after yesterday's warm PPI, crude is soft, and semis
@@ -446,44 +446,44 @@ const D = {
   /* av = this name's average absolute daily move %, the base for relative-move alerts.
      drift shapes the fake 1-year series (where it sits in its 52w range). */
   quotes: {
-    MU:{n:"Micron",px:921.40,ch:+2.6,rvol:1.8,earn:46,seed:22,av:1.3,drift:+3.2,cap:"$1.03T",pe:"14.2",spct:"2.4%",beta:"1.5",avol:"21.3M",yld:"0.5%",
+    MU:{n:"Micron",px:921.40,ch:+2.6,rvol:1.8,earn:46,seed:22,rsi:67,av:1.3,drift:+3.2,cap:"$1.03T",pe:"14.2",spct:"2.4%",beta:"1.5",avol:"21.3M",yld:"0.5%",
       an:[["Today","Initiated","Jefferies","Buy","$1,150",0],["Aug-05-26","PT Raise","Citi","Buy","$980 → $1,050",1],["Jul-18-26","Upgrade","Morgan Stanley","Equal-Wt → Overweight","$890",1],["Jun-26-26","Reiterated","KeyBanc","Overweight","$960",0]]},
-    CRWD:{n:"CrowdStrike",px:121.84,ch:-1.1,rvol:1.2,earn:13,seed:26,av:1.4,drift:-0.6,cap:"$76.4B",pe:"88.0",spct:"1.9%",beta:"1.2",avol:"5.8M",yld:null,
+    CRWD:{n:"CrowdStrike",px:121.84,ch:-1.1,rvol:1.2,earn:13,seed:26,rsi:34,av:1.4,drift:-0.6,cap:"$76.4B",pe:"88.0",spct:"1.9%",beta:"1.2",avol:"5.8M",yld:null,
       an:[["Aug-13-26","Downgrade","Piper Sandler","Overweight → Neutral","$135 → $118",-1],["Aug-13-26","Downgrade","BTIG","Buy → Neutral","—",-1],["May-20-26","PT Raise","Wedbush","Outperform","$115 → $130",1]]},
-    COHR:{n:"Coherent",px:88.36,ch:+1.9,rvol:1.1,earn:null,seed:27,av:1.6,drift:+1.0,cap:"$13.7B",pe:"21.4",spct:"3.8%",beta:"1.6",avol:"3.1M",yld:null,
+    COHR:{n:"Coherent",px:88.36,ch:+1.9,rvol:1.1,earn:null,seed:27,rsi:61,av:1.6,drift:+1.0,cap:"$13.7B",pe:"21.4",spct:"3.8%",beta:"1.6",avol:"3.1M",yld:null,
       an:[["Aug-14-26","PT Raise","B. Riley","Buy","$92 → $104",1],["Jul-02-26","Initiated","William Blair","Outperform","—",0],["Mar-11-26","Upgrade","JPMorgan","Neutral → Overweight","$81",1]]},
-    LLY:{n:"Eli Lilly",px:1204.10,ch:-0.4,rvol:0.8,earn:null,seed:28,av:1.1,drift:-1.2,cap:"$1.09T",pe:"32.1",spct:"0.8%",beta:"0.4",avol:"3.4M",yld:"0.9%"},
-    V:{n:"Visa",px:356.22,ch:+0.2,rvol:0.7,earn:68,seed:29,av:0.8,drift:+0.5,cap:"$700B",pe:"28.3",spct:"1.1%",beta:"0.9",avol:"6.2M",yld:"0.7%"},
-    XOM:{n:"Exxon",px:111.48,ch:-1.3,rvol:1.0,earn:77,seed:30,av:0.9,drift:-1.6,cap:"$470B",pe:"13.4",spct:"1.3%",beta:"0.7",avol:"14.8M",yld:"3.6%"},
-    AXTI:{n:"AXT Inc",px:4.86,ch:+4.2,rvol:2.3,earn:62,seed:31,av:1.6,drift:+2.4,cap:"$214M",pe:null,spct:"4.9%",beta:"1.9",avol:"0.9M",yld:null,
+    LLY:{n:"Eli Lilly",px:1204.10,ch:-0.4,rvol:0.8,earn:null,seed:28,rsi:41,av:1.1,drift:-1.2,cap:"$1.09T",pe:"32.1",spct:"0.8%",beta:"0.4",avol:"3.4M",yld:"0.9%"},
+    V:{n:"Visa",px:356.22,ch:+0.2,rvol:0.7,earn:68,seed:29,rsi:55,av:0.8,drift:+0.5,cap:"$700B",pe:"28.3",spct:"1.1%",beta:"0.9",avol:"6.2M",yld:"0.7%"},
+    XOM:{n:"Exxon",px:111.48,ch:-1.3,rvol:1.0,earn:77,seed:30,rsi:38,av:0.9,drift:-1.6,cap:"$470B",pe:"13.4",spct:"1.3%",beta:"0.7",avol:"14.8M",yld:"3.6%"},
+    AXTI:{n:"AXT Inc",px:4.86,ch:+4.2,rvol:2.3,earn:62,seed:31,rsi:78,av:1.6,drift:+2.4,cap:"$214M",pe:null,spct:"4.9%",beta:"1.9",avol:"0.9M",yld:null,
       an:[["Apr-08-26","Upgrade","Craig Hallum","Hold → Buy","$6.80",1],["Dec-17-25","Initiated","Lake Street","Buy","$5.00",0],["Mar-26-24","Downgrade","Craig Hallum","Buy → Hold","$3.10",-1]]},
-    TSEM:{n:"Tower Semi",px:52.14,ch:+0.9,rvol:0.9,earn:null,seed:32,av:1.2,drift:+1.1,cap:"$5.8B",pe:"19.0",spct:"1.0%",beta:"1.1",avol:"0.6M",yld:null},
-    NVDA:{n:"NVIDIA",px:201.88,ch:+1.2,rvol:1.2,earn:12,seed:24,av:1.4,drift:+2.0,cap:"$4.9T",pe:"38.2",spct:"1.2%",beta:"1.7",avol:"168M",yld:"0.03%",
+    TSEM:{n:"Tower Semi",px:52.14,ch:+0.9,rvol:0.9,earn:null,seed:32,rsi:58,av:1.2,drift:+1.1,cap:"$5.8B",pe:"19.0",spct:"1.0%",beta:"1.1",avol:"0.6M",yld:null},
+    NVDA:{n:"NVIDIA",px:201.88,ch:+1.2,rvol:1.2,earn:12,seed:24,rsi:61,av:1.4,drift:+2.0,cap:"$4.9T",pe:"38.2",spct:"1.2%",beta:"1.7",avol:"168M",yld:"0.03%",
       an:[["Aug-11-26","PT Raise","Melius","Buy","$215 → $240",1],["Jul-30-26","Reiterated","Goldman","Buy","$210",0],["Jun-12-26","Upgrade","HSBC","Hold → Buy","$200",1]]},
-    AVGO:{n:"Broadcom",px:391.20,ch:+0.6,rvol:0.8,earn:20,seed:33,av:1.2,drift:+2.1,cap:"$1.84T",pe:"34.5",spct:"1.4%",beta:"1.2",avol:"18.9M",yld:"1.1%",
+    AVGO:{n:"Broadcom",px:391.20,ch:+0.6,rvol:0.8,earn:20,seed:33,rsi:66,av:1.2,drift:+2.1,cap:"$1.84T",pe:"34.5",spct:"1.4%",beta:"1.2",avol:"18.9M",yld:"1.1%",
       an:[["Jul-28-26","PT Raise","Mizuho","Outperform","$410 → $445",1],["Jun-13-26","Reiterated","JPMorgan","Overweight","$430",0]]},
-    AMD:{n:"Advanced Micro",px:178.22,ch:+0.9,rvol:1.0,earn:null,seed:50,av:1.7,drift:+1.0,cap:"$288B",pe:"41.0",spct:"2.6%",beta:"1.7",avol:"41.2M",yld:null,
+    AMD:{n:"Advanced Micro",px:178.22,ch:+0.9,rvol:1.0,earn:null,seed:50,rsi:57,av:1.7,drift:+1.0,cap:"$288B",pe:"41.0",spct:"2.6%",beta:"1.7",avol:"41.2M",yld:null,
       an:[["Aug-06-26","PT Raise","Bank of America","Buy","$185 → $205",1],["Jul-21-26","Downgrade","Erste Group","Buy → Hold","—",-1]]},
-    TSM:{n:"TSMC",px:243.10,ch:+0.5,rvol:0.8,earn:62,seed:23,av:1.1,drift:+1.4,cap:"$1.26T",pe:"26.0",spct:"0.4%",beta:"1.1",avol:"14.0M",yld:"1.3%"},
-    MRVL:{n:"Marvell",px:92.60,ch:-0.7,rvol:0.9,earn:14,seed:51,av:1.6,drift:-0.4,cap:"$79B",pe:"26.3",spct:"2.2%",beta:"1.6",avol:"9.8M",yld:"0.3%"},
-    LITE:{n:"Lumentum",px:116.30,ch:+1.4,rvol:1.1,earn:null,seed:52,av:1.8,drift:+1.6,cap:"$8.1B",pe:"24.1",spct:"5.1%",beta:"1.5",avol:"1.7M",yld:null},
-    CAMT:{n:"Camtek",px:108.75,ch:+0.8,rvol:0.9,earn:null,seed:53,av:1.7,drift:+2.2,cap:"$5.2B",pe:"33.0",spct:"1.8%",beta:"1.4",avol:"0.5M",yld:null},
-    ONTO:{n:"Onto Innovation",px:196.40,ch:-0.3,rvol:0.8,earn:5,seed:54,av:1.6,drift:+0.4,cap:"$9.4B",pe:"22.4",spct:"2.9%",beta:"1.3",avol:"0.7M",yld:null},
-    SKHY:{n:"SK Hynix ADR",px:31.76,ch:-1.8,rvol:1.5,earn:70,seed:34,av:1.5,drift:+1.2,cap:"$118B",pe:"9.1",spct:"0.6%",beta:"1.4",avol:"2.2M",yld:"1.0%"},
-    SNDK:{n:"SanDisk",px:48.92,ch:+1.1,rvol:1.0,earn:55,seed:55,av:1.7,drift:+0.9,cap:"$7.9B",pe:"12.6",spct:"6.2%",beta:"1.5",avol:"3.0M",yld:null},
-    DRAM:{n:"Memory ETF",px:62.40,ch:+1.3,rvol:1.1,earn:null,seed:56,av:1.3,drift:+1.5,cap:"$310M AUM",pe:null,spct:null,beta:"1.4",avol:"0.2M",yld:null},
-    RAM:{n:"Memory ETF (alt)",px:27.85,ch:+0.7,rvol:0.9,earn:null,seed:57,av:1.4,drift:+0.6,cap:"$150M AUM",pe:null,spct:null,beta:"1.4",avol:"0.1M",yld:null},
-    SMH:{n:"Semis ETF",px:291.34,ch:+1.6,rvol:1.3,earn:null,seed:35,av:1.2,drift:+1.7,cap:"$28.5B AUM",pe:null,spct:null,beta:"1.3",avol:"7.9M",yld:"0.4%"},
-    GOOGL:{n:"Alphabet",px:206.44,ch:+0.3,rvol:0.7,earn:75,seed:21,av:0.9,drift:+1.1,cap:"$2.51T",pe:"23.4",spct:"0.9%",beta:"1.0",avol:"28.0M",yld:"0.4%"},
-    MSFT:{n:"Microsoft",px:558.40,ch:+0.4,rvol:0.8,earn:75,seed:39,av:0.8,drift:+0.6,cap:"$4.15T",pe:"33.2",spct:"0.7%",beta:"0.9",avol:"19.0M",yld:"0.7%"},
-    AMZN:{n:"Amazon",px:247.62,ch:+0.8,rvol:0.9,earn:76,seed:25,av:1.0,drift:+0.5,cap:"$2.63T",pe:"34.0",spct:"0.8%",beta:"1.2",avol:"36.0M",yld:null},
-    META:{n:"Meta",px:812.55,ch:+0.9,rvol:0.9,earn:76,seed:40,av:1.2,drift:+1.0,cap:"$2.05T",pe:"26.1",spct:"1.0%",beta:"1.3",avol:"12.0M",yld:"0.3%"},
-    CVX:{n:"Chevron",px:152.30,ch:-0.9,rvol:0.8,earn:77,seed:58,av:0.9,drift:-1.0,cap:"$270B",pe:"14.2",spct:"1.2%",beta:"0.8",avol:"8.0M",yld:"4.4%"},
+    TSM:{n:"TSMC",px:243.10,ch:+0.5,rvol:0.8,earn:62,seed:23,rsi:62,av:1.1,drift:+1.4,cap:"$1.26T",pe:"26.0",spct:"0.4%",beta:"1.1",avol:"14.0M",yld:"1.3%"},
+    MRVL:{n:"Marvell",px:92.60,ch:-0.7,rvol:0.9,earn:14,seed:51,rsi:33,av:1.6,drift:-0.4,cap:"$79B",pe:"26.3",spct:"2.2%",beta:"1.6",avol:"9.8M",yld:"0.3%"},
+    LITE:{n:"Lumentum",px:116.30,ch:+1.4,rvol:1.1,earn:null,seed:52,rsi:70,av:1.8,drift:+1.6,cap:"$8.1B",pe:"24.1",spct:"5.1%",beta:"1.5",avol:"1.7M",yld:null},
+    CAMT:{n:"Camtek",px:108.75,ch:+0.8,rvol:0.9,earn:null,seed:53,rsi:72,av:1.7,drift:+2.2,cap:"$5.2B",pe:"33.0",spct:"1.8%",beta:"1.4",avol:"0.5M",yld:null},
+    ONTO:{n:"Onto Innovation",px:196.40,ch:-0.3,rvol:0.8,earn:5,seed:54,rsi:49,av:1.6,drift:+0.4,cap:"$9.4B",pe:"22.4",spct:"2.9%",beta:"1.3",avol:"0.7M",yld:null},
+    SKHY:{n:"SK Hynix ADR",px:31.76,ch:-1.8,rvol:1.5,earn:70,seed:34,rsi:52,av:1.5,drift:+1.2,cap:"$118B",pe:"9.1",spct:"0.6%",beta:"1.4",avol:"2.2M",yld:"1.0%"},
+    SNDK:{n:"SanDisk",px:48.92,ch:+1.1,rvol:1.0,earn:55,seed:55,rsi:55,av:1.7,drift:+0.9,cap:"$7.9B",pe:"12.6",spct:"6.2%",beta:"1.5",avol:"3.0M",yld:null},
+    DRAM:{n:"Memory ETF",px:62.40,ch:+1.3,rvol:1.1,earn:null,seed:56,rsi:68,av:1.3,drift:+1.5,cap:"$310M AUM",pe:null,spct:null,beta:"1.4",avol:"0.2M",yld:null},
+    RAM:{n:"Memory ETF (alt)",px:27.85,ch:+0.7,rvol:0.9,earn:null,seed:57,rsi:60,av:1.4,drift:+0.6,cap:"$150M AUM",pe:null,spct:null,beta:"1.4",avol:"0.1M",yld:null},
+    SMH:{n:"Semis ETF",px:291.34,ch:+1.6,rvol:1.3,earn:null,seed:35,rsi:69,av:1.2,drift:+1.7,cap:"$28.5B AUM",pe:null,spct:null,beta:"1.3",avol:"7.9M",yld:"0.4%"},
+    GOOGL:{n:"Alphabet",px:206.44,ch:+0.3,rvol:0.7,earn:75,seed:21,rsi:58,av:0.9,drift:+1.1,cap:"$2.51T",pe:"23.4",spct:"0.9%",beta:"1.0",avol:"28.0M",yld:"0.4%"},
+    MSFT:{n:"Microsoft",px:558.40,ch:+0.4,rvol:0.8,earn:75,seed:39,rsi:60,av:0.8,drift:+0.6,cap:"$4.15T",pe:"33.2",spct:"0.7%",beta:"0.9",avol:"19.0M",yld:"0.7%"},
+    AMZN:{n:"Amazon",px:247.62,ch:+0.8,rvol:0.9,earn:76,seed:25,rsi:48,av:1.0,drift:+0.5,cap:"$2.63T",pe:"34.0",spct:"0.8%",beta:"1.2",avol:"36.0M",yld:null},
+    META:{n:"Meta",px:812.55,ch:+0.9,rvol:0.9,earn:76,seed:40,rsi:63,av:1.2,drift:+1.0,cap:"$2.05T",pe:"26.1",spct:"1.0%",beta:"1.3",avol:"12.0M",yld:"0.3%"},
+    CVX:{n:"Chevron",px:152.30,ch:-0.9,rvol:0.8,earn:77,seed:58,rsi:40,av:0.9,drift:-1.0,cap:"$270B",pe:"14.2",spct:"1.2%",beta:"0.8",avol:"8.0M",yld:"4.4%"},
     /* board-only symbols (not in the rail) */
-    QQQ:{n:"NASDAQ 100",px:689.14,ch:+0.52,rvol:1.1,earn:null,seed:12,av:0.9,drift:+1.2,cap:"$320B AUM",pe:null,spct:null,beta:"1.1",avol:"31M",yld:"0.5%"},
-    SOXL:{n:"Semis 3x (leveraged)",px:38.42,ch:+3.4,rvol:1.4,earn:null,seed:36,av:3.6,drift:+1.0,cap:"$11.2B AUM",pe:null,spct:null,beta:"3.9",avol:"64M",yld:null},
-    XLE:{n:"Energy",px:84.12,ch:-1.2,rvol:1.0,earn:null,seed:37,av:0.9,drift:-1.4,cap:"$36B AUM",pe:null,spct:null,beta:"0.8",avol:"14M",yld:"3.3%"},
-    XLK:{n:"Technology",px:262.90,ch:+0.7,rvol:0.9,earn:null,seed:38,av:1.0,drift:+1.6,cap:"$78B AUM",pe:null,spct:null,beta:"1.2",avol:"5M",yld:"0.6%"},
+    QQQ:{n:"NASDAQ 100",px:689.14,ch:+0.52,rvol:1.1,earn:null,seed:12,rsi:62,av:0.9,drift:+1.2,cap:"$320B AUM",pe:null,spct:null,beta:"1.1",avol:"31M",yld:"0.5%"},
+    SOXL:{n:"Semis 3x (leveraged)",px:38.42,ch:+3.4,rvol:1.4,earn:null,seed:36,rsi:66,av:3.6,drift:+1.0,cap:"$11.2B AUM",pe:null,spct:null,beta:"3.9",avol:"64M",yld:null},
+    XLE:{n:"Energy",px:84.12,ch:-1.2,rvol:1.0,earn:null,seed:37,rsi:39,av:0.9,drift:-1.4,cap:"$36B AUM",pe:null,spct:null,beta:"0.8",avol:"14M",yld:"3.3%"},
+    XLK:{n:"Technology",px:262.90,ch:+0.7,rvol:0.9,earn:null,seed:38,rsi:64,av:1.0,drift:+1.6,cap:"$78B AUM",pe:null,spct:null,beta:"1.2",avol:"5M",yld:"0.6%"},
     XLP:{n:"Staples",px:78.40,ch:+0.1,rvol:0.8,earn:null,seed:41,av:0.6,drift:+0.6,cap:"$16B AUM",pe:null,spct:null,beta:"0.6",avol:"9M",yld:"2.5%"},
     XLU:{n:"Utilities",px:82.90,ch:+0.2,rvol:0.9,earn:null,seed:42,av:0.7,drift:+0.7,cap:"$18B AUM",pe:null,spct:null,beta:"0.6",avol:"10M",yld:"2.8%"},
     XLV:{n:"Health care",px:142.20,ch:-0.2,rvol:0.8,earn:null,seed:43,av:0.7,drift:+0.2,cap:"$40B AUM",pe:null,spct:null,beta:"0.7",avol:"7M",yld:"1.5%"},
@@ -586,6 +586,7 @@ const TIPS = {
   oiconf:"Did yesterday's swing-bucket volume become held open interest overnight? OPENING = new positions, CLOSING = unwound, CHURN = day-traded.",
   rel:"1-week relative strength vs SPY, in percentage points. Bars: leaders saturated, tail muted.",
   flows:"Fund flows = change in shares outstanding × NAV (creations/redemptions). Flows chase returns — context, never a signal.",
+  fund:"Colored from a buyer's lens against rough thresholds: fwd P/E green under ~18 / red over ~35 (market runs ~22); short % of float green under 2% / red over 5%; dividend yield green at 2.5%+; RSI green at 35 or under (washed out) / red at 70+ (hot). A gauge, not a rating.",
   range:"Position in the 52-week range. Near the low = shopping territory, near the high = hot runner. The diamond is today.",
   hot:"Today's move divided by this name's own average daily move — Micron swinging 2% is normal, Google swinging 2% is not. Highlights at 1.8× and up.",
 };
@@ -629,6 +630,14 @@ function statsOf(sym){
   STATS[sym]={lo,hi,pos:Math.min(1,Math.max(0,(q.px-lo)/((hi-lo)||1))),
     v50:(q.px/m50[m50.length-1]-1)*100,v200:(q.px/m200[m200.length-1]-1)*100,m50,m200};
   return STATS[sym];
+}
+const numv=v=>parseFloat(String(v).replace(/[^\d.\-]/g,""));
+function fundCls(kind,q){
+  if(kind==="pe"){if(q.pe==null)return"";const v=numv(q.pe);return v<=18?"u":v>=35?"d":""}
+  if(kind==="short"){if(q.spct==null)return"";const v=numv(q.spct);return v<=2?"u":v>=5?"d":""}
+  if(kind==="yld"){if(!q.yld)return"";return numv(q.yld)>=2.5?"u":""}
+  if(kind==="rsi"){if(q.rsi==null)return"";return q.rsi<=35?"u":q.rsi>=70?"d":""}
+  return"";
 }
 const hotOf=sym=>{const q=D.quotes[sym];return q&&q.av?Math.abs(q.ch)/q.av:0};
 const HOT_AT=1.8;
@@ -694,7 +703,7 @@ function renderWL(){
     (hot.length?hot.map(s=>`<span class="hm2">${s} ${hotOf(s).toFixed(1)}×</span> <span class="m">(${fm1(D.quotes[s].ch)}% vs ${D.quotes[s].av}% usual)</span>`).join(" · "):"none yet")+
     `<div style="margin-top:6px"><b>NEAR 52-WEEK LOWS · SHOPPING LIST</b>`+
     lows.map(s=>`${s} <span class="m">${Math.round(statsOf(s).pos*100)}%</span>`).join(" · ")+`</div>`+
-    `<div style="margin-top:6px"><b>WATCHDOG</b>quiet today · last alert Tue: MU −3.1% leg (D4)</div>`;
+    `<div style="margin-top:6px"><b>ALERTS · REPLACES THE WATCHDOG EMAIL</b>quiet today · last: Tue MU −3.1% leg (D4) · <span class="m">delivered as phone push + logged here</span></div>`;
   document.title=hot.length?`(${hot.length}) The Desk`:"The Desk";
 }
 
@@ -912,16 +921,18 @@ function openDrawer(sym){
       ${rangeBar(sym,true)}
       <div class="kvrow"><span>Position in range</span><b>${(st.pos*100).toFixed(0)}%${st.pos>0.85?" · hot runner":st.pos<0.25?" · near lows":""}</b></div>
     </div>
-    <div class="dsec"><h3>Snapshot</h3>
+    <div class="dsec"><h3><span data-tip="${esc(TIPS.fund)}">Snapshot</span></h3>
       <div class="kvrow"><span>Market cap</span><b>${q.cap||"—"}</b></div>
-      <div class="kvrow"><span>P/E (fwd)</span><b>${q.pe||"—"}</b></div>
-      <div class="kvrow"><span>Short % of float</span><b>${q.spct||"—"}</b></div>
+      <div class="kvrow"><span>P/E (fwd)</span><b class="${fundCls("pe",q)}">${q.pe||"—"}</b></div>
+      <div class="kvrow"><span>Short % of float</span><b class="${fundCls("short",q)}">${q.spct||"—"}</b></div>
+      <div class="kvrow"><span>RSI (14d)</span><b class="${fundCls("rsi",q)}">${q.rsi!=null?q.rsi:"—"}</b></div>
       <div class="kvrow"><span>Beta</span><b>${q.beta||"—"}</b></div>
       <div class="kvrow"><span>Avg volume</span><b>${q.avol||"—"}</b></div>
-      <div class="kvrow"><span>Dividend yield</span><b>${q.yld||"—"}</b></div>
+      <div class="kvrow"><span>Dividend yield</span><b class="${fundCls("yld",q)}">${q.yld||"—"}</b></div>
       <div class="kvrow"><span>Avg daily move</span><b>${q.av}%</b></div>
       ${q.earn!=null?`<div class="kvrow"><span>Next earnings</span><b>${q.earn}d</b></div>`:""}
       <div class="kvrow"><span>Relative volume today</span><b>${q.rvol.toFixed(1)}×</b></div>
+      <div class="note" style="margin-top:4px">Green/red here is a buyer's-lens gauge against rough thresholds — hover the header. Not a rating.</div>
     </div>
     ${conv?`<div class="dsec"><h3>Conviction board</h3>
       <div class="kvrow"><span>Score</span><b>${conv.score} ${conv.fire?"· FIRING":""}</b></div>

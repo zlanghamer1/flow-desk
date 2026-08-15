@@ -66,11 +66,13 @@ One web page, at the same address you already use
 | Today | After |
 |---|---|
 | Flow Desk site | Becomes this page (same URL, same data loop) |
-| Morning Brief email, 6:23am | Keeps sending until you say stop. The page shows the same content all day. Turning the email off is your call, made after you've lived with the page — and the cron-job.org pinger is on your account, so repointing/deleting it is a step only you can do. |
+| Morning Brief email, 6:23am | **Retired — Zach's ruling 2026-08-14.** The same engine still runs at 6:23 and publishes to the page; the email stops after the proving window below. |
+| Watchdog emails | **Replaced by phone push notifications + an on-page alerts log.** Same triggers, same cooldowns and daily caps — only the delivery changes. Email runs in parallel as a silent fallback for ~2 trading weeks, then off. |
 | Morning brief artifact skill (`/morning`) | Retires once the page covers it |
 
-Watchdog emails, Trade Stops, the Action List engine, and all theses/triggers
-are untouched.
+Trade Stops math, the Action List engine, and all theses/triggers are
+untouched. The cron-job.org pingers stay — they trigger the computing, not
+the emails.
 
 ### What stays off the public page (important)
 
@@ -83,15 +85,18 @@ file only a passphrase in your browser can open — but it is off until you
 explicitly want it. Same reason the Core Five panel shows levels and RSI but
 not the TRIM/ADD rebalance chips.
 
-### What I need from you (four decisions)
+### Decisions
 
-1. **Mockup approval** — open the mockup, say what to change. Layout, order,
-   density, colors, name ("THE DESK" is a placeholder).
-2. **Email's future** — keep the 6:23am email running alongside the page
-   indefinitely, or plan to turn it off after a trial period?
-3. **Private layer** — want the positions/action-list/stops panel behind a
-   passphrase in a later phase, or keep personal data off the page entirely?
-4. **Action List on page** — if yes to the private layer: verdicts render
+1. **Mockup approval** — RESOLVED through v3.2: cockpit layout, interactivity,
+   full watchlist with range bars, relative movers, drawer depth all approved
+   by iteration. Name "THE DESK" stands unless he renames it.
+2. **Email's future** — **RESOLVED 2026-08-14, Zach's ruling: the page
+   replaces ALL emails, Watchdog included.** Delivery moves to phone push +
+   the on-page alerts log; see the v3.2 section for the channel architecture
+   and the two-week parallel-run cutover.
+3. **Private layer** — OPEN: positions/action-list/stops behind a passphrase
+   in a later phase, or keep personal data off the page entirely?
+4. **Action List on page** — OPEN, only if yes to #3: verdicts render
    watch-only (backtest attempt #1 failed its gates; the standing rule says
    never present them as validated instructions).
 
@@ -363,6 +368,49 @@ Deliberately NOT added, per the prune rule: news sentiment scores, social
 feeds, level-2/tape widgets, multi-layout workspaces, alert-builder UI (the
 Watchdog already owns alerting), and any panel duplicating what the boards
 already say.
+
+### v3.2 — fundamentals gauge + the email-retirement ruling (2026-08-14)
+
+**Fundamentals coloring (implemented in the prototype).** Snapshot values now
+color green/red from a **buyer's lens against rough, tooltipped thresholds**:
+fwd P/E green ≤ ~18 / red ≥ ~35 (market runs ~22); short % of float green
+≤ 2% / red ≥ 5%; dividend yield green ≥ 2.5%; RSI(14) green ≤ 35 (washed
+out) / red ≥ 70 (hot) — RSI added as a snapshot row. Market cap, beta,
+volume, and average daily move stay neutral: they are descriptions, not
+good/bad. A note under the block says it plainly: *a gauge, not a rating.*
+Thresholds are constants in one place; Zach can retune them by asking.
+
+**The ruling: this page replaces ALL emails — Morning Brief AND Watchdog.**
+Architecture that makes it safe:
+
+- **Daily brief email** retires cleanly: the 6:23 engine run, its score
+  history, and its sentinel all keep working — the "send" event becomes
+  "summary published" instead of "email sent" (bookkeeping change in Phase 1;
+  the sentinel/dedupe semantics carry over unchanged).
+- **Watchdog is the hard case** — it exists to interrupt (built after the
+  SOXL/Iran morning). A webpage can't interrupt unless it can push. So the
+  Watchdog keeps its 10-minute cycle, triggers, cooldowns, and 3-a-day cap,
+  and swaps delivery to **web push notifications sent from the same Actions
+  job** (VAPID keypair in ClaudeVault secrets; per-device push subscriptions
+  stored in the private vault repo, never in public flow-desk; the public
+  page only holds the VAPID public key and the "enable alerts" button).
+  Every alert also lands in the page's alerts log, so the page is the record
+  even if a push is missed.
+- **Phone requirements (Zach-side, one time per device):** on iPhone the page
+  must be installed to the home screen (the Phase 3 manifest makes it
+  installable) and notifications allowed; then a one-time registration step
+  hands the device's push address to the vault — the build session walks him
+  through it in plain steps.
+- **Cutover: two-week parallel run.** Push and email both fire until push has
+  delivered every alert for ~10 straight trading days; then email off, and
+  Zach deletes/repoints the now-unneeded pieces on his cron-job.org account.
+  Never a gap in alerting.
+- **Loose end this ruling creates:** Position Guard's RAISE-STOP nags rode
+  the brief email. Their new home is push (same channel) and/or the private
+  layer — bundled into open decision #3 so stops never go unwatched.
+- **Honest risk note:** web push on iOS requires the installed-app route and
+  is reliable but not as battle-tested as email; that is exactly what the
+  parallel run proves before anything is turned off.
 
 ---
 
@@ -636,10 +684,19 @@ Optional hardening, Zach's call: a Watchdog "D5" check — data.json older than
 60 minutes mid-session triggers one email. Small registered change to the
 Watchdog if wanted; not required for launch.
 
+**Push channel upkeep (added by the v3.2 ruling):** VAPID keypair lives in
+ClaudeVault Actions secrets (no expiry); per-device push subscriptions can go
+stale when a phone reinstalls the app — symptom is silence, cure is redoing
+the one-time enable step; the alerts log on the page is the always-true
+record either way. The Watchdog's send step gains a fallback order: push
+first, email only while the parallel run lasts.
+
 **Zach-side items (nobody else can do these):**
-- cron-job.org account: keep the 6:23 pinger; delete the dead memory-brief
-  pinger (returns 404 harmlessly today); repoint/delete the brief pinger only
-  if the email is retired later.
+- cron-job.org account: keep the 6:23 and watchdog pingers (they trigger
+  computation, not email); delete the dead memory-brief pinger (returns 404
+  harmlessly today).
+- Install the page to his phone's home screen + allow notifications + the
+  one-time alert registration, per device.
 - PAT renewal yearly when the chip nags.
 
 Costs stay $0: public repo = free Actions minutes, free Pages, keyless feeds.
