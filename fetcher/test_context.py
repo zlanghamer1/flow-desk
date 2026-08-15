@@ -27,6 +27,15 @@ Zach or leak a secret if it broke:
 6. The two independent gates (hourly context fetch, daily bars build) each
    skip their own network work when fresh, and each still lets the OTHER
    one run when only it is stale.
+7. (wave 3, 2026-08-15) The news per-ticker cap guarantees other tagged
+   names room on the board without silently dropping items below the total
+   cap, and never reorders the final list out of newest-first.
+8. (wave 3) bars.json v3's volume never gets zero-filled when unknown, the
+   2y history bump never widens avg_move's own basis, and a bars_sig
+   mismatch forces a same-day rebuild instead of serving a stale-shape cache.
+9. (wave 3) A Yahoo earnings row's missing revenue is backfilled from the
+   same symbol's stockanalysis.com quarterly series ONLY — never a guessed
+   or zero-filled number, and rev_est/rev_surprise_pct are never touched.
 """
 from __future__ import annotations
 
@@ -55,16 +64,22 @@ def _econ_row(d, title, importance, time_ct="00:00", source="tv_calendar", ticke
     }
 
 
-def _yahoo_json(closes, opens=None, highs=None, lows=None):
+def _yahoo_json(closes, opens=None, highs=None, lows=None, volumes=None):
     """Build a v8 chart API response. By default open=high=low=close (fine
     for tests that only care about the close-derived arithmetic); pass
-    opens/highs/lows explicitly to test real OHLC divergence."""
+    opens/highs/lows explicitly to test real OHLC divergence. `volumes` is
+    OMITTED entirely by default (no "volume" key at all) — matching a real
+    malformed/short response and exercising _extract_yahoo_ohlcv's fail-soft
+    "no volume array -> every row's v is None" path; pass it explicitly to
+    test real volume values (including None entries mid-array)."""
     quote = {
         "open": opens if opens is not None else list(closes),
         "high": highs if highs is not None else list(closes),
         "low": lows if lows is not None else list(closes),
         "close": closes,
     }
+    if volumes is not None:
+        quote["volume"] = volumes
     return json.dumps({"chart": {"result": [{"indicators": {"quote": [quote]}}]}}).encode()
 
 
@@ -533,6 +548,110 @@ def test_news_url_falls_back_to_story_path_when_link_absent():
     assert result["items"][0]["url"] == "https://www.tradingview.com/news/x/"
 
 
+# ── news: per-ticker breadth cap (added 2026-08-15, wave 3, Task A) ─────────
+
+def _cap_item(ticker, ts):
+    return {"ticker": ticker, "title": f"{ticker} {ts}", "ts": str(ts), "url": None, "_sort": ts}
+
+
+def test_apply_news_ticker_cap_guarantees_breadth_when_pool_has_enough_tickers():
+    """6 tickers x 5 items, evenly interleaved by recency. 6*3 (cap) == 18 <=
+    total_cap 20, so every ticker is GUARANTEED its 3 with room to spare —
+    the core promise of ruling #1 ("want to see other names mentioned too")."""
+    pooled = []
+    ts = 30
+    tickers = ["A", "B", "C", "D", "E", "F"]
+    for _ in range(5):
+        for t in tickers:
+            pooled.append(_cap_item(t, ts))
+            ts -= 1
+    assert len(pooled) == 30
+    result = context._apply_news_ticker_cap(pooled, total_cap=20, per_ticker_cap=3)
+    assert len(result) == 20
+    counts: dict[str, int] = {}
+    for it in result:
+        counts[it["ticker"]] = counts.get(it["ticker"], 0) + 1
+    for t in tickers:
+        assert counts[t] >= 3, f"{t} did not get its guaranteed 3 slots: {counts}"
+    assert sum(counts.values()) == 20
+    sorts = [it["_sort"] for it in result]
+    assert sorts == sorted(sorts, reverse=True)   # newest-first overall, even after backfill
+
+
+def test_apply_news_ticker_cap_backfills_from_dominant_ticker_on_a_narrow_pool():
+    """Only 2 tickers in the pool: the cap alone can't reach total_cap, so
+    backfill fills the rest from the capped-out ticker — a mega-cap can still
+    dominate the COUNT (this is not a parity rule), but a smaller name that
+    DOES have news no longer gets crowded out of the board entirely."""
+    pooled = ([_cap_item("NVDA", 100 - i) for i in range(15)]
+              + [_cap_item("MU", 50 - i) for i in range(2)])
+    result = context._apply_news_ticker_cap(pooled, total_cap=10, per_ticker_cap=3)
+    counts: dict[str, int] = {}
+    for it in result:
+        counts[it["ticker"]] = counts.get(it["ticker"], 0) + 1
+    assert len(result) == 10
+    assert counts["MU"] == 2     # MU's whole (small) supply survives
+    assert counts["NVDA"] == 8    # backfilled to fill out the rest of total_cap
+
+
+def test_apply_news_ticker_cap_under_total_pool_size_returns_everything():
+    pooled = [_cap_item("A", 3), _cap_item("B", 2), _cap_item("A", 1)]
+    result = context._apply_news_ticker_cap(pooled, total_cap=20, per_ticker_cap=3)
+    assert len(result) == 3
+
+
+def test_fetch_news_per_ticker_cap_lets_other_names_through_with_mega_caps_still_dominant():
+    """Reproduces the exact live numbers NEWS_PER_TICKER_CAP was built to fix
+    (Zach, 2026-08-15): a 20-item board where NVDA/AMZN/GOOGL alone held 14
+    of 20 slots. After the cap: the big names keep the SAME counts here
+    (mega-caps can still dominate — this cap does not force parity), but
+    MU/LLY/COHR are now guaranteed a seat instead of being crowded out."""
+    feeds = {
+        "NASDAQ:NVDA": [1006, 1005, 1004, 1003, 1002, 1001],
+        "NASDAQ:AMZN": [905, 904, 903, 902, 901],
+        "NASDAQ:GOOGL": [803, 802, 801],
+        "NASDAQ:MU": [704, 703, 702, 701],
+        "NYSE:LLY": [600],
+        "NASDAQ:COHR": [501, 500],
+    }
+    def fake_get(url, headers):
+        for tv_symbol, ts_list in feeds.items():
+            if f"symbol:{tv_symbol}" in url:
+                items = [{"title": f"{tv_symbol} headline {ts}", "published": ts,
+                          "storyPath": f"/news/{tv_symbol}/{ts}/"} for ts in ts_list]
+                return _news_json(items)
+        raise AssertionError(url)
+
+    result = context.fetch_news(list(feeds.keys()), _get=fake_get)
+    assert result is not None
+    tickers = [it["ticker"] for it in result["items"]]
+    assert len(tickers) == 20
+    hist: dict[str, int] = {}
+    for t in tickers:
+        hist[t] = hist.get(t, 0) + 1
+    assert hist["NVDA"] == 6
+    assert hist["AMZN"] == 5
+    assert hist["GOOGL"] == 3
+    assert hist["MU"] == 3     # guaranteed room — would have been crowded out uncapped
+    assert hist["LLY"] == 1
+    assert hist["COHR"] == 2
+    tss = [it["ts"] for it in result["items"]]
+    assert tss == sorted(tss, reverse=True)
+
+
+def test_fetch_news_no_ticker_exceeds_per_ticker_cap_unless_backfilled():
+    """A single ticker with a flood of items never exceeds NEWS_PER_TICKER_CAP
+    UNLESS backfill needed its excess to reach NEWS_CAP (here it does — MU is
+    the only ticker in the pool, so its excess fills the whole 20)."""
+    def fake_get(url, headers):
+        items = [{"title": f"MU headline {i}", "published": 1000 + i,
+                  "storyPath": f"/news/mu{i}/"} for i in range(30)]
+        return _news_json(items)
+    result = context.fetch_news(["NASDAQ:MU"], _get=fake_get)
+    assert len(result["items"]) == context.NEWS_CAP == 20
+    assert all(it["ticker"] == "MU" for it in result["items"])
+
+
 # ── bars: avg_move arithmetic, window, fail-soft ────────────────────────────
 
 def test_avg_move_known_series():
@@ -561,26 +680,31 @@ def test_avg_move_none_when_fewer_than_two_closes():
 def test_build_bars_end_to_end_and_fail_soft_skip():
     def fake_get(url, headers):
         assert "query1.finance.yahoo.com" in url
+        assert "range=2y" in url and "interval=1d" in url   # 2026-08-15 wave 3: 1y -> 2y
         if "/GOOD" in url:
             return _yahoo_json([100.0 + i for i in range(25)])
         raise urllib.error.URLError("boom")
     payload, avg_move = context.build_bars(["GOOD", "BAD"], date(2026, 8, 15), _get=fake_get)
     assert payload["built"] == "2026-08-15"
-    assert payload["v"] == 2
+    assert payload["v"] == 3
     assert "GOOD" in payload["bars"] and "BAD" not in payload["bars"]
-    assert payload["bars"]["GOOD"][0] == [100.0, 100.0, 100.0, 100.0]
-    assert payload["bars"]["GOOD"][-1] == [124.0, 124.0, 124.0, 124.0]
+    # No "volume" array in this fixture at all -> v is None (never 0) for every row.
+    assert payload["bars"]["GOOD"][0] == [100.0, 100.0, 100.0, 100.0, None]
+    assert payload["bars"]["GOOD"][-1] == [124.0, 124.0, 124.0, 124.0, None]
     assert "GOOD" in avg_move and avg_move["GOOD"] > 0
     assert "BAD" not in avg_move
 
 
-def test_build_bars_caps_at_252_and_drops_nulls():
-    closes = [None] * 5 + [float(i) for i in range(300)]
+def test_build_bars_caps_at_504_and_drops_nulls():
+    closes = [None] * 5 + [float(i) for i in range(600)]
     def fake_get(url, headers):
         return _yahoo_json(closes)
     payload, _ = context.build_bars(["MU"], date(2026, 8, 15), _get=fake_get)
-    assert len(payload["bars"]["MU"]) == 252
-    assert all(v is not None for row in payload["bars"]["MU"] for v in row)
+    assert len(payload["bars"]["MU"]) == context.BARS_MAX == 504
+    # OHLC legs are never None (the row would have been dropped); volume MAY
+    # legitimately be None (no volume array in this fixture) — checked separately.
+    assert all(v is not None for row in payload["bars"]["MU"] for v in row[:4])
+    assert all(row[4] is None for row in payload["bars"]["MU"])
 
 
 # ── gates: hourly (context) and daily (bars) ────────────────────────────────
@@ -591,6 +715,7 @@ def test_hourly_gate_fresh_timestamp_skips_network_and_carries_cache_forward(tmp
     cache = {
         "context_fetched_at": "2026-08-15T13:30:00Z",   # 30 min ago -> fresh (<55min)
         "bars_built_date": "2026-08-15",                  # today -> bars also fresh
+        "bars_sig": context.BARS_BUILD_SIG,               # AND matches -> no rebuild
         "avg_move": {"MU": 4.2},
         "brief": {"date": "2026-08-15", "stale": False},
         "catalysts": [_econ_row("2026-08-16", "cached row", "LOW")],
@@ -648,11 +773,13 @@ def test_stale_context_triggers_full_refetch_and_updates_cache(tmp_path, monkeyp
     assert fields["desk_private"] == {"v": 1, "blob": "abc"}
     assert fields["context_updated_at"] == "2026-08-15T14:00:00Z"
     assert bars_payload is not None
+    assert bars_payload["v"] == 3
     assert fund_payload is not None and "MU" in fund_payload   # same gate as bars — both rebuilt
 
     saved = context.load_context_cache()
     assert saved["context_fetched_at"] == "2026-08-15T14:00:00Z"
     assert saved["bars_built_date"] == "2026-08-15"
+    assert saved["bars_sig"] == context.BARS_BUILD_SIG
 
 
 def test_build_context_without_token_still_gets_tv_and_opex_but_not_vault(tmp_path, monkeypatch):
@@ -690,6 +817,7 @@ def test_bars_only_gate_rebuilds_bars_without_refetching_context(tmp_path, monke
     cache = {
         "context_fetched_at": "2026-08-15T13:50:00Z",   # 10 min ago -> fresh, no refetch
         "bars_built_date": "2026-08-14",                  # yesterday -> bars ARE stale
+        "bars_sig": context.BARS_BUILD_SIG,               # sig matches; DATE is what's stale here
         "avg_move": {"MU": 9.99},
         "brief": {"date": "2026-08-15", "stale": False},
         "catalysts": [],
@@ -711,11 +839,72 @@ def test_bars_only_gate_rebuilds_bars_without_refetching_context(tmp_path, monke
                      "market_cap": None, "beta": None, "avol": None, "rsi": None}}
     fields, bars_payload, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert bars_payload is not None and bars_payload["built"] == "2026-08-15"
-    assert bars_payload["v"] == 2
+    assert bars_payload["v"] == 3
     assert fields["brief"] == {"date": "2026-08-15", "stale": False}   # carried from cache
     assert fields["facts"]["MU"]["avg_move"] is not None
     assert fields["facts"]["MU"]["avg_move"] != 9.99   # replaced by the fresh rebuild
     assert fund_payload is not None and "MU" in fund_payload   # same gate as bars — both rebuilt
+
+    saved = context.load_context_cache()
+    assert saved["bars_built_date"] == "2026-08-15" and saved["bars_sig"] == context.BARS_BUILD_SIG
+
+
+def test_bars_gate_same_day_same_sig_is_cached_no_rebuild(tmp_path, monkeypatch):
+    """Both halves of the gate agree today's cache is current -> no rebuild,
+    no network at all (the _boom getter would raise on any attempted call)."""
+    monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    now = datetime(2026, 8, 15, 14, 0, 0, tzinfo=timezone.utc)
+    cache = {
+        "context_fetched_at": "2026-08-15T13:50:00Z",   # fresh -> no context refetch either
+        "bars_built_date": "2026-08-15",                  # today...
+        "bars_sig": context.BARS_BUILD_SIG,               # ...AND matching signature -> cached
+        "avg_move": {"MU": 4.2},
+        "brief": None, "catalysts": [], "news": None, "desk_private": None,
+    }
+    context.save_context_cache(cache)
+
+    quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
+                     "market_cap": None, "beta": None, "avol": None, "rsi": None}}
+    fields, bars_payload, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=_boom)
+    assert bars_payload is None
+    assert fund_payload is None
+
+
+def test_bars_gate_same_day_different_sig_forces_rebuild(tmp_path, monkeypatch):
+    """The exact bug BARS_BUILD_SIG exists to prevent: bars_built_date already
+    says today (written by an earlier cycle running the OLD code, before a
+    same-day deploy that changed build_bars's output shape), but the stored
+    signature is stale — the date match ALONE must not be enough to skip the
+    rebuild, or this cycle would keep serving the old shape until midnight."""
+    monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    now = datetime(2026, 8, 15, 14, 0, 0, tzinfo=timezone.utc)
+    cache = {
+        "context_fetched_at": "2026-08-15T13:50:00Z",   # fresh -> context leg still skips
+        "bars_built_date": "2026-08-15",                  # today...
+        "bars_sig": "v2-quads",                            # ...but an OLDER build signature
+        "avg_move": {"MU": 4.2},
+        "brief": None, "catalysts": [], "news": None, "desk_private": None,
+    }
+    context.save_context_cache(cache)
+
+    def fake_get(url, headers):
+        if "stockanalysis.com" in url:
+            return _sa_skip_data_json()
+        yahoo_fund = _yahoo_crumb_and_empty_quotesummary(url)
+        if yahoo_fund is not None:
+            return yahoo_fund
+        assert "query1.finance.yahoo.com" in url, f"unexpected fetch: {url}"
+        return _yahoo_json([100.0 + i for i in range(25)])
+
+    quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
+                     "market_cap": None, "beta": None, "avol": None, "rsi": None}}
+    fields, bars_payload, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
+    assert bars_payload is not None and bars_payload["v"] == context.BARS_VERSION
+    assert fund_payload is not None and "MU" in fund_payload
+
+    saved = context.load_context_cache()
+    assert saved["bars_built_date"] == "2026-08-15"
+    assert saved["bars_sig"] == context.BARS_BUILD_SIG   # stale sig replaced with the current one
 
 
 def test_is_context_stale_missing_or_old_timestamp():
@@ -732,6 +921,7 @@ def test_load_context_cache_missing_file_returns_defaults(tmp_path, monkeypatch)
     cache = context.load_context_cache()
     assert cache["context_fetched_at"] is None
     assert cache["bars_built_date"] is None
+    assert cache["bars_sig"] is None
     assert cache["avg_move"] == {}
     assert cache["brief"] is None
     assert cache["catalysts"] == []
@@ -771,17 +961,21 @@ def test_fetch_econ_tv_drops_low_importance():
     assert all(r["importance"] in ("HIGH", "MEDIUM") for r in rows)
 
 
-def test_build_bars_v2_quads_and_facts_fundamentals_passthrough():
-    """2026-08-15: bars.json v2 rows are [o,h,l,c] quads; rows with a missing
-    leg are dropped; avg_move still computes from closes. And the facts map
-    must pass the scanner fundamentals through (None stays None, never 0)."""
+def test_build_bars_v3_quints_and_facts_fundamentals_passthrough():
+    """2026-08-15 wave 3: bars.json v3 rows are [o,h,l,c,v] quints; rows with
+    a missing OHLC leg are dropped (volume plays no part in that decision —
+    the dropped row's own volume reading is irrelevant); avg_move still
+    computes from closes. And the facts map must pass the scanner
+    fundamentals through (None stays None, never 0)."""
     payload = {"chart": {"result": [{"indicators": {"quote": [{
         "open": [10.0, 11.0, None, 12.0], "high": [10.5, 11.5, 12.0, 12.5],
-        "low": [9.5, 10.5, 11.0, 11.5], "close": [10.2, 11.2, 11.8, 12.2]}]}}]}}
+        "low": [9.5, 10.5, 11.0, 11.5], "close": [10.2, 11.2, 11.8, 12.2],
+        "volume": [1000, 2000, 3000, 4000]}]}}]}}
     bars, avg = context.build_bars(["ZZZ"], date(2026, 8, 15),
                                     _get=lambda url, headers=None: json.dumps(payload).encode())
-    assert bars["v"] == 2
-    assert bars["bars"]["ZZZ"] == [[10.0, 10.5, 9.5, 10.2], [11.0, 11.5, 10.5, 11.2], [12.0, 12.5, 11.5, 12.2]]
+    assert bars["v"] == 3
+    assert bars["bars"]["ZZZ"] == [[10.0, 10.5, 9.5, 10.2, 1000], [11.0, 11.5, 10.5, 11.2, 2000],
+                                    [12.0, 12.5, 11.5, 12.2, 4000]]
     assert "ZZZ" in avg and avg["ZZZ"] > 0
     quotes = {"ZZZ": {"tv_symbol": "NASDAQ:ZZZ", "hi52": 20.0, "lo52": 5.0, "market_cap": 1e9,
               "beta": 1.1, "avol": 1e6, "rsi": 55.0, "earnings_ts": None,
@@ -798,13 +992,65 @@ def test_build_bars_v2_quads_and_facts_fundamentals_passthrough():
         assert f[k] is None and f[k] != 0
 
 
-def test_build_bars_v1_style_all_present_row_still_round_trips():
-    """A bar with every OHLC leg present survives; values are rounded 2dp."""
+def test_build_bars_ohlc_round_trips_with_null_volume_when_no_volume_array():
+    """A bar with every OHLC leg present survives; values are rounded 2dp. No
+    "volume" array in the response at all -> v is None (never 0) for the
+    row, same None != 0 rule as every other missing reading in this file."""
     payload = {"chart": {"result": [{"indicators": {"quote": [{
         "open": [10.001], "high": [10.999], "low": [9.994], "close": [10.501]}]}}]}}
     bars, _ = context.build_bars(["ZZZ"], date(2026, 8, 15),
                                   _get=lambda url, headers=None: json.dumps(payload).encode())
-    assert bars["bars"]["ZZZ"] == [[10.0, 11.0, 9.99, 10.5]]
+    assert bars["bars"]["ZZZ"] == [[10.0, 11.0, 9.99, 10.5, None]]
+
+
+def test_extract_yahoo_ohlcv_null_volume_on_valid_bar_stays_none_not_zero():
+    """A day with perfectly good OHLC but a null volume reading mid-array
+    keeps the bar (OHLC alone decides whether a row survives) with v: None —
+    never 0, which would misrepresent "unknown" as "no shares traded"."""
+    payload = {"chart": {"result": [{"indicators": {"quote": [{
+        "open": [10.0, 11.0], "high": [10.5, 11.5], "low": [9.5, 10.5], "close": [10.2, 11.2],
+        "volume": [1500, None]}]}}]}}
+    rows = context._extract_yahoo_ohlcv(payload)
+    assert rows == [[10.0, 10.5, 9.5, 10.2, 1500], [11.0, 11.5, 10.5, 11.2, None]]
+
+
+def test_extract_yahoo_ohlcv_float_volume_cast_to_int_and_missing_index_is_none():
+    payload = {"chart": {"result": [{"indicators": {"quote": [{
+        "open": [10.0, 11.0], "high": [10.5, 11.5], "low": [9.5, 10.5], "close": [10.2, 11.2],
+        "volume": [1234.0]}]}}]}}   # short volume array: only 1 entry for 2 bars
+    rows = context._extract_yahoo_ohlcv(payload)
+    assert rows[0][4] == 1234 and isinstance(rows[0][4], int)   # cast, not left as float
+    assert rows[1][4] is None   # index out of range on the volume array -> None, not 0
+
+
+def test_build_bars_avg_move_unaffected_by_2y_of_extra_older_history():
+    """2026-08-15 wave 3: BARS_MAX doubled (252 -> 504) for a 2-year chart
+    range, but avg_move must still read exactly like the pre-2y behavior —
+    only the last 20 closes, regardless of how much MORE history now sits in
+    front of them. 504 rows total: the oldest 484 are a wild, easily
+    distinguishable swing; the last 20 are the SAME known alternating series
+    the plain `_avg_move` unit test above already pins the expected value
+    for — proving BARS_MAX's widening never leaks into this arithmetic."""
+    noise = [5.0, 5000.0] * 242   # 484 rows of extreme, easy-to-spot noise
+    tail = []
+    for _ in range(10):
+        tail += [100.0, 110.0]     # 20 rows: known +10%/-9.09% alternation
+    closes = noise + tail           # 504 total
+    assert len(closes) == 504
+    def fake_get(url, headers):
+        return _yahoo_json(closes)
+    payload, avg_move = context.build_bars(["MU"], date(2026, 8, 15), _get=fake_get)
+    assert len(payload["bars"]["MU"]) == 504   # all kept (== BARS_MAX, nothing trimmed)
+    expected_changes = [abs((b - a) / a) * 100.0 for a, b in zip(tail, tail[1:])]
+    expected = round(sum(expected_changes) / len(expected_changes), 2)
+    assert avg_move["MU"] == pytest.approx(expected)
+    assert avg_move["MU"] < 20.0   # sanity bound: the noise swings are ~1000x moves
+
+
+def test_avg_move_basis_constant_is_decoupled_from_bars_max():
+    assert context.BARS_MAX == 504
+    assert context.AVG_MOVE_BASIS == 252
+    assert context.AVG_MOVE_BASIS != context.BARS_MAX
 
 
 def test_track_only_names_never_reach_chain_candidates():
@@ -1073,6 +1319,121 @@ def test_fetch_yahoo_fundamentals_fetch_failure_is_all_empty():
     # A 200 with a shape quoteSummary doesn't recognize is equally fail-soft.
     out2 = context.fetch_yahoo_fundamentals("NVDA", "abc", _get=lambda u, h: json.dumps({"quoteSummary": {"result": []}}).encode())
     assert out2 == {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None}
+
+
+# ── earnings-row revenue backfill (added 2026-08-15, wave 3, Task C) ────────
+
+def test_backfill_earnings_revenue_matches_by_quarter_number_and_year_mod_100():
+    earnings = [
+        {"period": "Q1 2027", "rev": None},
+        {"period": "Q4 2026", "rev": None},
+        {"period": "Q2 2027", "rev": 555.0},   # already has rev -> must NOT be overwritten
+        {"period": None, "rev": None},           # unparseable -> left alone
+        {"period": "Q3 2099", "rev": None},      # no matching quarter anywhere -> stays None
+    ]
+    quarterly = {"periods": ["Q4 26", "Q1 27", "Q2 27"], "revenue": [111.0, 222.0, 999.0], "eps": [0, 0, 0]}
+    context._backfill_earnings_revenue(earnings, quarterly)
+    assert earnings[0]["rev"] == 222.0   # "Q1 2027" -> "Q1 27"
+    assert earnings[1]["rev"] == 111.0   # "Q4 2026" -> "Q4 26"
+    assert earnings[2]["rev"] == 555.0   # untouched — already had a real value
+    assert earnings[3]["rev"] is None    # unparseable period, left alone, never guessed
+    assert earnings[4]["rev"] is None    # no match found, left alone
+
+
+def test_backfill_earnings_revenue_never_touches_rev_est_or_surprise_pct():
+    earnings = [{"period": "Q1 2027", "rev": None, "rev_est": None, "rev_surprise_pct": None}]
+    quarterly = {"periods": ["Q1 27"], "revenue": [222.0], "eps": [0]}
+    context._backfill_earnings_revenue(earnings, quarterly)
+    assert earnings[0]["rev"] == 222.0
+    assert earnings[0]["rev_est"] is None            # never invented
+    assert earnings[0]["rev_surprise_pct"] is None   # never invented
+
+
+def test_backfill_earnings_revenue_no_quarterly_series_is_a_no_op():
+    earnings = [{"period": "Q1 2027", "rev": None}]
+    context._backfill_earnings_revenue(earnings, {"periods": [], "revenue": [], "eps": []})
+    assert earnings[0]["rev"] is None
+    context._backfill_earnings_revenue(earnings, {})   # malformed/empty quarterly dict entirely
+    assert earnings[0]["rev"] is None
+    context._backfill_earnings_revenue([], {"periods": ["Q1 27"], "revenue": [1.0], "eps": [0]})  # no rows at all
+
+
+def test_build_fund_sidecar_backfills_missing_revenue_from_stockanalysis_quarterly():
+    """AXTI-shaped scenario (2026-08-15, live): Yahoo's earnings row has no
+    financialsChart match for its quarter (rev stays None straight out of
+    fetch_yahoo_fundamentals — see
+    test_fetch_yahoo_fundamentals_revenue_unmatched_stays_none), but the SAME
+    symbol's already-fetched stockanalysis.com quarterly series has that
+    exact quarter ("Q1 2027" <-> "Q1 27" — same quarter number, year mod
+    100), so build_fund_sidecar backfills rev from there. rev_est/
+    rev_surprise_pct must stay untouched (never invented)."""
+    period_end = int(datetime(2026, 4, 30, tzinfo=timezone.utc).timestamp())
+    yahoo_result = {
+        "defaultKeyStatistics": {},
+        "earnings": {
+            "earningsChart": {"quarterly": [{
+                "date": "1Q2026", "fiscalQuarter": "1Q2027",
+                "actual": {"raw": 0.05}, "estimate": {"raw": 0.04},
+                "surprisePct": "25.0", "periodEndDate": {"raw": period_end}, "reportedDate": None,
+            }]},
+            "financialsChart": {"quarterly": []},   # no matching revenue row at all -> rev None
+        },
+        "calendarEvents": {},
+    }
+    financial_data = {
+        "datekey": ["TTM", "2026-04-30"],
+        "fiscalYear": ["2028", "2027"],
+        "fiscalQuarter": ["Q2", "Q1"],
+        "revenue": [999.0, 45123456.0],
+        "epsdil": [9.9, 0.05],
+    }
+    sa_root_quarterly = {"financialData": financial_data}
+
+    def fake_get(url, headers):
+        if "statistics" in url:
+            return _sa_skip_data_json()
+        if "financials/income-statement" in url:
+            return _sa_data_json(sa_root_quarterly)
+        if "quoteSummary" in url:
+            return _yahoo_qs(yahoo_result)
+        raise AssertionError(url)
+
+    payload = context.build_fund_sidecar("AXTI", date(2026, 8, 15), "crumbtoken", None, _get=fake_get)
+    assert "Q1 27" in payload["quarterly"]["periods"]   # sanity: the quarterly series really has it
+    assert payload["earnings"][0]["period"] == "Q1 2027"
+    assert payload["earnings"][0]["rev"] == pytest.approx(45123456.0)   # backfilled
+    assert payload["earnings"][0]["rev_est"] is None                     # never invented
+    assert payload["earnings"][0]["rev_surprise_pct"] is None            # never invented
+
+
+def test_build_fund_sidecar_revenue_stays_null_when_no_quarterly_series_to_backfill_from():
+    """Fail-soft: when stockanalysis.com's quarterly leg has nothing (fetch
+    failed entirely here), a Yahoo earnings row with rev None stays None —
+    never guessed, never zero-filled."""
+    period_end = int(datetime(2026, 4, 30, tzinfo=timezone.utc).timestamp())
+    yahoo_result = {
+        "defaultKeyStatistics": {},
+        "earnings": {
+            "earningsChart": {"quarterly": [{
+                "date": "1Q2026", "fiscalQuarter": "1Q2027",
+                "actual": {"raw": 0.05}, "estimate": {"raw": 0.04},
+                "surprisePct": "25.0", "periodEndDate": {"raw": period_end}, "reportedDate": None,
+            }]},
+            "financialsChart": {"quarterly": []},
+        },
+        "calendarEvents": {},
+    }
+    def fake_get(url, headers):
+        if "statistics" in url:
+            return _sa_skip_data_json()
+        if "financials/income-statement" in url:
+            raise urllib.error.URLError("boom")   # quarterly leg fails entirely
+        if "quoteSummary" in url:
+            return _yahoo_qs(yahoo_result)
+        raise AssertionError(url)
+    payload = context.build_fund_sidecar("AXTI", date(2026, 8, 15), "crumbtoken", None, _get=fake_get)
+    assert payload["earnings"][0]["rev"] is None
+    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": []}
 
 
 def test_build_fund_sidecar_yahoo_next_earnings_session_falls_back_to_stockanalysis_text():

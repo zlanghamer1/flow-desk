@@ -153,11 +153,16 @@ values are `null` (never a string sentinel). All strings are already plain
 >
 > **`news`** — up to 20 items total (not per ticker) across the pinned
 > universe, newest first, pulled from TradingView's per-symbol news endpoint.
-> `rotation_banner` is true when at least 2 of the scanned titles carry
-> rotation/derisking language — the identical keyword list the morning brief's
-> headline scan uses (`market-data/morning-report/sections/headlines.py`,
-> `ROTATION_KEYWORDS`), copied into `fetcher/context.py` with a comment naming
-> that source so the two lists can't silently drift apart. Display only.
+> Within that total, no single ticker's tag can hold more than
+> `NEWS_PER_TICKER_CAP` (3) slots unless a backfill pass needs the extra room
+> to reach 20 (Zach's ruling, 2026-08-15: mega-caps may still appear most
+> often, but other tagged names are now guaranteed a seat instead of being
+> crowded out entirely). `rotation_banner` is true when at least 2 of the
+> scanned titles carry rotation/derisking language — the identical keyword
+> list the morning brief's headline scan uses
+> (`market-data/morning-report/sections/headlines.py`, `ROTATION_KEYWORDS`),
+> copied into `fetcher/context.py` with a comment naming that source so the
+> two lists can't silently drift apart. Display only.
 >
 > ### NewsItem
 > ```json
@@ -255,46 +260,60 @@ day** (see `fetcher/.context_cache.json` below): it is daily-bar history, so
 refetching it every ~7-minute cycle would be pure waste against Yahoo for no
 benefit.
 
-**v2 (2026-08-15, Task 2):** rows are now `[open, high, low, close]` quads
-instead of bare close numbers, and the file carries a `"v": 2` marker. The
-source is unchanged — the SAME Yahoo v8 chart call this file always used
-already returns full OHLC in `indicators.quote[0]` (`open`/`high`/`low`/
-`close` parallel arrays); v1 only read the `close` array out of it. **Any
-consumer of this file must accept BOTH shapes**: v1 (no `"v"` key, `bars`
-values are plain number arrays) from snapshots written before this date, and
-v2 (`"v": 2`, `bars` values are `[o,h,l,c]` quad arrays) from this date
-forward — the same "old readers keep working" rule every other addition in
-this file follows. A reader that only wants the close can take `row[3]` in v2
-or `row` itself in v1.
+**v3 (2026-08-15, Task 2, wave 3):** rows are now `[open, high, low, close,
+volume]` quints, the fetch window doubled from 1y to 2y, and the file carries
+a `"v": 3` marker. Source is unchanged — the SAME Yahoo v8 chart call this
+file always used already returns `open`/`high`/`low`/`close`/`volume`
+parallel arrays in `indicators.quote[0]`; earlier versions just read less of
+it. **Any consumer of this file must accept ALL THREE shapes**: v1 (no `"v"`
+key, `bars` values are plain close-only number arrays), v2 (`"v": 2`, `bars`
+values are `[o,h,l,c]` quad arrays), and v3 (`"v": 3`, `bars` values are
+`[o,h,l,c,v]` quint arrays) — the same "old readers keep working" rule every
+other addition in this file follows. A reader that only wants the close can
+take `row[3]` in v2 or v3, or `row` itself in v1 — that index didn't move
+when volume was appended after it.
 
 ```json
 {
   "built": "2026-08-15",
-  "v": 2,
+  "v": 3,
   "bars": {
-    "MU": [[112.80, 114.10, 112.50, 113.46], "...", [968.00, 975.20, 965.10, 971.66]]
+    "MU": [[112.80, 114.10, 112.50, 113.46, 24581900], "...", [968.00, 975.20, 965.10, 971.66, 5124300]]
   }
 }
 ```
 
 - `built` — session date (`YYYY-MM-DD`) this file was last (re)built.
-- `v` — schema version, `2` as of 2026-08-15. Absent entirely on pre-2026-08-15
-  snapshots (that is how a consumer tells v1 and v2 apart — check for the key,
-  not its absence-as-1).
+- `v` — schema version, `3` as of 2026-08-15. Absent entirely on pre-2026-08-15
+  snapshots (v1), or `2` on snapshots written between the OHLC upgrade and the
+  volume/2y upgrade earlier the same day — check for the key's VALUE, not
+  just its presence, to tell all three apart.
 - `bars` — per pinned ticker (`build_snapshot.PINNED`, TRACK_ONLY names
   included — bars/facts/fund track the full universe regardless of chain
-  eligibility), up to 252 daily `[open, high, low, close]` rows, **oldest
-  first**, each value rounded 2dp. Source: Yahoo's v8 chart API
-  (`query1.finance.yahoo.com/v8/finance/chart/<SYM>?range=1y&interval=1d`). A
+  eligibility), up to 504 daily (2 years' worth of) `[open, high, low, close,
+  volume]` rows, **oldest first**, o/h/l/c rounded 2dp. Source: Yahoo's v8
+  chart API
+  (`query1.finance.yahoo.com/v8/finance/chart/<SYM>?range=2y&interval=1d`,
+  bumped from `range=1y` 2026-08-15 so the frontend has enough trailing
+  history to plot a full SMA200 line rather than just a partial one). A
   ticker whose fetch failed is simply absent from `bars` — fail-soft, never
   zero-filled or backfilled from a stale value. A single bar missing ANY of
   its four OHLC legs is dropped entirely (not partially filled) — same
-  "never fabricate" rule applied per-row instead of just per-ticker.
+  "never fabricate" rule applied per-row instead of just per-ticker; this
+  drop decision never depends on volume. `volume` (the 5th element) is an
+  int when Yahoo has a reading for that day, or `null` — NEVER `0` — when it
+  doesn't (None != 0 throughout this codebase; a null-volume bar still keeps
+  its OHLC and should simply be skipped in a volume pane, not read as "no
+  shares traded").
 
 `facts.*.avg_move` (see above) is derived from this same fetch — mean of
 `abs(daily % change)` over each ticker's last 20 CLOSES (the 4th element of
-each row in v2) — but that reading is published in `data.json`'s `facts`,
-not duplicated here.
+each row in v2/v3) — but that reading is published in `data.json`'s `facts`,
+not duplicated here. Doubling this file's stored history to 2 years does NOT
+widen avg_move's own basis: the fetcher re-slices to its last 252 rows
+(`AVG_MOVE_BASIS`, decoupled from this file's `BARS_MAX`) before taking the
+trailing-20-closes window, so this reading is unaffected by the 2026-08-15
+range change.
 
 ## fund/{SYM}.json (added 2026-08-15, Task 4 — one file per tracked ticker,
 published beside data.json on the `data` branch)
@@ -306,10 +325,17 @@ null; forward P/E was confirmed null in `facts` too — see above). Written in
 the SAME publish step `loop.py` already uses for bars.json — `loop.py`'s
 `git add -A` over `OUT_DIR` picks up the new `fund/` directory with no
 `loop.py` change. Built **at most once per calendar day, on the SAME gate as
-bars.json** (`fetcher/.context_cache.json`'s `bars_built_date`) — one file
-per name in `build_snapshot.PINNED` (TRACK_ONLY names included; this sidecar
-tracks the full universe same as bars.json, regardless of CBOE chain
-eligibility).
+bars.json** (`fetcher/.context_cache.json`'s `bars_built_date` AND
+`bars_sig` together — see that file's shape below) — one file per name in
+`build_snapshot.PINNED` (TRACK_ONLY names included; this sidecar tracks the
+full universe same as bars.json, regardless of CBOE chain eligibility).
+
+`earnings[].rev` backfill (added 2026-08-15, wave 3): a row whose `rev` came
+back null from Yahoo (no `financialsChart` match for that quarter — e.g.
+AXTI's oldest row, live-confirmed 2026-08-15) is backfilled from this same
+symbol's `quarterly` series below by matching period labels (quarter number +
+fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
+`rev_surprise_pct`.
 
 ```jsonc
 {
@@ -660,6 +686,7 @@ versa):
 {
   "context_fetched_at": "2026-08-15T14:32:00Z",
   "bars_built_date": "2026-08-15",
+  "bars_sig": "v3-2y-vol",
   "avg_move": {"MU": 3.45},
   "brief": {"...": "..."},
   "catalysts": [ "..." ],
@@ -669,14 +696,18 @@ versa):
 ```
 Drives two independent gates: the vault/econ/news fetch runs only when
 `context_fetched_at` is missing or >55 minutes stale; the Yahoo bars fetch
-runs only when `bars_built_date` differs from today's session date.
-`brief`/`catalysts`/`news`/`desk_private` hold the LAST successfully fetched
-values (not just gate metadata) so data.json's fields keep publishing on the
-~50 cycles/day that skip the hourly fetch, instead of flickering in and out
-every hour; `avg_move` does the same job for `facts.*.avg_move` across the
-cycles that skip the daily bars rebuild. Fail-soft: a missing or corrupt file
-reads as "never fetched, never built" — worst case one extra fetch that
-cycle, never a crash.
+runs when EITHER `bars_built_date` differs from today's session date OR
+`bars_sig` differs from `context.BARS_BUILD_SIG` (added 2026-08-15, wave 3).
+The signature half exists so a same-day code deploy that changes
+`bars.json`'s shape (e.g. the v2 -> v3 volume/2y upgrade) forces an immediate
+rebuild instead of matching on date alone and serving the OLD shape,
+unchanged, until midnight. `brief`/`catalysts`/`news`/`desk_private` hold the
+LAST successfully fetched values (not just gate metadata) so data.json's
+fields keep publishing on the ~50 cycles/day that skip the hourly fetch,
+instead of flickering in and out every hour; `avg_move` does the same job for
+`facts.*.avg_move` across the cycles that skip the daily bars rebuild.
+Fail-soft: a missing or corrupt file reads as "never fetched, never built,
+never signed" — worst case one extra fetch/rebuild that cycle, never a crash.
 
 ## Symbol hygiene (fetcher)
 Skip TV tickers containing `/`, `.`, `-` (preferred shares, warrants, units).

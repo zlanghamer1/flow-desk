@@ -92,6 +92,14 @@ run_cycle can't clobber each other)
   "context_fetched_at": "2026-08-15T14:32:00Z",   // last time the hourly-gated
                                                    // vault/econ/news fetch ran
   "bars_built_date": "2026-08-15",                 // last session bars.json built for
+  "bars_sig": "v3-2y-vol",                         // build_bars's BARS_BUILD_SIG as of
+                                                    // that last build (added 2026-08-15,
+                                                    // Task 2 wave 3) — a mismatch forces
+                                                    // a same-day rebuild even when
+                                                    // bars_built_date already matches, so
+                                                    // a mid-day code deploy that changes
+                                                    // bars.json's shape doesn't keep
+                                                    // serving the old shape until midnight
   "avg_move": {"MU": 3.45, ...},                   // carried forward on cycles that
                                                     // don't rebuild bars
   "brief": {...} | null,                           // last-fetched values, carried
@@ -100,11 +108,11 @@ run_cycle can't clobber each other)
   "desk_private": {...} | null                     // don't flicker in/out hourly
 }
 Fail-soft: a missing/corrupt file reads as "never fetched, never built" —
-worst case one extra fetch that cycle, never a crash. `bars_built_date` also
-gates the fund/{SYM}.json sidecar rebuild (added 2026-08-15, Task 4) — SAME
-key, SAME condition, no separate cache field: both are once-a-day, Yahoo/
-stockanalysis.com-heavy builds, and the task's own instruction was to gate
-them together.
+worst case one extra fetch that cycle, never a crash. `bars_built_date` AND
+`bars_sig` together also gate the fund/{SYM}.json sidecar rebuild (added
+2026-08-15, Task 4) — SAME keys, SAME condition, no separate cache field:
+both are once-a-day, Yahoo/stockanalysis.com-heavy builds, and the task's own
+instruction was to gate them together.
 """
 from __future__ import annotations
 
@@ -147,9 +155,30 @@ YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
 
 ECON_WINDOW_DAYS = 28        # display window for TV/csv econ rows and OpEx
 NEWS_CAP = 20                 # total items across the whole pinned universe
-BARS_MAX = 252                 # cap on daily closes kept per ticker
+NEWS_PER_TICKER_CAP = 3        # Zach, 2026-08-15: "big 4 dominating headlines
+                                # ... want to see other names mentioned as
+                                # well if in the news". A live pull the same
+                                # day put 20 items total across just 3 tickers
+                                # (NVDA 6 + AMZN 5 + GOOGL 3 = 14/20). Caps how
+                                # many of the final NEWS_CAP items any one
+                                # ticker's tag can hold — see
+                                # _apply_news_ticker_cap. Mega-caps can still
+                                # win MOST slots via backfill; this only
+                                # guarantees room for others, not parity.
+BARS_MAX = 504                 # cap on daily bars kept per ticker (2y of daily
+                                # sessions, bumped from 252/1y 2026-08-15 so
+                                # the frontend has enough history for a full
+                                # trailing SMA200 line — see build_bars)
 BARS_SLEEP_SEC = 0.25          # between per-symbol Yahoo calls
 AVG_MOVE_WINDOW = 20            # "last 20 closes" -> 19 day-over-day changes
+AVG_MOVE_BASIS = 252            # avg_move's own closes pool stays pinned at
+                                # ~1y even though BARS_MAX (bars.json's stored
+                                # history) is now 2y — decoupled on purpose so
+                                # BARS_MAX can't silently widen this
+                                # arithmetic's basis. AVG_MOVE_WINDOW (20)
+                                # sits well inside either value; this is a
+                                # defensive, redundant slice, not a change in
+                                # what avg_move measures (see build_bars).
 FETCH_STALE_SEC = 55 * 60       # hourly gate for vault/econ/news
 
 _IMPORTANCE_MAP = {-1: "LOW", 0: "MEDIUM", 1: "HIGH"}
@@ -438,15 +467,58 @@ def _rotation_banner(items: list[dict]) -> bool:
     return hits >= 2
 
 
+def _apply_news_ticker_cap(pooled: list[dict], total_cap: int, per_ticker_cap: int) -> list[dict]:
+    """pooled: newest-first pooled news dicts (each carrying a "ticker" key —
+    an item's only/primary tag, see fetch_news — and a "_sort" sortable
+    timestamp) -> up to `total_cap` of them, newest first, with no more than
+    `per_ticker_cap` counted against any single ticker (Zach, 2026-08-15:
+    NEWS_PER_TICKER_CAP's docstring has the live numbers this was built to fix).
+
+    Single forward pass over `pooled` (already newest-first): an item is
+    admitted while its ticker is still under the per-ticker cap; once a
+    ticker hits the cap, its further items are set aside rather than dropped
+    outright. If the admitted items alone don't fill `total_cap` (not enough
+    OTHER tickers in the pool that cycle), the remaining room is backfilled
+    from the set-asides, newest first — so a mega-cap ticker can still fill
+    most or all of a quiet day's board (this cap GUARANTEES room for other
+    names, it does not force parity — see the module-level ruling note).
+
+    The result is re-sorted newest-first overall before returning: since a
+    capped-out ticker's older items are only ever admitted during the
+    backfill pass (appended at the end), leaving the two passes' concatenation
+    unsorted could interleave an older backfilled item ahead of a newer one
+    from a different ticker that was admitted during the first pass.
+    """
+    selected: list[dict] = []
+    setaside: list[dict] = []
+    per_ticker: dict[str, int] = {}
+    for item in pooled:
+        ticker = item.get("ticker")
+        count = per_ticker.get(ticker, 0)
+        if count < per_ticker_cap:
+            selected.append(item)
+            per_ticker[ticker] = count + 1
+        else:
+            setaside.append(item)
+    if len(selected) < total_cap:
+        selected.extend(setaside[: total_cap - len(selected)])
+    final = selected[:total_cap]
+    final.sort(key=lambda x: x["_sort"], reverse=True)
+    return final
+
+
 def fetch_news(symbols: list[str], _get: Optional[Callable] = None) -> Optional[dict]:
     """TradingView per-symbol news -> {"items": [...], "rotation_banner": bool}.
 
     symbols: exchange-prefixed tv_symbol strings (e.g. "NASDAQ:MU"), matching
     the news endpoint's own filter parameter and the ticker/quote shape the
-    rest of this codebase already uses. Cap NEWS_CAP items TOTAL (not per
-    symbol) across the whole pinned universe, newest first. None if nothing
-    at all came back for any symbol (fail-soft; a single symbol's failure
-    just contributes nothing, it never aborts the others).
+    rest of this codebase already uses. Collection is pooled across every
+    symbol exactly as before; assembling the FINAL list then applies two
+    caps together: NEWS_CAP items TOTAL (unchanged, not per ticker) and
+    NEWS_PER_TICKER_CAP per ticker (added 2026-08-15 — see
+    _apply_news_ticker_cap), newest first throughout. None if nothing at all
+    came back for any symbol (fail-soft; a single symbol's failure just
+    contributes nothing, it never aborts the others).
     """
     pooled: list[dict] = []
     for tv_symbol in symbols:
@@ -485,8 +557,9 @@ def fetch_news(symbols: list[str], _get: Optional[Callable] = None) -> Optional[
     if not pooled:
         return None
     pooled.sort(key=lambda x: x["_sort"], reverse=True)
+    final = _apply_news_ticker_cap(pooled, NEWS_CAP, NEWS_PER_TICKER_CAP)
     capped = [{"ticker": x["ticker"], "title": x["title"], "ts": x["ts"], "url": x["url"]}
-              for x in pooled[:NEWS_CAP]]
+              for x in final]
     return {"items": capped, "rotation_banner": _rotation_banner(capped)}
 
 
@@ -807,20 +880,40 @@ def build_catalysts(econ_rows: list[dict], memory_rows: list[dict],
 
 # ── Bars (Yahoo daily OHLC, at most once per day) ───────────────────────────
 
-BARS_VERSION = 2   # bars.json schema version — see build_bars's docstring
+BARS_VERSION = 3   # bars.json schema version — see build_bars's docstring
+BARS_BUILD_SIG = "v3-2y-vol"   # bumped whenever build_bars's OUTPUT SHAPE
+                                # changes (not on an ordinary daily rebuild).
+                                # build_context's once-a-day gate keys off
+                                # BOTH bars_built_date AND this signature, so
+                                # a code deploy that changes the shape forces
+                                # an immediate rebuild even on a day
+                                # bars_built_date already matches — otherwise
+                                # a cached v2 bars.json from earlier the same
+                                # day would keep publishing, unchanged, until
+                                # midnight. See build_context.
 
 
-def _extract_yahoo_ohlc(obj) -> Optional[list[list[float]]]:
-    """v8 chart API response -> [[open, high, low, close], ...] rows, one per
-    available bar, in the API's own (oldest-first) order.
+def _extract_yahoo_ohlcv(obj) -> Optional[list[list]]:
+    """v8 chart API response -> [[open, high, low, close, volume], ...] rows,
+    one per available bar, in the API's own (oldest-first) order.
 
     A bar missing ANY of open/high/low/close is dropped ENTIRELY rather than
     partially filled — same "never zero-filled, never guessed" convention
     the old close-only extraction used, just applied per-row instead of
-    per-ticker. Yahoo's quote block carries four parallel arrays (indices
-    line up positionally with the response's `timestamp` array); a short or
-    missing array here means the shape is unusable and yields None, same as
-    any other malformed response.
+    per-ticker. Yahoo's quote block carries four parallel OHLC arrays plus a
+    fifth `volume` array (indices line up positionally with the response's
+    `timestamp` array); a short or missing OHLC array here means the shape
+    is unusable and yields None, same as any other malformed response.
+
+    Volume (added 2026-08-15, Task 2) is handled separately from the OHLC
+    legs on purpose: None != 0 everywhere in this codebase, and a day with a
+    perfectly good OHLC bar but a missing/null volume reading must not be
+    zero-filled (that would misrepresent "no trading" as a fact rather than
+    an unknown) — so an otherwise-valid bar keeps `v: None` in that case, and
+    only a genuinely missing/non-list `volume` array (the whole ticker's
+    volume leg failed) leaves every row's 5th element None. The OHLC drop
+    rule is unaffected by volume either way — a row's fate is decided by its
+    four price legs alone.
     """
     try:
         result = obj["chart"]["result"][0]
@@ -830,12 +923,18 @@ def _extract_yahoo_ohlc(obj) -> Optional[list[list[float]]]:
         return None
     if not all(isinstance(x, list) for x in (opens, highs, lows, closes)):
         return None
+    volumes = q.get("volume")
+    if not isinstance(volumes, list):
+        volumes = []
     n = min(len(opens), len(highs), len(lows), len(closes))
-    out: list[list[float]] = []
+    out: list[list] = []
     for i in range(n):
         row = (opens[i], highs[i], lows[i], closes[i])
-        if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in row):
-            out.append([float(v) for v in row])
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in row):
+            continue
+        vol_raw = volumes[i] if i < len(volumes) else None
+        vol = int(vol_raw) if isinstance(vol_raw, (int, float)) and not isinstance(vol_raw, bool) else None
+        out.append([float(v) for v in row] + [vol])
     return out or None
 
 
@@ -855,31 +954,45 @@ def build_bars(universe: list[str], session_date: date,
                 _get: Optional[Callable] = None) -> tuple[dict, dict[str, float]]:
     """Yahoo v8 chart API per symbol -> (bars_payload, avg_move_map).
 
-    bars_payload matches bars.json's v2 shape exactly: {"built": <session_date
-    ISO>, "v": 2, "bars": {ticker: [[o,h,l,c], ...]}} — up to BARS_MAX rows,
-    oldest first, each value rounded 2dp. avg_move_map ({ticker: float}) is a
-    SEPARATE return value for facts.*.avg_move (computed from closes only,
-    same arithmetic as before v2) — it is not part of bars.json.
+    bars_payload matches bars.json's v3 shape exactly: {"built": <session_date
+    ISO>, "v": 3, "bars": {ticker: [[o,h,l,c,v], ...]}} — up to BARS_MAX rows,
+    oldest first, o/h/l/c rounded 2dp, v an int or None (see
+    _extract_yahoo_ohlcv). avg_move_map ({ticker: float}) is a SEPARATE
+    return value for facts.*.avg_move (computed from closes only, same
+    arithmetic as before v2/v3) — it is not part of bars.json.
 
-    v2 (added 2026-08-15, Task 2): full OHLC instead of close-only. The same
-    Yahoo v8 chart call already returns open/high/low arrays alongside close
-    in indicators.quote[0] — no new source, just reading more of what was
-    already there. Consumers must accept BOTH the old v1 shape (bare number
-    arrays, no "v" key) and this v2 shape (quad-arrays, "v": 2) — see
+    v3 (added 2026-08-15, Task 2): range bumped from 1y to 2y (so the
+    frontend has enough trailing history to plot a full SMA200 line, not
+    just ~50 days of it) and a 5th `volume` element added to every row (for
+    a finviz-style volume pane) — BARS_MAX raised from 252 to 504 to match.
+    The same Yahoo v8 chart call already returns open/high/low/volume arrays
+    alongside close in indicators.quote[0] — no new source, just reading
+    more of what was already there and asking for a longer window. Consumers
+    must accept v1 (bare number arrays, no "v" key), v2 (`[o,h,l,c]` quads,
+    "v": 2), and this v3 shape (`[o,h,l,c,v]` quints, "v": 3) — see
     DATA_CONTRACT.md.
+
+    avg_move's own closes pool is explicitly re-sliced to AVG_MOVE_BASIS (252)
+    out of the (now up to 504-row) fetched series before being handed to
+    _avg_move, so doubling BARS_MAX's stored history does not change this
+    arithmetic's basis (see AVG_MOVE_BASIS's comment) — _avg_move's own
+    20-day window sits well inside either slice, so this is a defensive,
+    provably-inert guard against a future refactor accidentally coupling the
+    two, not a behavior change from before this date.
 
     0.25s sleep between calls (skips the sleep before the first). A symbol
     that fails to fetch, or returns an unusable shape, is simply absent from
     both outputs — fail-soft, never zero-filled. A single bar missing any of
     its four OHLC values is dropped rather than partially filled (see
-    _extract_yahoo_ohlc).
+    _extract_yahoo_ohlcv); a bar with valid OHLC but no volume reading keeps
+    the bar with v: None rather than 0.
     """
-    bars: dict[str, list[list[float]]] = {}
+    bars: dict[str, list[list]] = {}
     avg_move: dict[str, float] = {}
     for i, sym in enumerate(universe):
         if i > 0:
             time.sleep(BARS_SLEEP_SEC)
-        url = YAHOO_CHART_URL.format(sym=sym) + "?range=1y&interval=1d"
+        url = YAHOO_CHART_URL.format(sym=sym) + "?range=2y&interval=1d"
         headers = {"User-Agent": UA}
         try:
             raw = _http_get(url, headers, _get=_get)
@@ -887,14 +1000,15 @@ def build_bars(universe: list[str], session_date: date,
         except Exception as e:
             log(f"skip {sym}: bars fetch failed ({type(e).__name__})")
             continue
-        quads = _extract_yahoo_ohlc(obj)
-        if not quads:
+        quints = _extract_yahoo_ohlcv(obj)
+        if not quints:
             log(f"skip {sym}: no usable OHLC series")
             continue
-        quads = quads[-BARS_MAX:]
-        bars[sym] = [[round(v, 2) for v in q] for q in quads]
-        closes_only = [q[3] for q in quads]
-        mv = _avg_move(closes_only)
+        quints = quints[-BARS_MAX:]
+        bars[sym] = [[round(row[0], 2), round(row[1], 2), round(row[2], 2), round(row[3], 2), row[4]]
+                     for row in quints]
+        closes_for_avg_move = [row[3] for row in quints[-AVG_MOVE_BASIS:]]
+        mv = _avg_move(closes_for_avg_move)
         if mv is not None:
             avg_move[sym] = mv
     payload = {"built": session_date.isoformat(), "v": BARS_VERSION, "bars": bars}
@@ -990,6 +1104,12 @@ FUND_MAX_EARNINGS = 12
 _DEVALUE_SPECIAL = {-1: None, -2: float("nan"), -3: float("inf"), -4: float("-inf"), -5: -0.0}
 _PCT_RE = re.compile(r"-?\d+(?:\.\d+)?")
 _FISCAL_Q_RE = re.compile(r"^(\d)Q(\d{4})$")
+# Revenue backfill (added 2026-08-15, wave 3, Task C): Yahoo's earnings row
+# period ("Q1 2027", from _fmt_fiscal_period) vs stockanalysis.com's
+# quarterly period ("Q1 27", from _build_quarterly_series) — same quarter
+# number, year mod 100. See _backfill_earnings_revenue.
+_EARNINGS_PERIOD_RE = re.compile(r"^Q(\d)\s+(\d{4})$")
+_QUARTERLY_PERIOD_RE = re.compile(r"^Q(\d)\s+(\d{2})$")
 
 _yahoo_opener = None   # lazily-created module-level urllib opener; see _default_yahoo_get
 
@@ -1375,6 +1495,44 @@ def fetch_yahoo_fundamentals(sym: str, crumb: str, _get: Optional[Callable] = No
     return out
 
 
+def _backfill_earnings_revenue(earnings: list[dict], quarterly: dict) -> None:
+    """Mutates `earnings` IN PLACE: any row whose `rev` is still None (Yahoo's
+    financialsChart had no matching-quarter row — e.g. AXTI's oldest row,
+    2026-08-15 live) gets backfilled from the SAME symbol's already-fetched
+    stockanalysis.com `quarterly` series, matched by quarter number + fiscal
+    year mod 100 (Yahoo's "Q1 2027" vs stockanalysis's "Q1 27" — same quarter,
+    same "27").
+
+    Only `rev` is ever filled — `rev_est`/`rev_surprise_pct` are NEVER
+    invented here (stockanalysis.com's quarterly series carries reported
+    revenue only, no historical estimate, so there is nothing honest to fill
+    them with; see DATA_CONTRACT.md's note on why those two stay permanently
+    null). Fail-soft throughout: no quarterly series, an unparseable period
+    label on either side, or simply no matching quarter, and the row's `rev`
+    is left exactly as it was (None) — never guessed, never zero-filled.
+    """
+    periods = quarterly.get("periods") if isinstance(quarterly, dict) else None
+    revenues = quarterly.get("revenue") if isinstance(quarterly, dict) else None
+    if not isinstance(periods, list) or not isinstance(revenues, list):
+        return
+    by_quarter_year: dict[tuple[int, int], float] = {}
+    for period, rev in zip(periods, revenues):
+        m = _QUARTERLY_PERIOD_RE.match(period) if isinstance(period, str) else None
+        if not m or not isinstance(rev, (int, float)) or isinstance(rev, bool):
+            continue
+        by_quarter_year[(int(m.group(1)), int(m.group(2)))] = rev
+
+    for row in earnings:
+        if not isinstance(row, dict) or row.get("rev") is not None:
+            continue
+        m = _EARNINGS_PERIOD_RE.match(row.get("period")) if isinstance(row.get("period"), str) else None
+        if not m:
+            continue
+        key = (int(m.group(1)), int(m.group(2)) % 100)
+        if key in by_quarter_year:
+            row["rev"] = by_quarter_year[key]
+
+
 def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
                         earn_ts, _get: Optional[Callable] = None) -> dict:
     """One ticker's fund/{SYM}.json payload (see DATA_CONTRACT.md for the
@@ -1387,6 +1545,14 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
     the same premarket/afterhours heuristic build_catalysts uses elsewhere
     — Yahoo's calendarEvents carries no intraday time, and stockanalysis.com
     supplies its own session read separately (see fetch_sa_statistics).
+
+    Revenue backfill (added 2026-08-15, wave 3): a Yahoo earnings row whose
+    `rev` came back None (no financialsChart match for that quarter) is
+    backfilled, in place, from this same call's `quarterly` series — see
+    _backfill_earnings_revenue. Runs unconditionally at the end so it applies
+    whether or not the Yahoo leg above ran at all (an empty `earnings` list
+    is simply a no-op for the backfill, same fail-soft posture as everything
+    else in this function).
     """
     payload = {
         "built": session_date.isoformat(), "sym": sym,
@@ -1433,6 +1599,7 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
                     ne["session"] = sa_next_earnings.get("session")
             payload["next_earnings"] = ne
 
+    _backfill_earnings_revenue(payload["earnings"], payload["quarterly"])
     return payload
 
 
@@ -1483,6 +1650,7 @@ def load_context_cache() -> dict:
     return {
         "context_fetched_at": raw.get("context_fetched_at") if isinstance(raw.get("context_fetched_at"), str) else None,
         "bars_built_date": raw.get("bars_built_date") if isinstance(raw.get("bars_built_date"), str) else None,
+        "bars_sig": raw.get("bars_sig") if isinstance(raw.get("bars_sig"), str) else None,
         "avg_move": raw.get("avg_move") if isinstance(raw.get("avg_move"), dict) else {},
         "brief": raw.get("brief") if isinstance(raw.get("brief"), dict) else None,
         "catalysts": raw.get("catalysts") if isinstance(raw.get("catalysts"), list) else [],
@@ -1590,11 +1758,18 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         desk_private = cache["desk_private"]
 
     # ── once-daily bars rebuild (+ fund sidecars, same gate — Task 4) ────
+    # Gated on BOTH the date AND the build signature (added 2026-08-15,
+    # Task 2 wave 3): a sig mismatch forces a rebuild even when today's date
+    # already matches, so a code deploy that changes bars.json's shape mid-day
+    # (e.g. this same date's v2 -> v3 upgrade) doesn't keep serving whatever
+    # was already cached under today's date until midnight.
     bars_payload = None
     fund_payload = None
-    if cache.get("bars_built_date") != session_date.isoformat():
+    if (cache.get("bars_built_date") != session_date.isoformat()
+            or cache.get("bars_sig") != BARS_BUILD_SIG):
         bars_payload, new_avg_move = build_bars(pinned, session_date, _get=_get)
         cache["bars_built_date"] = bars_payload["built"]
+        cache["bars_sig"] = BARS_BUILD_SIG
         # Merge (not replace): a ticker whose fetch failed THIS rebuild keeps
         # its last-known reading rather than losing it to one bad cycle.
         merged_avg_move = {**cache.get("avg_move", {}), **new_avg_move}
