@@ -1,7 +1,24 @@
 # The Desk — Trading Dashboard Plan of Record
 
-> **Status: PROPOSED — awaiting Zach's approval.** Nothing on the live site,
-> the refresh loop, or the Morning Brief changes until he says go.
+> **Status: APPROVED — BUILD STARTED 2026-08-14 ("build it", + hover
+> explainers on every position term).** Scope note: Action List chips were
+> not answered and are EXCLUDED from this build; one sentence from Zach adds
+> them to the private layer later. The v3.3 prototype in this folder is the
+> binding spec; explainer tooltip copy lives in its TIPS object and is ported
+> verbatim.
+>
+> **Two 2-minute setups only Zach can do (page works without them; these
+> light up the brief panel and the private Position Guard):**
+> 1. `VAULT_READ_TOKEN` — GitHub avatar → Settings → Developer settings →
+>    Personal access tokens → Fine-grained tokens → Generate: name
+>    `desk-vault-read`, expiration 1 year, Repository access = Only
+>    ClaudeVault, Permissions → Contents = Read-only → Generate, copy. Then
+>    flow-desk repo → Settings → Secrets and variables → Actions → New
+>    repository secret → name `VAULT_READ_TOKEN`, paste.
+> 2. `DESK_PASSPHRASE` — pick the passphrase you'll type into the page (never
+>    send it in chat). ClaudeVault repo → Settings → Secrets and variables →
+>    Actions → New repository secret → name `DESK_PASSPHRASE`, value = the
+>    passphrase.
 > Mockup of the proposed page: `2026-08-14-trading-dashboard-mockup.html`
 > (same folder). Written 2026-08-14 by the architect session (Fable), following
 > the vault's `writing-plans` conventions at phase granularity; each phase gets

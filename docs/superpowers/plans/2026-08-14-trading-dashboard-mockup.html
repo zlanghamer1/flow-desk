@@ -596,6 +596,16 @@ const TIPS = {
   oiconf:"Did yesterday's swing-bucket volume become held open interest overnight? OPENING = new positions, CLOSING = unwound, CHURN = day-traded.",
   rel:"1-week relative strength vs SPY, in percentage points. Bars: leaders saturated, tail muted.",
   flows:"Fund flows = change in shares outstanding × NAV (creations/redemptions). Flows chase returns — context, never a signal.",
+  entry:"What you paid and when the trade opened.",
+  stop_resting:"The stop order actually sitting at the broker (good-til-canceled). Touch it and the position sells.",
+  stop_rec:"Where the trail math says the stop belongs today: highest close since entry minus 3× ATR (2× for leveraged funds). It only ratchets up, never down.",
+  raise_nag:"Your broker stop has fallen 2%+ of price behind the recommended level. Move the order up — the desk never touches your broker.",
+  trail:"Chandelier trail: highest close since entry minus a multiple of ATR — this name’s average daily range over 22 sessions. Volatile names get more room; calm names ride tighter.",
+  pnl:"Gain or loss versus your entry, before costs.",
+  trim:"Fires when a held name sits in the top 15% of its 52-week range with RSI 70+. The hot-runner profile — a flag to look, never an order.",
+  kill:"Thesis positions don’t use stops. They exit only if a named reason breaks — the kill triggers in the thesis record. This line says whether every trigger still holds.",
+  dca:"The leveraged sleeve buys on schedule while price holds above the 200-day band and pauses below it. The taxable sleeve never sells, by rule.",
+  gap:"A stop is an order, not a guarantee — price can gap straight through it overnight. Position size is the only gap defense.",
   fund:"Colored from a buyer's lens against rough thresholds: fwd P/E green under ~18 / red over ~35 (market runs ~22); short % of float green under 2% / red over 5%; dividend yield green at 2.5%+; RSI green at 35 or under (washed out) / red at 70+ (hot). A gauge, not a rating.",
   range:"Position in the 52-week range. Near the low = shopping territory, near the high = hot runner. The diamond is today.",
   hot:"Today's move divided by this name's own average daily move — Micron swinging 2% is normal, Google swinging 2% is not. Highlights at 1.8× and up.",
@@ -806,13 +816,13 @@ function renderPositions(){
   const P=D.positions,q=D.quotes;
   const rows=[];
   const mu=q.MU;
-  rows.push(`<div class="kvrow" data-sym="MU" style="cursor:pointer"><span><b style="text-align:left">MU</b> <span class="m">core · thesis</span></span><b class="u" style="font-weight:600">${P.MU.note}</b></div>
+  rows.push(`<div class="kvrow" data-sym="MU" style="cursor:pointer"><span><b style="text-align:left">MU</b> <span class="m" data-tip="${esc(TIPS.kill)}">core · thesis</span></span><b class="u" style="font-weight:600">${P.MU.note}</b></div>
   <div class="note" style="margin:0 0 4px">no stop by design — kill triggers govern thesis positions</div>`);
-  rows.push(`<div class="kvrow"><span><b style="text-align:left">UPRO</b> <span class="m">DCA sleeve</span></span><b class="u">${P.UPRO.note}</b></div>`);
-  rows.push(`<div class="kvrow"><span><b style="text-align:left">SSO</b> <span class="m">DCA sleeve</span></span><b class="m">${P.SSO.note}</b></div>`);
+  rows.push(`<div class="kvrow"><span><b style="text-align:left">UPRO</b> <span class="m" data-tip="${esc(TIPS.dca)}">DCA sleeve</span></span><b class="u">${P.UPRO.note}</b></div>`);
+  rows.push(`<div class="kvrow"><span><b style="text-align:left">SSO</b> <span class="m" data-tip="${esc(TIPS.dca)}">DCA sleeve</span></span><b class="m">${P.SSO.note}</b></div>`);
   const c=P.COHR,cq=q.COHR,pl=(cq.px/c.entry-1)*100,drift=(c.rec-c.stop)/cq.px*100;
   rows.push(`<div class="kvrow" data-sym="COHR" style="cursor:pointer"><span><b style="text-align:left">COHR</b> <span class="m">${c.sh} sh @ ${c.entry.toFixed(2)}</span></span><b class="${sign(pl)}">${fm1(pl)}%</b></div>
-  <div class="kvrow"><span>resting stop ${c.stop.toFixed(2)}</span><b class="d">RAISE → ${c.rec.toFixed(2)}</b></div>
+  <div class="kvrow"><span data-tip="${esc(TIPS.stop_resting)}">resting stop ${c.stop.toFixed(2)}</span><b class="d" data-tip="${esc(TIPS.raise_nag)}">RAISE → ${c.rec.toFixed(2)}</b></div>
   <div class="note" style="margin:0">trail math: highest close ${c.hc.toFixed(2)} − 3×ATR ${c.atr.toFixed(2)} · drift ${drift.toFixed(1)}% of price ≥ 2% ⇒ nag</div>`);
   $("#positions").innerHTML=`<b>POSITION GUARD · PRIVATE LAYER (UNLOCKED DEMO)</b>`+rows.join("")
   +`<div class="note" style="margin-top:6px">Passphrase-locked on the real page — public visitors never see this box. Stops are trail math on trades only; levels are levels, not instructions.</div>`;
@@ -957,18 +967,18 @@ function openDrawer(sym){
     </div>
     ${(()=>{const P=D.positions&&D.positions[sym];if(!P)return"";
       if(P.kind==="thesis")return `<div class="dsec"><h3>Position — core (thesis)</h3>
-        <div class="kvrow"><span>Kill triggers</span><b class="u">${P.note}</b></div>
+        <div class="kvrow"><span data-tip="${esc(TIPS.kill)}">Kill triggers</span><b class="u">${P.note}</b></div>
         <div class="note" style="margin-top:2px">Thesis positions never carry stops — triggers govern. Details live in the thesis record.</div></div>`;
-      if(P.kind==="dca")return `<div class="dsec"><h3>Position — DCA sleeve</h3><div class="kvrow"><span>Status</span><b class="u">${P.note}</b></div></div>`;
+      if(P.kind==="dca")return `<div class="dsec"><h3>Position — DCA sleeve</h3><div class="kvrow"><span data-tip="${esc(TIPS.dca)}">Status</span><b class="u">${P.note}</b></div></div>`;
       const pl=(q.px/P.entry-1)*100, dist=(q.px-P.rec)/q.px*100;
       return `<div class="dsec"><h3>Position — trade</h3>
-        <div class="kvrow"><span>Size · entry</span><b>${P.sh} sh @ ${P.entry.toFixed(2)} · ${P.opened}</b></div>
-        <div class="kvrow"><span>Open P&L</span><b class="${sign(pl)}">${fm1(pl)}%</b></div>
-        <div class="kvrow"><span>Resting stop</span><b>${P.stop.toFixed(2)}</b></div>
-        <div class="kvrow"><span>Recommended stop</span><b class="d">RAISE → ${P.rec.toFixed(2)} (${dist.toFixed(1)}% below)</b></div>
-        <div class="kvrow"><span>Trail math</span><b style="font-size:10.5px">high close ${P.hc.toFixed(2)} − 3×ATR ${P.atr.toFixed(2)}</b></div>
-        <div class="kvrow"><span>Trim watch</span><b class="m">${statsOf(sym).pos>=0.85&&q.rsi>=70?"TRIM ZONE — top of range + hot RSI":"none — levels on the chart"}</b></div>
-        <div class="note" style="margin-top:2px">Drawn on the chart above: entry + recommended stop. 50/200-day are the sell/trim reference levels.</div></div>`;})()}
+        <div class="kvrow"><span data-tip="${esc(TIPS.entry)}">Size · entry</span><b>${P.sh} sh @ ${P.entry.toFixed(2)} · ${P.opened}</b></div>
+        <div class="kvrow"><span data-tip="${esc(TIPS.pnl)}">Open P&L</span><b class="${sign(pl)}">${fm1(pl)}%</b></div>
+        <div class="kvrow"><span data-tip="${esc(TIPS.stop_resting)}">Resting stop</span><b>${P.stop.toFixed(2)}</b></div>
+        <div class="kvrow"><span data-tip="${esc(TIPS.stop_rec)}">Recommended stop</span><b class="d" data-tip="${esc(TIPS.raise_nag)}">RAISE → ${P.rec.toFixed(2)} (${dist.toFixed(1)}% below)</b></div>
+        <div class="kvrow"><span data-tip="${esc(TIPS.trail)}">Trail math</span><b style="font-size:10.5px">high close ${P.hc.toFixed(2)} − 3×ATR ${P.atr.toFixed(2)}</b></div>
+        <div class="kvrow"><span data-tip="${esc(TIPS.trim)}">Trim watch</span><b class="m">${statsOf(sym).pos>=0.85&&q.rsi>=70?"TRIM ZONE — top of range + hot RSI":"none — levels on the chart"}</b></div>
+        <div class="note" style="margin-top:2px">Drawn on the chart above: entry + recommended stop. 50/200-day are the sell/trim reference levels. <span data-tip="${esc(TIPS.gap)}">Stops are not guarantees.</span></div></div>`;})()}
     <div class="dsec"><h3><span data-tip="${esc(TIPS.fund)}">Snapshot</span></h3>
       <div class="kvrow"><span>Market cap</span><b>${q.cap||"—"}</b></div>
       <div class="kvrow"><span>P/E (fwd)</span><b class="${fundCls("pe",q)}">${q.pe||"—"}</b></div>
