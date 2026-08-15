@@ -313,6 +313,57 @@ console errors):
 | Short % of float | TV scanner first; if absent, stockanalysis/finviz as named alternates — verify before promising, fail to "—" |
 | Analyst actions history | **open** — TV carries ratings summaries but not a clean action-history feed; candidates: finviz/stockanalysis scrape or Benzinga RSS. Phase 1 verifies; if no reliable free source, the drawer section renders only what's available and says so. Display-only either way — the desk never scores off analyst opinions. |
 
+### v3.1 — final architect pass (approved-direction polish)
+
+Added to the prototype after a "what's still missing for this specific user"
+review, filtered by the prune rule:
+
+1. **Watchlist sort views** — `groups / 52w↑ / Δ% / hot` control on the rail.
+   The `52w↑` view is the value-shopping mode Zach described: lowest-in-range
+   first (CRWD, MRVL, LLY lead), hot runners sink to the bottom.
+2. **Shopping list line** in the alerts box — the three names nearest their
+   52-week lows, precomputed next to the hot movers, so both ends of his
+   "shop value / trim runners" loop are one glance.
+3. **Overnight — Asia panel** (right rail, above catalysts): KOSPI, SK Hynix
+   and Samsung in Seoul, Nikkei, TSMC in Taipei, plus a divergence read line
+   (Seoul pop vs US ADR fade). His heaviest position is MU — the Korea session
+   is the memory-complex tell that moves it premarket. Sources are already
+   routed and verified in `DATA_SOURCES.md` (TV global scanner / `fetch_tv`:
+   KRX:KOSPI, KRX:000660, KRX:005930, TVC:NI225, TWSE) — fetched once by the
+   morning context build, labeled with its session date.
+4. **Tab badge** — the browser tab shows "(2) The Desk" when hot movers are
+   active, so a parked tab signals without being opened.
+5. **Price formatting** matches his reference snippet (`1,204.10`), tabular
+   everywhere.
+
+Build-phase requirements this pass adds (plan-only, no prototype change):
+
+- **Session states**: the page must render distinct premarket / after-hours /
+  closed treatments (state chip, "as of Friday's close" labeling, next-open
+  line) — `data.json.market_state` already supplies the state.
+- **Stale-data law**: any panel older than 2× its cadence renders an amber
+  "as of <time>" badge — this repo's incident history (asof drift, dead feeds
+  rendered flat) makes silent staleness the #1 forbidden failure.
+- **Calendar export**: a "download .ics" action on the catalyst panel so
+  high-impact events land in Outlook next to his site visits (Phase 3;
+  generated client-side from the catalysts key).
+- **Install-to-phone**: a web-app manifest so the page installs as an icon on
+  his phone (Phase 3, two small files, no behavior change).
+- **Breadth-regime chip** (optional): `brief_summary.json` may carry the
+  vault's breadth-thrust regime state as one more backdrop chip — computed
+  system already exists; Zach opts in or not.
+- **Big-orders repeat flag** (Phase 3): once `history.json`'s archived boards
+  accumulate, mark contracts appearing ≥3 straight sessions.
+- **Threshold alignment note**: the dashboard's relative hot-mover rule (1.8×
+  own average) and the Watchdog's absolute D4 rule (−3% legs) measure
+  different things on purpose; if Zach later wants the Watchdog to go
+  relative, that is a registered-engine change with its own decision.
+
+Deliberately NOT added, per the prune rule: news sentiment scores, social
+feeds, level-2/tape widgets, multi-layout workspaces, alert-builder UI (the
+Watchdog already owns alerting), and any panel duplicating what the boards
+already say.
+
 ---
 
 ## Part C — Technical architecture
