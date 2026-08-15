@@ -94,6 +94,7 @@ jobs:
           # (schedule firings have no `inputs` context) -> "0".
           FORCE_ONE_CYCLE: ${{ inputs.force && '1' || '0' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VAULT_READ_TOKEN: ${{ secrets.VAULT_READ_TOKEN }}
         run: |
           set -o pipefail
           python3 fetcher/loop.py 2>&1 | tee loop_output.log

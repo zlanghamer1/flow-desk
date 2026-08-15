@@ -165,6 +165,9 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import context  # sibling module: vault brief/catalysts/news/facts + bars.json
+
 TZ_CT = ZoneInfo("America/Chicago")
 
 ROOT = Path(__file__).resolve().parent            # flow-desk/fetcher/
@@ -330,6 +333,16 @@ TV_COLUMNS = [
     "name", "close", "change", "change_from_open",
     "relative_volume_10d_calc", "market_cap_basic", "SMA20", "SMA50",
     "earnings_release_next_date",
+    # Context-layer facts (added 2026-08, see fetcher/context.py /
+    # DATA_CONTRACT.md's `facts`) — all five verified live to resolve for the
+    # whole pinned universe. Short interest was ALSO probed live (
+    # short_percent_float / short_interest_percent / short_interest /
+    # shares_short / short_percent_of_float / shares_short_prior_month /
+    # days_to_cover_short) and every candidate came back null for every
+    # ticker — the free scanner does not carry it at all, so facts.short_pct
+    # stays permanently None rather than adding a column here for it.
+    "price_52_week_high", "price_52_week_low", "beta_1_year",
+    "average_volume_10d_calc", "RSI",
 ]
 # index positions into the "d" row, named for readability
 _COL = {name: i for i, name in enumerate(TV_COLUMNS)}
@@ -401,6 +414,15 @@ def _row_to_quote(sym_field: str, d: list) -> dict | None:
         "sma20": _num(_COL["SMA20"]),
         "sma50": _num(_COL["SMA50"]),
         "earnings_ts": earnings_ts,
+        # Context-layer facts (added 2026-08) — see TV_COLUMNS above and
+        # fetcher/context.py:fetch_earnings_days, which turns these into
+        # data.json's `facts` map. Numeric-or-None, same as every other
+        # scanner field on this quote.
+        "hi52": _num(_COL["price_52_week_high"]),
+        "lo52": _num(_COL["price_52_week_low"]),
+        "beta": _num(_COL["beta_1_year"]),
+        "avol": _num(_COL["average_volume_10d_calc"]),
+        "rsi": _num(_COL["RSI"]),
     }
 
 
@@ -1510,6 +1532,20 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     except Exception as e:
         log(f"WARN etf-flows build failed: {e}")
 
+    # ── context layer: vault brief/catalysts/news/facts + daily bars ────────
+    # (added 2026-08, fetcher/context.py). Hourly-gated internally (vault/
+    # econ/news) and daily-gated (bars) via fetcher/.context_cache.json — see
+    # that module's docstring. Wrapped defensively here the same way
+    # etf_flows is just above: every individual fetch inside context.py is
+    # already fail-soft, this is belt-and-suspenders so a bug there can never
+    # take down the rest of the cycle.
+    context_fields: dict = {}
+    bars_payload = None
+    try:
+        context_fields, bars_payload = context.build_context(quotes, PINNED, session_date, now_utc)
+    except Exception as e:
+        log(f"WARN context build failed: {e}")
+
     bullish_flow = sum(1 for v in by_ticker.values() if v["direction"] == "BULL")
     bearish_flow = sum(1 for v in by_ticker.values() if v["direction"] == "BEAR")
     firing_count = sum(1 for v in by_ticker.values() if v.get("firing"))
@@ -1576,6 +1612,12 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
                            "say the same thing five times; any name that earned more rows "
                            "than it got is listed under the board. Display only."),
         },
+        # Context-layer keys (brief/catalysts/news/facts/desk_private/
+        # context_updated_at) — each OMITTED entirely when its own build had
+        # nothing to show this cycle, never present as null (see
+        # DATA_CONTRACT.md). context_fields is {} when context.build_context
+        # raised (caught above), so this is a no-op in that case.
+        **context_fields,
     }
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1583,6 +1625,17 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     tmp = data_path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
     tmp.replace(data_path)
+
+    # bars.json sidecar (added 2026-08) — only written on cycles that actually
+    # rebuilt it (see context.build_context's daily gate); loop.py's `git add
+    # -A` over OUT_DIR already covers any new file here, so this needed no
+    # loop.py change to start publishing.
+    if bars_payload is not None:
+        bars_path = out_dir / "bars.json"
+        bars_tmp = bars_path.with_suffix(".json.tmp")
+        bars_tmp.write_text(json.dumps(bars_payload, indent=2), encoding="utf-8")
+        bars_tmp.replace(bars_path)
+        log(f"wrote {bars_path} ({bars_path.stat().st_size} bytes)")
 
     if write_history:
         save_history(out_dir, history)

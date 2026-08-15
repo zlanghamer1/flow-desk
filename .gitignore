@@ -2,6 +2,7 @@
 data/
 verify/
 fetcher/.prev_cycle.json
+fetcher/.context_cache.json
 __pycache__/
 *.pyc
 docs-preview/

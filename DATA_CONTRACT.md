@@ -1,4 +1,4 @@
-# data.json / history.json contract (authoritative — builders #1 and #2 both obey this)
+# data.json / history.json / bars.json contract (authoritative — builders #1 and #2 both obey this)
 
 The fetcher writes `data.json` and `history.json` to the `data` branch. The
 frontend reads `data.json` only (history is internal to the fetcher). All
@@ -73,9 +73,181 @@ string sentinel). All strings are already plain (frontend still escapes on rende
     "oi_confirm": "…methodology one-liner for OI-confirm…",
     "etf_flows": "…methodology one-liner for the semi ETF flows card…",
     "big_orders": "…methodology one-liner for the biggest-orders board…"
+  },
+  "brief": { "...": "...", "stale": false },   // OPTIONAL — see note below
+  "catalysts": [ <Catalyst>, ... ],             // OPTIONAL — see note below
+  "news": { "items": [ <NewsItem>, ... ], "rotation_banner": false },  // OPTIONAL
+  "facts": { "MU": { "hi52": null, "...": "..." } },  // OPTIONAL
+  "desk_private": { "v": 1 },                    // OPTIONAL, opaque — see note below
+  "context_updated_at": "2026-08-15T14:32:00Z"   // OPTIONAL — see note below
+}
+```
+
+> **All six keys above are OPTIONAL and were added in the context-layer build
+> (2026-08).** Absent on old snapshots and the site renders nothing for a
+> missing key — the same "old readers keep working" rule every prior addition
+> in this file follows. Each is OMITTED entirely (not present as a key) when
+> its own build produced nothing that cycle, never present with a `null`/`{}`
+> placeholder — a caller checks `"brief" in data`, not `data["brief"] is not
+> None`, except `desk_private` which is a true nullable passthrough (see below).
+>
+> **`brief`** — a verbatim passthrough of the vault's
+> `market-data/data/brief_summary.json` (ClaudeVault repo, fetched read-only
+> over the GitHub raw-content API), with exactly one field the loop adds
+> itself: `"stale"` (bool) — true when the brief's own `date` field is older
+> than the last completed trading day, computed the same way
+> `build_snapshot.py` computes `session_date`. Every other key inside `brief`
+> is whatever `brief_summary.json` contains that cycle, unmodified — this
+> contract does not pin its inner shape, because the loop never inspects it
+> beyond the one `date` field needed for `stale`. Fetched on the hourly gate
+> (see `fetcher/.context_cache.json` below), not every cycle.
+>
+> **`catalysts`** — a merged, date-sorted list of upcoming market events: TV's
+> economic calendar (next 28 days), the vault's hand-kept
+> `market-data/data/econ_calendar.csv` (WINS on same-day+similar-title
+> conflicts — it is Zach's verified source, not TV's raw feed), one row per
+> pinned ticker's next known earnings date, the vault's
+> `market-data/data/memory_events.csv` rows, and locally-computed options-
+> expiration (OpEx) rows (third-Friday-of-month = MEDIUM "Monthly options
+> expiration", other Fridays = LOW "Weekly options expiration", quarter-end =
+> MEDIUM). **Anchors are the one exception to the 28-day window**: the next
+> FOMC rate decision and the next CPI print are always included even when they
+> fall past the 28-day horizon, and so is each pinned name's next earnings
+> date — all three marked `"anchor": true` — because a name popping up on a
+> board with an earnings date 40 days out is exactly when Zach wants the
+> catalyst visible, not dropped for being outside an arbitrary window.
+>
+> > **Importance floor:** TradingView econ rows below MEDIUM are dropped at
+> fetch — the raw feed carries hundreds of LOW auction/release rows per month
+> and the rail is curated by design. `"LOW"` therefore appears only on
+> market-calendar rows (weekly OpEx) or rows the hand-kept CSV mirror
+> deliberately carries.
+
+### Catalyst
+> ```json
+> {
+>   "date": "2026-09-16",            // YYYY-MM-DD
+>   "time_ct": "13:00",               // HH:MM 24h, America/Chicago; best-effort —
+>                                     // null when the source gives no time (e.g. some
+>                                     // memory_events.csv rows)
+>   "title": "FOMC Rate Decision + Summary of Economic Projections (dot plot)",
+>   "importance": "HIGH",             // "HIGH" | "MEDIUM" | "LOW"
+>   "kind": "econ",                   // "econ" | "earnings" | "memory" | "market"
+>   "ticker": null,                   // set for "earnings" rows and memory rows whose
+>                                     // scope looks like a US ticker; else null
+>   "session": null,                  // "premarket" | "afterhours" | null — only ever
+>                                     // populated on "earnings" rows, only when
+>                                     // derivable from TV's earnings timestamp
+>   "forecast": null,                 // econ rows only (TV/csv "forecast"); else null
+>   "prior": null,                    // econ rows only (TV/csv "previous"); else null
+>   "actual": null,                   // econ rows only, filled in once the print
+>                                     // lands; else null
+>   "anchor": false,                  // true = kept past the 28-day window (see above)
+>   "source": "tv_calendar"           // "econ_calendar" | "tv_calendar" | "tv_earnings"
+>                                     // | "memory_events" | "market_calendar"
+> }
+> ```
+>
+> **`news`** — up to 20 items total (not per ticker) across the pinned
+> universe, newest first, pulled from TradingView's per-symbol news endpoint.
+> `rotation_banner` is true when at least 2 of the scanned titles carry
+> rotation/derisking language — the identical keyword list the morning brief's
+> headline scan uses (`market-data/morning-report/sections/headlines.py`,
+> `ROTATION_KEYWORDS`), copied into `fetcher/context.py` with a comment naming
+> that source so the two lists can't silently drift apart. Display only.
+>
+> ### NewsItem
+> ```json
+> {"ticker": "MU", "title": "...", "ts": "2026-08-15T14:02:00Z", "url": "https://..."}
+> ```
+>
+> **`facts`** — per pinned ticker, one row of reference numbers riding along
+> on the scanner batch-quote call `build_universe()` already makes every
+> cycle (no separate fetch, no gate). A ticker absent from `quotes` that
+> cycle (self-healing exchange probe found nothing) is simply absent from
+> `facts` too.
+>
+> ### Facts entry
+> ```json
+> {
+>   "hi52": 1255.0,          // TV price_52_week_high; null if TV omits it
+>   "lo52": 113.46,          // TV price_52_week_low; null if TV omits it
+>   "cap": 1097386086649.25, // TV market_cap_basic; null if TV omits it
+>   "beta": 3.0174081,       // TV beta_1_year; null if TV omits it
+>   "avol": 34379166.7,      // TV average_volume_10d_calc; null if TV omits it
+>   "short_pct": null,       // ALWAYS null. Live-probed 2026-08 across every pinned
+>                            // name: short_percent_float, short_interest_percent,
+>                            // short_interest, shares_short, short_percent_of_float,
+>                            // shares_short_prior_month, days_to_cover_short — every
+>                            // candidate column returned null for every ticker (the
+>                            // scanner accepts unknown column names silently rather
+>                            // than erroring, so a typo can't be told apart from a
+>                            // real-but-empty field; several tickers were cross-
+>                            // checked to rule that out). TradingView's free scanner
+>                            // does not carry short interest at all — DATA_SOURCES.md
+>                            // already routes that need to Yahoo quoteSummary
+>                            // (`sharesShort`/`shortPercentOfFloat`), a second vendor
+>                            // this build deliberately did not wire in. The key stays
+>                            // present so the frontend has a stable field to check
+>                            // for rather than a key that might appear later; never
+>                            // rendered as 0.
+>   "earn_days": 45,         // calendar days, session_date -> TV earnings_release_next_date;
+>                            // null if TV has no date on file, or the date is in the past
+>   "rsi": 56.3,             // TV RSI; null if TV omits it
+>   "avg_move": 3.45         // mean(|daily % change|) over the last 20 closes in
+>                            // bars.json, 2dp. Populated only after bars.json has
+>                            // built at least once for this ticker; recomputed once
+>                            // per day alongside the bars rebuild (see bars.json
+>                            // below) and carried forward on the other ~50 cycles/day
+>                            // via fetcher/.context_cache.json — a deliberately
+>                            // day-stale reading, not a live one.
+> }
+> ```
+>
+> **`desk_private`** — omitted, same as the other five keys, whenever the
+> vault fetch has nothing to report (no token, 404, bad JSON); present as
+> `{"v": 1, ...}` — an encrypted blob passed through **verbatim** from the
+> vault's `market-data/data/desk_private.enc.json` — whenever the fetch
+> succeeds. The loop republishes the parsed JSON byte-for-byte; it never
+> decrypts, inspects, or validates the payload's contents — only Zach's own
+> client-side key can read it.
+>
+> **`context_updated_at`** — UTC ISO8601, the last time the hourly-gated
+> vault/econ/news fetch actually ran — **not** this cycle's `generated_at`.
+> `facts` (ungated) is always as fresh as the current cycle; `bars.json`
+> carries its own `built` date; this timestamp is `brief`/`catalysts`/`news`/
+> `desk_private`'s freshness signal, since those four can be up to ~55 minutes
+> older than the snapshot they're riding in.
+
+## bars.json (published beside data.json on the `data` branch)
+
+A sidecar file for the pinned universe's daily close history, written in the
+same publish step `loop.py` already uses for data.json/history.json —
+`loop.py`'s `git add -A` over `OUT_DIR` picks up any new file there, so
+shipping this required no `loop.py` change. Built **at most once per calendar
+day** (see `fetcher/.context_cache.json` below): it is daily-bar history, so
+refetching it every ~7-minute cycle would be pure waste against Yahoo for no
+benefit.
+
+```json
+{
+  "built": "2026-08-15",
+  "bars": {
+    "MU": [113.46, 114.02, "...", 971.66]
   }
 }
 ```
+
+- `built` — session date (`YYYY-MM-DD`) this file was last (re)built.
+- `bars` — per pinned ticker (`build_snapshot.PINNED`), up to 252 daily
+  closes, **oldest first**, rounded 2dp. Source: Yahoo's v8 chart API
+  (`query1.finance.yahoo.com/v8/finance/chart/<SYM>?range=1y&interval=1d`). A
+  ticker whose fetch failed is simply absent from `bars` — fail-soft, never
+  zero-filled or backfilled from a stale value.
+
+`facts.*.avg_move` (see above) is derived from this same fetch — mean of
+`abs(daily % change)` over each ticker's last 20 closes — but that reading is
+published in `data.json`'s `facts`, not duplicated here.
 
 > **Note on `etf_flows`:** this is a once-per-session CONTEXT signal, not a
 > scoring input — it never touches the conviction/swing scores. Daily flow is
@@ -314,6 +486,33 @@ flows drives the firing accel check; vols is the per-contract baseline for the
 aggressor-tilt volume deltas (same session only — after a workflow restart the
 first cycle contributes no tilt, by design). Legacy flat {ticker: net_flow}
 files are still readable.
+
+`fetcher/.context_cache.json` (job-local, gitignored, NOT part of the data
+branch — same pattern as `.prev_cycle.json` above, deliberately kept as a
+SEPARATE file so the context layer's read/write lifecycle inside one
+`run_cycle` can never clobber build_snapshot's own prev-cycle write, or vice
+versa):
+```json
+{
+  "context_fetched_at": "2026-08-15T14:32:00Z",
+  "bars_built_date": "2026-08-15",
+  "avg_move": {"MU": 3.45},
+  "brief": {"...": "..."},
+  "catalysts": [ "..." ],
+  "news": {"items": [], "rotation_banner": false},
+  "desk_private": null
+}
+```
+Drives two independent gates: the vault/econ/news fetch runs only when
+`context_fetched_at` is missing or >55 minutes stale; the Yahoo bars fetch
+runs only when `bars_built_date` differs from today's session date.
+`brief`/`catalysts`/`news`/`desk_private` hold the LAST successfully fetched
+values (not just gate metadata) so data.json's fields keep publishing on the
+~50 cycles/day that skip the hourly fetch, instead of flickering in and out
+every hour; `avg_move` does the same job for `facts.*.avg_move` across the
+cycles that skip the daily bars rebuild. Fail-soft: a missing or corrupt file
+reads as "never fetched, never built" — worst case one extra fetch that
+cycle, never a crash.
 
 ## Symbol hygiene (fetcher)
 Skip TV tickers containing `/`, `.`, `-` (preferred shares, warrants, units).
