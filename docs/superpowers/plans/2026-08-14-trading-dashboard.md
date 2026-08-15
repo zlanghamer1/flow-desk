@@ -275,6 +275,44 @@ sparklines with endpoint markers.
 10. **Watchdog status chip** in the rail — alerts summarized where attention
     lands, not another panel. (TraderTV: alerts replace staring.)
 
+### v3 — Zach's second review (same day)
+
+Six changes, all implemented and re-verified (both widths, both themes, zero
+console errors):
+
+1. **Core Five retired as a panel.** The five names live in the watchlist rail
+   like everything else; their levels/RSI detail lives in the drawer.
+2. **Watchlist = his full TradingView list, leveraged ETFs excluded**
+   (SOXL / SOXS / MUU out by rule — the flow boards still scan them; the rail
+   says so). Groups: Watchlist / Semis & Memory / Mega cap & Energy — 26 names.
+3. **52-week range bar on every rail row** — track, filled-to-current, diamond
+   marker, lo/hi labels — for shopping value (CRWD at 17% of range) and
+   spotting hot runners (AXTI at 93%) at a glance. Repeated large in the
+   drawer with a "position in range" line.
+4. **Relative movers, not absolute** — a name highlights only when today's
+   move is ≥1.8× its OWN average daily move (MU's 2% is normal; GOOGL's 2% is
+   an event). Amber tag shows the multiple; the rail's Movers box lists them
+   with the "vs usual" arithmetic spelled out. Threshold is one tunable
+   constant.
+5. **Drawer chart upgrades** — segments now 1D/1W/1M/3M/6M/1Y; a chip states
+   the % change over the selected segment; dashed 50-day and 200-day overlays
+   draw on the chart with a legend stating distance from each ("+7.5% vs
+   50-day · +33.8% vs 200-day").
+6. **Analyst actions + fundamentals snapshot in the drawer** — actions table
+   (date, action pill, firm, rating change, target change, colored by
+   direction) and a snapshot block (market cap, fwd P/E, short % of float,
+   beta, avg volume, dividend yield, avg daily move, next earnings, RVOL).
+
+**New data these features need (Phase 1 verification list):**
+
+| Need | Source plan |
+|---|---|
+| 52-week high/low, market cap, beta, avg volume | TV scanner fields (`price_52_week_high/low`, `market_cap_basic`, …) — same batch call the loop already makes; confirm exact field names in the Phase 1 probe |
+| Average daily move (relative-mover base) | computed by the loop from cached daily bars (20-session mean of abs % change) — no new source |
+| Daily closes for drawer charts + 50/200-day MAs | loop publishes a `bars.json` (≈260 closes per rail name, built via the existing `fetch_tv` websocket pattern); client computes MAs and segment % |
+| Short % of float | TV scanner first; if absent, stockanalysis/finviz as named alternates — verify before promising, fail to "—" |
+| Analyst actions history | **open** — TV carries ratings summaries but not a clean action-history feed; candidates: finviz/stockanalysis scrape or Benzinga RSS. Phase 1 verifies; if no reliable free source, the drawer section renders only what's available and says so. Display-only either way — the desk never scores off analyst opinions. |
+
 ---
 
 ## Part C — Technical architecture

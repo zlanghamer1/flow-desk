@@ -100,7 +100,7 @@ a{color:var(--acc);text-decoration:none}
 .tp svg{grid-column:1/3;width:100%;height:18px;margin-top:3px}
 
 /* ============ columns ============ */
-.cols{display:grid;grid-template-columns:236px minmax(0,1fr) 332px}
+.cols{display:grid;grid-template-columns:252px minmax(0,1fr) 332px}
 .wl{border-right:1px solid var(--edge)}
 .rr{border-left:1px solid var(--edge)}
 .mid{min-width:0}
@@ -120,20 +120,26 @@ section.closed .sb{display:none}
 @media (prefers-reduced-motion: reduce){ .sh .car{transition:none} }
 
 /* ============ watchlist rail ============ */
-.wg{padding:7px 14px 3px;font-size:9.5px;letter-spacing:.13em;color:var(--ink3);font-weight:700}
-.wr{
-  display:grid;grid-template-columns:52px 1fr 58px 46px;gap:8px;align-items:center;
-  padding:5px 14px;cursor:pointer;border-left:2px solid transparent;
-}
+.wg{padding:8px 14px 3px;font-size:9.5px;letter-spacing:.13em;color:var(--ink3);font-weight:700}
+.wr{display:block;padding:6px 14px 4px;cursor:pointer;border-left:2px solid transparent}
 .wr:hover{background:var(--sel)}
 .wr.foc{border-left-color:var(--acc);background:var(--sel)}
+.wr.hot{box-shadow:inset 2px 0 0 var(--hi)}
+.wr .l1{display:flex;align-items:baseline;gap:7px}
 .wr .sy{font-weight:700;font-size:12px}
-.wr .meta{font-size:9.5px;color:var(--ink3)}
-.wr svg{width:100%;height:16px}
+.wr .meta{font-size:9px;color:var(--ink3);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wr .px{font-size:11.5px;text-align:right}
-.wr .ch{font-size:11px;font-weight:650;text-align:right}
-.alertbox{margin:10px 14px;border:1px solid var(--edge);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--ink2);background:var(--srf2)}
+.wr .ch{font-size:11px;font-weight:650;text-align:right;min-width:44px}
+.hotb{font-size:8.5px;font-weight:700;color:var(--hi);background:var(--hibg);border-radius:3px;padding:0 4px;letter-spacing:.03em}
+.rb{position:relative;height:4px;border-radius:2px;background:var(--edge);margin:7px 0 13px}
+.rb i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--up);opacity:.5}
+.rb b{position:absolute;top:50%;width:7px;height:7px;background:var(--ink);transform:translate(-50%,-50%) rotate(45deg);border-radius:1px}
+.rb .lo,.rb .hi{position:absolute;top:7px;font-size:8.5px;color:var(--ink3)}
+.rb .hi{right:0}
+.wlnote{padding:4px 14px 8px;font-size:9.5px;color:var(--ink3)}
+.alertbox{margin:8px 14px 12px;border:1px solid var(--edge);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--ink2);background:var(--srf2)}
 .alertbox b{display:block;font-size:9.5px;letter-spacing:.12em;color:var(--ink3);margin-bottom:3px}
+.alertbox .hm2{color:var(--hi);font-weight:650}
 
 /* ============ brief ============ */
 .verdict{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
@@ -167,8 +173,7 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .sy2{font-weight:700}
 .pill{font-size:9px;font-weight:700;letter-spacing:.07em;border-radius:3px;padding:1.5px 5px}
 .pill.b{color:var(--up);background:var(--upbg)} .pill.s{color:var(--dn);background:var(--dnbg)}
-.pill.f{color:var(--hi);background:var(--hibg)}
-.bar{display:inline-block;height:7px;border-radius:2px;vertical-align:middle}
+.pill.f{color:var(--hi);background:var(--hibg)} .pill.n{color:var(--ink2);background:var(--srf2);border:1px solid var(--edge)}
 .dvg{position:relative;display:inline-block;width:120px;height:8px;vertical-align:middle}
 .dvg i{position:absolute;top:0;bottom:0;left:50%;border-radius:2px}
 .dvg em{position:absolute;top:-2px;bottom:-2px;left:50%;width:1px;background:var(--edge)}
@@ -210,29 +215,44 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 
 /* ============ drawer ============ */
 .drawer{
-  position:fixed;top:0;right:0;bottom:0;width:min(400px,100vw);z-index:60;background:var(--srf);
+  position:fixed;top:0;right:0;bottom:0;width:min(430px,100vw);z-index:60;background:var(--srf);
   border-left:1px solid var(--edge);box-shadow:-18px 0 40px rgba(0,0,0,.35);
   transform:translateX(102%);visibility:hidden;
   transition:transform .18s ease,visibility 0s .18s;overflow-y:auto;
 }
 .drawer.open{transform:none;visibility:visible;transition:transform .18s ease}
 @media (prefers-reduced-motion: reduce){ .drawer{transition:none} }
-.dh{display:flex;align-items:baseline;gap:10px;padding:14px 16px 6px;position:sticky;top:0;background:var(--srf);border-bottom:1px solid var(--edge2)}
+.dh{display:flex;align-items:baseline;gap:10px;padding:14px 16px 6px;position:sticky;top:0;background:var(--srf);border-bottom:1px solid var(--edge2);z-index:2}
 .dh .sy{font-size:19px;font-weight:750}
 .dh .px{font-size:15px}
 .dh .ch{font-size:12px;font-weight:650}
 .dh .x{margin-left:auto;color:var(--ink3);font-size:16px;padding:2px 8px}
 .dsec{padding:10px 16px;border-bottom:1px solid var(--edge2)}
 .dsec h3{font-size:9.5px;letter-spacing:.13em;color:var(--ink3);text-transform:uppercase;margin-bottom:7px}
-.seg{display:inline-flex;border:1px solid var(--edge);border-radius:6px;overflow:hidden;margin-bottom:8px}
-.seg button{font-size:10.5px;padding:3px 10px;color:var(--ink2);border-right:1px solid var(--edge)}
+.seg{display:inline-flex;border:1px solid var(--edge);border-radius:6px;overflow:hidden}
+.seg button{font-size:10.5px;padding:3px 9px;color:var(--ink2);border-right:1px solid var(--edge)}
 .seg button:last-child{border-right:none}
 .seg button[aria-pressed="true"]{color:var(--acc);background:var(--accbg)}
+.segrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.pchip{font-size:10.5px;font-weight:700;border-radius:4px;padding:2px 7px}
+.pchip.u{background:var(--upbg)} .pchip.d{background:var(--dnbg)}
 .chart{position:relative}
-.chart svg{width:100%;height:130px;display:block}
+.chart svg{width:100%;height:150px;display:block}
 .xh{position:absolute;pointer-events:none;display:none;font-size:10px;background:var(--srf2);border:1px solid var(--edge);border-radius:4px;padding:3px 7px;white-space:nowrap;z-index:5}
+.leg{display:flex;gap:12px;font-size:9.5px;color:var(--ink3);margin-top:5px;flex-wrap:wrap}
+.leg i{display:inline-block;width:12px;border-top:2px solid var(--ink2);vertical-align:middle;margin-right:4px}
+.leg i.p{border-top:2px solid var(--acc)}
+.leg i.d50{border-top:2px dashed var(--acc)}
+.leg i.d200{border-top:2px dashed var(--ink3)}
 .kvrow{display:flex;justify-content:space-between;gap:14px;font-size:11.5px;padding:3px 0;color:var(--ink3)}
 .kvrow b{color:var(--ink);font-weight:600;text-align:right}
+.rb.big{height:6px;margin:10px 0 16px}
+.rb.big b{width:9px;height:9px}
+.rb.big .lo,.rb.big .hi{top:9px;font-size:9.5px}
+table.an{font-size:10.5px}
+table.an th{font-size:8.5px;padding:4px 6px}
+table.an td{padding:4px 6px;white-space:normal}
+table.an td:nth-child(3){color:var(--ink2)}
 
 /* ============ palette ============ */
 .pal{position:fixed;inset:0;z-index:80;display:none;background:rgba(6,8,10,.55);backdrop-filter:blur(2px)}
@@ -247,21 +267,22 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 
 /* ============ tooltip ============ */
 .tipb{position:fixed;z-index:90;max-width:280px;background:var(--srf2);border:1px solid var(--edge);border-radius:6px;padding:7px 10px;font-size:11px;color:var(--ink2);display:none;box-shadow:0 8px 24px rgba(0,0,0,.35)}
-[data-tip]{cursor:help;border-bottom:1px dotted var(--ink3)}
+[data-tip]{cursor:help}
+span[data-tip],.rl[data-tip]{border-bottom:1px dotted var(--ink3)}
 
 /* ============ footer ============ */
 footer{padding:12px 16px 26px;font-size:10.5px;color:var(--ink3);line-height:1.7}
 footer b{color:var(--ink2)}
 
 /* ============ responsive ============ */
-@media (max-width:1240px){ .cols{grid-template-columns:210px minmax(0,1fr)} .rr{grid-column:1/3;border-left:none;border-top:1px solid var(--edge)} .rr .inner{columns:2;column-gap:28px} }
+@media (max-width:1240px){ .cols{grid-template-columns:224px minmax(0,1fr)} .rr{grid-column:1/3;border-left:none;border-top:1px solid var(--edge)} .rr .inner{columns:2;column-gap:28px} }
 @media (max-width:900px){
   .rail{flex-wrap:wrap;row-gap:6px}
   .rail .grow{display:none}
   .kbtn{margin-left:auto}
   .cols{grid-template-columns:1fr}
   .wl{border-right:none}
-  .wl .wrs{display:grid;grid-template-columns:1fr 1fr}
+  .wl .wrs{display:grid;grid-template-columns:1fr 1fr;column-gap:8px}
   .rr .inner{columns:1}
   .kbtn{min-width:0}
   .kbtn span{display:none}
@@ -277,6 +298,7 @@ footer b{color:var(--ink2)}
   td .nm{display:none}
   .dvg{width:70px}
   .rl.clock{display:none}
+  .sh .st{display:none}
 }
 </style>
 </head>
@@ -309,7 +331,8 @@ footer b{color:var(--ink2)}
     <!-- ======= watchlist rail ======= -->
     <aside class="wl">
       <div class="wrs" id="wl"></div>
-      <div class="alertbox"><b>WATCHDOG</b>quiet today · last alert Tue: MU −3.1% leg (D4) · alerts land by email, logged here</div>
+      <div class="wlnote">leveraged ETFs (SOXL · SOXS · MUU) excluded by rule — flow boards still scan them</div>
+      <div class="alertbox" id="alerts"></div>
     </aside>
 
     <!-- ======= middle ======= -->
@@ -362,7 +385,7 @@ footer b{color:var(--ink2)}
         <b>Honesty box</b> — options data is 15-minute-delayed CBOE; prices are live TradingView. Net flow is premium
         changing hands; free data can't see buyer vs seller. FLOW % describes what traded today, not what happens next.
         Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
-        Nothing here is financial advice.<br>
+        Analyst actions are third-party opinions, shown for reference. Nothing here is financial advice.<br>
         Freshness: prices 30s · flow boards ~7 min (8:00–15:20 CT) · brief daily 6:23 AM · catalysts hourly.
         Personal data (positions, stops, action list) stays off this public page.
       </footer>
@@ -397,7 +420,7 @@ footer b{color:var(--ink2)}
 
 <script>
 /* =================== sample data (all fake, dated Fri 2026-08-14) =================== */
-const NOW = new Date(2026, 7, 14, 9, 47, 12); // desk clock for the mockup
+const NOW = new Date(2026, 7, 14, 9, 47, 12);
 const D = {
   tape: [
     {s:"SPY",  n:"S&P 500",   px:644.82, ch:+0.31, seed:11, drift:+1},
@@ -409,42 +432,62 @@ const D = {
     {s:"WTI",  n:"CRUDE",     px:63.85,  ch:-1.10, seed:17, drift:-1, neutral:true},
     {s:"DXY",  n:"DOLLAR",    px:97.62,  ch:+0.05, seed:18, drift:0,  neutral:true},
   ],
+  /* Zach's full TradingView list, leveraged ETFs excluded (SOXL/SOXS/MUU) */
   groups: [
-    {g:"CORE FIVE", syms:["GOOGL","MU","TSM","NVDA","AMZN"]},
-    {g:"WATCHLIST", syms:["CRWD","COHR","LLY","V","XOM","AXTI","TSEM","AVGO","SKHY"]},
-    {g:"ETFS", syms:["SMH","SOXL","XLE","XLK"]},
+    {g:"WATCHLIST", syms:["MU","CRWD","COHR","LLY","V","XOM","AXTI","TSEM"]},
+    {g:"SEMIS & MEMORY", syms:["NVDA","AVGO","AMD","TSM","MRVL","LITE","CAMT","ONTO","SKHY","SNDK","DRAM","RAM","SMH"]},
+    {g:"MEGA CAP & ENERGY", syms:["GOOGL","MSFT","AMZN","META","CVX"]},
   ],
+  /* av = this name's average absolute daily move %, the base for relative-move alerts.
+     drift shapes the fake 1-year series (where it sits in its 52w range). */
   quotes: {
-    GOOGL:{n:"Alphabet",px:206.44,ch:+0.3,rvol:0.7,earn:75,seed:21, core:{v50:+2.1,v200:+8.0,rsi:58,bask:-1.2}},
-    MU:{n:"Micron",px:921.40,ch:+2.6,rvol:1.8,earn:46,seed:22, core:{v50:+6.9,v200:+31.2,rsi:67,bask:+9.4}},
-    TSM:{n:"TSMC",px:243.10,ch:+0.5,rvol:0.8,earn:62,seed:23, core:{v50:+1.4,v200:+11.6,rsi:55,bask:-2.6}},
-    NVDA:{n:"NVIDIA",px:201.88,ch:+1.2,rvol:1.2,earn:12,seed:24, core:{v50:+3.8,v200:+18.9,rsi:61,bask:+1.9}},
-    AMZN:{n:"Amazon",px:247.62,ch:+0.8,rvol:0.9,earn:76,seed:25, core:{v50:-0.8,v200:+5.3,rsi:48,bask:-4.1}},
-    CRWD:{n:"CrowdStrike",px:121.84,ch:-1.1,rvol:1.2,earn:13,seed:26},
-    COHR:{n:"Coherent",px:88.36,ch:+1.9,rvol:1.1,earn:null,seed:27},
-    LLY:{n:"Eli Lilly",px:1204.10,ch:-0.4,rvol:0.8,earn:null,seed:28},
-    V:{n:"Visa",px:356.22,ch:+0.2,rvol:0.7,earn:68,seed:29},
-    XOM:{n:"Exxon",px:111.48,ch:-1.3,rvol:1.0,earn:77,seed:30},
-    AXTI:{n:"AXT Inc",px:4.86,ch:+4.2,rvol:2.3,earn:62,seed:31},
-    TSEM:{n:"Tower Semi",px:52.14,ch:+0.9,rvol:0.9,earn:null,seed:32},
-    AVGO:{n:"Broadcom",px:391.20,ch:+0.6,rvol:0.8,earn:20,seed:33},
-    SKHY:{n:"SK Hynix ADR",px:31.76,ch:-1.8,rvol:1.5,earn:70,seed:34},
-    SMH:{n:"Semis ETF",px:291.34,ch:+1.6,rvol:1.3,earn:null,seed:35},
-    SOXL:{n:"Semis 3x",px:38.42,ch:+3.4,rvol:1.4,earn:null,seed:36},
-    XLE:{n:"Energy",px:84.12,ch:-1.2,rvol:1.0,earn:null,seed:37},
-    XLK:{n:"Technology",px:262.90,ch:+0.7,rvol:0.9,earn:null,seed:38},
-    QQQ:{n:"NASDAQ 100",px:689.14,ch:+0.52,rvol:1.1,earn:null,seed:12},
-    MSFT:{n:"Microsoft",px:558.40,ch:+0.4,rvol:0.8,earn:75,seed:39},
-    META:{n:"Meta",px:812.55,ch:+0.9,rvol:0.9,earn:76,seed:40},
-    XLP:{n:"Staples",px:78.4,ch:+0.1,rvol:0.8,earn:null,seed:41},
-    XLU:{n:"Utilities",px:82.9,ch:+0.2,rvol:0.9,earn:null,seed:42},
-    XLV:{n:"Health care",px:142.2,ch:-0.2,rvol:0.8,earn:null,seed:43},
-    XLC:{n:"Comm svcs",px:112.8,ch:+0.3,rvol:0.7,earn:null,seed:44},
-    XLI:{n:"Industrials",px:148.6,ch:0.0,rvol:0.7,earn:null,seed:45},
-    XLY:{n:"Discretionary",px:231.5,ch:-0.4,rvol:0.8,earn:null,seed:46},
-    XLF:{n:"Financials",px:54.7,ch:-0.3,rvol:0.7,earn:null,seed:47},
-    XLB:{n:"Materials",px:92.3,ch:-0.5,rvol:0.8,earn:null,seed:48},
-    XLRE:{n:"Real estate",px:42.1,ch:-0.6,rvol:0.9,earn:null,seed:49},
+    MU:{n:"Micron",px:921.40,ch:+2.6,rvol:1.8,earn:46,seed:22,av:1.3,drift:+3.2,cap:"$1.03T",pe:"14.2",spct:"2.4%",beta:"1.5",avol:"21.3M",yld:"0.5%",
+      an:[["Today","Initiated","Jefferies","Buy","$1,150",0],["Aug-05-26","PT Raise","Citi","Buy","$980 → $1,050",1],["Jul-18-26","Upgrade","Morgan Stanley","Equal-Wt → Overweight","$890",1],["Jun-26-26","Reiterated","KeyBanc","Overweight","$960",0]]},
+    CRWD:{n:"CrowdStrike",px:121.84,ch:-1.1,rvol:1.2,earn:13,seed:26,av:1.4,drift:-0.6,cap:"$76.4B",pe:"88.0",spct:"1.9%",beta:"1.2",avol:"5.8M",yld:null,
+      an:[["Aug-13-26","Downgrade","Piper Sandler","Overweight → Neutral","$135 → $118",-1],["Aug-13-26","Downgrade","BTIG","Buy → Neutral","—",-1],["May-20-26","PT Raise","Wedbush","Outperform","$115 → $130",1]]},
+    COHR:{n:"Coherent",px:88.36,ch:+1.9,rvol:1.1,earn:null,seed:27,av:1.6,drift:+1.0,cap:"$13.7B",pe:"21.4",spct:"3.8%",beta:"1.6",avol:"3.1M",yld:null,
+      an:[["Aug-14-26","PT Raise","B. Riley","Buy","$92 → $104",1],["Jul-02-26","Initiated","William Blair","Outperform","—",0],["Mar-11-26","Upgrade","JPMorgan","Neutral → Overweight","$81",1]]},
+    LLY:{n:"Eli Lilly",px:1204.10,ch:-0.4,rvol:0.8,earn:null,seed:28,av:1.1,drift:-1.2,cap:"$1.09T",pe:"32.1",spct:"0.8%",beta:"0.4",avol:"3.4M",yld:"0.9%"},
+    V:{n:"Visa",px:356.22,ch:+0.2,rvol:0.7,earn:68,seed:29,av:0.8,drift:+0.5,cap:"$700B",pe:"28.3",spct:"1.1%",beta:"0.9",avol:"6.2M",yld:"0.7%"},
+    XOM:{n:"Exxon",px:111.48,ch:-1.3,rvol:1.0,earn:77,seed:30,av:0.9,drift:-1.6,cap:"$470B",pe:"13.4",spct:"1.3%",beta:"0.7",avol:"14.8M",yld:"3.6%"},
+    AXTI:{n:"AXT Inc",px:4.86,ch:+4.2,rvol:2.3,earn:62,seed:31,av:1.6,drift:+2.4,cap:"$214M",pe:null,spct:"4.9%",beta:"1.9",avol:"0.9M",yld:null,
+      an:[["Apr-08-26","Upgrade","Craig Hallum","Hold → Buy","$6.80",1],["Dec-17-25","Initiated","Lake Street","Buy","$5.00",0],["Mar-26-24","Downgrade","Craig Hallum","Buy → Hold","$3.10",-1]]},
+    TSEM:{n:"Tower Semi",px:52.14,ch:+0.9,rvol:0.9,earn:null,seed:32,av:1.2,drift:+1.1,cap:"$5.8B",pe:"19.0",spct:"1.0%",beta:"1.1",avol:"0.6M",yld:null},
+    NVDA:{n:"NVIDIA",px:201.88,ch:+1.2,rvol:1.2,earn:12,seed:24,av:1.4,drift:+2.0,cap:"$4.9T",pe:"38.2",spct:"1.2%",beta:"1.7",avol:"168M",yld:"0.03%",
+      an:[["Aug-11-26","PT Raise","Melius","Buy","$215 → $240",1],["Jul-30-26","Reiterated","Goldman","Buy","$210",0],["Jun-12-26","Upgrade","HSBC","Hold → Buy","$200",1]]},
+    AVGO:{n:"Broadcom",px:391.20,ch:+0.6,rvol:0.8,earn:20,seed:33,av:1.2,drift:+2.1,cap:"$1.84T",pe:"34.5",spct:"1.4%",beta:"1.2",avol:"18.9M",yld:"1.1%",
+      an:[["Jul-28-26","PT Raise","Mizuho","Outperform","$410 → $445",1],["Jun-13-26","Reiterated","JPMorgan","Overweight","$430",0]]},
+    AMD:{n:"AMD",px:178.22,ch:+0.9,rvol:1.0,earn:null,seed:50,av:1.7,drift:+1.0,cap:"$288B",pe:"41.0",spct:"2.6%",beta:"1.7",avol:"41.2M",yld:null,
+      an:[["Aug-06-26","PT Raise","Bank of America","Buy","$185 → $205",1],["Jul-21-26","Downgrade","Erste Group","Buy → Hold","—",-1]]},
+    TSM:{n:"TSMC",px:243.10,ch:+0.5,rvol:0.8,earn:62,seed:23,av:1.1,drift:+1.4,cap:"$1.26T",pe:"26.0",spct:"0.4%",beta:"1.1",avol:"14.0M",yld:"1.3%"},
+    MRVL:{n:"Marvell",px:92.60,ch:-0.7,rvol:0.9,earn:14,seed:51,av:1.6,drift:-0.4,cap:"$79B",pe:"26.3",spct:"2.2%",beta:"1.6",avol:"9.8M",yld:"0.3%"},
+    LITE:{n:"Lumentum",px:116.30,ch:+1.4,rvol:1.1,earn:null,seed:52,av:1.8,drift:+1.6,cap:"$8.1B",pe:"24.1",spct:"5.1%",beta:"1.5",avol:"1.7M",yld:null},
+    CAMT:{n:"Camtek",px:108.75,ch:+0.8,rvol:0.9,earn:null,seed:53,av:1.7,drift:+2.2,cap:"$5.2B",pe:"33.0",spct:"1.8%",beta:"1.4",avol:"0.5M",yld:null},
+    ONTO:{n:"Onto Innovation",px:196.40,ch:-0.3,rvol:0.8,earn:5,seed:54,av:1.6,drift:+0.4,cap:"$9.4B",pe:"22.4",spct:"2.9%",beta:"1.3",avol:"0.7M",yld:null},
+    SKHY:{n:"SK Hynix ADR",px:31.76,ch:-1.8,rvol:1.5,earn:70,seed:34,av:1.5,drift:+1.2,cap:"$118B",pe:"9.1",spct:"0.6%",beta:"1.4",avol:"2.2M",yld:"1.0%"},
+    SNDK:{n:"SanDisk",px:48.92,ch:+1.1,rvol:1.0,earn:55,seed:55,av:1.7,drift:+0.9,cap:"$7.9B",pe:"12.6",spct:"6.2%",beta:"1.5",avol:"3.0M",yld:null},
+    DRAM:{n:"Memory ETF",px:62.40,ch:+1.3,rvol:1.1,earn:null,seed:56,av:1.3,drift:+1.5,cap:"$310M AUM",pe:null,spct:null,beta:"1.4",avol:"0.2M",yld:null},
+    RAM:{n:"Memory ETF (alt)",px:27.85,ch:+0.7,rvol:0.9,earn:null,seed:57,av:1.4,drift:+0.6,cap:"$150M AUM",pe:null,spct:null,beta:"1.4",avol:"0.1M",yld:null},
+    SMH:{n:"Semis ETF",px:291.34,ch:+1.6,rvol:1.3,earn:null,seed:35,av:1.2,drift:+1.7,cap:"$28.5B AUM",pe:null,spct:null,beta:"1.3",avol:"7.9M",yld:"0.4%"},
+    GOOGL:{n:"Alphabet",px:206.44,ch:+0.3,rvol:0.7,earn:75,seed:21,av:0.9,drift:+1.1,cap:"$2.51T",pe:"23.4",spct:"0.9%",beta:"1.0",avol:"28.0M",yld:"0.4%"},
+    MSFT:{n:"Microsoft",px:558.40,ch:+0.4,rvol:0.8,earn:75,seed:39,av:0.8,drift:+0.6,cap:"$4.15T",pe:"33.2",spct:"0.7%",beta:"0.9",avol:"19.0M",yld:"0.7%"},
+    AMZN:{n:"Amazon",px:247.62,ch:+0.8,rvol:0.9,earn:76,seed:25,av:1.0,drift:+0.5,cap:"$2.63T",pe:"34.0",spct:"0.8%",beta:"1.2",avol:"36.0M",yld:null},
+    META:{n:"Meta",px:812.55,ch:+0.9,rvol:0.9,earn:76,seed:40,av:1.2,drift:+1.0,cap:"$2.05T",pe:"26.1",spct:"1.0%",beta:"1.3",avol:"12.0M",yld:"0.3%"},
+    CVX:{n:"Chevron",px:152.30,ch:-0.9,rvol:0.8,earn:77,seed:58,av:0.9,drift:-1.0,cap:"$270B",pe:"14.2",spct:"1.2%",beta:"0.8",avol:"8.0M",yld:"4.4%"},
+    /* board-only symbols (not in the rail) */
+    QQQ:{n:"NASDAQ 100",px:689.14,ch:+0.52,rvol:1.1,earn:null,seed:12,av:0.9,drift:+1.2,cap:"$320B AUM",pe:null,spct:null,beta:"1.1",avol:"31M",yld:"0.5%"},
+    SOXL:{n:"Semis 3x (leveraged)",px:38.42,ch:+3.4,rvol:1.4,earn:null,seed:36,av:3.6,drift:+1.0,cap:"$11.2B AUM",pe:null,spct:null,beta:"3.9",avol:"64M",yld:null},
+    XLE:{n:"Energy",px:84.12,ch:-1.2,rvol:1.0,earn:null,seed:37,av:0.9,drift:-1.4,cap:"$36B AUM",pe:null,spct:null,beta:"0.8",avol:"14M",yld:"3.3%"},
+    XLK:{n:"Technology",px:262.90,ch:+0.7,rvol:0.9,earn:null,seed:38,av:1.0,drift:+1.6,cap:"$78B AUM",pe:null,spct:null,beta:"1.2",avol:"5M",yld:"0.6%"},
+    XLP:{n:"Staples",px:78.40,ch:+0.1,rvol:0.8,earn:null,seed:41,av:0.6,drift:+0.6,cap:"$16B AUM",pe:null,spct:null,beta:"0.6",avol:"9M",yld:"2.5%"},
+    XLU:{n:"Utilities",px:82.90,ch:+0.2,rvol:0.9,earn:null,seed:42,av:0.7,drift:+0.7,cap:"$18B AUM",pe:null,spct:null,beta:"0.6",avol:"10M",yld:"2.8%"},
+    XLV:{n:"Health care",px:142.20,ch:-0.2,rvol:0.8,earn:null,seed:43,av:0.7,drift:+0.2,cap:"$40B AUM",pe:null,spct:null,beta:"0.7",avol:"7M",yld:"1.5%"},
+    XLC:{n:"Comm svcs",px:112.80,ch:+0.3,rvol:0.7,earn:null,seed:44,av:0.8,drift:+0.8,cap:"$22B AUM",pe:null,spct:null,beta:"1.0",avol:"4M",yld:"0.8%"},
+    XLI:{n:"Industrials",px:148.60,ch:0.0,rvol:0.7,earn:null,seed:45,av:0.7,drift:+0.3,cap:"$20B AUM",pe:null,spct:null,beta:"1.0",avol:"9M",yld:"1.4%"},
+    XLY:{n:"Discretionary",px:231.50,ch:-0.4,rvol:0.8,earn:null,seed:46,av:0.9,drift:-0.3,cap:"$21B AUM",pe:null,spct:null,beta:"1.2",avol:"4M",yld:"0.8%"},
+    XLF:{n:"Financials",px:54.70,ch:-0.3,rvol:0.7,earn:null,seed:47,av:0.7,drift:-0.1,cap:"$50B AUM",pe:null,spct:null,beta:"1.0",avol:"32M",yld:"1.5%"},
+    XLB:{n:"Materials",px:92.30,ch:-0.5,rvol:0.8,earn:null,seed:48,av:0.8,drift:-0.6,cap:"$5B AUM",pe:null,spct:null,beta:"1.0",avol:"5M",yld:"1.8%"},
+    XLRE:{n:"Real estate",px:42.10,ch:-0.6,rvol:0.9,earn:null,seed:49,av:0.8,drift:-0.9,cap:"$7B AUM",pe:null,spct:null,beta:"0.9",avol:"5M",yld:"3.4%"},
   },
   sectors: [
     {s:"XLP",n:"Staples",rel:+1.4,m:+2.1,f1:+0.9,f2:+2.6},
@@ -505,6 +548,7 @@ const D = {
     {d:"2026-08-26",t:"07:30",title:"PCE Price Index (July)",imp:"hi",kind:"econ",meta:"fc +0.2% m/m · prior +0.3% · Fed's preferred gauge"},
     {d:"2026-08-26",t:"16:05",title:"NVDA earnings",imp:"hi",kind:"earnings",sym:"NVDA",meta:"AMC · bellwether — AI capex read for the whole complex",anchor:true},
     {d:"2026-08-27",t:"16:05",title:"CRWD earnings",imp:"md",kind:"earnings",sym:"CRWD",meta:"AMC · watchlist name"},
+    {d:"2026-08-28",t:"16:05",title:"MRVL earnings",imp:"md",kind:"earnings",sym:"MRVL",meta:"AMC · AI networking read"},
     {d:"2026-08-31",t:"09:00",title:"DRAM/NAND September contracts settle",imp:"md",kind:"memory",sym:"MU",meta:"TrendForce window · MU / SKHY pricing read"},
     {d:"2026-09-03",t:"16:05",title:"AVGO earnings",imp:"md",kind:"earnings",sym:"AVGO",meta:"AMC"},
     {d:"2026-09-04",t:"07:30",title:"Jobs Report (August)",imp:"hi",kind:"econ",meta:"fc +95k · prior +73k"},
@@ -532,15 +576,57 @@ const TIPS = {
   oiconf:"Did yesterday's swing-bucket volume become held open interest overnight? OPENING = new positions, CLOSING = unwound, CHURN = day-traded.",
   rel:"1-week relative strength vs SPY, in percentage points. Bars: leaders saturated, tail muted.",
   flows:"Fund flows = change in shares outstanding × NAV (creations/redemptions). Flows chase returns — context, never a signal.",
+  range:"Position in the 52-week range. Near the low = shopping territory, near the high = hot runner. The diamond is today.",
+  hot:"Today's move divided by this name's own average daily move — Micron swinging 2% is normal, Google swinging 2% is not. Highlights at 1.8× and up.",
 };
 
 /* =================== utils =================== */
 const $=q=>document.querySelector(q), $$=q=>[...document.querySelectorAll(q)];
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-function rng(seed){let a=seed*1103515245+12345;return()=>{a=(a*1664525+1013904223)>>>0;return a/4294967296}}
-function series(seed,n,drift){const r=rng(seed);let v=50,out=[];for(let i=0;i<n;i++){v+=(r()-0.5)*6+drift*0.55;out.push(v)}return out}
+function rng(seed){let a=(seed*1103515245+12345)>>>0;return()=>{a=(a*1664525+1013904223)>>>0;return a/4294967296}}
+const sign=v=>v>0?"u":v<0?"d":"m";
+const fm1=v=>(v>0?"+":v<0?"−":"")+Math.abs(v).toFixed(1);
+const fmB=v=>(v>0?"+$":v<0?"−$":"$")+Math.abs(v).toFixed(1)+"B";
+const fmM=v=>(v>0?"+$":"−$")+Math.abs(v).toFixed(1)+"M";
+const fmtpx=v=>v>=1000?v.toLocaleString("en-US",{maximumFractionDigits:0}):v>=100?v.toFixed(1):v.toFixed(2);
+
+/* =================== price-series engine (one source for ranges, MAs, charts) =================== */
+
+/* 52-week lo/hi per name — in the build these come from TradingView's
+   price_52_week_low / price_52_week_high fields, not from bar math. */
+const RANGES={MU:[613,985],CRWD:[108,190],COHR:[55,97],LLY:[1010,1590],V:[302,375],XOM:[98,128],
+AXTI:[1.55,5.10],TSEM:[33,56],NVDA:[142,212],AVGO:[265,402],AMD:[118,196],TSM:[168,252],
+MRVL:[74,141],LITE:[62,124],CAMT:[58,114],ONTO:[132,243],SKHY:[18.5,36.9],SNDK:[30.8,62.6],
+DRAM:[38,66],RAM:[19,31.5],SMH:[214,298],GOOGL:[158,226],MSFT:[442,586],AMZN:[196,263],
+META:[618,848],CVX:[136,172],QQQ:[552,701],SOXL:[21,44],XLE:[74,98],XLK:[196,268],
+XLP:[70,80],XLU:[72,85],XLV:[128,158],XLC:[92,116],XLI:[128,154],XLY:[205,258],
+XLF:[47,57],XLB:[84,103],XLRE:[38,47]};
+const SER={},STATS={};
+function seriesOf(sym){
+  if(SER[sym])return SER[sym];
+  const q=D.quotes[sym],r=rng(q.seed*7+3);let v=100;const a=[];
+  for(let i=0;i<452;i++){const sh=(r()+r()+r()-1.5);v*=1+(q.drift||0)*0.00085+sh*(q.av||1.2)*0.0062;a.push(v)}
+  const k=q.px/a[a.length-1];SER[sym]=a.map(x=>x*k);return SER[sym];
+}
+function rollMA(a,n){const o=new Array(a.length).fill(null);let s=0;
+  for(let i=0;i<a.length;i++){s+=a[i];if(i>=n)s-=a[i-n];if(i>=n-1)o[i]=s/n}return o}
+function statsOf(sym){
+  if(STATS[sym])return STATS[sym];
+  const q=D.quotes[sym],a=seriesOf(sym),yr=a.slice(-252);
+  const lo=RANGES[sym]?RANGES[sym][0]:Math.min(...yr);
+  const hi=RANGES[sym]?RANGES[sym][1]:Math.max(...yr);
+  const m50=rollMA(a,50),m200=rollMA(a,200);
+  STATS[sym]={lo,hi,pos:Math.min(1,Math.max(0,(q.px-lo)/((hi-lo)||1))),
+    v50:(q.px/m50[m50.length-1]-1)*100,v200:(q.px/m200[m200.length-1]-1)*100,m50,m200};
+  return STATS[sym];
+}
+const hotOf=sym=>{const q=D.quotes[sym];return q&&q.av?Math.abs(q.ch)/q.av:0};
+const HOT_AT=1.8;
+
+/* =================== tape =================== */
 function sparkSVG(seed,drift,w,h,colored){
-  const pts=series(seed,26,drift), mn=Math.min(...pts), mx=Math.max(...pts), sp=mx-mn||1;
+  const r=rng(seed);let v=50;const pts=[];for(let i=0;i<26;i++){v+=(r()-0.5)*6+drift*0.55;pts.push(v)}
+  const mn=Math.min(...pts),mx=Math.max(...pts),sp=mx-mn||1;
   const xy=pts.map((p,i)=>[i/(pts.length-1)*w,(h-2)-(p-mn)/sp*(h-4)+1]);
   const line=xy.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" ");
   const col=colored===0?"var(--spark-n)":(colored>0?"var(--spark-up)":"var(--spark-dn)");
@@ -550,12 +636,6 @@ function sparkSVG(seed,drift,w,h,colored){
     <polyline points="${line}" fill="none" stroke="${col}" stroke-width="1.3" opacity=".85"/>
     <circle cx="${last[0]}" cy="${last[1]}" r="1.8" fill="${col}"/></svg>`;
 }
-const sign=v=>v>0?"u":v<0?"d":"m";
-const fm1=v=>(v>0?"+":v<0?"−":"")+Math.abs(v).toFixed(1);
-const fmB=v=>(v>0?"+$":v<0?"−$":"$")+Math.abs(v).toFixed(1)+"B";
-const fmM=v=>(v>0?"+$":"−$")+Math.abs(v).toFixed(1)+"M";
-
-/* =================== render: tape =================== */
 function renderTape(){
   $("#tape").innerHTML = D.tape.map((t,i)=>{
     const up=t.ch>0, cls=t.ch===0?"m":(up?"u":"d");
@@ -567,17 +647,28 @@ function renderTape(){
   }).join("");
 }
 
-/* =================== render: watchlist rail =================== */
+/* =================== watchlist rail: 52w range bars + hot movers =================== */
+function rangeBar(sym,big){
+  const st=statsOf(sym),p=(st.pos*100).toFixed(0);
+  return `<div class="rb ${big?"big":""}" data-tip="${esc(TIPS.range)} Now at ${p}% of the range.">
+    <i style="width:${p}%"></i><b style="left:${p}%"></b>
+    <span class="lo tn">${fmtpx(st.lo)}</span><span class="hi tn">${fmtpx(st.hi)}</span></div>`;
+}
 function renderWL(){
   $("#wl").innerHTML = D.groups.map(g=>
     `<div class="wg">${g.g}</div>`+g.syms.map(s=>{
-      const q=D.quotes[s], cls=sign(q.ch);
-      return `<div class="wr" data-sym="${s}" role="button" tabindex="0">
-        <div><div class="sy">${s}</div><div class="meta">${q.earn!=null?("earnings "+q.earn+"d"):esc(q.n)}</div></div>
-        ${sparkSVG(q.seed,Math.sign(q.ch),80,16,q.ch)}
-        <span class="px tn">${q.px>=1000?q.px.toFixed(0):q.px.toFixed(2)}</span>
-        <span class="ch tn ${cls}">${fm1(q.ch)}%</span></div>`;
+      const q=D.quotes[s], cls=sign(q.ch), h=hotOf(s);
+      return `<div class="wr ${h>=HOT_AT?"hot":""}" data-sym="${s}" role="button" tabindex="0">
+        <div class="l1"><span class="sy">${s}</span><span class="meta">${q.earn!=null?("earn "+q.earn+"d"):esc(q.n)}</span>
+        ${h>=HOT_AT?`<span class="hotb" data-tip="${esc(TIPS.hot)} Today: ${h.toFixed(1)}× its usual ${q.av}% day.">${h.toFixed(1)}×</span>`:""}
+        <span class="px tn">${fmtpx(q.px)}</span><span class="ch tn ${cls}">${fm1(q.ch)}%</span></div>
+        ${rangeBar(s)}</div>`;
     }).join("")).join("");
+  const hot=D.groups.flatMap(g=>g.syms).filter(s=>hotOf(s)>=HOT_AT)
+    .sort((a,b)=>hotOf(b)-hotOf(a));
+  $("#alerts").innerHTML=`<b>MOVERS · RELATIVE TO THEIR OWN AVERAGE DAY</b>`+
+    (hot.length?hot.map(s=>`<span class="hm2">${s} ${hotOf(s).toFixed(1)}×</span> <span class="m">(${fm1(D.quotes[s].ch)}% vs ${D.quotes[s].av}% usual)</span>`).join(" · "):"none yet")+
+    `<div style="margin-top:6px"><b>WATCHDOG</b>quiet today · last alert Tue: MU −3.1% leg (D4)</div>`;
 }
 
 /* =================== sortable table helper =================== */
@@ -597,14 +688,14 @@ function table(el, cls, cols, rows, rowHTML, defaultKey){
   draw(); return {redraw:draw};
 }
 
-/* =================== render: sector board =================== */
+/* =================== boards (unchanged systems) =================== */
 function renderSector(){
   const mx=Math.max(...D.sectors.map(x=>Math.abs(x.rel)));
   table($("#sector"),"t-sector",[
     {l:"Sector",key:"s"},{l:"1w vs SPY",tip:TIPS.rel},{l:"1w pp",key:"rel"},{l:"1m pp",key:"m"},
     {l:"$1w flow",key:"f1",tip:TIPS.flows},{l:"$1m flow",key:"f2"},{l:""}],
-    D.sectors, (r,i)=>{
-      const wpx=Math.round(Math.abs(r.rel)/mx*56), lead=i<3&&r.rel>0||r.rel===Math.min(...D.sectors.map(x=>x.rel));
+    D.sectors, (r)=>{
+      const wpx=Math.round(Math.abs(r.rel)/mx*56);
       const dim=Math.abs(r.rel)/mx<0.55?"opacity:.4":"";
       const side=r.rel>=0?`left:50%;width:${wpx}px;background:var(--up)`:`left:calc(50% - ${wpx}px);width:${wpx}px;background:var(--dn)`;
       return `<tr class="rw" data-sym="${r.s}"><td><span class="sy2">${r.s}</span><span class="nm">${r.n}</span></td>
@@ -620,8 +711,6 @@ function renderSector(){
     <div class="note">This week: sectors <b class="u">+$1.3B</b> · treasuries <b class="u">+$0.5B</b> · gold <b class="u">+$0.9B</b> · cash <b class="u">+$1.8B</b> — <span data-tip="${esc(TIPS.flows)}">flows chase returns</span>.</div>`;
   $("#sector").appendChild(hv);
 }
-
-/* =================== render: boards =================== */
 function renderConv(){
   const bulls=D.conviction.filter(c=>c.dir>0).length;
   $("#convstat").innerHTML=`<span class="u">${bulls} bull</span> · <span class="d">${D.conviction.length-bulls} bear</span> · <span style="color:var(--hi)">1 firing</span> · CBOE 15-min delayed 9:41`;
@@ -667,7 +756,7 @@ function renderETF(){
   <div class="note">Slower money — funds, advisors, retail — versus the fast options tape above.</div>`;
 }
 
-/* =================== render: catalysts =================== */
+/* =================== catalysts =================== */
 let catKind="all", catHi=false;
 function renderCatFilters(){
   const kinds=[["all","All"],["econ","Econ"],["earnings","Earnings"],["memory","Memory"],["market","OpEx"]];
@@ -677,6 +766,7 @@ function renderCatFilters(){
   $("#fhi").addEventListener("click",()=>{catHi=!catHi;renderCatFilters();renderCats();});
 }
 function catWhen(c){ return new Date(c.d+"T"+(c.t||"09:00")+":00-05:00"); }
+function deskNow(){ return new Date(NOW.getTime()+performance.now()); }
 function countdown(c,now){
   const ms=catWhen(c)-now;
   if(c.done||ms<-6*3600e3) return {txt:"cleared",cls:"",done:true};
@@ -706,7 +796,7 @@ function renderCats(){
   }).join("")||`<div class="note">nothing matches this filter</div>`;
 }
 
-/* =================== render: news =================== */
+/* =================== news =================== */
 function renderNews(){
   let list=D.news; if(FOCUS) list=list.filter(n=>n.s===FOCUS||n.s==="MACRO");
   $("#news").innerHTML=list.map(n=>`<div class="nw" ${n.s!=="MACRO"?`data-sym="${n.s}"`:""}>
@@ -731,39 +821,75 @@ function applyFocus(){
   });
 }
 
-/* =================== drawer =================== */
-let dTF="1M";
+/* =================== drawer: chart with 50/200-day overlays =================== */
+let dTF="3M";
+const TFN={ "1W":5,"1M":21,"3M":63,"6M":126,"1Y":252 };
+function chartData(sym,tf){
+  const q=D.quotes[sym], st=statsOf(sym), full=seriesOf(sym);
+  if(tf==="1D"){
+    const open=q.px/(1+q.ch/100), r=rng(q.seed*13+5), n=40, pts=[];
+    for(let i=0;i<n;i++){const f=i/(n-1);pts.push(open+(q.px-open)*f+(r()-0.5)*open*0.0035)}
+    pts[n-1]=q.px;
+    const m50=new Array(n).fill(st.m50[st.m50.length-1]);
+    const m200=new Array(n).fill(st.m200[st.m200.length-1]);
+    return {pts,m50,m200,pct:q.ch};
+  }
+  const n=TFN[tf];
+  const pts=full.slice(-n), m50=st.m50.slice(-n), m200=st.m200.slice(-n);
+  return {pts,m50,m200,pct:(q.px/pts[0]-1)*100};
+}
 function chartSVG(sym,tf){
-  const q=D.quotes[sym], n={ "1D":30,"1W":35,"1M":45,"3M":60 }[tf];
-  const pts=series(q.seed+tf.length*7,n,Math.sign(q.ch)*0.8);
-  const w=368,h=120,mn=Math.min(...pts),mx=Math.max(...pts),sp=mx-mn||1;
-  const xy=pts.map((p,i)=>[i/(n-1)*w,(h-6)-(p-mn)/sp*(h-16)+5]);
-  const line=xy.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" ");
-  const col=q.ch>=0?"var(--spark-up)":"var(--spark-dn)";
+  const {pts,m50,m200,pct}=chartData(sym,tf);
+  const w=396,h=140;
+  const mn=Math.min(...pts),mx=Math.max(...pts),pad=(mx-mn)*0.08||1;
+  const lo=mn-pad,hi=mx+pad,sp=hi-lo;
+  const Y=v=>h-((v-lo)/sp)*(h-10)-5, X=i=>i/(pts.length-1)*w;
+  const path=a=>a.map((v,i)=>v==null?null:`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).filter(Boolean).join(" ");
+  const col=pct>=0?"var(--spark-up)":"var(--spark-dn)";
   const grid=[0.25,0.5,0.75].map(f=>`<line x1="0" x2="${w}" y1="${(h*f).toFixed(0)}" y2="${(h*f).toFixed(0)}" stroke="var(--edge)" stroke-width="1" opacity=".5"/>`).join("");
-  return {svg:`<svg viewBox="0 0 ${w} ${h}" id="dchart">${grid}
-    <polyline points="${line} ${w},${h} 0,${h}" fill="${col}" opacity=".08" stroke="none"/>
-    <polyline points="${line}" fill="none" stroke="${col}" stroke-width="1.6"/>
-    <circle cx="${xy[xy.length-1][0]}" cy="${xy[xy.length-1][1]}" r="2.4" fill="${col}"/></svg>`,pts,xy};
+  const pline=path(pts);
+  return {pct,pts,svg:`<svg viewBox="0 0 ${w} ${h}" id="dchart" preserveAspectRatio="none">${grid}
+    <polyline points="${path(m200)}" fill="none" stroke="var(--ink3)" stroke-width="1.2" stroke-dasharray="5 4" opacity=".8"/>
+    <polyline points="${path(m50)}" fill="none" stroke="var(--acc)" stroke-width="1.2" stroke-dasharray="3 3" opacity=".9"/>
+    <polyline points="${pline} ${w},${h} 0,${h}" fill="${col}" opacity=".07" stroke="none"/>
+    <polyline points="${pline}" fill="none" stroke="${col}" stroke-width="1.7"/>
+    <circle cx="${X(pts.length-1)}" cy="${Y(pts[pts.length-1])}" r="2.6" fill="${col}"/></svg>`};
 }
 let chartState=null;
+function anPill(a){return a==="Upgrade"?"b":a==="Downgrade"?"s":"n"}
+function anTone(t){return t>0?"u":t<0?"d":"m"}
 function openDrawer(sym){
   const q=D.quotes[sym]; if(!q) return;
+  const st=statsOf(sym), h=hotOf(sym);
   const conv=D.conviction.find(c=>c.s===sym), sw=D.swing.find(c=>c.s===sym);
   const cats=D.cats.filter(c=>c.sym===sym), news=D.news.filter(n=>n.s===sym);
-  const ch=chartSVG(sym,dTF); chartState={sym,...ch};
+  const ch=chartSVG(sym,dTF); chartState={sym,pts:ch.pts};
   $("#drawer").innerHTML=`
-    <div class="dh"><span class="sy">${sym}</span><span class="px tn">${q.px.toFixed(2)}</span>
-      <span class="ch tn ${sign(q.ch)}">${fm1(q.ch)}%</span><span class="m" style="font-size:11px">${esc(q.n)}</span>
+    <div class="dh"><span class="sy">${sym}</span><span class="px tn">${fmtpx(q.px)}</span>
+      <span class="ch tn ${sign(q.ch)}">${fm1(q.ch)}%</span>
+      ${h>=HOT_AT?`<span class="hotb" data-tip="${esc(TIPS.hot)}">${h.toFixed(1)}× usual move</span>`:""}
+      <span class="m" style="font-size:11px">${esc(q.n)}</span>
       <button class="x" id="dclose" aria-label="Close">×</button></div>
-    <div class="dsec"><div class="seg" role="group">${["1D","1W","1M","3M"].map(t=>`<button data-tf="${t}" aria-pressed="${t===dTF}">${t}</button>`).join("")}</div>
-      <div class="chart" id="dchartwrap">${ch.svg}<div class="xh" id="xh"></div></div></div>
-    <div class="dsec"><h3>Quote</h3>
-      <div class="kvrow"><span>Day move</span><b class="${sign(q.ch)}">${fm1(q.ch)}%</b></div>
-      <div class="kvrow"><span>Relative volume</span><b>${q.rvol.toFixed(1)}×</b></div>
+    <div class="dsec">
+      <div class="segrow"><div class="seg" role="group">${["1D","1W","1M","3M","6M","1Y"].map(t=>`<button data-tf="${t}" aria-pressed="${t===dTF}">${t}</button>`).join("")}</div>
+        <span class="pchip tn ${ch.pct>=0?"u":"d"}">${fm1(ch.pct)}% this ${dTF}</span></div>
+      <div class="chart" id="dchartwrap">${ch.svg}<div class="xh" id="xh"></div></div>
+      <div class="leg"><span><i class="p"></i>price</span><span><i class="d50"></i>50-day · <b class="${sign(st.v50)}">${fm1(st.v50)}%</b> vs it</span><span><i class="d200"></i>200-day · <b class="${sign(st.v200)}">${fm1(st.v200)}%</b> vs it</span></div>
+    </div>
+    <div class="dsec"><h3><span data-tip="${esc(TIPS.range)}">52-week range</span></h3>
+      ${rangeBar(sym,true)}
+      <div class="kvrow"><span>Position in range</span><b>${(st.pos*100).toFixed(0)}%${st.pos>0.85?" · hot runner":st.pos<0.25?" · near lows":""}</b></div>
+    </div>
+    <div class="dsec"><h3>Snapshot</h3>
+      <div class="kvrow"><span>Market cap</span><b>${q.cap||"—"}</b></div>
+      <div class="kvrow"><span>P/E (fwd)</span><b>${q.pe||"—"}</b></div>
+      <div class="kvrow"><span>Short % of float</span><b>${q.spct||"—"}</b></div>
+      <div class="kvrow"><span>Beta</span><b>${q.beta||"—"}</b></div>
+      <div class="kvrow"><span>Avg volume</span><b>${q.avol||"—"}</b></div>
+      <div class="kvrow"><span>Dividend yield</span><b>${q.yld||"—"}</b></div>
+      <div class="kvrow"><span>Avg daily move</span><b>${q.av}%</b></div>
       ${q.earn!=null?`<div class="kvrow"><span>Next earnings</span><b>${q.earn}d</b></div>`:""}
-      ${q.core?`<div class="kvrow"><span>vs 50-day / 200-day</span><b><span class="${sign(q.core.v50)}">${fm1(q.core.v50)}%</span> / <span class="${sign(q.core.v200)}">${fm1(q.core.v200)}%</span></b></div>
-      <div class="kvrow"><span>RSI · 3m vs basket</span><b>${q.core.rsi} · ${fm1(q.core.bask)}pp</b></div>`:""}
+      <div class="kvrow"><span>Relative volume today</span><b>${q.rvol.toFixed(1)}×</b></div>
     </div>
     ${conv?`<div class="dsec"><h3>Conviction board</h3>
       <div class="kvrow"><span>Score</span><b>${conv.score} ${conv.fire?"· FIRING":""}</b></div>
@@ -775,10 +901,18 @@ function openDrawer(sym){
       <div class="kvrow"><span>5-day flow</span><b class="${sign(sw.f5)}">${fmM(sw.f5)}</b></div>
       <div class="kvrow"><span><span data-tip="${esc(TIPS.oiconf)}">OI-confirm</span></span><b>${sw.oi}</b></div>
       <div class="kvrow"><span>Suggested</span><b style="font-size:10.5px">${sw.sug}</b></div></div>`:""}
+    ${q.an?`<div class="dsec"><h3>Analyst actions</h3>
+      <table class="an"><thead><tr><th>Date</th><th>Action</th><th>Firm</th><th>Rating</th><th>Target</th></tr></thead>
+      <tbody>${q.an.map(a=>`<tr>
+        <td class="tn m">${a[0]}</td>
+        <td><span class="pill ${anPill(a[1])}">${a[1]}</span></td>
+        <td>${a[2]}</td>
+        <td class="${anTone(a[5])}">${a[3]}</td>
+        <td class="tn ${anTone(a[5])}">${a[4]}</td></tr>`).join("")}</tbody></table></div>`:""}
     ${cats.length?`<div class="dsec"><h3>Catalysts</h3>${cats.map(c=>{const cd=countdown(c,deskNow());
       return `<div class="kvrow"><span>${esc(c.title)}</span><b class="${cd.cls==="soon"?"":"m"}">${cd.txt}</b></div>`}).join("")}</div>`:""}
     ${news.length?`<div class="dsec"><h3>Headlines</h3>${news.map(n=>`<div class="kvrow"><span style="max-width:82%">${esc(n.h)}</span><b class="m tn">${n.t}</b></div>`).join("")}</div>`:""}
-    <div class="dsec note">Sample data. In the build, this panel is where one click re-points everything — the "type a ticker once" pattern from the screen-setup research.</div>`;
+    <div class="dsec note">Sample data. Analyst rows are third-party opinions shown for reference — the desk never scores off them.</div>`;
   $("#drawer").classList.add("open");
   $("#dclose").addEventListener("click",()=>setFocus(null));
   $$("#drawer .seg button").forEach(b=>b.addEventListener("click",()=>{dTF=b.dataset.tf;openDrawer(sym)}));
@@ -786,10 +920,8 @@ function openDrawer(sym){
   wrap.addEventListener("mousemove",e=>{
     const r=svg.getBoundingClientRect(), fx=(e.clientX-r.left)/r.width;
     const i=Math.max(0,Math.min(chartState.pts.length-1,Math.round(fx*(chartState.pts.length-1))));
-    const base=q.px*(1-q.ch/100), scale=q.px*0.06/(Math.max(...chartState.pts)-Math.min(...chartState.pts)||1);
-    const val=(base+(chartState.pts[i]-chartState.pts[0])*scale).toFixed(2);
-    xh.style.display="block"; xh.style.left=Math.min(r.width-90,Math.max(0,e.clientX-r.left+8))+"px"; xh.style.top="8px";
-    xh.textContent=`${dTF} · point ${i+1}/${chartState.pts.length} · ~${val}`;
+    xh.style.display="block"; xh.style.left=Math.min(r.width-110,Math.max(0,e.clientX-r.left+8))+"px"; xh.style.top="8px";
+    xh.textContent=`${dTF} · $${chartState.pts[i].toFixed(2)}`;
   });
   wrap.addEventListener("mouseleave",()=>{xh.style.display="none"});
 }
@@ -859,7 +991,6 @@ $("#replay").addEventListener("click",()=>{
   },900);
 });
 
-function deskNow(){ return new Date(NOW.getTime() + (Date.now()%86400000)%1000*0 + (performance.now()|0)); }
 setInterval(()=>{
   const t=new Date(NOW.getTime()+performance.now());
   $("#clock").textContent="Fri Aug 14 · "+t.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",second:"2-digit"})+" CT";
@@ -868,18 +999,19 @@ setInterval(renderCats,30000);
 
 /* =================== tooltips =================== */
 const tipb=$("#tipb");
-document.addEventListener("mouseover",e=>{
-  const t=e.target.closest("[data-tip]"); if(!t){tipb.style.display="none";return}
+function showTip(t){
   tipb.textContent=t.dataset.tip; tipb.style.display="block";
   const r=t.getBoundingClientRect();
   tipb.style.left=Math.min(innerWidth-296,Math.max(8,r.left))+"px";
   tipb.style.top=(r.bottom+8)+"px";
+}
+document.addEventListener("mouseover",e=>{
+  const t=e.target.closest("[data-tip]"); if(!t){tipb.style.display="none";return}
+  showTip(t);
 });
 document.addEventListener("click",e=>{
   const t=e.target.closest("[data-tip]");
-  if(t){tipb.textContent=t.dataset.tip;tipb.style.display="block";
-    const r=t.getBoundingClientRect();tipb.style.left=Math.min(innerWidth-296,Math.max(8,r.left))+"px";tipb.style.top=(r.bottom+8)+"px";
-    e.stopPropagation();return}
+  if(t){showTip(t);e.stopPropagation();return}
   if(!e.target.closest(".tipb"))tipb.style.display="none";
 });
 
