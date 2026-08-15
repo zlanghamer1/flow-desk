@@ -1032,6 +1032,7 @@ def test_fetch_yahoo_fundamentals_full_shape_matches_and_derives_session():
     row = out["earnings"][0]
     assert row["period"] == "Q1 2027"
     assert row["date"] == "2026-04-30"
+    assert row["report_date"] == "2026-05-20"   # announcement date — page anchors E-badges here
     assert row["session"] == "afterhours"
     assert row["eps"] == pytest.approx(1.87) and row["eps_est"] == pytest.approx(1.77191)
     assert row["eps_surprise_pct"] == pytest.approx(5.54)

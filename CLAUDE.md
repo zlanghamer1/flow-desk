@@ -23,9 +23,11 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   cycle; a manual push will be clobbered or will fight the loop.
 - **Never** flip Settings → Pages to "GitHub Actions" mode. Branch mode from
   `gh-pages` is intentional (see DEPLOY.md).
-- **Never** re-add the deliberately-excluded tickers — BESIY, IFNNY, NRGU,
-  WTI, SPX, VIX, SPMO — without first reading the exclusion note in
-  `fetcher/build_snapshot.py`.
+- **Never** re-add the deliberately-excluded tickers — BESIY, IFNNY, SPX,
+  VIX, SPMO — without first reading the exclusion note in
+  `fetcher/build_snapshot.py`. (NRGU and WTI were reinstated 2026-08-15 by
+  Zach's full TV-list ruling — NRGU is TRACK_ONLY, and WTI is W&T Offshore
+  equity, not crude; both cases are documented in that same note.)
 - Keep `index.html`'s `TIPS` text in sync with `build_snapshot.py` scoring
   whenever weights change — the two describe the same methodology and must not
   drift.

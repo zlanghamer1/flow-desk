@@ -1347,6 +1347,8 @@ def fetch_yahoo_fundamentals(sym: str, crumb: str, _get: Optional[Callable] = No
         rows.append({
             "period": _fmt_fiscal_period(r.get("fiscalQuarter")),
             "date": datetime.fromtimestamp(pe_ts, tz=timezone.utc).date().isoformat(),
+            "report_date": (datetime.fromtimestamp(rd_ts, tz=timezone.utc).date().isoformat()
+                            if isinstance(rd_ts, (int, float)) else None),
             "session": _earnings_session(rd_ts) if isinstance(rd_ts, (int, float)) else None,
             "eps": _yahoo_num(r.get("actual")),
             "eps_est": _yahoo_num(r.get("estimate")),

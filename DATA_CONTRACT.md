@@ -321,6 +321,12 @@ eligibility).
     {
       "period": "Q1 2027",           // "Q{n} {fiscal year}"
       "date": "2026-04-30",          // fiscal quarter END date (not report date)
+      "report_date": "2026-05-28",   // date the results were actually announced
+                                      // (Yahoo reportedDate) — the page anchors
+                                      // chart E-badges here so they sit on the
+                                      // earnings gap; null if Yahoo omits it,
+                                      // in which case the page falls back to
+                                      // `date`
       "session": "afterhours",       // "premarket" | "afterhours" | null — read
                                       // off the ACTUAL report timestamp, same
                                       // heuristic context._earnings_session uses

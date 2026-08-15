@@ -869,11 +869,56 @@ function seriesQuads(sym){
 // null, and every sidecar-driven element in the modal renders "—"/hides.
 var FUND_CACHE = {};
 function fundUrl(sym){ return FUND_BASE + encodeURIComponent(sym) + ".json"; }
+// normalizeFund(): boundary adapter, same pattern as normalizeBrief/normalizePositions.
+// DATA_CONTRACT.md is authoritative for fund/{SYM}.json (short_pct_float,
+// earnings rows as eps/eps_est/rev/rev_est, top-level quarterly/annual with
+// "periods"); the page's internal shape predates it. Map contract → internal
+// here, tolerating either shape so fixtures and older sidecars keep working.
+function normalizeFund(f){
+  if(!f || typeof f!=="object") return null;
+  var out = {};
+  out.short_pct = (f.short_pct!=null) ? f.short_pct : (f.short_pct_float!=null ? f.short_pct_float : null);
+  out.pe_forward = (f.pe_forward!=null) ? f.pe_forward : null;
+  out.earnings = Array.isArray(f.earnings) ? f.earnings.map(function(r){
+    if(!r || typeof r!=="object") return null;
+    return {
+      period: r.period!=null ? r.period : null,
+      date: r.date!=null ? r.date : null,
+      report_date: r.report_date!=null ? r.report_date : null,
+      session: r.session!=null ? r.session : null,
+      eps_actual: r.eps_actual!=null ? r.eps_actual : (r.eps!=null ? r.eps : null),
+      eps_estimate: r.eps_estimate!=null ? r.eps_estimate : (r.eps_est!=null ? r.eps_est : null),
+      eps_surprise_pct: r.eps_surprise_pct!=null ? r.eps_surprise_pct : null,
+      rev_actual: r.rev_actual!=null ? r.rev_actual : (r.rev!=null ? r.rev : null),
+      rev_estimate: r.rev_estimate!=null ? r.rev_estimate : (r.rev_est!=null ? r.rev_est : null),
+      rev_surprise_pct: r.rev_surprise_pct!=null ? r.rev_surprise_pct : null
+    };
+  }).filter(Boolean) : [];
+  var ne = f.next_earnings;
+  out.next_earnings = (ne && typeof ne==="object" && ne.date!=null) ? {
+    date: ne.date,
+    session: ne.session!=null ? ne.session : null,
+    eps_estimate: ne.eps_estimate!=null ? ne.eps_estimate : (ne.eps_est!=null ? ne.eps_est : null),
+    rev_estimate: ne.rev_estimate!=null ? ne.rev_estimate : (ne.rev_est!=null ? ne.rev_est : null)
+  } : null;
+  function series(d){
+    if(!d || typeof d!=="object") return null;
+    var labels = Array.isArray(d.labels) ? d.labels : (Array.isArray(d.periods) ? d.periods : null);
+    if(!labels || !labels.length) return null;
+    return { labels: labels,
+      revenue: Array.isArray(d.revenue) ? d.revenue : [],
+      eps: Array.isArray(d.eps) ? d.eps : [] };
+  }
+  var g = (f.growth && typeof f.growth==="object") ? f.growth : f;
+  var q = series(g.quarterly), a = series(g.annual);
+  out.growth = (q || a) ? { quarterly:q, annual:a } : null;
+  return out;
+}
 function ensureFund(sym){
   if(Object.prototype.hasOwnProperty.call(FUND_CACHE, sym)) return Promise.resolve(FUND_CACHE[sym]);
   return fetch(cacheBust(fundUrl(sym)), {cache:"no-store"})
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
-    .then(function(json){ FUND_CACHE[sym] = (json && typeof json==="object") ? json : null; return FUND_CACHE[sym]; })
+    .then(function(json){ FUND_CACHE[sym] = normalizeFund(json); return FUND_CACHE[sym]; })
     .catch(function(){ FUND_CACHE[sym] = null; return null; });
 }
 
@@ -1788,8 +1833,10 @@ function candleChartSVG(sym, tf, fund){
   var earnRows = (fund && Array.isArray(fund.earnings)) ? fund.earnings : [];
   var startDate=dates[0], endDate=dates[n-1], earnHtml="";
   earnRows.forEach(function(er, ei){
-    if(!er || !er.date) return;
-    var ed = new Date(er.date+"T12:00:00Z");
+    if(!er || !(er.report_date || er.date)) return;
+    // anchor the badge on the announcement date (where the gap is), not the
+    // fiscal quarter-end — see DATA_CONTRACT.md's report_date note
+    var ed = new Date((er.report_date || er.date)+"T12:00:00Z");
     if(ed < startDate || ed > endDate) return;
     var bestI=0, bestDiff=Infinity;
     for(var k=0;k<n;k++){ var diff=Math.abs(dates[k]-ed); if(diff<bestDiff){ bestDiff=diff; bestI=k; } }
@@ -1844,7 +1891,7 @@ function earnPopoverHTML(row, nextRow, isNext){
   }
   if(!row) return '<span class="cl" id="popclose">×</span><div class="note">no data</div>';
   return '<span class="cl" id="popclose">×</span><b>'+esc(row.period||"—")+'</b><br>'
-    + esc(row.date||"—")+(row.session?(" · "+esc(row.session)):"")
+    + 'Reported '+esc(row.report_date||row.date||"—")+(row.session?(" · "+esc(row.session)):"")
     + '<div style="margin-top:4px">EPS '+surpriseSpan(row.eps_actual, row.eps_estimate, row.eps_surprise_pct, false)+'</div>'
     + '<div>Rev '+surpriseSpan(row.rev_actual, row.rev_estimate, row.rev_surprise_pct, true)+'</div>';
 }
