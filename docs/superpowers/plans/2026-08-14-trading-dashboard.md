@@ -601,7 +601,50 @@ same `pages.yml` copy — no ops change.
 | Workflow-edit schedule reset | the one `refresh-loop.yml` edit ships alone, off-hours, with a forced-cycle check after |
 | Scope creep re-scoring boards | conviction/swing scoring, weights, and universe are explicitly out of scope for every phase |
 
-## Part F — Success criteria
+## Part F — Automations & maintenance (what keeps it running)
+
+**No new schedulers.** Every dashboard feed rides an automation that already
+runs today:
+
+| Automation | Status | What it feeds |
+|---|---|---|
+| flow-desk refresh loop (Actions, self-redispatching ~7 min, 08:00–15:20 CT, daily 8:20 backup start) | running since 2026-07-16 | boards + (new) catalysts, news, earnings fields, brief pickup — the new fetches ride the same cycles |
+| Pages deploy workflow | running | publishes `index.html` on change |
+| Morning Brief workflow (ClaudeVault, 6:23 CT via Zach's cron-job.org pinger; GitHub cron backup) | running | (new) also writes `brief_summary.json` in the same run — no new trigger |
+| Evening options-snapshot workflow (ClaudeVault) | running | insider snapshot if the footprints chip ever joins |
+| Watchdog (10-min pinger) | running | independent of the page |
+
+**The only new credential:** `VAULT_READ_TOKEN` (fine-grained PAT, read-only,
+ClaudeVault only) — created once, **expires at most yearly**. If it lapses,
+nothing breaks loudly: the brief panel goes amber "as of <last date>" and the
+fix is a 2-minute token renewal in GitHub settings. Renewal date goes in the
+maintenance nag below.
+
+**Hand-kept inputs and their nags (existing pattern, extended):**
+- `econ_calendar.csv` — verified through 2026-12-30; the brief already
+  self-warns when runway < 30 days. Phase 1's TradingView calendar merge
+  demotes this file to a verification layer, so the chore shrinks.
+- `memory_events.csv` — hand-kept by thesis sessions, as today.
+- NYSE holiday calendar — yearly refill, same nag.
+- The dashboard adds a **maintenance chip** in the footer when any of: brief
+  stale > 3 sessions, PAT within 30 days of expiry (date baked into the loop
+  env), or calendar runway low — one amber line naming the chore.
+
+**Failure visibility instead of failure silence:** the stale-data law (amber
+"as of" badges) means a dead feed shows itself on the page the same morning.
+Optional hardening, Zach's call: a Watchdog "D5" check — data.json older than
+60 minutes mid-session triggers one email. Small registered change to the
+Watchdog if wanted; not required for launch.
+
+**Zach-side items (nobody else can do these):**
+- cron-job.org account: keep the 6:23 pinger; delete the dead memory-brief
+  pinger (returns 404 harmlessly today); repoint/delete the brief pinger only
+  if the email is retired later.
+- PAT renewal yearly when the chip nags.
+
+Costs stay $0: public repo = free Actions minutes, free Pages, keyless feeds.
+
+## Part G — Success criteria
 
 1. One URL replaces the morning email + Flow Desk for a full trading week
    without Zach opening either.
