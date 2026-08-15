@@ -67,7 +67,7 @@ One web page, at the same address you already use
 |---|---|
 | Flow Desk site | Becomes this page (same URL, same data loop) |
 | Morning Brief email, 6:23am | **Retired — Zach's ruling 2026-08-14.** The same engine still runs at 6:23 and publishes to the page; the email stops after the proving window below. |
-| Watchdog emails | **Replaced by phone push notifications + an on-page alerts log.** Same triggers, same cooldowns and daily caps — only the delivery changes. Email runs in parallel as a silent fallback for ~2 trading weeks, then off. |
+| Watchdog emails | **Stay as email for now (Zach, 2026-08-14).** The page adds an always-on alerts log; the designed push channel (v3.2) sits shelved and ready if he later wants email gone. |
 | Morning brief artifact skill (`/morning`) | Retires once the page covers it |
 
 Trade Stops math, the Action List engine, and all theses/triggers are
@@ -90,15 +90,16 @@ not the TRIM/ADD rebalance chips.
 1. **Mockup approval** — RESOLVED through v3.2: cockpit layout, interactivity,
    full watchlist with range bars, relative movers, drawer depth all approved
    by iteration. Name "THE DESK" stands unless he renames it.
-2. **Email's future** — **RESOLVED 2026-08-14, Zach's ruling: the page
-   replaces ALL emails, Watchdog included.** Delivery moves to phone push +
-   the on-page alerts log; see the v3.2 section for the channel architecture
-   and the two-week parallel-run cutover.
-3. **Private layer** — OPEN: positions/action-list/stops behind a passphrase
-   in a later phase, or keep personal data off the page entirely?
-4. **Action List on page** — OPEN, only if yes to #3: verdicts render
-   watch-only (backtest attempt #1 failed its gates; the standing rule says
-   never present them as validated instructions).
+2. **Email's future** — RESOLVED in two steps (both 2026-08-14): the brief
+   email retires once the page proves out; **the Watchdog email stays for
+   now** — its push replacement (v3.2) is designed and shelved, revisit on
+   Zach's word.
+3. **Private layer** — **RESOLVED YES: Position Guard lives on the desk**,
+   behind the passphrase layer (the page is public; his positions are not).
+   Spec in v3.3.
+4. **Action List on page** — OPEN: watch-only verdict chips inside the
+   private layer, or leave the Action List to the skill (backtest attempt #1
+   failed its gates; never rendered as validated instructions either way).
 
 ### What it costs
 
@@ -412,6 +413,40 @@ Architecture that makes it safe:
   is reliable but not as battle-tested as email; that is exactly what the
   parallel run proves before anything is turned off.
 
+### v3.3 — color fix, Watchdog kept, Position Guard on the desk (2026-08-14)
+
+1. **Fundamentals coloring bug, found and fixed.** The v3.2 gauge classes were
+   being overridden by a more specific base rule (`.kvrow b` beat `.u`/`.d` in
+   the cascade), so values rendered ink-colored despite carrying the right
+   class — and the v3.2 check only asserted class names, not computed colors.
+   Fixed with explicit variant rules; verification now reads
+   `getComputedStyle().color`. Lesson for Phase 2 tests: **assert computed
+   styles, never class presence.**
+2. **Watchdog email stays for now** (supersedes the v3.2 all-emails ruling for
+   the Watchdog only). The push channel design is shelved intact; the page
+   keeps the alerts log either way. The brief email still retires.
+3. **Position Guard joins the desk — inside the passphrase layer** (this
+   resolves decision #3 as YES; the page is public, positions are not).
+   Implemented in the prototype as an unlocked demo. The spec:
+   - **Trades** (from `trades.json`): size, entry, open P&L, resting stop vs
+     **recommended stop** = the validated chandelier math (highest close since
+     entry − MULT×ATR22, MULT 2 leveraged / 3 plain — same engine as
+     trade_stops), with the ≥2%-of-price drift rule driving a RAISE-STOP nag.
+     Entry and recommended stop draw as dashed lines on the drawer chart.
+   - **Thesis positions (MU core) never get stops** — the panel shows
+     kill-trigger status instead. Standing portfolio-thesis rule, preserved
+     verbatim.
+   - **DCA sleeves (UPRO/SSO)** show band/rule status only.
+   - **"Recommended sells" are levels, not commands:** the drawer chart's
+     50/200-day lines are the sell/trim references, plus a TRIM ZONE flag when
+     a held name sits ≥85% of its 52-week range with RSI ≥70. Watch-only
+     wording throughout; nothing here is an instruction.
+   - **Data path:** the vault workflow publishes an encrypted private blob
+     (passphrase → WebCrypto key, decrypt client-side only) carrying
+     trades.json state, thesis/band status, and per-position stop math; the
+     loop folds it alongside the brief; the panel renders only after unlock,
+     and public visitors never see the box.
+
 ---
 
 ## Part C — Technical architecture
@@ -684,7 +719,8 @@ Optional hardening, Zach's call: a Watchdog "D5" check — data.json older than
 60 minutes mid-session triggers one email. Small registered change to the
 Watchdog if wanted; not required for launch.
 
-**Push channel upkeep (added by the v3.2 ruling):** VAPID keypair lives in
+**Push channel upkeep (v3.2 design — DEFERRED while the Watchdog stays on
+email, v3.3):** VAPID keypair lives in
 ClaudeVault Actions secrets (no expiry); per-device push subscriptions can go
 stale when a phone reinstalls the app — symptom is silence, cure is redoing
 the one-time enable step; the alerts log on the page is the always-true

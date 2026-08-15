@@ -247,6 +247,9 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .leg i.d200{border-top:2px dashed var(--ink3)}
 .kvrow{display:flex;justify-content:space-between;gap:14px;font-size:11.5px;padding:3px 0;color:var(--ink3)}
 .kvrow b{color:var(--ink);font-weight:600;text-align:right}
+.kvrow b.u{color:var(--up)}
+.kvrow b.d{color:var(--dn)}
+.kvrow b.m{color:var(--ink2)}
 .rb.big{height:6px;margin:10px 0 16px}
 .rb.big b{width:9px;height:9px}
 .rb.big .lo,.rb.big .hi{top:9px;font-size:9.5px}
@@ -334,6 +337,7 @@ footer b{color:var(--ink2)}
       <div class="wrs" id="wl"></div>
       <div class="wlnote">leveraged ETFs (SOXL · SOXS · MUU) excluded by rule — flow boards still scan them</div>
       <div class="alertbox" id="alerts"></div>
+      <div class="alertbox" id="positions"></div>
     </aside>
 
     <!-- ======= middle ======= -->
@@ -561,6 +565,12 @@ const D = {
     {d:"2026-09-16",t:"13:00",title:"FOMC decision + dot plot + presser",imp:"hi",kind:"econ",meta:"anchor event — shown past the 28d window",anchor:true},
     {d:"2026-09-29",t:"16:05",title:"MU earnings — FQ4 + guidance",imp:"hi",kind:"earnings",sym:"MU",meta:"anchor for the memory thesis",anchor:true},
   ],
+  positions: {
+    MU:{kind:"thesis",note:"kill triggers intact ✓"},
+    UPRO:{kind:"dca",note:"200-day band: ABOVE — buying continues"},
+    SSO:{kind:"dca",note:"taxable DCA — never-sell rule"},
+    COHR:{kind:"trade",sh:200,entry:82.10,opened:"Jul 22",stop:81.40,rec:83.65,atr:2.05,hc:89.80},
+  },
   asia: [
     ["KOSPI","3,412",+0.8],["SK Hynix · Seoul","₩298,500",+2.1],["Samsung · Seoul","₩91,300",+0.4],
     ["Nikkei 225","44,180",+0.3],["TSMC · Taipei","NT$1,485",+1.1]
@@ -703,7 +713,7 @@ function renderWL(){
     (hot.length?hot.map(s=>`<span class="hm2">${s} ${hotOf(s).toFixed(1)}×</span> <span class="m">(${fm1(D.quotes[s].ch)}% vs ${D.quotes[s].av}% usual)</span>`).join(" · "):"none yet")+
     `<div style="margin-top:6px"><b>NEAR 52-WEEK LOWS · SHOPPING LIST</b>`+
     lows.map(s=>`${s} <span class="m">${Math.round(statsOf(s).pos*100)}%</span>`).join(" · ")+`</div>`+
-    `<div style="margin-top:6px"><b>ALERTS · REPLACES THE WATCHDOG EMAIL</b>quiet today · last: Tue MU −3.1% leg (D4) · <span class="m">delivered as phone push + logged here</span></div>`;
+    `<div style="margin-top:6px"><b>WATCHDOG · EMAIL STAYS FOR NOW</b>quiet today · last: Tue MU −3.1% leg (D4) · <span class="m">every alert also logs here</span></div>`;
   document.title=hot.length?`(${hot.length}) The Desk`:"The Desk";
 }
 
@@ -792,6 +802,21 @@ function renderETF(){
   <div class="note">Slower money — funds, advisors, retail — versus the fast options tape above.</div>`;
 }
 
+function renderPositions(){
+  const P=D.positions,q=D.quotes;
+  const rows=[];
+  const mu=q.MU;
+  rows.push(`<div class="kvrow" data-sym="MU" style="cursor:pointer"><span><b style="text-align:left">MU</b> <span class="m">core · thesis</span></span><b class="u" style="font-weight:600">${P.MU.note}</b></div>
+  <div class="note" style="margin:0 0 4px">no stop by design — kill triggers govern thesis positions</div>`);
+  rows.push(`<div class="kvrow"><span><b style="text-align:left">UPRO</b> <span class="m">DCA sleeve</span></span><b class="u">${P.UPRO.note}</b></div>`);
+  rows.push(`<div class="kvrow"><span><b style="text-align:left">SSO</b> <span class="m">DCA sleeve</span></span><b class="m">${P.SSO.note}</b></div>`);
+  const c=P.COHR,cq=q.COHR,pl=(cq.px/c.entry-1)*100,drift=(c.rec-c.stop)/cq.px*100;
+  rows.push(`<div class="kvrow" data-sym="COHR" style="cursor:pointer"><span><b style="text-align:left">COHR</b> <span class="m">${c.sh} sh @ ${c.entry.toFixed(2)}</span></span><b class="${sign(pl)}">${fm1(pl)}%</b></div>
+  <div class="kvrow"><span>resting stop ${c.stop.toFixed(2)}</span><b class="d">RAISE → ${c.rec.toFixed(2)}</b></div>
+  <div class="note" style="margin:0">trail math: highest close ${c.hc.toFixed(2)} − 3×ATR ${c.atr.toFixed(2)} · drift ${drift.toFixed(1)}% of price ≥ 2% ⇒ nag</div>`);
+  $("#positions").innerHTML=`<b>POSITION GUARD · PRIVATE LAYER (UNLOCKED DEMO)</b>`+rows.join("")
+  +`<div class="note" style="margin-top:6px">Passphrase-locked on the real page — public visitors never see this box. Stops are trail math on trades only; levels are levels, not instructions.</div>`;
+}
 function renderAsia(){
   $("#asia").innerHTML=D.asia.map(r=>`<div class="kvrow"><span>${esc(r[0])}</span><b><span class="m tn" style="font-weight:400;margin-right:10px">${esc(r[1])}</span><span class="${sign(r[2])} tn">${fm1(r[2])}%</span></b></div>`).join("")
   +`<div class="note" style="margin-top:6px">${esc(D.asiaRead)}</div>`;
@@ -888,11 +913,20 @@ function chartSVG(sym,tf){
   const path=a=>a.map((v,i)=>v==null?null:`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).filter(Boolean).join(" ");
   const col=pct>=0?"var(--spark-up)":"var(--spark-dn)";
   const grid=[0.25,0.5,0.75].map(f=>`<line x1="0" x2="${w}" y1="${(h*f).toFixed(0)}" y2="${(h*f).toFixed(0)}" stroke="var(--edge)" stroke-width="1" opacity=".5"/>`).join("");
+  const P=D.positions&&D.positions[sym];
+  let poslines="";
+  if(P&&P.kind==="trade"){
+    for(const [v,lab,c] of [[P.rec,"stop "+P.rec.toFixed(2),"var(--dn)"],[P.entry,"entry "+P.entry.toFixed(2),"var(--ink3)"]]){
+      if(v>lo&&v<hi) poslines+=`<line x1="0" x2="${w}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="${c}" stroke-width="1" stroke-dasharray="7 4" opacity=".85"/>
+      <text x="4" y="${(Y(v)-3).toFixed(1)}" font-size="8.5" fill="${c}">${lab}</text>`;
+    }
+  }
   const pline=path(pts);
   return {pct,pts,svg:`<svg viewBox="0 0 ${w} ${h}" id="dchart" preserveAspectRatio="none">${grid}
     <polyline points="${path(m200)}" fill="none" stroke="var(--ink3)" stroke-width="1.2" stroke-dasharray="5 4" opacity=".8"/>
     <polyline points="${path(m50)}" fill="none" stroke="var(--acc)" stroke-width="1.2" stroke-dasharray="3 3" opacity=".9"/>
     <polyline points="${pline} ${w},${h} 0,${h}" fill="${col}" opacity=".07" stroke="none"/>
+    ${poslines}
     <polyline points="${pline}" fill="none" stroke="${col}" stroke-width="1.7"/>
     <circle cx="${X(pts.length-1)}" cy="${Y(pts[pts.length-1])}" r="2.6" fill="${col}"/></svg>`};
 }
@@ -921,6 +955,20 @@ function openDrawer(sym){
       ${rangeBar(sym,true)}
       <div class="kvrow"><span>Position in range</span><b>${(st.pos*100).toFixed(0)}%${st.pos>0.85?" · hot runner":st.pos<0.25?" · near lows":""}</b></div>
     </div>
+    ${(()=>{const P=D.positions&&D.positions[sym];if(!P)return"";
+      if(P.kind==="thesis")return `<div class="dsec"><h3>Position — core (thesis)</h3>
+        <div class="kvrow"><span>Kill triggers</span><b class="u">${P.note}</b></div>
+        <div class="note" style="margin-top:2px">Thesis positions never carry stops — triggers govern. Details live in the thesis record.</div></div>`;
+      if(P.kind==="dca")return `<div class="dsec"><h3>Position — DCA sleeve</h3><div class="kvrow"><span>Status</span><b class="u">${P.note}</b></div></div>`;
+      const pl=(q.px/P.entry-1)*100, dist=(q.px-P.rec)/q.px*100;
+      return `<div class="dsec"><h3>Position — trade</h3>
+        <div class="kvrow"><span>Size · entry</span><b>${P.sh} sh @ ${P.entry.toFixed(2)} · ${P.opened}</b></div>
+        <div class="kvrow"><span>Open P&L</span><b class="${sign(pl)}">${fm1(pl)}%</b></div>
+        <div class="kvrow"><span>Resting stop</span><b>${P.stop.toFixed(2)}</b></div>
+        <div class="kvrow"><span>Recommended stop</span><b class="d">RAISE → ${P.rec.toFixed(2)} (${dist.toFixed(1)}% below)</b></div>
+        <div class="kvrow"><span>Trail math</span><b style="font-size:10.5px">high close ${P.hc.toFixed(2)} − 3×ATR ${P.atr.toFixed(2)}</b></div>
+        <div class="kvrow"><span>Trim watch</span><b class="m">${statsOf(sym).pos>=0.85&&q.rsi>=70?"TRIM ZONE — top of range + hot RSI":"none — levels on the chart"}</b></div>
+        <div class="note" style="margin-top:2px">Drawn on the chart above: entry + recommended stop. 50/200-day are the sell/trim reference levels.</div></div>`;})()}
     <div class="dsec"><h3><span data-tip="${esc(TIPS.fund)}">Snapshot</span></h3>
       <div class="kvrow"><span>Market cap</span><b>${q.cap||"—"}</b></div>
       <div class="kvrow"><span>P/E (fwd)</span><b class="${fundCls("pe",q)}">${q.pe||"—"}</b></div>
@@ -1082,7 +1130,7 @@ $("#pal").addEventListener("click",e=>{if(e.target.id==="pal")palClose()});
 $("#focclear").addEventListener("click",()=>setFocus(null));
 
 /* =================== boot =================== */
-renderTape();renderWL();renderAsia();renderSector();renderConv();renderSwing();renderOrders();renderETF();renderCatFilters();renderCats();renderNews();
+renderTape();renderWL();renderPositions();renderAsia();renderSector();renderConv();renderSwing();renderOrders();renderETF();renderCatFilters();renderCats();renderNews();
 </script>
 </body>
 </html>
