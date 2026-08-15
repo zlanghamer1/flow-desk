@@ -55,12 +55,42 @@ def _econ_row(d, title, importance, time_ct="00:00", source="tv_calendar", ticke
     }
 
 
-def _yahoo_json(closes):
-    return json.dumps({"chart": {"result": [{"indicators": {"quote": [{"close": closes}]}}]}}).encode()
+def _yahoo_json(closes, opens=None, highs=None, lows=None):
+    """Build a v8 chart API response. By default open=high=low=close (fine
+    for tests that only care about the close-derived arithmetic); pass
+    opens/highs/lows explicitly to test real OHLC divergence."""
+    quote = {
+        "open": opens if opens is not None else list(closes),
+        "high": highs if highs is not None else list(closes),
+        "low": lows if lows is not None else list(closes),
+        "close": closes,
+    }
+    return json.dumps({"chart": {"result": [{"indicators": {"quote": [quote]}}]}}).encode()
 
 
 def _news_json(items):
     return json.dumps({"items": items}).encode()
+
+
+def _sa_skip_data_json():
+    """A stockanalysis.com __data.json response whose last node is "skip"
+    (unchanged) — makes _fetch_sa_page return None cleanly. Used by tests
+    that don't care about the fund-sidecar builder's specifics but need
+    SOME response for its (now unconditional, on the bars-rebuild gate)
+    stockanalysis.com requests."""
+    return json.dumps({"nodes": [{"type": "skip"}, {"type": "skip"}, {"type": "skip"}]}).encode()
+
+
+def _yahoo_crumb_and_empty_quotesummary(url):
+    """Routes the Yahoo crumb dance + a quoteSummary call to an empty-but-
+    valid response, for tests that don't care about fund-sidecar specifics."""
+    if "fc.yahoo.com" in url:
+        raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+    if "getcrumb" in url:
+        return b"testcrumb"
+    if "quoteSummary" in url:
+        return json.dumps({"quoteSummary": {"result": [{}]}}).encode()
+    return None
 
 
 # ── 1. token-absent -> every vault fetch skips the network ─────────────────
@@ -536,9 +566,10 @@ def test_build_bars_end_to_end_and_fail_soft_skip():
         raise urllib.error.URLError("boom")
     payload, avg_move = context.build_bars(["GOOD", "BAD"], date(2026, 8, 15), _get=fake_get)
     assert payload["built"] == "2026-08-15"
+    assert payload["v"] == 2
     assert "GOOD" in payload["bars"] and "BAD" not in payload["bars"]
-    assert payload["bars"]["GOOD"][0] == 100.0
-    assert payload["bars"]["GOOD"][-1] == 124.0
+    assert payload["bars"]["GOOD"][0] == [100.0, 100.0, 100.0, 100.0]
+    assert payload["bars"]["GOOD"][-1] == [124.0, 124.0, 124.0, 124.0]
     assert "GOOD" in avg_move and avg_move["GOOD"] > 0
     assert "BAD" not in avg_move
 
@@ -549,7 +580,7 @@ def test_build_bars_caps_at_252_and_drops_nulls():
         return _yahoo_json(closes)
     payload, _ = context.build_bars(["MU"], date(2026, 8, 15), _get=fake_get)
     assert len(payload["bars"]["MU"]) == 252
-    assert None not in payload["bars"]["MU"]
+    assert all(v is not None for row in payload["bars"]["MU"] for v in row)
 
 
 # ── gates: hourly (context) and daily (bars) ────────────────────────────────
@@ -570,8 +601,9 @@ def test_hourly_gate_fresh_timestamp_skips_network_and_carries_cache_forward(tmp
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None,
                      "lo52": None, "market_cap": None, "beta": None, "avol": None, "rsi": None}}
-    fields, bars_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=_boom)
+    fields, bars_payload, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=_boom)
     assert bars_payload is None
+    assert fund_payload is None   # same gate as bars — both fresh, neither rebuilds
     assert fields["brief"] == {"date": "2026-08-15", "stale": False}
     assert fields["catalysts"] == cache["catalysts"]
     assert fields["desk_private"] == {"v": 1}
@@ -600,17 +632,23 @@ def test_stale_context_triggers_full_refetch_and_updates_cache(tmp_path, monkeyp
             return json.dumps({"status": "ok", "result": []}).encode()
         if "news-mediator.tradingview.com" in url:
             return json.dumps({"items": []}).encode()
+        if "stockanalysis.com" in url:
+            return _sa_skip_data_json()
+        yahoo_fund = _yahoo_crumb_and_empty_quotesummary(url)
+        if yahoo_fund is not None:
+            return yahoo_fund
         if "query1.finance.yahoo.com" in url:
             return _yahoo_json([1.0, 2.0])
         raise AssertionError(f"unexpected URL: {url}")
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": 1.0, "lo52": 1.0,
                      "market_cap": 1.0, "beta": 1.0, "avol": 1.0, "rsi": 50.0}}
-    fields, bars_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
+    fields, bars_payload, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert fields["brief"]["date"] == "2026-08-15" and fields["brief"]["stale"] is False
     assert fields["desk_private"] == {"v": 1, "blob": "abc"}
     assert fields["context_updated_at"] == "2026-08-15T14:00:00Z"
     assert bars_payload is not None
+    assert fund_payload is not None and "MU" in fund_payload   # same gate as bars — both rebuilt
 
     saved = context.load_context_cache()
     assert saved["context_fetched_at"] == "2026-08-15T14:00:00Z"
@@ -628,16 +666,22 @@ def test_build_context_without_token_still_gets_tv_and_opex_but_not_vault(tmp_pa
             return json.dumps({"status": "ok", "result": []}).encode()
         if "news-mediator.tradingview.com" in url:
             return json.dumps({"items": []}).encode()
+        if "stockanalysis.com" in url:
+            return _sa_skip_data_json()
+        yahoo_fund = _yahoo_crumb_and_empty_quotesummary(url)
+        if yahoo_fund is not None:
+            return yahoo_fund
         if "query1.finance.yahoo.com" in url:
             return _yahoo_json([1.0, 2.0])
         raise AssertionError(f"unexpected URL: {url}")
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None}}
-    fields, _ = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
+    fields, _, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert "brief" not in fields
     assert "desk_private" not in fields
     assert "catalysts" in fields
     assert any(c["kind"] == "market" for c in fields["catalysts"])   # OpEx needs no vault/TV data
+    assert fund_payload is not None and "MU" in fund_payload   # no vault token needed for this leg either
 
 
 def test_bars_only_gate_rebuilds_bars_without_refetching_context(tmp_path, monkeypatch):
@@ -655,16 +699,23 @@ def test_bars_only_gate_rebuilds_bars_without_refetching_context(tmp_path, monke
     context.save_context_cache(cache)
 
     def fake_get(url, headers):
+        if "stockanalysis.com" in url:
+            return _sa_skip_data_json()
+        yahoo_fund = _yahoo_crumb_and_empty_quotesummary(url)
+        if yahoo_fund is not None:
+            return yahoo_fund
         assert "query1.finance.yahoo.com" in url, f"unexpected fetch: {url}"
         return _yahoo_json([100.0 + i for i in range(25)])
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
                      "market_cap": None, "beta": None, "avol": None, "rsi": None}}
-    fields, bars_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
+    fields, bars_payload, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert bars_payload is not None and bars_payload["built"] == "2026-08-15"
+    assert bars_payload["v"] == 2
     assert fields["brief"] == {"date": "2026-08-15", "stale": False}   # carried from cache
     assert fields["facts"]["MU"]["avg_move"] is not None
     assert fields["facts"]["MU"]["avg_move"] != 9.99   # replaced by the fresh rebuild
+    assert fund_payload is not None and "MU" in fund_payload   # same gate as bars — both rebuilt
 
 
 def test_is_context_stale_missing_or_old_timestamp():
@@ -718,3 +769,428 @@ def test_fetch_econ_tv_drops_low_importance():
     assert "3-Month Bill Auction" not in titles
     assert "FOMC Minutes" in titles and "CPI" in titles
     assert all(r["importance"] in ("HIGH", "MEDIUM") for r in rows)
+
+
+def test_build_bars_v2_quads_and_facts_fundamentals_passthrough():
+    """2026-08-15: bars.json v2 rows are [o,h,l,c] quads; rows with a missing
+    leg are dropped; avg_move still computes from closes. And the facts map
+    must pass the scanner fundamentals through (None stays None, never 0)."""
+    payload = {"chart": {"result": [{"indicators": {"quote": [{
+        "open": [10.0, 11.0, None, 12.0], "high": [10.5, 11.5, 12.0, 12.5],
+        "low": [9.5, 10.5, 11.0, 11.5], "close": [10.2, 11.2, 11.8, 12.2]}]}}]}}
+    bars, avg = context.build_bars(["ZZZ"], date(2026, 8, 15),
+                                    _get=lambda url, headers=None: json.dumps(payload).encode())
+    assert bars["v"] == 2
+    assert bars["bars"]["ZZZ"] == [[10.0, 10.5, 9.5, 10.2], [11.0, 11.5, 10.5, 11.2], [12.0, 12.5, 11.5, 12.2]]
+    assert "ZZZ" in avg and avg["ZZZ"] > 0
+    quotes = {"ZZZ": {"tv_symbol": "NASDAQ:ZZZ", "hi52": 20.0, "lo52": 5.0, "market_cap": 1e9,
+              "beta": 1.1, "avol": 1e6, "rsi": 55.0, "earnings_ts": None,
+              "pe": 12.5, "peg": None, "net_margin": 22.0, "gross_margin": None, "op_margin": 18.0,
+              "fcf_margin": None, "debt_eq": 0.4, "roe": None, "ps": 3.1, "pb": None,
+              "ev_ebitda": 9.9, "yld": None, "target": 25.0, "rec_mark": 2.1}}
+    facts = context.fetch_earnings_days(quotes, date(2026, 8, 15))
+    f = facts["ZZZ"]
+    assert f["pe"] == 12.5 and f["peg"] is None and f["debt_eq"] == 0.4
+    assert f["rec_mark"] == 2.1 and f["gross_margin"] is None
+    assert f["net_margin"] == 22.0 and f["op_margin"] == 18.0 and f["ps"] == 3.1
+    assert f["ev_ebitda"] == 9.9 and f["target"] == 25.0
+    for k in ("peg", "gross_margin", "fcf_margin", "roe", "pb", "yld"):
+        assert f[k] is None and f[k] != 0
+
+
+def test_build_bars_v1_style_all_present_row_still_round_trips():
+    """A bar with every OHLC leg present survives; values are rounded 2dp."""
+    payload = {"chart": {"result": [{"indicators": {"quote": [{
+        "open": [10.001], "high": [10.999], "low": [9.994], "close": [10.501]}]}}]}}
+    bars, _ = context.build_bars(["ZZZ"], date(2026, 8, 15),
+                                  _get=lambda url, headers=None: json.dumps(payload).encode())
+    assert bars["bars"]["ZZZ"] == [[10.0, 11.0, 9.99, 10.5]]
+
+
+def test_track_only_names_never_reach_chain_candidates():
+    """Pin the 2026-07-25 SKHX ghost-liquidity ruling: TRACK_ONLY names are
+    quoted/tracked (facts/bars/fund/rail) but deliberately never chain-fetched
+    — select_candidates() is the enforcement point, so this exercises it
+    directly rather than merely inspecting the set."""
+    import build_snapshot as bs
+    assert bs.TRACK_ONLY == {"SKHX", "NRGU", "OILU", "STLL", "AAOG"}
+    for t in bs.TRACK_ONLY:
+        assert t in bs.WATCHLIST, t + " must still be on the watchlist (tracked)"
+        assert t in bs.PINNED, t + " must still be tracked"
+
+    # Every pinned name "resolved" this cycle, TRACK_ONLY included.
+    quotes = {t: {"ticker": t, "tv_symbol": f"NASDAQ:{t}"} for t in bs.PINNED}
+    candidates = bs.select_candidates(quotes)
+    assert "SKHX" not in candidates
+    for t in bs.TRACK_ONLY:
+        assert t not in candidates, t + " must never reach a CBOE chain fetch"
+    # Everything else that resolved DOES become a candidate.
+    for t in bs.PINNED:
+        if t not in bs.TRACK_ONLY:
+            assert t in candidates
+
+
+def test_select_candidates_track_only_excluded_even_when_it_did_resolve():
+    """The exclusion is a deliberate rule, not an accident of a missing quote:
+    give SKHX a perfectly good resolved quote (as if its ghost chain looked
+    fine) and it must still never become a candidate."""
+    import build_snapshot as bs
+    quotes = {"SKHX": {"ticker": "SKHX", "tv_symbol": "CBOE:SKHX", "close": 15.0}}
+    assert bs.select_candidates(quotes) == []
+
+
+# ── fund/{SYM}.json sidecars (added 2026-08-15, Task 4) ─────────────────────
+
+def _sa_data_json(root):
+    """A minimal stockanalysis.com __data.json fixture: a single "data" node
+    whose array is just [root]. _devalue_resolve(data, 0) returns `root`
+    almost verbatim since nothing in it needs a reference lookup — AS LONG
+    AS every numeric leaf is a float, never a bare int (an int leaf would be
+    misread as a devalue reference index into this 1-element array). Real
+    stockanalysis.com payloads are properly flattened; this shortcut is only
+    valid for these hand-built fixtures."""
+    return json.dumps({"nodes": [{"type": "data", "data": [root]}]}).encode()
+
+
+def _yahoo_qs(result):
+    return json.dumps({"quoteSummary": {"result": [result]}}).encode()
+
+
+def test_devalue_resolve_basic_reference_walk():
+    # data[0] is the root: {"a": 1, "b": 2}; data[1] = "hello" (a's value);
+    # data[2] = [3, -1] (b's value: a 2-element list whose first element
+    # references data[3] = 1.5, and whose second element IS the reference
+    # -1 itself — devalue's "undefined" sentinel -> None).
+    data = [{"a": 1, "b": 2}, "hello", [3, -1], 1.5]
+    out = context._devalue_resolve(data, 0)
+    assert out == {"a": "hello", "b": [1.5, None]}
+
+
+def test_fetch_sa_page_skip_node_and_network_failure_are_none():
+    assert context._fetch_sa_page("ZZZ", context.SA_STATISTICS_PATH,
+                                   _get=lambda u, h: _sa_skip_data_json()) is None
+    def fake_fail(u, h):
+        raise urllib.error.URLError("boom")
+    assert context._fetch_sa_page("ZZZ", context.SA_STATISTICS_PATH, _get=fake_fail) is None
+
+
+def test_fetch_sa_statistics_parses_short_float_pe_forward_and_amc_session():
+    root = {
+        "shortSelling": {"data": [
+            {"id": "shortInterest", "value": "292.67M"},
+            {"id": "shortFloat", "title": "Short % of Float", "value": "1.26%", "hover": "1.259%"},
+        ]},
+        "ratios": {"data": [
+            {"id": "pe", "value": "34.48", "hover": "34.483"},
+            {"id": "peForward", "value": "22.59", "hover": "22.589"},
+        ]},
+        "dates": {
+            "text": "The next confirmed earnings date is Wednesday, August 26, 2026, after market close.",
+            "data": [{"id": "earningsdate", "value": "Aug 26, 2026"}],
+        },
+    }
+    def fake_get(url, headers):
+        assert url == "https://stockanalysis.com/stocks/nvda/statistics/__data.json"
+        return _sa_data_json(root)
+    out = context.fetch_sa_statistics("NVDA", _get=fake_get)
+    assert out["short_pct_float"] == pytest.approx(1.259)
+    assert out["pe_forward"] == pytest.approx(22.589)
+    assert out["next_earnings_date"] == "2026-08-26"
+    assert out["next_earnings_session"] == "AMC"
+
+
+def test_fetch_sa_statistics_before_market_open_session():
+    root = {"shortSelling": {"data": []}, "ratios": {"data": []},
+            "dates": {"text": "The next confirmed earnings date is Tuesday, before market open.",
+                      "data": [{"id": "earningsdate", "value": "Sep 1, 2026"}]}}
+    out = context.fetch_sa_statistics("ZZZ", _get=lambda u, h: _sa_data_json(root))
+    assert out["next_earnings_session"] == "BMO"
+    assert out["next_earnings_date"] == "2026-09-01"
+
+
+def test_fetch_sa_statistics_missing_rows_and_page_failure_are_all_none():
+    empty = {"short_pct_float": None, "pe_forward": None,
+              "next_earnings_date": None, "next_earnings_session": None}
+    root = {"shortSelling": {"data": []}, "ratios": {"data": []}, "dates": {"data": [], "text": ""}}
+    assert context.fetch_sa_statistics("ZZZ", _get=lambda u, h: _sa_data_json(root)) == empty
+
+    def fake_fail(u, h):
+        raise urllib.error.URLError("boom")
+    assert context.fetch_sa_statistics("ZZZ", _get=fake_fail) == empty
+
+
+def test_fetch_sa_quarterly_drops_ttm_and_keeps_newest_first():
+    financial_data = {
+        "datekey": ["TTM", "2026-04-26", "2026-01-25", "2025-10-26", "2025-07-27"],
+        "fiscalYear": ["2027", "2026", "2026", "2026", "2026"],
+        "fiscalQuarter": ["Q1", "Q4", "Q3", "Q2", "Q1"],
+        "revenue": [253491000000.0, 68127000000.0, 57006000000.0, 46743000000.0, 44062000000.0],
+        "epsdil": [6.52965, 1.87, 1.62, 1.3, 1.05],
+    }
+    root = {"financialData": financial_data}
+    rows = context.fetch_sa_quarterly("NVDA", _get=lambda u, h: _sa_data_json(root))
+    assert rows is not None
+    assert len(rows) == 4   # TTM dropped
+    assert all(r["date"] != "TTM" for r in rows)
+    assert rows[0]["fiscal_quarter"] == "Q4" and rows[0]["fiscal_year"] == "2026"   # newest first, as returned
+    assert rows[-1]["fiscal_quarter"] == "Q1" and rows[-1]["revenue"] == pytest.approx(44062000000.0)
+
+
+def test_fetch_sa_quarterly_bad_shape_or_network_failure_is_none():
+    assert context.fetch_sa_quarterly("ZZZ", _get=lambda u, h: _sa_data_json({"financialData": None})) is None
+    assert context.fetch_sa_quarterly("ZZZ", _get=lambda u, h: _sa_data_json({})) is None
+    def fake_fail(u, h):
+        raise urllib.error.URLError("boom")
+    assert context.fetch_sa_quarterly("ZZZ", _get=fake_fail) is None
+
+
+def test_build_quarterly_series_oldest_first_and_capped():
+    # 20 newest-first synthetic rows: index 0 = newest (value 0), index 19 = oldest (value 19).
+    rows = [{"fiscal_year": "2020", "fiscal_quarter": "Q1", "revenue": float(i), "eps": float(i)}
+            for i in range(20)]
+    series = context._build_quarterly_series(rows)
+    assert len(series["periods"]) == context.FUND_MAX_QUARTERLY == 12
+    # capped to the 12 NEWEST (values 0..11), then reversed to oldest-first.
+    assert series["revenue"][0] == 11.0 and series["revenue"][-1] == 0.0
+    assert series["periods"][0] == "Q1 20"
+
+
+def test_build_annual_series_sums_complete_fiscal_years_only():
+    rows = [
+        {"fiscal_year": "2026", "fiscal_quarter": "Q4", "revenue": 68127000000.0, "eps": 1.87},
+        {"fiscal_year": "2026", "fiscal_quarter": "Q3", "revenue": 57006000000.0, "eps": 1.62},
+        {"fiscal_year": "2026", "fiscal_quarter": "Q2", "revenue": 46743000000.0, "eps": 1.3},
+        {"fiscal_year": "2026", "fiscal_quarter": "Q1", "revenue": 44062000000.0, "eps": 1.05},
+        {"fiscal_year": "2027", "fiscal_quarter": "Q1", "revenue": 81615000000.0, "eps": 1.87},  # partial FY27
+    ]
+    annual = context._build_annual_series(rows)
+    assert annual["periods"] == ["FY26"]   # FY27 excluded: only 1 of 4 quarters present
+    assert annual["revenue"][0] == pytest.approx(215938000000.0)
+    assert annual["eps"][0] == pytest.approx(5.84)
+
+
+def test_build_annual_series_caps_at_max_years():
+    rows = []
+    for y in range(2015, 2028):   # 13 candidate years, all complete
+        yy = str(y)
+        for q in ("Q1", "Q2", "Q3", "Q4"):
+            rows.append({"fiscal_year": yy, "fiscal_quarter": q, "revenue": 1.0, "eps": 1.0})
+    annual = context._build_annual_series(rows)
+    assert len(annual["periods"]) == context.FUND_MAX_ANNUAL == 6
+    assert annual["periods"][-1] == "FY27"   # most recent complete year kept
+
+
+def test_fetch_yahoo_crumb_tolerates_fc_yahoo_404_and_extracts_crumb():
+    def fake_get(url, headers):
+        if "fc.yahoo.com" in url:
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        if "getcrumb" in url:
+            return b"abc123crumb"
+        raise AssertionError(url)
+    assert context.fetch_yahoo_crumb(_get=fake_get) == "abc123crumb"
+
+
+def test_fetch_yahoo_crumb_none_when_getcrumb_itself_fails():
+    def fake_get(url, headers):
+        if "fc.yahoo.com" in url:
+            return b""
+        raise urllib.error.URLError("boom")
+    assert context.fetch_yahoo_crumb(_get=fake_get) is None
+
+
+def test_fetch_yahoo_fundamentals_full_shape_matches_and_derives_session():
+    period_end = int(datetime(2026, 4, 30, tzinfo=timezone.utc).timestamp())
+    reported = int(datetime(2026, 5, 20, 20, 15, tzinfo=timezone.utc).timestamp())   # 16:15 ET -> afterhours
+    next_earn = int(datetime(2026, 8, 27, tzinfo=timezone.utc).timestamp())
+    result = {
+        "defaultKeyStatistics": {
+            "forwardPE": {"raw": 17.467222, "fmt": "17.47"},
+            "shortPercentOfFloat": {"raw": 0.0126, "fmt": "1.26%"},
+        },
+        "earnings": {
+            "earningsChart": {"quarterly": [{
+                "date": "1Q2026", "fiscalQuarter": "1Q2027",
+                "actual": {"raw": 1.87}, "estimate": {"raw": 1.77191},
+                "surprisePct": "5.54",
+                "periodEndDate": {"raw": period_end}, "reportedDate": {"raw": reported},
+            }]},
+            "financialsChart": {"quarterly": [{"date": "1Q2026", "revenue": {"raw": 81615000000}}]},
+        },
+        "calendarEvents": {"earnings": {
+            "earningsDate": [{"raw": next_earn}],
+            "earningsAverage": {"raw": 2.083},
+            "revenueAverage": {"raw": 91846098240},
+        }},
+    }
+    def fake_get(url, headers):
+        assert "quoteSummary/NVDA" in url and "crumb=abc" in url
+        return _yahoo_qs(result)
+    out = context.fetch_yahoo_fundamentals("NVDA", "abc", _get=fake_get)
+    assert out["pe_forward"] == pytest.approx(17.467222)
+    assert out["short_pct_float"] == pytest.approx(1.26, abs=1e-6)
+    assert len(out["earnings"]) == 1
+    row = out["earnings"][0]
+    assert row["period"] == "Q1 2027"
+    assert row["date"] == "2026-04-30"
+    assert row["session"] == "afterhours"
+    assert row["eps"] == pytest.approx(1.87) and row["eps_est"] == pytest.approx(1.77191)
+    assert row["eps_surprise_pct"] == pytest.approx(5.54)
+    assert row["rev"] == pytest.approx(81615000000.0)
+    assert row["rev_est"] is None and row["rev_surprise_pct"] is None   # never sourced, see module header
+    assert out["next_earnings"] == {
+        "date": "2026-08-27", "session": None,   # no intraday time in calendarEvents
+        "eps_est": pytest.approx(2.083), "rev_est": pytest.approx(91846098240.0),
+    }
+
+
+def test_fetch_yahoo_fundamentals_revenue_unmatched_stays_none():
+    period_end = int(datetime(2026, 4, 30, tzinfo=timezone.utc).timestamp())
+    result = {
+        "defaultKeyStatistics": {},
+        "earnings": {
+            "earningsChart": {"quarterly": [{
+                "date": "1Q2026", "fiscalQuarter": "1Q2027",
+                "actual": {"raw": 1.87}, "estimate": {"raw": 1.77},
+                "surprisePct": "5.65", "periodEndDate": {"raw": period_end}, "reportedDate": None,
+            }]},
+            "financialsChart": {"quarterly": []},   # no matching revenue row at all
+        },
+        "calendarEvents": {},
+    }
+    out = context.fetch_yahoo_fundamentals("NVDA", "abc", _get=lambda u, h: _yahoo_qs(result))
+    assert out["earnings"][0]["rev"] is None
+    assert out["earnings"][0]["session"] is None   # no reportedDate -> can't classify
+    assert out["next_earnings"] is None
+
+
+def test_fetch_yahoo_fundamentals_fetch_failure_is_all_empty():
+    def fake_fail(u, h):
+        raise urllib.error.URLError("boom")
+    out = context.fetch_yahoo_fundamentals("NVDA", "abc", _get=fake_fail)
+    assert out == {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None}
+
+    # A 200 with a shape quoteSummary doesn't recognize is equally fail-soft.
+    out2 = context.fetch_yahoo_fundamentals("NVDA", "abc", _get=lambda u, h: json.dumps({"quoteSummary": {"result": []}}).encode())
+    assert out2 == {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None}
+
+
+def test_build_fund_sidecar_yahoo_next_earnings_session_falls_back_to_stockanalysis_text():
+    """Yahoo's calendarEvents carries no intraday time, so next_earnings.session
+    is None straight out of fetch_yahoo_fundamentals; build_fund_sidecar must
+    fill it in — from a TV earnings_ts if one is available, else from
+    stockanalysis.com's own before/after-market text."""
+    sa_stats_root = {
+        "shortSelling": {"data": [{"id": "shortFloat", "hover": "4.103%"}]},
+        "ratios": {"data": [{"id": "peForward", "hover": "48.83"}]},
+        "dates": {"text": "after market close", "data": [{"id": "earningsdate", "value": "Aug 27, 2026"}]},
+    }
+    next_earn_ts = int(datetime(2026, 8, 27, tzinfo=timezone.utc).timestamp())
+    yahoo_result = {
+        "defaultKeyStatistics": {},
+        "earnings": {"earningsChart": {"quarterly": []}, "financialsChart": {"quarterly": []}},
+        "calendarEvents": {"earnings": {
+            "earningsDate": [{"raw": next_earn_ts}],
+            "earningsAverage": {"raw": 2.01}, "revenueAverage": {"raw": 92100000000.0},
+        }},
+    }
+    def fake_get(url, headers):
+        if "statistics" in url:
+            return _sa_data_json(sa_stats_root)
+        if "financials/income-statement" in url:
+            raise urllib.error.URLError("boom")   # quarterly leg fails independently
+        if "quoteSummary" in url:
+            return _yahoo_qs(yahoo_result)
+        raise AssertionError(url)
+
+    # No TV earnings_ts available -> falls back to stockanalysis.com's session text.
+    payload = context.build_fund_sidecar("MRVL", date(2026, 8, 15), "crumbtoken", None, _get=fake_get)
+    assert payload["sym"] == "MRVL" and payload["built"] == "2026-08-15"
+    assert payload["short_pct_float"] == pytest.approx(4.103)
+    assert payload["pe_forward"] == pytest.approx(48.83)
+    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": []}   # that leg failed, stays scaffolded
+    assert payload["next_earnings"] == {
+        "date": "2026-08-27", "session": "AMC",   # from stockanalysis.com's text, not TV
+        "eps_est": pytest.approx(2.01), "rev_est": pytest.approx(92100000000.0),
+    }
+
+    # A same-ticker TV earnings_ts, if available, takes priority over the
+    # stockanalysis.com text (premarket here vs AMC from the text above).
+    premarket_ts = datetime(2026, 8, 27, 11, 0, tzinfo=timezone.utc).timestamp()   # 07:00 ET -> premarket
+    payload2 = context.build_fund_sidecar("MRVL", date(2026, 8, 15), "crumbtoken", premarket_ts, _get=fake_get)
+    assert payload2["next_earnings"]["session"] == "premarket"
+
+
+def test_build_fund_sidecar_yahoo_leg_skipped_entirely_when_crumb_is_none():
+    sa_stats_root = {
+        "shortSelling": {"data": [{"id": "shortFloat", "hover": "2.0%"}]},
+        "ratios": {"data": [{"id": "peForward", "hover": "10.0"}]},
+        "dates": {"text": "before market open", "data": [{"id": "earningsdate", "value": "Sep 1, 2026"}]},
+    }
+    def fake_get(url, headers):
+        if "statistics" in url:
+            return _sa_data_json(sa_stats_root)
+        if "financials/income-statement" in url:
+            raise urllib.error.URLError("boom")
+        raise AssertionError(f"yahoo must not be called with no crumb: {url}")
+    payload = context.build_fund_sidecar("XYZ", date(2026, 8, 15), None, None, _get=fake_get)
+    assert payload["short_pct_float"] == pytest.approx(2.0)
+    assert payload["pe_forward"] == pytest.approx(10.0)
+    assert payload["earnings"] == []
+    assert payload["next_earnings"] == {"date": "2026-09-01", "session": "BMO", "eps_est": None, "rev_est": None}
+    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": []}
+
+
+def test_build_fund_universe_fetches_crumb_exactly_once_across_symbols():
+    calls = {"crumb": 0}
+    def fake_get(url, headers):
+        if "fc.yahoo.com" in url:
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        if "getcrumb" in url:
+            calls["crumb"] += 1
+            return b"crumb"
+        if "statistics" in url or "financials/income-statement" in url:
+            return _sa_skip_data_json()
+        if "quoteSummary" in url:
+            return _yahoo_qs({})
+        raise AssertionError(url)
+    out = context.build_fund_universe(["A", "B", "C"], date(2026, 8, 15), _get=fake_get)
+    assert set(out.keys()) == {"A", "B", "C"}
+    assert calls["crumb"] == 1   # one crumb dance for the whole run, not per symbol
+
+
+def test_build_fund_universe_no_crumb_still_builds_from_stockanalysis_only():
+    def fake_get(url, headers):
+        if "fc.yahoo.com" in url or "getcrumb" in url:
+            raise urllib.error.URLError("boom")
+        if "quoteSummary" in url:
+            raise AssertionError("must not call yahoo quoteSummary with no crumb")
+        if "statistics" in url or "financials/income-statement" in url:
+            return _sa_skip_data_json()
+        raise AssertionError(url)
+    out = context.build_fund_universe(["A"], date(2026, 8, 15), _get=fake_get)
+    assert "A" in out
+
+
+def test_build_fund_universe_symbol_level_exception_is_fail_soft(monkeypatch):
+    """One symbol's total, unexpected failure inside build_fund_sidecar must
+    not lose the rest of the universe."""
+    real_build = context.build_fund_sidecar
+    def flaky(sym, session_date, crumb, earn_ts, _get=None):
+        if sym == "BAD":
+            raise RuntimeError("boom")
+        return real_build(sym, session_date, crumb, earn_ts, _get=_get)
+    monkeypatch.setattr(context, "build_fund_sidecar", flaky)
+
+    def fake_get(url, headers):
+        if "fc.yahoo.com" in url:
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        if "getcrumb" in url:
+            return b"crumb"
+        if "statistics" in url or "financials/income-statement" in url:
+            return _sa_skip_data_json()
+        if "quoteSummary" in url:
+            return _yahoo_qs({})
+        raise AssertionError(url)
+
+    out = context.build_fund_universe(["GOOD", "BAD"], date(2026, 8, 15), _get=fake_get)
+    assert set(out.keys()) == {"GOOD"}

@@ -11,9 +11,11 @@ PIPELINE (letters match the build spec)
 ────────────────────────────────────────────────────────────────────────────
 (a) NO market-wide screen (dropped 2026-07-17 — it dumped dozens of
     correlated movers onto the boards on rotation days). The universe is a
-    FIXED, curated list: PINNED = WATCHLIST (Zach's canonical picks + the
-    semiconductor/memory names off his TradingView watchlist) + the 11 SPDR
-    sector-index ETFs. See the PINNED definition below.
+    FIXED, curated list: PINNED = WATCHLIST (Zach's full synced TradingView
+    lists, leveraged wrappers included — see the 2026-08-15 ruling in the
+    WATCHLIST block below) + the 11 SPDR sector-index ETFs. See the PINNED
+    definition below. A TRACK_ONLY subset (also below) is quoted/tracked
+    like everything else but deliberately never reaches a CBOE chain fetch.
 (b) Resolve every pinned name to a live TV quote via a SELF-HEALING exchange
     probe (try NASDAQ:, then NYSE:, then AMEX:, then CBOE: batch quote calls)
     rather than a hand-maintained ticker->exchange dict — a live check found
@@ -34,7 +36,7 @@ PIPELINE (letters match the build spec)
     (percentile once >=20 iv30 sessions collected).
 (f) Swing score (see WEIGHTS_SWING below).
 (g) Board membership: conviction = usable 0-7DTE bucket, score desc.
-    swing = usable suggested_contract, swing-score desc. BOARD_CAP (50) is
+    swing = usable suggested_contract, swing-score desc. BOARD_CAP (80) is
     above the pinned-universe size so no curated name is truncated.
 (h) Alert memory: first_board_conviction/first_board_swing {time, spot} set
     once per ticker per day, read back from history.json.
@@ -185,7 +187,13 @@ CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{sym}.json"
 # Curated universe (see PINNED below) — every pinned name that has a usable
 # CBOE chain becomes a candidate; the board cap is set high enough that no
 # curated name is ever truncated off a board.
-BOARD_CAP = 50
+BOARD_CAP = 80  # raised 2026-08-15 with the 52-name universe (was 50/38);
+                # the SAME-DAY leveraged-wrapper reinstatement (see the
+                # WATCHLIST sync note below) brought PINNED to 62 (51
+                # watchlist + 11 sector ETFs) — still comfortably under the
+                # cap, and TRACK_ONLY names (below) can never reach a board
+                # regardless, so the cap headroom versus real candidates is
+                # actually wider than the raw count suggests.
 MAX_HISTORY_SESSIONS = 60
 MAX_IV_HISTORY = 60
 
@@ -279,45 +287,98 @@ MAX_ETF_SO_SESSIONS = 60     # history cap, same horizon as sessions/iv_history
 # options chain on 2026-07-17; TV symbol/exchange still self-heals via
 # _resolve_core_tv() (NASDAQ -> NYSE -> AMEX -> CBOE).
 #
-# Deliberately NOT included (verified 2026-07-17, don't silently re-add):
-#   BESIY / IFNNY  — foreign ADRs (BE Semi, Infineon), no US CBOE chain (403)
-#   NRGU           — 3x oil ETN, no listed options (403)
-#   WTI            — CBOE root resolves to W&T Offshore (micro-cap oil E&P),
-#                    NOT crude oil; almost certainly not the intended line
+# Deliberately NOT included (see the WATCHLIST sync note below for the
+# 2026-08-15 ruling that superseded most of the original 2026-07-17 list):
+#   BESIY / IFNNY  — foreign ADRs (BE Semi, Infineon), no US CBOE chain (403).
+#                    IFNN (no Y) was checked again 2026-08-15: TradingView
+#                    shows it carrying a delisted badge, still no US chain.
 #   SPX / VIX      — index roots, not the equity/ETF chain this pipeline reads
 #   SPMO           — broad-market momentum ETF, left off to keep the board lean
+#   NRGU and WTI were REINSTATED 2026-08-15 by Zach's final ruling below —
+#   NRGU tracks (quotes/facts/bars/fund) but is TRACK_ONLY (confirmed live
+#   2026-08-15: CBOE 403s it, no listed options at all); WTI tracks fully
+#   but resolves to W&T Offshore, a micro-cap oil E&P EQUITY, NOT crude oil
+#   — see the loud name-identity comment on WTI in the WATCHLIST block below.
 #   (QQQ was added back 2026-07-17 at Zach's request — it's below.)
 WATCHLIST = [
-    # Zach's canonical picks (vault, 2026-06-10)
+    # ============ FULL TV-LIST SYNC — ZACH'S FINAL RULING (2026-08-15) ============
+    # Zach sent his complete TradingView lists. An interrupted draft of this
+    # sync (same date, uncommitted when this build picked it up) read the
+    # instruction as "track everything, MINUS all leveraged wrappers." His
+    # FINAL ruling SUPERSEDES that reading: track the full list, LEVERAGED
+    # WRAPPERS INCLUDED. This supersedes BOTH the v3 "no leveraged names in
+    # the options rail" rule AND the interrupted draft's exclusion.
+    #
+    # Leveraged wrappers ADDED BACK by the final ruling: SOXL/SOXS (3x/-3x
+    # semis), MUU (2x MU), RAM (2x the DRAM ETF), SKHX (2x SK hynix), NRGU
+    # (3x oil ETN), OILU (2x oil), STLL (2x STRL), AAOG (2x AAOI). Five of
+    # these — SKHX, NRGU, OILU, STLL, AAOG — are TRACK_ONLY (defined below
+    # PINNED): quotes/facts/bars/fund track them same as anything else, but
+    # select_candidates() never lets them reach a CBOE chain fetch, so they
+    # can never join either options board. The other four leveraged names
+    # (SOXL, SOXS, MUU, RAM) carry real, liquid CBOE chains (live-probed
+    # 2026-08-15: 2400-3400+ contracts each) and compete for the boards
+    # exactly like every other pinned name.
+    #
+    # META/AMD/CVX DROPPED — this supersedes the 2026-07-31 AMZN/META/AMD
+    # note for these three specifically: they are off Zach's updated lists
+    # and were dropped here per his sync instruction. AMZN STAYS (it is on
+    # the list). XOM kept by explicit instruction. WTI ADDED per his list —
+    # see the loud name-identity warning where it's listed below. IFNNY/IFNN
+    # stay OUT (see the top-of-file exclusion note: delisted / no US chain).
+    #
+    # Exchanges verified live 2026-08-15 (architect's scanner probe) —
+    # KNOWN_EXCHANGE below cross-checks the self-healing probe against these
+    # (a WARN log on disagreement, never an override — the probe's live
+    # result stays authoritative). SKHX/NRGU/WTI were freshly probed for
+    # this sync rather than pre-supplied; see their own comments below.
+    # Zach's canonical picks (vault, 2026-06-10) — XOM kept by instruction
     "MU", "CRWD", "COHR", "LLY", "V", "XOM",
-    # Photonics subset plays alongside COHR (Zach's call, 2026-08-08). Both
-    # verified to have usable CBOE chains that day: AXTI 1,540 contracts /
-    # 65,320 volume; TSEM 1,598 contracts / 7,696 volume.
     "AXTI",                       # AXT — indium phosphide substrates
     "TSEM",                       # Tower Semiconductor — SiPh foundry
-    # Semiconductor / memory cluster off his TradingView watchlist
-    "SMH", "SOXL", "SOXS",        # semi ETFs (broad + 3x bull/bear)
-    "MUU",                        # Direxion 2x Long MU
-    # SK Hynix: the sponsored ADR, NOT the 2x ETF. Swapped 2026-07-25 —
-    # SKHX (Leverage Shares 2x Long SK Hynix) carried 352 contracts / 195
-    # total volume on the Cboe chain versus SKHY's 2,600 / 167k, so the
-    # leveraged wrapper was scoring noise while the liquid SK Hynix options
-    # venue sat off the board.
-    "SKHY",                       # SK hynix Inc. sponsored ADR (NASDAQ)
-    "SNDK",                       # Sandisk
-    "DRAM",                       # Roundhill Memory ETF
-    "RAM",                        # Roundhill T-REX 2x Long DRAM ETF
-    "AVGO", "NVDA", "MRVL", "LITE", "CAMT", "ONTO",  # semis / semi-cap
-    "GOOGL", "MSFT",              # megacap AI-demand names off his list
-    # Added 2026-07-31 (Zach's call) so the biggest-orders board covers the
-    # names that actually dominate the mega-cap options tape. AMZN and MSFT
-    # calls owned the top of that leaderboard on the day it was built, and
-    # neither AMZN nor META nor AMD was on the desk at all. AAPL / TSLA / NFLX
-    # were considered in the same conversation and deliberately left off — he
-    # picked these three.
-    "AMZN", "META", "AMD",
-    "CVX",                        # Chevron ("CHEV" on his TradingView list)
+    # Semis / memory / photonics / semi-cap
+    "SMH",                        # semi ETF (unlevered)
+    "SKHY",                       # SK hynix sponsored ADR (see 2026-07-25 note in git history)
+    "SNDK", "DRAM",               # Sandisk; Roundhill Memory ETF (unlevered)
+    "AVGO", "NVDA", "MRVL", "LITE", "CAMT", "ONTO", "TSM",
+    "KLAC", "AMAT",               # semi-cap equipment
+    "AEHR", "AMKR", "VSH", "STM", "SMCI", "AAOI",
+    # Mega-cap AI demand
+    "GOOGL", "MSFT", "AMZN",
+    # AI infra / power / datacenter / miners (new cluster, 2026-08-15)
+    "CBRS",                       # Cerebras Systems
+    "NBIS",                       # Nebius Group
+    "STRL", "MOD", "BE",          # Sterling Infra, Modine, Bloom Energy
+    "APLD", "CORZ", "CIFR", "RIOT", "CLSK",
     "QQQ",                        # Nasdaq-100 (broad index, Zach's add 2026-07-17)
+    # ---- Leveraged wrappers, REINSTATED 2026-08-15 (Zach's final ruling) ----
+    "SOXL", "SOXS",                # 3x / -3x semis — real chains (3434 / 2422
+                                    # contracts live 2026-08-15), board-eligible
+    "MUU",                         # 2x MU — real chain (2490 contracts live), board-eligible
+    "RAM",                         # 2x DRAM ETF — real chain (326 contracts live), board-eligible
+    "SKHX",                        # 2x SK hynix — TRACK_ONLY: CBOE chain
+                                    # resolves (352 contracts live 2026-08-15)
+                                    # but this is the same 2026-07-25 ghost-
+                                    # liquidity ruling (352 vs SKHY's real
+                                    # book) — do not let it score ghosts again.
+    "NRGU",                        # 3x oil ETN — TRACK_ONLY: CBOE 403s live
+                                    # 2026-08-15, no listed options at all
+    "OILU",                        # 2x oil — TRACK_ONLY: CBOE 403s live
+                                    # 2026-08-15, no listed options at all
+    "STLL",                        # 2x STRL — TRACK_ONLY: CBOE 403s live
+                                    # 2026-08-15, no listed options at all
+                                    # (NOT merely thin like SKHX/AAOG — a
+                                    # harder failure, same TRACK_ONLY outcome)
+    "AAOG",                        # 2x AAOI — TRACK_ONLY: CBOE chain
+                                    # resolves but thin (136 contracts live
+                                    # 2026-08-15) — same ghost class as SKHX
+    # WTI — on Zach's list, so it tracks. LOUD NAME-IDENTITY WARNING: this
+    # ticker is W&T Offshore, a micro-cap oil E&P EQUITY (~$3.70/share,
+    # NYSE-listed, 124-contract CBOE chain — all confirmed live 2026-08-15),
+    # NOT a crude-oil instrument. Crude itself lives on the page's macro
+    # tape, not this rail. Kept per his explicit instruction; see the
+    # top-of-file exclusion note for the history of this confusion.
+    "WTI",
 ]
 
 # 11 SPDR sector-index ETFs ("sector indexes like xle, xlc, xlp etc.")
@@ -328,6 +389,33 @@ SECTOR_ETFS = [
 
 # The full pinned universe — deduped, order-preserving.
 PINNED = list(dict.fromkeys(WATCHLIST + SECTOR_ETFS))
+
+# Names that track fully (quotes/facts/bars/fund sidecars all include them)
+# but are DELIBERATELY SKIPPED for CBOE chain fetches, so they can never
+# join either options board no matter how liquid their underlying looks —
+# see each name's comment in the WATCHLIST block above for why it's here.
+# select_candidates() below is the sole enforcement point.
+TRACK_ONLY = {"SKHX", "NRGU", "OILU", "STLL", "AAOG"}
+
+# Exchange resolutions verified live by the architect, 2026-08-15 (see the
+# WATCHLIST sync note above). USED ONLY AS A CROSS-CHECK on the self-healing
+# probe's live result (_exchange_mismatches -> a WARN log on disagreement)
+# — never to override it. A hand-maintained table can go stale (a listing
+# can move exchanges); the probe's live discovery each cycle stays
+# authoritative, exactly as the self-healing design intends.
+KNOWN_EXCHANGE = {
+    "AAOI": "NASDAQ", "AAOG": "CBOE", "BE": "NYSE", "NBIS": "NASDAQ",
+    "AMKR": "NASDAQ", "CIFR": "NASDAQ", "MOD": "NYSE", "SMCI": "NASDAQ",
+    "KLAC": "NASDAQ", "AMAT": "NASDAQ", "AEHR": "NASDAQ", "STRL": "NASDAQ",
+    "STLL": "CBOE", "CORZ": "NASDAQ", "STM": "NYSE", "APLD": "NASDAQ",
+    "RIOT": "NASDAQ", "VSH": "NYSE", "CBRS": "NASDAQ", "CLSK": "NASDAQ",
+    "OILU": "AMEX", "MUU": "NASDAQ", "SOXL": "AMEX", "SOXS": "AMEX",
+    "DRAM": "CBOE", "RAM": "CBOE",
+    # Freshly probed for this sync (not pre-supplied by the architect):
+    "SKHX": "CBOE",   # ghost chain lives here, see the WATCHLIST comment
+    "NRGU": "AMEX",   # 403s on chain fetch regardless of listing exchange
+    "WTI": "NYSE",    # the W&T Offshore equity — see the identity warning
+}
 
 TV_COLUMNS = [
     "name", "close", "change", "change_from_open",
@@ -343,6 +431,20 @@ TV_COLUMNS = [
     # stays permanently None rather than adding a column here for it.
     "price_52_week_high", "price_52_week_low", "beta_1_year",
     "average_volume_10d_calc", "RSI",
+    # Fundamentals (added 2026-08-15, Task 3) — all 14 verified live on
+    # NASDAQ:NVDA the same day: pe=34.48, peg=0.313, net_margin=62.97,
+    # gross_margin=74.15, op_margin=64.02, fcf_margin=46.97, debt_eq=0.0656,
+    # roe=114.29, ps=25.56, pb=34.79, ev_ebitda=32.51, yld=0.124,
+    # target=314.29, rec_mark=1.115 (1=strong buy .. 5=sell). Forward P/E was
+    # probed under BOTH `price_earnings_forward_fy` and `price_earnings_fy`
+    # and BOTH returned null for NVDA — this scanner simply doesn't carry a
+    # forward multiple, so no column for it here; pe_forward is sourced in
+    # fund/{SYM}.json instead (Task 4, stockanalysis.com / Yahoo).
+    "price_earnings_ttm", "price_earnings_growth_ttm", "net_margin_ttm",
+    "gross_margin_ttm", "operating_margin_ttm", "free_cash_flow_margin_ttm",
+    "debt_to_equity", "return_on_equity", "price_sales_ratio",
+    "price_book_ratio", "enterprise_value_ebitda_ttm",
+    "dividends_yield_current", "price_target_average", "recommendation_mark",
 ]
 # index positions into the "d" row, named for readability
 _COL = {name: i for i, name in enumerate(TV_COLUMNS)}
@@ -423,7 +525,46 @@ def _row_to_quote(sym_field: str, d: list) -> dict | None:
         "beta": _num(_COL["beta_1_year"]),
         "avol": _num(_COL["average_volume_10d_calc"]),
         "rsi": _num(_COL["RSI"]),
+        # Fundamentals (added 2026-08-15, Task 3) — see TV_COLUMNS above for
+        # the live-verification note. Numeric-or-None like every other field
+        # here; None means TV omitted it for this ticker, never 0.
+        "pe": _num(_COL["price_earnings_ttm"]),
+        "peg": _num(_COL["price_earnings_growth_ttm"]),
+        "net_margin": _num(_COL["net_margin_ttm"]),
+        "gross_margin": _num(_COL["gross_margin_ttm"]),
+        "op_margin": _num(_COL["operating_margin_ttm"]),
+        "fcf_margin": _num(_COL["free_cash_flow_margin_ttm"]),
+        "debt_eq": _num(_COL["debt_to_equity"]),
+        "roe": _num(_COL["return_on_equity"]),
+        "ps": _num(_COL["price_sales_ratio"]),
+        "pb": _num(_COL["price_book_ratio"]),
+        "ev_ebitda": _num(_COL["enterprise_value_ebitda_ttm"]),
+        "yld": _num(_COL["dividends_yield_current"]),
+        "target": _num(_COL["price_target_average"]),
+        "rec_mark": _num(_COL["recommendation_mark"]),
     }
+
+
+def _exchange_mismatches(resolved: dict[str, dict]) -> list[str]:
+    """Tickers whose self-healing resolution landed on a DIFFERENT exchange
+    than KNOWN_EXCHANGE's 2026-08-15 live verification says it should.
+
+    Pure/testable by design — never mutates `resolved`, only reports. A
+    listing can move exchanges, or two different instruments can coincide on
+    the same raw ticker string across venues; either way this is a signal
+    worth a human look, not grounds to override a live result with a table
+    that can itself go stale.
+    """
+    out = []
+    for ticker, q in sorted(resolved.items()):
+        expected = KNOWN_EXCHANGE.get(ticker)
+        if not expected:
+            continue
+        tv_symbol = q.get("tv_symbol") if isinstance(q, dict) else None
+        actual = tv_symbol.split(":", 1)[0] if isinstance(tv_symbol, str) and ":" in tv_symbol else None
+        if actual and actual != expected:
+            out.append(ticker)
+    return out
 
 
 def _resolve_core_tv(missing: list[str]) -> dict[str, dict]:
@@ -431,7 +572,9 @@ def _resolve_core_tv(missing: list[str]) -> dict[str, dict]:
 
     Tries NASDAQ -> NYSE -> AMEX -> CBOE batch quote calls; a ticker only
     needs one successful match. CBOE covers the memory/semi ETFs (DRAM, RAM)
-    that list on Cboe BZX. Fail-soft per exchange call.
+    that list on Cboe BZX. Fail-soft per exchange call. The live result is
+    then cross-checked against KNOWN_EXCHANGE (a WARN log on disagreement,
+    never an override — see _exchange_mismatches).
     """
     resolved: dict[str, dict] = {}
     remaining = list(missing)
@@ -457,6 +600,10 @@ def _resolve_core_tv(missing: list[str]) -> dict[str, dict]:
         remaining = [t for t in remaining if t not in resolved]
     if remaining:
         log(f"WARN could not resolve TV symbol for: {remaining}")
+    for ticker in _exchange_mismatches(resolved):
+        actual = resolved[ticker]["tv_symbol"].split(":", 1)[0]
+        log(f"WARN {ticker} resolved on {actual}, expected {KNOWN_EXCHANGE[ticker]} "
+            f"per 2026-08-15 verification — listing may have changed")
     return resolved
 
 
@@ -478,12 +625,15 @@ def build_universe(dry_run: bool = False) -> tuple[dict[str, dict], int]:
 
 
 def select_candidates(quotes: dict[str, dict]) -> list[str]:
-    """Every resolved pinned name is a candidate, in PINNED order.
+    """Every resolved pinned name is a candidate, in PINNED order — EXCEPT
+    TRACK_ONLY names (see TRACK_ONLY above), which never reach a CBOE chain
+    fetch no matter how live their quote resolved.
 
     The whole point of the curated universe is to show Zach's names, so there
-    is no pre-score cut — anything that resolved gets a CBOE chain pulled.
+    is no pre-score cut beyond that — anything else that resolved gets a
+    CBOE chain pulled.
     """
-    return [t for t in PINNED if t in quotes]
+    return [t for t in PINNED if t in quotes and t not in TRACK_ONLY]
 
 
 # ── CBOE chain fetch + OCC parsing ──────────────────────────────────────────
@@ -1541,8 +1691,9 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     # take down the rest of the cycle.
     context_fields: dict = {}
     bars_payload = None
+    fund_payload = None
     try:
-        context_fields, bars_payload = context.build_context(quotes, PINNED, session_date, now_utc)
+        context_fields, bars_payload, fund_payload = context.build_context(quotes, PINNED, session_date, now_utc)
     except Exception as e:
         log(f"WARN context build failed: {e}")
 
@@ -1636,6 +1787,27 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
         bars_tmp.write_text(json.dumps(bars_payload, indent=2), encoding="utf-8")
         bars_tmp.replace(bars_path)
         log(f"wrote {bars_path} ({bars_path.stat().st_size} bytes)")
+
+    # fund/{SYM}.json sidecars (added 2026-08-15, Task 4) — same mirrored
+    # write-and-publish path as bars.json above: only written on cycles that
+    # actually rebuilt them (context.build_context's daily gate, same one
+    # bars.json uses), and loop.py's `git add -A` over OUT_DIR already picks
+    # up the new fund/ directory with no loop.py change needed. Per-file
+    # fail-soft so one bad ticker's write can never lose the rest.
+    if fund_payload is not None:
+        fund_dir = out_dir / "fund"
+        fund_dir.mkdir(parents=True, exist_ok=True)
+        written = 0
+        for sym, payload in fund_payload.items():
+            try:
+                fund_path = fund_dir / f"{sym}.json"
+                fund_tmp = fund_path.with_suffix(".json.tmp")
+                fund_tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                fund_tmp.replace(fund_path)
+                written += 1
+            except Exception as e:
+                log(f"WARN could not write {fund_dir / (sym + '.json')}: {e}")
+        log(f"wrote fund/ sidecars for {written}/{len(fund_payload)} symbols")
 
     if write_history:
         save_history(out_dir, history)

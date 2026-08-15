@@ -1,9 +1,12 @@
-# data.json / history.json / bars.json contract (authoritative — builders #1 and #2 both obey this)
+# data.json / history.json / bars.json / fund/{SYM}.json contract (authoritative — builders #1 and #2 both obey this)
 
-The fetcher writes `data.json` and `history.json` to the `data` branch. The
-frontend reads `data.json` only (history is internal to the fetcher). All
-numbers are plain JSON numbers; missing/unknown values are `null` (never a
-string sentinel). All strings are already plain (frontend still escapes on render).
+The fetcher writes `data.json` and `history.json` to the `data` branch, plus
+two sidecars built at most once per day: `bars.json` (daily OHLC per pinned
+ticker) and `fund/{SYM}.json` (per-symbol fundamentals). The frontend reads
+`data.json` (and, if it renders bars/fundamentals, the sidecars) — history is
+internal to the fetcher. All numbers are plain JSON numbers; missing/unknown
+values are `null` (never a string sentinel). All strings are already plain
+(frontend still escapes on render).
 
 ## data.json
 
@@ -194,16 +197,39 @@ string sentinel). All strings are already plain (frontend still escapes on rende
 >   "earn_days": 45,         // calendar days, session_date -> TV earnings_release_next_date;
 >                            // null if TV has no date on file, or the date is in the past
 >   "rsi": 56.3,             // TV RSI; null if TV omits it
->   "avg_move": 3.45         // mean(|daily % change|) over the last 20 closes in
+>   "avg_move": 3.45,        // mean(|daily % change|) over the last 20 closes in
 >                            // bars.json, 2dp. Populated only after bars.json has
 >                            // built at least once for this ticker; recomputed once
 >                            // per day alongside the bars rebuild (see bars.json
 >                            // below) and carried forward on the other ~50 cycles/day
 >                            // via fetcher/.context_cache.json — a deliberately
 >                            // day-stale reading, not a live one.
+>   // ── Fundamentals (added 2026-08-15, Task 3) — all 14 verified live on
+>   // NASDAQ:NVDA the same day, rides the SAME scanner batch-quote call as
+>   // everything else above (no separate fetch, no gate). null if TV omits it
+>   // for a given ticker, exactly like every other field here — never 0.
+>   "pe": 34.483,            // TV price_earnings_ttm (trailing P/E)
+>   "peg": 0.313,            // TV price_earnings_growth_ttm
+>   "net_margin": 62.97,     // TV net_margin_ttm, percent (62.97 == 62.97%)
+>   "gross_margin": 74.15,   // TV gross_margin_ttm, percent
+>   "op_margin": 64.02,      // TV operating_margin_ttm, percent
+>   "fcf_margin": 46.97,     // TV free_cash_flow_margin_ttm, percent
+>   "debt_eq": 0.0656,       // TV debt_to_equity
+>   "roe": 114.29,           // TV return_on_equity, percent
+>   "ps": 25.56,             // TV price_sales_ratio
+>   "pb": 34.79,             // TV price_book_ratio
+>   "ev_ebitda": 32.51,      // TV enterprise_value_ebitda_ttm
+>   "yld": 0.124,            // TV dividends_yield_current, percent (0.124 == 0.124%)
+>   "target": 314.29,        // TV price_target_average (analyst 12-mo price target, $)
+>   "rec_mark": 1.115        // TV recommendation_mark, 1.0 (strong buy) .. 5.0 (sell)
 > }
 > ```
 >
+> **Forward P/E is NOT in `facts`.** TradingView's scanner was probed live
+> 2026-08-15 under both `price_earnings_forward_fy` and `price_earnings_fy`
+> and BOTH returned null for every ticker tried — this scanner simply does
+> not carry a forward multiple. Forward P/E is instead `pe_forward` in
+> `fund/{SYM}.json` (see below), sourced from stockanalysis.com/Yahoo.
 > **`desk_private`** — omitted, same as the other five keys, whenever the
 > vault fetch has nothing to report (no token, 404, bad JSON); present as
 > `{"v": 1, ...}` — an encrypted blob passed through **verbatim** from the
@@ -221,7 +247,7 @@ string sentinel). All strings are already plain (frontend still escapes on rende
 
 ## bars.json (published beside data.json on the `data` branch)
 
-A sidecar file for the pinned universe's daily close history, written in the
+A sidecar file for the pinned universe's daily OHLC history, written in the
 same publish step `loop.py` already uses for data.json/history.json —
 `loop.py`'s `git add -A` over `OUT_DIR` picks up any new file there, so
 shipping this required no `loop.py` change. Built **at most once per calendar
@@ -229,25 +255,157 @@ day** (see `fetcher/.context_cache.json` below): it is daily-bar history, so
 refetching it every ~7-minute cycle would be pure waste against Yahoo for no
 benefit.
 
+**v2 (2026-08-15, Task 2):** rows are now `[open, high, low, close]` quads
+instead of bare close numbers, and the file carries a `"v": 2` marker. The
+source is unchanged — the SAME Yahoo v8 chart call this file always used
+already returns full OHLC in `indicators.quote[0]` (`open`/`high`/`low`/
+`close` parallel arrays); v1 only read the `close` array out of it. **Any
+consumer of this file must accept BOTH shapes**: v1 (no `"v"` key, `bars`
+values are plain number arrays) from snapshots written before this date, and
+v2 (`"v": 2`, `bars` values are `[o,h,l,c]` quad arrays) from this date
+forward — the same "old readers keep working" rule every other addition in
+this file follows. A reader that only wants the close can take `row[3]` in v2
+or `row` itself in v1.
+
 ```json
 {
   "built": "2026-08-15",
+  "v": 2,
   "bars": {
-    "MU": [113.46, 114.02, "...", 971.66]
+    "MU": [[112.80, 114.10, 112.50, 113.46], "...", [968.00, 975.20, 965.10, 971.66]]
   }
 }
 ```
 
 - `built` — session date (`YYYY-MM-DD`) this file was last (re)built.
-- `bars` — per pinned ticker (`build_snapshot.PINNED`), up to 252 daily
-  closes, **oldest first**, rounded 2dp. Source: Yahoo's v8 chart API
+- `v` — schema version, `2` as of 2026-08-15. Absent entirely on pre-2026-08-15
+  snapshots (that is how a consumer tells v1 and v2 apart — check for the key,
+  not its absence-as-1).
+- `bars` — per pinned ticker (`build_snapshot.PINNED`, TRACK_ONLY names
+  included — bars/facts/fund track the full universe regardless of chain
+  eligibility), up to 252 daily `[open, high, low, close]` rows, **oldest
+  first**, each value rounded 2dp. Source: Yahoo's v8 chart API
   (`query1.finance.yahoo.com/v8/finance/chart/<SYM>?range=1y&interval=1d`). A
   ticker whose fetch failed is simply absent from `bars` — fail-soft, never
-  zero-filled or backfilled from a stale value.
+  zero-filled or backfilled from a stale value. A single bar missing ANY of
+  its four OHLC legs is dropped entirely (not partially filled) — same
+  "never fabricate" rule applied per-row instead of just per-ticker.
 
 `facts.*.avg_move` (see above) is derived from this same fetch — mean of
-`abs(daily % change)` over each ticker's last 20 closes — but that reading is
-published in `data.json`'s `facts`, not duplicated here.
+`abs(daily % change)` over each ticker's last 20 CLOSES (the 4th element of
+each row in v2) — but that reading is published in `data.json`'s `facts`,
+not duplicated here.
+
+## fund/{SYM}.json (added 2026-08-15, Task 4 — one file per tracked ticker,
+published beside data.json on the `data` branch)
+
+Per-symbol fundamentals: short % of float, forward P/E, earnings surprise
+history, next-earnings estimates, and a quarterly/annual revenue+EPS series
+— none of which the TV scanner carries (`facts.short_pct` is permanently
+null; forward P/E was confirmed null in `facts` too — see above). Written in
+the SAME publish step `loop.py` already uses for bars.json — `loop.py`'s
+`git add -A` over `OUT_DIR` picks up the new `fund/` directory with no
+`loop.py` change. Built **at most once per calendar day, on the SAME gate as
+bars.json** (`fetcher/.context_cache.json`'s `bars_built_date`) — one file
+per name in `build_snapshot.PINNED` (TRACK_ONLY names included; this sidecar
+tracks the full universe same as bars.json, regardless of CBOE chain
+eligibility).
+
+```jsonc
+{
+  "built": "2026-08-15",
+  "sym": "NVDA",
+  "short_pct_float": 1.259,          // % of float sold short, or null
+  "pe_forward": 22.589,              // forward P/E, or null
+  "earnings": [                      // up to 12 rows, newest LAST, oldest first
+    {
+      "period": "Q1 2027",           // "Q{n} {fiscal year}"
+      "date": "2026-04-30",          // fiscal quarter END date (not report date)
+      "session": "afterhours",       // "premarket" | "afterhours" | null — read
+                                      // off the ACTUAL report timestamp, same
+                                      // heuristic context._earnings_session uses
+                                      // for catalysts; null if unclassifiable
+      "eps": 1.87, "eps_est": 1.77191, "eps_surprise_pct": 5.54,
+      "rev": 81615000000.0,          // actual reported revenue
+      "rev_est": null,               // ALWAYS null — see note below
+      "rev_surprise_pct": null       // ALWAYS null — see note below
+    }
+  ],
+  "next_earnings": {                 // null if no confirmed next date anywhere
+    "date": "2026-08-26",
+    "session": "AMC",                // "AMC" | "BMO" | null (before/after market)
+    "eps_est": 2.083, "rev_est": 91846098240.0
+  },
+  "quarterly": {                     // up to 12 quarters, OLDEST FIRST
+    "periods": ["Q2 24", "...", "Q1 27"],   // "Q{n} {2-digit fiscal year}"
+    "revenue": [26044000000.0, "...", 81615000000.0],   // reported, not estimated
+    "eps": [0.2895, "...", 2.39]             // reported diluted EPS
+  },
+  "annual": {                        // up to 6 years, OLDEST FIRST — DERIVED, see note
+    "periods": ["FY23", "...", "FY26"],
+    "revenue": [26974000000.0, "...", 215938000000.0],
+    "eps": [0.83, "...", 5.84]
+  }
+}
+```
+
+- `short_pct_float` / `pe_forward` — sourced from stockanalysis.com's
+  `/stocks/{sym}/statistics/` page first (short % of float: `shortSelling`
+  row `id="shortFloat"`; forward P/E: `ratios` row `id="peForward"`), Yahoo
+  quoteSummary `defaultKeyStatistics` (`shortPercentOfFloat`, `forwardPE`)
+  as a fallback whenever the stockanalysis.com leg came back null. Both
+  independently null if BOTH legs fail for that field.
+- `earnings` — sourced from Yahoo quoteSummary's `earnings.earningsChart.
+  quarterly` (actual/estimate/surprise% + report timestamp, up to ~4
+  quarters — Yahoo's own limit on this module) matched against `earnings.
+  financialsChart.quarterly` (actual revenue) by Yahoo's shared calendar-
+  quarter label. **`rev_est` and `rev_surprise_pct` are ALWAYS null** —
+  probed and NOT found on either source: stockanalysis.com's `/forecast/`
+  page only carries TODAY'S consensus (a past quarter's estimate has
+  already been revised to match the actual, which is not "what analysts
+  expected before the print"), and Yahoo's `earningsTrend` module only
+  returned forward-looking periods (`0q`/`+1q`/`0y`/`+1y`) on the account
+  this was built against, no historical `-1q..-4q` rows. A fourth vendor
+  was deliberately not added for it — same posture as `facts.short_pct`.
+- `next_earnings` — date/eps_est/rev_est from Yahoo's `calendarEvents.
+  earnings` module (a genuine FORWARD estimate, unlike the historical
+  `rev_est` above). `session` is read off stockanalysis.com's own
+  before/after-market text when Yahoo's copy is null (Yahoo's calendarEvents
+  carries no intraday time at all) or, if a same-ticker TV
+  `earnings_release_next_date` timestamp is available, that timestamp takes
+  priority (same premarket/afterhours heuristic `catalysts` uses).
+- `quarterly` / `eps` — up to 12 quarters of REPORTED (not derived) revenue
+  and diluted EPS from stockanalysis.com's `/stocks/{sym}/financials/
+  income-statement/?p=quarterly` page (`financialData.revenue` /
+  `financialData.epsdil`), oldest first. The leading `"TTM"` column
+  (trailing-twelve-months, not a completed quarter) is dropped.
+- `annual` — **a DERIVED aggregate, not a separately-fetched or separately-
+  reported figure.** Summed from the SAME quarterly rows above, only for
+  fiscal years where all 4 quarters are present (a partial year yields no
+  row rather than an undercount presented as a full year). This is NOT
+  necessarily identical to the company's own separately-filed annual
+  diluted EPS, which can differ slightly for weighted-average-share-count
+  reasons across the year — e.g. NVDA FY2026: summed-from-quarters gives
+  5.84, the company's own filed annual diluted EPS is 4.90. Revenue sums
+  match closely since revenue isn't share-count-sensitive. Fetching a
+  separate stockanalysis.com annual route instead would have made this
+  exact (like `quarterly` is) but pushed every symbol from 3 requests to 4
+  against the runtime budget below — a deliberate tradeoff, not an oversight.
+- A ticker whose stockanalysis.com legs both fail keeps whatever Yahoo
+  supplied (or null); a ticker whose Yahoo leg fails (including "no crumb
+  this cycle") keeps whatever stockanalysis.com supplied for
+  `short_pct_float`/`pe_forward`/`next_earnings`, with `earnings` empty and
+  `rev_est`/`rev_surprise_pct` null throughout — per-field fail-soft, same
+  as every other part of this build. NEVER fabricated: a field either came
+  from a live source or it is null.
+- **Runtime budget:** 3 stockanalysis.com requests/symbol (statistics +
+  quarterly financials) + 1 Yahoo quoteSummary request/symbol, at a 0.3s
+  sleep between every request. The Yahoo cookie+crumb handshake
+  (`fc.yahoo.com` then `query1.finance.yahoo.com/v1/test/getcrumb`) is a
+  ONE-TIME cost for the whole run, not per symbol. Measured live 2026-08-15
+  for 3 symbols: ~7s total including the crumb dance, extrapolating to
+  roughly 2-2.5 minutes for the full ~62-name tracked universe — inside the
+  daily gate's budget.
 
 > **Note on `etf_flows`:** this is a once-per-session CONTEXT signal, not a
 > scoring input — it never touches the conviction/swing scores. Daily flow is
@@ -517,3 +675,13 @@ cycle, never a crash.
 ## Symbol hygiene (fetcher)
 Skip TV tickers containing `/`, `.`, `-` (preferred shares, warrants, units).
 Root for OCC = the plain ticker (strip exchange prefix). Skip CBOE 404s.
+
+## TRACK_ONLY (added 2026-08-15)
+`build_snapshot.TRACK_ONLY` (`SKHX`, `NRGU`, `OILU`, `STLL`, `AAOG`) names are
+full members of `PINNED` — they get quotes, `facts`, `bars.json` rows, and
+`fund/{SYM}.json` sidecars exactly like every other pinned name — but
+`select_candidates()` deliberately excludes them from CBOE chain fetches, so
+they can never appear on the `conviction` or `swing` boards. See
+`fetcher/build_snapshot.py`'s WATCHLIST comments for why each one is here
+(a confirmed ghost/thin chain or a confirmed 403 with no listed options at
+all, live-verified 2026-08-15).

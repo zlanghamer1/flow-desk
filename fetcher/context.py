@@ -1,12 +1,14 @@
-"""Flow Desk — context layer: vault brief/catalysts/news/facts + daily bars.
+"""Flow Desk — context layer: vault brief/catalysts/news/facts + daily bars
++ per-symbol fundamentals sidecars.
 
 Free-data only, Python stdlib only (urllib/json/csv/datetime/zoneinfo/math/
-os/re). Every network call is fail-soft — one bad leg logs a single warn line
-and returns None/[]/{} depending on its shape; nothing here ever raises out to
-build_snapshot.run_cycle. See /home/user/flow-desk/DATA_CONTRACT.md for the
-authoritative shape of every field this module produces (the new data.json
-keys: brief, catalysts, news, facts, desk_private, context_updated_at; and
-the new sidecar file bars.json).
+os/re/http.cookiejar). Every network call is fail-soft — one bad leg logs a
+single warn line and returns None/[]/{} depending on its shape; nothing here
+ever raises out to build_snapshot.run_cycle. See
+/home/user/flow-desk/DATA_CONTRACT.md for the authoritative shape of every
+field this module produces (the data.json keys: brief, catalysts, news,
+facts, desk_private, context_updated_at; and the sidecar files bars.json
+and fund/{SYM}.json).
 
 ────────────────────────────────────────────────────────────────────────────
 SOURCES (see ClaudeVault's market-data/DATA_SOURCES.md for the routing table
@@ -38,6 +40,33 @@ environment while building this module, 2026-08)
   DATA_SOURCES.md, which already routes short interest to Yahoo
   quoteSummary, a second vendor this build deliberately did not add).
   facts.short_pct is therefore ALWAYS None; see DATA_CONTRACT.md.
+- TradingView scanner fundamentals (added 2026-08-15, Task 3): pe/peg/
+  net_margin/gross_margin/op_margin/fcf_margin/debt_eq/roe/ps/pb/ev_ebitda/
+  yld/target/rec_mark — all 14 verified live on NASDAQ:NVDA the same day
+  (see build_snapshot.py's TV_COLUMNS). Forward P/E was probed under both
+  `price_earnings_forward_fy` and `price_earnings_fy`; both returned null.
+- stockanalysis.com (added 2026-08-15, Task 4) — a named alternate in
+  DATA_SOURCES.md, tried first for per-symbol fundamentals. No documented
+  public API; every page's server-rendered data is available at
+  `<route>/__data.json` (SvelteKit's own built-in data-loading endpoint),
+  devalue-encoded — see _devalue_resolve's docstring for the format and
+  fetch_sa_statistics/fetch_sa_quarterly for the two routes used. Confirmed
+  live 2026-08-15 for NVDA/MRVL/AXTI: short % of float, forward P/E, next
+  earnings date + before/after-market text, and up to ~20 quarters of
+  reported (not derived) revenue + diluted EPS.
+- Yahoo quoteSummary (added 2026-08-15, Task 4) — needs a cookie + crumb now,
+  not a bare request; confirmed live 2026-08-15 to work fully keyless (GET
+  fc.yahoo.com for a cookie — a 404 there is normal, the cookie still lands
+  via Set-Cookie on the error response — then GET
+  query1.finance.yahoo.com/v1/test/getcrumb on the same cookie jar for a
+  crumb token). One quoteSummary call per symbol
+  (modules=defaultKeyStatistics,earningsHistory,earnings,calendarEvents)
+  supplies short % of float / forward P/E as a fallback, plus historical
+  earnings surprise (actual vs estimate-at-report-time) and next-quarter
+  analyst estimates that stockanalysis.com's free pages do not carry at
+  all. See the "Per-symbol fundamentals sidecars" section below
+  build_bars for the full design writeup, including what was probed and
+  NOT found (historical revenue estimates).
 
 ────────────────────────────────────────────────────────────────────────────
 TESTABILITY SEAM
@@ -46,7 +75,12 @@ Every function that hits the network takes an optional `_get` parameter: a
 callable `(url, headers) -> bytes`. Production code never passes it (the
 real `_default_get` is used); tests inject a fake to keep the whole suite off
 the network. Nothing here ever calls `_default_get` directly except
-`_http_get`'s own default.
+`_http_get`'s own default. The Yahoo fundamentals leg (fetch_yahoo_crumb /
+fetch_yahoo_fundamentals) uses the SAME `_get(url, headers) -> bytes` seam
+for testability, even though its real default (`_default_yahoo_get`) is
+stateful (a persistent cookiejar-backed opener, needed for the crumb
+handshake) rather than the plain one-shot `_default_get` every other fetch
+in this module uses.
 
 ────────────────────────────────────────────────────────────────────────────
 JOB-LOCAL CACHE — fetcher/.context_cache.json (gitignored, NOT the data
@@ -66,17 +100,23 @@ run_cycle can't clobber each other)
   "desk_private": {...} | null                     // don't flicker in/out hourly
 }
 Fail-soft: a missing/corrupt file reads as "never fetched, never built" —
-worst case one extra fetch that cycle, never a crash.
+worst case one extra fetch that cycle, never a crash. `bars_built_date` also
+gates the fund/{SYM}.json sidecar rebuild (added 2026-08-15, Task 4) — SAME
+key, SAME condition, no separate cache field: both are once-a-day, Yahoo/
+stockanalysis.com-heavy builds, and the task's own instruction was to gate
+them together.
 """
 from __future__ import annotations
 
 import csv
+import http.cookiejar
 import io
 import json
 import os
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -460,13 +500,24 @@ def fetch_earnings_days(tv_rows: dict[str, dict], session_date: date) -> dict[st
     TV_COLUMNS with price_52_week_high/low, beta_1_year,
     average_volume_10d_calc and RSI (market_cap_basic and
     earnings_release_next_date were already fetched), so every quote dict
-    already carries hi52/lo52/beta/avol/rsi/market_cap/earnings_ts.
+    already carries hi52/lo52/beta/avol/rsi/market_cap/earnings_ts. The
+    2026-08-15 fundamentals sync (Task 3) further extends TV_COLUMNS with 14
+    scanner fundamentals (pe/peg/net_margin/gross_margin/op_margin/
+    fcf_margin/debt_eq/roe/ps/pb/ev_ebitda/yld/target/rec_mark), all
+    verified live on NASDAQ:NVDA the same day — see build_snapshot.py's
+    TV_COLUMNS comment. Forward P/E is NOT among them (TV returned null
+    under both candidate column names); it is sourced in fund/{SYM}.json
+    instead (Task 4) as `pe_forward`.
 
     avg_move is NOT set here (always None) — the orchestrator (build_context)
     merges it in afterward from the once-daily bars cache; this function has
     no access to bars history and shouldn't guess.
 
     short_pct is ALWAYS None — see the module docstring's live-probe note.
+    (fund/{SYM}.json's `short_pct_float`, added 2026-08-15, is a DIFFERENT
+    field on a DIFFERENT file, sourced from stockanalysis.com/Yahoo rather
+    than this scanner — see build_fund_sidecar below. `facts.short_pct`
+    itself is untouched and stays permanently None.)
     """
     facts: dict[str, dict] = {}
     for ticker, q in tv_rows.items():
@@ -492,6 +543,20 @@ def fetch_earnings_days(tv_rows: dict[str, dict], session_date: date) -> dict[st
             "earn_days": earn_days,
             "rsi": q.get("rsi"),
             "avg_move": None,
+            "pe": q.get("pe"),
+            "peg": q.get("peg"),
+            "net_margin": q.get("net_margin"),
+            "gross_margin": q.get("gross_margin"),
+            "op_margin": q.get("op_margin"),
+            "fcf_margin": q.get("fcf_margin"),
+            "debt_eq": q.get("debt_eq"),
+            "roe": q.get("roe"),
+            "ps": q.get("ps"),
+            "pb": q.get("pb"),
+            "ev_ebitda": q.get("ev_ebitda"),
+            "yld": q.get("yld"),
+            "target": q.get("target"),
+            "rec_mark": q.get("rec_mark"),
         }
     return facts
 
@@ -740,17 +805,37 @@ def build_catalysts(econ_rows: list[dict], memory_rows: list[dict],
     return out
 
 
-# ── Bars (Yahoo daily closes, at most once per day) ─────────────────────────
+# ── Bars (Yahoo daily OHLC, at most once per day) ───────────────────────────
 
-def _extract_yahoo_closes(obj) -> Optional[list[float]]:
+BARS_VERSION = 2   # bars.json schema version — see build_bars's docstring
+
+
+def _extract_yahoo_ohlc(obj) -> Optional[list[list[float]]]:
+    """v8 chart API response -> [[open, high, low, close], ...] rows, one per
+    available bar, in the API's own (oldest-first) order.
+
+    A bar missing ANY of open/high/low/close is dropped ENTIRELY rather than
+    partially filled — same "never zero-filled, never guessed" convention
+    the old close-only extraction used, just applied per-row instead of
+    per-ticker. Yahoo's quote block carries four parallel arrays (indices
+    line up positionally with the response's `timestamp` array); a short or
+    missing array here means the shape is unusable and yields None, same as
+    any other malformed response.
+    """
     try:
         result = obj["chart"]["result"][0]
-        closes = result["indicators"]["quote"][0]["close"]
+        q = result["indicators"]["quote"][0]
+        opens, highs, lows, closes = q["open"], q["high"], q["low"], q["close"]
     except Exception:
         return None
-    if not isinstance(closes, list):
+    if not all(isinstance(x, list) for x in (opens, highs, lows, closes)):
         return None
-    out = [c for c in closes if isinstance(c, (int, float)) and not isinstance(c, bool)]
+    n = min(len(opens), len(highs), len(lows), len(closes))
+    out: list[list[float]] = []
+    for i in range(n):
+        row = (opens[i], highs[i], lows[i], closes[i])
+        if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in row):
+            out.append([float(v) for v in row])
     return out or None
 
 
@@ -770,15 +855,26 @@ def build_bars(universe: list[str], session_date: date,
                 _get: Optional[Callable] = None) -> tuple[dict, dict[str, float]]:
     """Yahoo v8 chart API per symbol -> (bars_payload, avg_move_map).
 
-    bars_payload matches bars.json's shape exactly: {"built": <session_date
-    ISO>, "bars": {ticker: [closes]}}. avg_move_map ({ticker: float}) is a
-    SEPARATE return value for facts.*.avg_move — it is not part of bars.json.
+    bars_payload matches bars.json's v2 shape exactly: {"built": <session_date
+    ISO>, "v": 2, "bars": {ticker: [[o,h,l,c], ...]}} — up to BARS_MAX rows,
+    oldest first, each value rounded 2dp. avg_move_map ({ticker: float}) is a
+    SEPARATE return value for facts.*.avg_move (computed from closes only,
+    same arithmetic as before v2) — it is not part of bars.json.
+
+    v2 (added 2026-08-15, Task 2): full OHLC instead of close-only. The same
+    Yahoo v8 chart call already returns open/high/low arrays alongside close
+    in indicators.quote[0] — no new source, just reading more of what was
+    already there. Consumers must accept BOTH the old v1 shape (bare number
+    arrays, no "v" key) and this v2 shape (quad-arrays, "v": 2) — see
+    DATA_CONTRACT.md.
 
     0.25s sleep between calls (skips the sleep before the first). A symbol
     that fails to fetch, or returns an unusable shape, is simply absent from
-    both outputs — fail-soft, never zero-filled.
+    both outputs — fail-soft, never zero-filled. A single bar missing any of
+    its four OHLC values is dropped rather than partially filled (see
+    _extract_yahoo_ohlc).
     """
-    bars: dict[str, list[float]] = {}
+    bars: dict[str, list[list[float]]] = {}
     avg_move: dict[str, float] = {}
     for i, sym in enumerate(universe):
         if i > 0:
@@ -791,17 +887,584 @@ def build_bars(universe: list[str], session_date: date,
         except Exception as e:
             log(f"skip {sym}: bars fetch failed ({type(e).__name__})")
             continue
-        closes = _extract_yahoo_closes(obj)
-        if not closes:
-            log(f"skip {sym}: no usable close series")
+        quads = _extract_yahoo_ohlc(obj)
+        if not quads:
+            log(f"skip {sym}: no usable OHLC series")
             continue
-        closes = closes[-BARS_MAX:]
-        bars[sym] = [round(c, 2) for c in closes]
-        mv = _avg_move(closes)
+        quads = quads[-BARS_MAX:]
+        bars[sym] = [[round(v, 2) for v in q] for q in quads]
+        closes_only = [q[3] for q in quads]
+        mv = _avg_move(closes_only)
         if mv is not None:
             avg_move[sym] = mv
-    payload = {"built": session_date.isoformat(), "bars": bars}
+    payload = {"built": session_date.isoformat(), "v": BARS_VERSION, "bars": bars}
     return payload, avg_move
+
+
+# ── Per-symbol fundamentals sidecars (fund/{SYM}.json, added 2026-08-15) ────
+#
+# Goal: short % of float, forward P/E, earnings surprise history, next
+# earnings estimates, and a quarterly/annual revenue+EPS series — none of
+# which the TV scanner carries (Task 3's fundamentals sync confirmed forward
+# P/E null; short interest was already confirmed permanently null in this
+# module's docstring). Sourced from stockanalysis.com first (a named
+# alternate in the vault's DATA_SOURCES.md routing table), Yahoo second.
+#
+# stockanalysis.com has NO documented public REST API for this data. It is a
+# SvelteKit app: every route's server-rendered data is available at
+# <route>/__data.json, encoded as a flat "devalue" array (index 0 is the
+# root; every object/array VALUE is itself an index into the same array,
+# not an inline literal — see _devalue_resolve). This is SvelteKit's own
+# built-in data-loading endpoint, not a bespoke stockanalysis.com API, so it
+# is considerably more stable than scraping rendered HTML, but it is still
+# an internal endpoint, not a published contract — hence per-field fail-soft
+# throughout, same as every other fetch in this file.
+#
+# Two stockanalysis.com routes are used per symbol (no single route carries
+# both halves of what's needed):
+#   /stocks/{sym}/statistics/__data.json          -> short % of float,
+#       forward P/E, next earnings date + before/after-market text (all
+#       under root.shortSelling / root.ratios / root.dates, each a list of
+#       {"id", "value", "hover"} rows — keyed by "id", not position, so a
+#       column reorder on their end can't silently misalign a value).
+#   /stocks/{sym}/financials/income-statement/__data.json?p=quarterly
+#       -> up to 20 quarters of REPORTED (not derived) revenue + diluted EPS
+#       under root.financialData, keyed arrays (datekey/fiscalYear/
+#       fiscalQuarter/revenue/epsdil) aligned by position; the leading
+#       "TTM" column is a trailing-twelve-months figure, not a completed
+#       quarter, and is dropped. ANNUAL figures are then SUMMED from these
+#       same quarterly rows (only for fiscal years with all 4 quarters
+#       present) rather than fetched separately — this is a disclosed
+#       DERIVED aggregate, not the company's own separately-filed annual
+#       diluted EPS (which can differ slightly for weighted-share-count
+#       reasons); see DATA_CONTRACT.md. Fetching a 4th route just for real
+#       annual figures would push every symbol from 3 requests to 4, and the
+#       daily runtime budget (60ish symbols, well under 3 minutes) was
+#       measured against 3.
+#
+# Yahoo covers what stockanalysis.com's pages don't have at all: historical
+# earnings SURPRISE (actual vs the estimate that existed at report time,
+# plus a session read off the report timestamp) and next-quarter analyst
+# estimates. quoteSummary needs a cookie + crumb now (a bare API key/token
+# is not how this endpoint gates access) — confirmed live 2026-08-15 to work
+# completely keyless: GET fc.yahoo.com (best-effort, sets a cookie; a 404
+# here is normal and harmless — the cookie lands via Set-Cookie on the error
+# response itself), then GET query1.finance.yahoo.com/v1/test/getcrumb
+# (same cookie jar) for a crumb token, then ONE quoteSummary call per symbol
+# with modules=defaultKeyStatistics,earningsHistory,earnings,calendarEvents
+# and that crumb on the query string. The crumb/cookie dance happens ONCE
+# per whole build (fetch_yahoo_crumb), not once per symbol — only the final
+# quoteSummary GET repeats per ticker.
+#
+# Revenue ESTIMATES (as opposed to revenue ACTUALS) at historical report
+# time were probed and NOT found on either source for past quarters:
+# stockanalysis.com's /forecast/ page only carries the CURRENT consensus
+# (today's estimate for a past quarter has already been revised to match
+# the reported actual, which is not the same thing as "what analysts
+# expected before the print"), and Yahoo's earningsTrend module only
+# returns forward-looking periods (0q/+1q/0y/+1y) on this account, no
+# historical -1q..-4q rows. `rev_est` / `rev_surprise_pct` on past quarters
+# are therefore ALWAYS null — a fourth vendor was deliberately not added for
+# it, same posture as facts.short_pct. `next_earnings.rev_est` (a FORWARD
+# estimate) IS available, from Yahoo's calendarEvents module.
+#
+# Budget (Task 4): 3 stockanalysis.com requests/symbol + 1 Yahoo request/
+# symbol (the crumb dance is a one-time, whole-run cost) at FUND_SLEEP_SEC
+# between every request, logged as a one-line timing summary at the end of
+# build_fund_universe.
+
+SA_BASE = "https://stockanalysis.com/stocks/{sym}"
+SA_STATISTICS_PATH = "/statistics/__data.json"
+SA_FINANCIALS_Q_PATH = "/financials/income-statement/__data.json?p=quarterly"
+
+YAHOO_FC_URL = "https://fc.yahoo.com"
+YAHOO_CRUMB_URL = "https://query1.finance.yahoo.com/v1/test/getcrumb"
+YAHOO_QUOTESUMMARY_URL = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{sym}"
+YAHOO_QS_MODULES = "defaultKeyStatistics,earningsHistory,earnings,calendarEvents"
+
+FUND_SLEEP_SEC = 0.3
+FUND_MAX_QUARTERLY = 12
+FUND_MAX_ANNUAL = 6
+FUND_MAX_EARNINGS = 12
+
+_DEVALUE_SPECIAL = {-1: None, -2: float("nan"), -3: float("inf"), -4: float("-inf"), -5: -0.0}
+_PCT_RE = re.compile(r"-?\d+(?:\.\d+)?")
+_FISCAL_Q_RE = re.compile(r"^(\d)Q(\d{4})$")
+
+_yahoo_opener = None   # lazily-created module-level urllib opener; see _default_yahoo_get
+
+
+def _devalue_resolve(data: list, idx: int, memo: Optional[dict] = None):
+    """Resolve one SvelteKit `__data.json` devalue-encoded value tree.
+
+    `data` is the flat array from one response node's "data" field. Index 0
+    is always the root. Every dict/list VALUE in that array is itself an
+    integer index into the same array (devalue's reference scheme — this is
+    what lets one repeated string be shared by many fields without
+    duplicating it inline); this function walks those references and
+    returns a plain nested dict/list/primitive tree. Negative indices are
+    devalue's special sentinels (-1 undefined -> None is the only one ever
+    observed in this site's payloads; the rest are handled for completeness).
+    Memoized per top-level call to survive any shared-reference cycles.
+    Generic to devalue's format — nothing here is stockanalysis-specific.
+    """
+    if memo is None:
+        memo = {}
+    if idx < 0:
+        return _DEVALUE_SPECIAL.get(idx, None)
+    if idx in memo:
+        return memo[idx]
+    raw = data[idx]
+    if isinstance(raw, dict):
+        out: dict = {}
+        memo[idx] = out
+        for k, v in raw.items():
+            out[k] = _devalue_resolve(data, v, memo) if isinstance(v, int) else v
+        return out
+    if isinstance(raw, list):
+        out_list: list = []
+        memo[idx] = out_list
+        for v in raw:
+            out_list.append(_devalue_resolve(data, v, memo) if isinstance(v, int) else v)
+        return out_list
+    return raw
+
+
+def _fetch_sa_page(sym: str, path: str, _get: Optional[Callable] = None) -> Optional[dict]:
+    """GET one stockanalysis.com SvelteKit page's `__data.json` -> resolved
+    root dict. None on: network error, bad JSON, no usable "data" node, or a
+    non-dict root — fail-soft, same convention as every fetch in this file.
+    """
+    url = SA_BASE.format(sym=sym.lower()) + path
+    headers = {"User-Agent": BROWSER_UA, "Accept": "*/*"}
+    try:
+        raw = _http_get(url, headers, _get=_get)
+        obj = json.loads(raw)
+    except Exception as e:
+        log(f"WARN stockanalysis fetch failed for {sym} ({path}): {type(e).__name__}")
+        return None
+    nodes = obj.get("nodes") if isinstance(obj, dict) else None
+    if not isinstance(nodes, list) or not nodes:
+        return None
+    last = nodes[-1]
+    if not isinstance(last, dict) or last.get("type") != "data":
+        return None
+    node_data = last.get("data")
+    if not isinstance(node_data, list) or not node_data:
+        return None
+    try:
+        root = _devalue_resolve(node_data, 0)
+    except Exception as e:
+        log(f"WARN stockanalysis devalue decode failed for {sym} ({path}): {type(e).__name__}")
+        return None
+    return root if isinstance(root, dict) else None
+
+
+def _parse_pct(s) -> Optional[float]:
+    """"1.259%" -> 1.259. None on anything unparsable — never a guess."""
+    if not isinstance(s, str):
+        return None
+    m = _PCT_RE.search(s)
+    if not m:
+        return None
+    try:
+        return float(m.group(0))
+    except ValueError:
+        return None
+
+
+def _parse_plain_number(s) -> Optional[float]:
+    """"22.589" / "$22.59" / "-" / "N/A" -> float or None."""
+    if not isinstance(s, str):
+        return None
+    cleaned = s.replace(",", "").replace("$", "").strip()
+    if cleaned in ("", "-", "N/A", "n/a", "--"):
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _sa_stat_row(rows, row_id: str) -> Optional[dict]:
+    if not isinstance(rows, list):
+        return None
+    for r in rows:
+        if isinstance(r, dict) and r.get("id") == row_id:
+            return r
+    return None
+
+
+def fetch_sa_statistics(sym: str, _get: Optional[Callable] = None) -> dict:
+    """stockanalysis.com's /statistics/ page -> short % of float, forward
+    P/E, and the next-earnings date + before/after-market read.
+
+    Returns {"short_pct_float", "pe_forward", "next_earnings_date",
+    "next_earnings_session"} — every key independently None on a missing
+    row (per-field fail-soft); a page-level fetch failure yields all-None
+    rather than raising.
+    """
+    out = {"short_pct_float": None, "pe_forward": None,
+           "next_earnings_date": None, "next_earnings_session": None}
+    root = _fetch_sa_page(sym, SA_STATISTICS_PATH, _get=_get)
+    if not isinstance(root, dict):
+        return out
+
+    short_sel = root.get("shortSelling") or {}
+    row = _sa_stat_row(short_sel.get("data"), "shortFloat")
+    if row:
+        out["short_pct_float"] = _parse_pct(row.get("hover") or row.get("value"))
+
+    ratios = root.get("ratios") or {}
+    row = _sa_stat_row(ratios.get("data"), "peForward")
+    if row:
+        out["pe_forward"] = _parse_plain_number(row.get("hover") or row.get("value"))
+
+    dates = root.get("dates") or {}
+    row = _sa_stat_row(dates.get("data"), "earningsdate")
+    if row and isinstance(row.get("value"), str):
+        try:
+            out["next_earnings_date"] = datetime.strptime(row["value"], "%b %d, %Y").date().isoformat()
+        except ValueError:
+            pass
+    text = (dates.get("text") or "").lower()
+    if "after market" in text or "after-market" in text or "after the market clos" in text:
+        out["next_earnings_session"] = "AMC"
+    elif "before market" in text or "before-market" in text or "before the market" in text:
+        out["next_earnings_session"] = "BMO"
+    return out
+
+
+def fetch_sa_quarterly(sym: str, _get: Optional[Callable] = None) -> Optional[list[dict]]:
+    """stockanalysis.com's quarterly income-statement page -> per-quarter
+    rows, NEWEST FIRST (the site's own order): {"date", "fiscal_year",
+    "fiscal_quarter", "revenue", "eps"}. The leading "TTM" column (a
+    trailing-twelve-months figure, not a completed quarter) is dropped.
+    None if the page fetch failed or the shape was unusable.
+    """
+    root = _fetch_sa_page(sym, SA_FINANCIALS_Q_PATH, _get=_get)
+    if not isinstance(root, dict):
+        return None
+    fd = root.get("financialData")
+    if not isinstance(fd, dict):
+        return None
+    datekeys, fys, fqs = fd.get("datekey"), fd.get("fiscalYear"), fd.get("fiscalQuarter")
+    revs, epss = fd.get("revenue"), fd.get("epsdil")
+    if not all(isinstance(x, list) for x in (datekeys, fys, fqs, revs, epss)):
+        return None
+    n = min(len(datekeys), len(fys), len(fqs), len(revs), len(epss))
+    rows = []
+    for i in range(n):
+        if datekeys[i] == "TTM":
+            continue
+        rows.append({
+            "date": datekeys[i] if isinstance(datekeys[i], str) else None,
+            "fiscal_year": fys[i] if isinstance(fys[i], str) else None,
+            "fiscal_quarter": fqs[i] if isinstance(fqs[i], str) else None,
+            "revenue": revs[i] if isinstance(revs[i], (int, float)) and not isinstance(revs[i], bool) else None,
+            "eps": epss[i] if isinstance(epss[i], (int, float)) and not isinstance(epss[i], bool) else None,
+        })
+    return rows or None
+
+
+def _build_quarterly_series(rows: list[dict]) -> dict:
+    """`rows` (newest-first, as stockanalysis.com returns them) -> the
+    quarterly.{periods,revenue,eps} series, OLDEST FIRST (same charting
+    convention as bars.json), capped at FUND_MAX_QUARTERLY quarters.
+    """
+    capped = list(reversed(rows[:FUND_MAX_QUARTERLY]))
+    periods, revenue, eps = [], [], []
+    for r in capped:
+        fy, fq = r.get("fiscal_year"), r.get("fiscal_quarter")
+        yy = fy[-2:] if isinstance(fy, str) and len(fy) >= 2 else None
+        periods.append(f"{fq} {yy}" if fq and yy else None)
+        revenue.append(r.get("revenue"))
+        eps.append(r.get("eps"))
+    return {"periods": periods, "revenue": revenue, "eps": eps}
+
+
+def _build_annual_series(rows: list[dict]) -> dict:
+    """Sum COMPLETE fiscal years (all 4 quarters present) out of the SAME
+    quarterly rows stockanalysis.com already returned — a DERIVED aggregate,
+    not the company's own separately-filed annual diluted EPS (which can
+    differ slightly for weighted-share-count reasons across the year; see
+    DATA_CONTRACT.md). No extra network request. Oldest first, capped at
+    FUND_MAX_ANNUAL years. A year missing any quarter's revenue/eps yields
+    None for that year rather than summing a partial (never a silent
+    undercount presented as a full year).
+    """
+    by_year: dict[str, list[dict]] = {}
+    for r in rows:
+        fy = r.get("fiscal_year")
+        if isinstance(fy, str):
+            by_year.setdefault(fy, []).append(r)
+    complete_years = sorted(y for y, qs in by_year.items() if len(qs) == 4)
+    complete_years = complete_years[-FUND_MAX_ANNUAL:]
+    periods, revenue, eps = [], [], []
+    for y in complete_years:
+        qs = by_year[y]
+        revs = [q["revenue"] for q in qs if isinstance(q.get("revenue"), (int, float))]
+        epss = [q["eps"] for q in qs if isinstance(q.get("eps"), (int, float))]
+        periods.append(f"FY{y[-2:]}")
+        revenue.append(round(sum(revs), 2) if len(revs) == 4 else None)
+        eps.append(round(sum(epss), 5) if len(epss) == 4 else None)
+    return {"periods": periods, "revenue": revenue, "eps": eps}
+
+
+def _default_yahoo_get(url: str, headers: dict) -> bytes:
+    """Real Yahoo transport: a lazily-created, process-lifetime urllib
+    opener with its own cookiejar, so the cookie fc.yahoo.com sets survives
+    into the getcrumb call and every quoteSummary call that follows within
+    the same run — the crumb dance is a stateful cookie handshake, unlike
+    every other fetch in this module, hence its own opener rather than
+    reusing `_default_get`.
+    """
+    global _yahoo_opener
+    if _yahoo_opener is None:
+        _yahoo_opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    req = urllib.request.Request(url, headers=headers)
+    with _yahoo_opener.open(req, timeout=TIMEOUT) as resp:
+        return resp.read()
+
+
+def _yahoo_get(url: str, _get: Optional[Callable] = None) -> bytes:
+    getter = _get or _default_yahoo_get
+    return getter(url, {"User-Agent": BROWSER_UA})
+
+
+def fetch_yahoo_crumb(_get: Optional[Callable] = None) -> Optional[str]:
+    """One-time-per-run cookie warm-up + crumb fetch. None on failure (the
+    whole Yahoo leg is then skipped for every symbol this cycle — fail-soft,
+    never blocks the stockanalysis.com legs).
+
+    fc.yahoo.com routinely 404s ("Not Found on Accelerator", confirmed live
+    2026-08-15) — that is expected and harmless; the cookie lands via
+    Set-Cookie on the error response itself, so the exception is swallowed
+    deliberately and the crumb call proceeds on the same cookie jar.
+    """
+    try:
+        _yahoo_get(YAHOO_FC_URL, _get=_get)
+    except Exception:
+        pass
+    try:
+        raw = _yahoo_get(YAHOO_CRUMB_URL, _get=_get)
+        crumb = raw.decode("utf-8").strip()
+        return crumb or None
+    except Exception as e:
+        log(f"WARN yahoo crumb fetch failed: {type(e).__name__}")
+        return None
+
+
+def _yahoo_num(v) -> Optional[float]:
+    """Yahoo's {"raw": x, "fmt": "..."} convention -> float, or None."""
+    if isinstance(v, dict):
+        raw = v.get("raw")
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            return float(raw)
+    return None
+
+
+def _yahoo_num_str(v) -> Optional[float]:
+    """Some Yahoo fields (surprisePct) are plain numeric strings, not the
+    {"raw","fmt"} dict shape -> float, or None."""
+    if isinstance(v, str):
+        try:
+            return float(v)
+        except ValueError:
+            return None
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return float(v)
+    return None
+
+
+def _fmt_fiscal_period(fq) -> Optional[str]:
+    """"1Q2027" -> "Q1 2027". None if it doesn't match that shape."""
+    if not isinstance(fq, str):
+        return None
+    m = _FISCAL_Q_RE.match(fq)
+    return f"Q{m.group(1)} {m.group(2)}" if m else None
+
+
+def fetch_yahoo_fundamentals(sym: str, crumb: str, _get: Optional[Callable] = None) -> dict:
+    """One Yahoo quoteSummary call (defaultKeyStatistics + earningsHistory +
+    earnings + calendarEvents) -> {"short_pct_float", "pe_forward",
+    "earnings": [...], "next_earnings": {...} | None}.
+
+    `earnings` is built from earnings.earningsChart.quarterly (actual/
+    estimate/surprise/session — a strict superset of the separate
+    earningsHistory module for the same quarters, so that module is
+    requested but not separately parsed) matched against
+    earnings.financialsChart.quarterly (actual revenue) by Yahoo's own
+    shared "date" label (e.g. "2Q2025") — both charts use the same key, so
+    no timestamp-matching heuristics are needed. Yahoo returns at most ~4
+    historical quarters here; `rev_est`/`rev_surprise_pct` are always None
+    (no historical estimate-at-time source was found — see the module
+    header). `next_earnings` comes from calendarEvents.earnings (date,
+    eps_est, rev_est); it carries no intraday time, so `session` is left
+    None here for the caller to fill in from a same-ticker TV timestamp if
+    one is available (see build_fund_sidecar).
+
+    Whole-dict-empty on a fetch/parse failure; every field independently
+    None/[]/absent on a narrower miss (per-field fail-soft throughout).
+    """
+    empty = {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None}
+    url = (YAHOO_QUOTESUMMARY_URL.format(sym=sym)
+           + f"?modules={YAHOO_QS_MODULES}&crumb={urllib.parse.quote(crumb)}")
+    try:
+        raw = _yahoo_get(url, _get=_get)
+        obj = json.loads(raw)
+        result = obj["quoteSummary"]["result"][0]
+    except Exception as e:
+        log(f"WARN yahoo quoteSummary fetch failed for {sym}: {type(e).__name__}")
+        return empty
+    if not isinstance(result, dict):
+        return empty
+
+    out = dict(empty)
+    dks = result.get("defaultKeyStatistics") or {}
+    short_frac = _yahoo_num(dks.get("shortPercentOfFloat"))
+    out["short_pct_float"] = round(short_frac * 100, 3) if short_frac is not None else None
+    out["pe_forward"] = _yahoo_num(dks.get("forwardPE"))
+
+    earnings_mod = result.get("earnings") or {}
+    echart = ((earnings_mod.get("earningsChart") or {}).get("quarterly")) or []
+    fchart = ((earnings_mod.get("financialsChart") or {}).get("quarterly")) or []
+    rev_by_caldate = {r.get("date"): _yahoo_num(r.get("revenue"))
+                      for r in fchart if isinstance(r, dict)}
+
+    rows = []
+    for r in echart:
+        if not isinstance(r, dict):
+            continue
+        pe_raw = r.get("periodEndDate")
+        pe_ts = pe_raw.get("raw") if isinstance(pe_raw, dict) else None
+        if not isinstance(pe_ts, (int, float)):
+            continue
+        rd_raw = r.get("reportedDate")
+        rd_ts = rd_raw.get("raw") if isinstance(rd_raw, dict) else None
+        surprise = _yahoo_num_str(r.get("surprisePct"))
+        rows.append({
+            "period": _fmt_fiscal_period(r.get("fiscalQuarter")),
+            "date": datetime.fromtimestamp(pe_ts, tz=timezone.utc).date().isoformat(),
+            "session": _earnings_session(rd_ts) if isinstance(rd_ts, (int, float)) else None,
+            "eps": _yahoo_num(r.get("actual")),
+            "eps_est": _yahoo_num(r.get("estimate")),
+            "eps_surprise_pct": round(surprise, 2) if surprise is not None else None,
+            "rev": rev_by_caldate.get(r.get("date")),
+            "rev_est": None,
+            "rev_surprise_pct": None,
+        })
+    rows.sort(key=lambda r: r["date"])
+    out["earnings"] = rows[-FUND_MAX_EARNINGS:]
+
+    cal = (result.get("calendarEvents") or {}).get("earnings") or {}
+    ed = cal.get("earningsDate")
+    next_ts = None
+    if isinstance(ed, list) and ed and isinstance(ed[0], dict):
+        next_ts = ed[0].get("raw")
+    if isinstance(next_ts, (int, float)):
+        out["next_earnings"] = {
+            "date": datetime.fromtimestamp(next_ts, tz=timezone.utc).date().isoformat(),
+            "session": None,   # filled in by the caller from TV's earnings_ts, if any
+            "eps_est": _yahoo_num(cal.get("earningsAverage")),
+            "rev_est": _yahoo_num(cal.get("revenueAverage")),
+        }
+    return out
+
+
+def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
+                        earn_ts, _get: Optional[Callable] = None) -> dict:
+    """One ticker's fund/{SYM}.json payload (see DATA_CONTRACT.md for the
+    full shape). Every leg below is independently fail-soft: a leg that
+    errors contributes null/[]/default fields and never raises, never
+    blocks the other leg, never blocks the next symbol.
+
+    earn_ts: this ticker's TV earnings_release_next_date (unix seconds, from
+    build_snapshot's quotes), used ONLY to derive next_earnings.session via
+    the same premarket/afterhours heuristic build_catalysts uses elsewhere
+    — Yahoo's calendarEvents carries no intraday time, and stockanalysis.com
+    supplies its own session read separately (see fetch_sa_statistics).
+    """
+    payload = {
+        "built": session_date.isoformat(), "sym": sym,
+        "short_pct_float": None, "pe_forward": None,
+        "earnings": [], "next_earnings": None,
+        "quarterly": {"periods": [], "revenue": [], "eps": []},
+        "annual": {"periods": [], "revenue": [], "eps": []},
+    }
+
+    sa_stats = fetch_sa_statistics(sym, _get=_get)
+    payload["short_pct_float"] = sa_stats["short_pct_float"]
+    payload["pe_forward"] = sa_stats["pe_forward"]
+    sa_next_earnings = None
+    if sa_stats["next_earnings_date"] is not None:
+        sa_next_earnings = {
+            "date": sa_stats["next_earnings_date"],
+            "session": sa_stats["next_earnings_session"],
+            "eps_est": None, "rev_est": None,
+        }
+
+    time.sleep(FUND_SLEEP_SEC)
+    quarterly_rows = fetch_sa_quarterly(sym, _get=_get)
+    if quarterly_rows:
+        payload["quarterly"] = _build_quarterly_series(quarterly_rows)
+        payload["annual"] = _build_annual_series(quarterly_rows)
+
+    payload["next_earnings"] = sa_next_earnings   # best guess so far; Yahoo may improve it below
+
+    if crumb:
+        time.sleep(FUND_SLEEP_SEC)
+        yq = fetch_yahoo_fundamentals(sym, crumb, _get=_get)
+        if payload["short_pct_float"] is None:
+            payload["short_pct_float"] = yq["short_pct_float"]
+        if payload["pe_forward"] is None:
+            payload["pe_forward"] = yq["pe_forward"]
+        if yq["earnings"]:
+            payload["earnings"] = yq["earnings"]
+        if yq["next_earnings"] is not None:
+            ne = dict(yq["next_earnings"])
+            if ne.get("session") is None:
+                if isinstance(earn_ts, (int, float)):
+                    ne["session"] = _earnings_session(earn_ts)
+                elif sa_next_earnings is not None:
+                    ne["session"] = sa_next_earnings.get("session")
+            payload["next_earnings"] = ne
+
+    return payload
+
+
+def build_fund_universe(universe: list[str], session_date: date,
+                         earn_ts_map: Optional[dict] = None,
+                         _get: Optional[Callable] = None) -> dict[str, dict]:
+    """Build fund/{SYM}.json payloads for the whole tracked universe (called
+    once per day by build_context, on the SAME gate as the bars rebuild).
+
+    Fail-soft per symbol: one symbol's total failure (an uncaught exception
+    anywhere in build_fund_sidecar) is logged and skipped, never blocks the
+    rest of the universe. Logs one timing summary line at the end (Task 4's
+    runtime-budget note: ~60 symbols x up to 4 requests/symbol including the
+    one-time crumb dance, ~0.3s sleep between each, should stay well under
+    the daily gate's 3-minute budget).
+    """
+    earn_ts_map = earn_ts_map or {}
+    crumb = fetch_yahoo_crumb(_get=_get)
+    if crumb is None:
+        log("WARN fund sidecars: yahoo crumb unavailable this cycle — "
+            "short_pct_float/pe_forward/earnings fall back to stockanalysis.com only")
+
+    out: dict[str, dict] = {}
+    t0 = time.monotonic()
+    for i, sym in enumerate(universe):
+        if i > 0:
+            time.sleep(FUND_SLEEP_SEC)
+        try:
+            out[sym] = build_fund_sidecar(sym, session_date, crumb, earn_ts_map.get(sym), _get=_get)
+        except Exception as e:
+            log(f"skip {sym}: fund sidecar build failed ({type(e).__name__})")
+    elapsed = time.monotonic() - t0
+    log(f"fund sidecars: built {len(out)}/{len(universe)} symbols in {elapsed:.1f}s")
+    return out
 
 
 # ── Job-local cache (fetcher/.context_cache.json) ───────────────────────────
@@ -849,10 +1512,10 @@ def _is_context_stale(cache: dict, now_utc: datetime) -> bool:
 
 def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date,
                    now_utc: datetime, _get: Optional[Callable] = None,
-                   ) -> tuple[dict, Optional[dict]]:
+                   ) -> tuple[dict, Optional[dict], Optional[dict]]:
     """Run the whole context layer for one build_snapshot.run_cycle call.
 
-    Returns (fields, bars_payload):
+    Returns (fields, bars_payload, fund_payload):
       fields       — ONLY the keys that belong in data.json this cycle
                      (brief/catalysts/news/facts/desk_private/
                      context_updated_at), each omitted entirely when there is
@@ -864,11 +1527,19 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
                      an earlier cycle today is still current). The caller
                      writes it to OUT_DIR/bars.json using the same tmp-file-
                      then-replace pattern data.json/history.json already use.
+      fund_payload — {ticker: fund/{SYM}.json body} when the fund sidecars
+                     were (re)built this cycle (added 2026-08-15, Task 4),
+                     else None. Built on the SAME gate as bars_payload — see
+                     below. The caller writes one file per ticker to
+                     OUT_DIR/fund/{ticker}.json, same tmp-then-replace
+                     pattern.
 
     quotes  — {ticker: quote} from build_snapshot.build_universe(), with this
               build's extended TV_COLUMNS (hi52/lo52/beta/avol/rsi/
               earnings_ts/market_cap/tv_symbol already present per quote).
-    pinned  — build_snapshot.PINNED (the bars universe).
+    pinned  — build_snapshot.PINNED (the bars universe, also the fund
+              sidecar universe — TRACK_ONLY names are tracked here same as
+              everything else; only the CBOE chain fetch skips them).
     """
     token = os.environ.get("VAULT_READ_TOKEN")
     cache = load_context_cache()
@@ -916,8 +1587,9 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         news = cache["news"]
         desk_private = cache["desk_private"]
 
-    # ── once-daily bars rebuild ──────────────────────────────────────────
+    # ── once-daily bars rebuild (+ fund sidecars, same gate — Task 4) ────
     bars_payload = None
+    fund_payload = None
     if cache.get("bars_built_date") != session_date.isoformat():
         bars_payload, new_avg_move = build_bars(pinned, session_date, _get=_get)
         cache["bars_built_date"] = bars_payload["built"]
@@ -928,6 +1600,10 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         for ticker, f in facts.items():
             if ticker in new_avg_move:
                 f["avg_move"] = new_avg_move[ticker]
+
+        earn_ts_map = {t: (q.get("earnings_ts") if isinstance(q, dict) else None)
+                       for t, q in quotes.items()}
+        fund_payload = build_fund_universe(pinned, session_date, earn_ts_map=earn_ts_map, _get=_get)
 
     save_context_cache(cache)
 
@@ -945,4 +1621,4 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
     if isinstance(cache.get("context_fetched_at"), str):
         fields["context_updated_at"] = cache["context_fetched_at"]
 
-    return fields, bars_payload
+    return fields, bars_payload, fund_payload

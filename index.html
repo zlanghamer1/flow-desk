@@ -226,20 +226,26 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .nw .tm{margin-left:auto;font-size:9.5px;color:var(--ink3);flex:none}
 .rotbanner{font-size:10.5px;color:var(--ink2);padding:0 0 6px;border-bottom:1px solid var(--edge2);margin-bottom:6px}
 
-/* ============ drawer ============ */
+/* ============ ticker modal (Finviz-style — large, centered, backdrop) ============ */
+.modalback{position:fixed;inset:0;z-index:59;background:rgba(6,8,10,.6);backdrop-filter:blur(2px);display:none}
+.modalback.open{display:block}
 .drawer{
-  position:fixed;top:0;right:0;bottom:0;width:min(430px,100vw);z-index:60;background:var(--srf);
-  border-left:1px solid var(--edge);box-shadow:-18px 0 40px rgba(0,0,0,.35);
-  transform:translateX(102%);visibility:hidden;
-  transition:transform .18s ease,visibility 0s .18s;overflow-y:auto;
+  position:fixed;top:5vh;left:50%;width:min(1280px,94vw);height:90vh;z-index:60;background:var(--srf);
+  border:1px solid var(--edge);border-radius:12px;box-shadow:0 30px 80px rgba(0,0,0,.5);
+  transform:translateX(-50%);visibility:hidden;opacity:0;
+  transition:opacity .16s ease,visibility 0s .16s;overflow-y:auto;
 }
-.drawer.open{transform:none;visibility:visible;transition:transform .18s ease}
-@media (prefers-reduced-motion: reduce){ .drawer{transition:none} }
-.dh{display:flex;align-items:baseline;gap:10px;padding:14px 16px 6px;position:sticky;top:0;background:var(--srf);border-bottom:1px solid var(--edge2);z-index:2}
+.drawer.open{visibility:visible;opacity:1;transition:opacity .16s ease}
+@media (prefers-reduced-motion: reduce){ .drawer,.modalback{transition:none} }
+@media (max-width:640px){
+  .drawer{width:100vw;height:100vh;top:0;left:0;transform:none;border-radius:0}
+}
+.dh{display:flex;align-items:baseline;gap:10px;padding:14px 16px 6px;position:sticky;top:0;background:var(--srf);border-bottom:1px solid var(--edge2);z-index:2;flex-wrap:wrap;border-radius:12px 12px 0 0}
 .dh .sy{font-size:19px;font-weight:750}
 .dh .px{font-size:15px}
 .dh .ch{font-size:12px;font-weight:650}
 .dh .x{margin-left:auto;color:var(--ink3);font-size:16px;padding:2px 8px}
+@media (max-width:640px){ .dh{border-radius:0} }
 .dsec{padding:10px 16px;border-bottom:1px solid var(--edge2)}
 .dsec h3{font-size:9.5px;letter-spacing:.13em;color:var(--ink3);text-transform:uppercase;margin-bottom:7px}
 .seg{display:inline-flex;border:1px solid var(--edge);border-radius:6px;overflow:hidden}
@@ -251,12 +257,30 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .pchip.u{background:var(--upbg)} .pchip.d{background:var(--dnbg)}
 .chart{position:relative}
 .chart svg{width:100%;height:150px;display:block}
-.xh{position:absolute;pointer-events:none;display:none;font-size:10px;background:var(--srf2);border:1px solid var(--edge);border-radius:4px;padding:3px 7px;white-space:nowrap;z-index:5}
+.chartbig{position:relative}
+.chartbig svg{width:100%;height:min(46vh,360px);display:block}
+.xh{position:absolute;pointer-events:none;display:none;font-size:10px;background:var(--srf2);border:1px solid var(--edge);border-radius:4px;padding:3px 7px;white-space:nowrap;z-index:5;line-height:1.5}
+.pop{position:absolute;z-index:8;display:none;max-width:230px;background:var(--srf2);border:1px solid var(--edge);border-radius:6px;padding:8px 10px 9px;font-size:11px;color:var(--ink2);box-shadow:0 12px 32px rgba(0,0,0,.4);line-height:1.55}
+.pop b{color:var(--ink)}
+.pop .u{color:var(--up)} .pop .d{color:var(--dn)}
+.pop .cl{position:absolute;top:1px;right:6px;color:var(--ink3);cursor:pointer;font-size:13px;padding:2px 4px}
 .leg{display:flex;gap:12px;font-size:9.5px;color:var(--ink3);margin-top:5px;flex-wrap:wrap}
 .leg i{display:inline-block;width:12px;border-top:2px solid var(--ink2);vertical-align:middle;margin-right:4px}
 .leg i.p{border-top:2px solid var(--acc)}
-.leg i.d50{border-top:2px dashed var(--acc)}
-.leg i.d200{border-top:2px dashed var(--ink3)}
+.leg i.d20{border-top:2px dashed var(--ink3)}
+.leg i.d50{border-top:2px solid var(--acc)}
+.leg i.d200{border-top:2px solid var(--hi)}
+.fgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px 16px}
+@media (max-width:900px){ .fgrid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+.fcell{display:flex;justify-content:space-between;gap:10px;padding:3.5px 0;border-bottom:1px solid var(--edge2);font-size:11.5px}
+.fcell span{color:var(--ink3)}
+.fcell b{font-weight:600}
+.gwrap{display:flex;gap:16px;flex-wrap:wrap;margin-top:4px}
+.gwrap .glabel{flex:1 1 100%;font-size:9.5px;letter-spacing:.12em;color:var(--ink3);font-weight:700;text-transform:uppercase;margin-top:8px}
+.gchart{flex:1 1 240px;min-width:200px}
+.gchart h4{font-size:9.5px;letter-spacing:.09em;color:var(--ink3);text-transform:uppercase;margin-bottom:3px;font-weight:650}
+.gchart svg{width:100%;height:82px;display:block}
+.jumpflash{background:var(--sel)!important;box-shadow:inset 2px 0 0 var(--acc)}
 .kvrow{display:flex;justify-content:space-between;gap:14px;font-size:11.5px;padding:3px 0;color:var(--ink3)}
 .kvrow b{color:var(--ink);font-weight:600;text-align:right}
 .kvrow b.u{color:var(--up)}
@@ -348,7 +372,7 @@ footer b{color:var(--ink2)}
     <!-- ======= watchlist rail ======= -->
     <aside class="wl">
       <div class="wrs" id="wl"></div>
-      <div class="wlnote">leveraged ETFs (SOXL · SOXS · MUU) excluded by rule — flow boards still scan them</div>
+      <div class="wlnote">leveraged wrappers included by rule (2026-08-15) · WTI here is W&amp;T Offshore, the oil producer — crude itself is the WTI tile in the tape</div>
       <div class="alertbox" id="alerts"></div>
       <div class="alertbox" id="positions"></div>
     </aside>
@@ -415,7 +439,8 @@ footer b{color:var(--ink2)}
 </div>
 
 <!-- drawer / palette / tooltip -->
-<div class="drawer" id="drawer" aria-label="Ticker detail"></div>
+<div class="modalback" id="modalback"></div>
+<div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Ticker detail"></div>
 <div class="pal" id="pal"><div class="palbox">
   <input id="palin" placeholder="Type a ticker or an action… (↑↓ + Enter)" autocomplete="off">
   <div class="pl" id="pallist"></div>
@@ -436,6 +461,8 @@ var RAW_DATA_URL  = "https://raw.githubusercontent.com/zlanghamer1/flow-desk/dat
 var LOCAL_DATA_URL = "./data/data.json";
 var RAW_BARS_URL  = "https://raw.githubusercontent.com/zlanghamer1/flow-desk/data/bars.json";
 var LOCAL_BARS_URL = "./data/bars.json";
+var RAW_FUND_BASE  = "https://raw.githubusercontent.com/zlanghamer1/flow-desk/data/fund/";
+var LOCAL_FUND_BASE = "./data/fund/";
 var TV_SCANNER_URL = "https://scanner.tradingview.com/america/scan";
 var TV_GLOBAL_SCANNER_URL = "https://scanner.tradingview.com/global/scan";
 var POLL_MS = 30000;
@@ -445,12 +472,15 @@ var CONTEXT_STALE_MS = 2 * 60 * 60 * 1000;  // catalysts/news hourly cadence -> 
 var isLocalHost = (location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "");
 var DATA_URL = isLocalHost ? LOCAL_DATA_URL : RAW_DATA_URL;
 var BARS_URL = isLocalHost ? LOCAL_BARS_URL : RAW_BARS_URL;
+var FUND_BASE = isLocalHost ? LOCAL_FUND_BASE : RAW_FUND_BASE;
 
 /* =================== static universe config =================== */
 var RAIL_GROUPS = [
-  {g:"WATCHLIST", syms:["MU","CRWD","COHR","LLY","V","XOM","AXTI","TSEM"]},
-  {g:"SEMIS & MEMORY", syms:["NVDA","AVGO","AMD","TSM","MRVL","LITE","CAMT","ONTO","SKHY","SNDK","DRAM","RAM","SMH"]},
-  {g:"MEGA CAP & ENERGY", syms:["GOOGL","MSFT","AMZN","META","CVX"]},
+  {g:"WATCHLIST", syms:["MU","CRWD","COHR","LLY","V","XOM","AXTI","TSEM","WTI"]},
+  {g:"SEMIS & MEMORY", syms:["NVDA","AVGO","TSM","MRVL","LITE","CAMT","ONTO","SKHY","SNDK","DRAM","SMH","KLAC","AMAT","AEHR","AMKR","VSH","STM","SMCI","AAOI"]},
+  {g:"MEGA CAP", syms:["GOOGL","MSFT","AMZN"]},
+  {g:"AI INFRA & MINERS", syms:["CBRS","NBIS","STRL","MOD","BE","APLD","CORZ","CIFR","RIOT","CLSK"]},
+  {g:"LEVERAGED", syms:["SOXL","SOXS","MUU","RAM","SKHX","STLL","AAOG","NRGU","OILU"]},
 ];
 // Best-effort exchange prefixes for client-side TV price polling of rail-only
 // tickers (ones that may not appear on either board this cycle, so data.json
@@ -463,19 +493,33 @@ var RAIL_GROUPS = [
 // 2026-08-15 (CBOE:DRAM / CBOE:RAM both resolve, NASDAQ: variants return nothing).
 var RAIL_TV_SYMBOL = {
   MU:"NASDAQ:MU", CRWD:"NASDAQ:CRWD", COHR:"NYSE:COHR", LLY:"NYSE:LLY", V:"NYSE:V", XOM:"NYSE:XOM",
-  AXTI:"NASDAQ:AXTI", TSEM:"NASDAQ:TSEM", NVDA:"NASDAQ:NVDA", AVGO:"NASDAQ:AVGO", AMD:"NASDAQ:AMD",
-  TSM:"NYSE:TSM", MRVL:"NASDAQ:MRVL", LITE:"NASDAQ:LITE", CAMT:"NASDAQ:CAMT", ONTO:"NYSE:ONTO",
-  SKHY:"NASDAQ:SKHY", SNDK:"NASDAQ:SNDK", DRAM:"CBOE:DRAM", RAM:"CBOE:RAM", SMH:"NASDAQ:SMH",
-  GOOGL:"NASDAQ:GOOGL", MSFT:"NASDAQ:MSFT", AMZN:"NASDAQ:AMZN", META:"NASDAQ:META", CVX:"NYSE:CVX"
+  AXTI:"NASDAQ:AXTI", TSEM:"NASDAQ:TSEM", NVDA:"NASDAQ:NVDA", AVGO:"NASDAQ:AVGO", TSM:"NYSE:TSM",
+  MRVL:"NASDAQ:MRVL", LITE:"NASDAQ:LITE", CAMT:"NASDAQ:CAMT", ONTO:"NYSE:ONTO", SKHY:"NASDAQ:SKHY",
+  SNDK:"NASDAQ:SNDK", DRAM:"CBOE:DRAM", SMH:"NASDAQ:SMH", KLAC:"NASDAQ:KLAC", AMAT:"NASDAQ:AMAT",
+  AEHR:"NASDAQ:AEHR", AMKR:"NASDAQ:AMKR", VSH:"NYSE:VSH", STM:"NYSE:STM", SMCI:"NASDAQ:SMCI",
+  AAOI:"NASDAQ:AAOI", GOOGL:"NASDAQ:GOOGL", MSFT:"NASDAQ:MSFT", AMZN:"NASDAQ:AMZN",
+  CBRS:"NASDAQ:CBRS", NBIS:"NASDAQ:NBIS", STRL:"NASDAQ:STRL", MOD:"NYSE:MOD", BE:"NYSE:BE",
+  APLD:"NASDAQ:APLD", CORZ:"NASDAQ:CORZ", CIFR:"NASDAQ:CIFR", RIOT:"NASDAQ:RIOT", CLSK:"NASDAQ:CLSK",
+  // Leveraged wrappers — IN the rail by owner's ruling (2026-08-15, supersedes
+  // the earlier exclusion note below the WATCHLIST wlnote). Exchange prefixes
+  // architect-verified live except SKHX/NRGU (best guesses); an unresolved
+  // symbol just polls empty and renders "—" harmlessly (existing behavior).
+  SOXL:"AMEX:SOXL", SOXS:"AMEX:SOXS", MUU:"NASDAQ:MUU", RAM:"CBOE:RAM", OILU:"AMEX:OILU",
+  STLL:"CBOE:STLL", AAOG:"CBOE:AAOG", WTI:"NYSE:WTI", SKHX:"CBOE:SKHX", NRGU:"NYSE:NRGU"
 };
 var STATIC_NAMES = {
   MU:"Micron", CRWD:"CrowdStrike", COHR:"Coherent", LLY:"Eli Lilly", V:"Visa", XOM:"Exxon",
-  AXTI:"AXT Inc", TSEM:"Tower Semi", NVDA:"NVIDIA", AVGO:"Broadcom", AMD:"Advanced Micro", TSM:"TSMC",
+  AXTI:"AXT Inc", TSEM:"Tower Semi", NVDA:"NVIDIA", AVGO:"Broadcom", TSM:"TSMC",
   MRVL:"Marvell", LITE:"Lumentum", CAMT:"Camtek", ONTO:"Onto Innovation", SKHY:"SK Hynix ADR",
-  SNDK:"SanDisk", DRAM:"Memory ETF", RAM:"Memory ETF (alt)", SMH:"Semis ETF",
-  GOOGL:"Alphabet", MSFT:"Microsoft", AMZN:"Amazon", META:"Meta", CVX:"Chevron",
+  SNDK:"SanDisk", DRAM:"Memory ETF", SMH:"Semis ETF", KLAC:"KLA", AMAT:"Applied Materials",
+  AEHR:"Aehr Test", AMKR:"Amkor", VSH:"Vishay", STM:"STMicro ADR", SMCI:"Supermicro",
+  AAOI:"Applied Opto", GOOGL:"Alphabet", MSFT:"Microsoft", AMZN:"Amazon",
+  CBRS:"Cerebras", NBIS:"Nebius", STRL:"Sterling Infra", MOD:"Modine", BE:"Bloom Energy",
+  APLD:"Applied Digital", CORZ:"Core Scientific", CIFR:"Cipher Mining", RIOT:"Riot Platforms", CLSK:"CleanSpark",
   QQQ:"NASDAQ 100", SOXL:"Semis 3x (leveraged)", XLE:"Energy", XLK:"Technology",
-  SPY:"S&P 500", DIA:"DOW", IWM:"SMALL CAPS"
+  SPY:"S&P 500", DIA:"DOW", IWM:"SMALL CAPS", META:"Meta", AMD:"Advanced Micro", CVX:"Chevron",
+  SOXS:"Semis 3x inverse", MUU:"MU 2x", RAM:"DRAM ETF 2x", SKHX:"SK Hynix 2x", STLL:"Sterling 2x",
+  AAOG:"Applied Opto 2x", NRGU:"Oil 3x ETN", OILU:"Oil 2x", WTI:"W&T Offshore"
 };
 var MAIN_TAPE = [
   {s:"SPY", n:"S&P 500", tv:"AMEX:SPY"},
@@ -570,7 +614,7 @@ var TIPS = {
   kill:"Thesis positions don't use stops. They exit only if a named reason breaks — the kill triggers in the thesis record. This line says whether every trigger still holds.",
   dca:"The leveraged sleeve buys on schedule while price holds above the 200-day band and pauses below it. The taxable sleeve never sells, by rule.",
   gap:"A stop is an order, not a guarantee — price can gap straight through it overnight. Position size is the only gap defense.",
-  fund:"Colored from a buyer's lens against rough thresholds: short % of float green under 2% / red over 5%; RSI green at 35 or under (washed out) / red at 70+ (hot). A gauge, not a rating.",
+  fund:"Colored from a buyer's lens against rough thresholds: short % of float green under 2% / red over 5%; RSI green at 35 or under (washed out) / red at 70+ (hot); PEG green at 1 or under / red at 2+; net margin green at 20%+ / red below 0%; Debt/Eq green at 0.5 or under / red at 2+; analyst target green when 15%+ above price. A gauge, not a rating.",
   range:"Position in the 52-week range. Near the low = shopping territory, near the high = hot runner. The diamond is today.",
   hot:"Today's move divided by this name's own average daily move — Micron swinging 2% is normal, Google swinging 2% is not. Highlights at 1.8× and up.",
   stale:"This section is older than expected for its usual refresh cadence — showing the last good read.",
@@ -776,6 +820,9 @@ function fetchData(){
       STATE.data = data;
       normalizeBrief(STATE.data);
       rebuildDynamicTv(data);
+      // Stable per-row ids for the modal's catalyst diamonds/list to jump to
+      // the exact right-rail row, regardless of the rail's current filter.
+      if(Array.isArray(data.catalysts)) data.catalysts.forEach(function(c,i){ if(c && typeof c==="object") c._id=i; });
       renderAll(data);
       return data;
     })
@@ -789,7 +836,46 @@ function ensureBars(){
     .then(function(json){ BARS_CACHE = (json && typeof json==="object") ? json : {bars:{}}; return BARS_CACHE; })
     .catch(function(){ BARS_CACHE = {bars:{}}; return BARS_CACHE; });
 }
-function barsOf(sym){ return (BARS_CACHE && BARS_CACHE.bars && BARS_CACHE.bars[sym]) || []; }
+function barsRaw(sym){ return (BARS_CACHE && BARS_CACHE.bars && BARS_CACHE.bars[sym]) || []; }
+// bars.json v2 rows are [o,h,l,c] quads; v1 rows are plain close numbers. barsOf()
+// keeps returning a flat CLOSES array either way, so every pre-existing caller
+// (seriesFull/statsOf/hotOf/the v1 line-chart fallback) needs no change.
+function quadsRaw(sym){ var b=barsRaw(sym); return (b.length && Array.isArray(b[0])) ? b : null; }
+function barsOf(sym){
+  var b = barsRaw(sym);
+  if(b.length && Array.isArray(b[0])) return b.map(function(q){ return num(q[3]); });
+  return b.map(function(v){ return num(v); });
+}
+// Quads history with a synthetic "today" candle appended from the live poll
+// (o=prevClose, h/l bracket prevClose..live, c=live) so the candle chart is as
+// fresh as the line-chart fallback already was. null when this symbol's bars
+// are v1 (no OHLC) or absent entirely.
+function seriesQuads(sym){
+  var q = quadsRaw(sym);
+  if(!q) return null;
+  var live = liveBySym(sym);
+  if(live && live.px!=null && q.length){
+    var prevClose = num(q[q.length-1][3]);
+    if(prevClose!=null){
+      var lp = live.px;
+      return q.concat([[prevClose, Math.max(prevClose,lp), Math.min(prevClose,lp), lp]]);
+    }
+  }
+  return q;
+}
+
+// fund/{SYM}.json sidecar — lazy-fetched on modal open, cached for the session.
+// Same URL host/path pattern as bars.json. Fail-soft: a 404/bad payload caches
+// null, and every sidecar-driven element in the modal renders "—"/hides.
+var FUND_CACHE = {};
+function fundUrl(sym){ return FUND_BASE + encodeURIComponent(sym) + ".json"; }
+function ensureFund(sym){
+  if(Object.prototype.hasOwnProperty.call(FUND_CACHE, sym)) return Promise.resolve(FUND_CACHE[sym]);
+  return fetch(cacheBust(fundUrl(sym)), {cache:"no-store"})
+    .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
+    .then(function(json){ FUND_CACHE[sym] = (json && typeof json==="object") ? json : null; return FUND_CACHE[sym]; })
+    .catch(function(){ FUND_CACHE[sym] = null; return null; });
+}
 
 /* =================== TV live price poll (ported/extended from live index.html) =================== */
 function collectPollSymbols(){
@@ -986,7 +1072,8 @@ function renderWL(){
       }).join(" · ") : "none yet")
     + '<div style="margin-top:6px"><b>NEAR 52-WEEK LOWS · SHOPPING LIST</b>'
     + (lows.length ? lows.map(function(s){ return esc(s)+' <span class="m">'+Math.round(statsOf(s).pos*100)+'%</span>'; }).join(" · ") : "not enough range data yet")
-    + '</div>';
+    + '</div>'
+    + '<div class="note" style="margin-top:6px">the (n) in the tab title = names moving ≥1.8× their own average day</div>';
   $("#alerts").innerHTML = alertsHtml;
   document.title = hot.length ? ("("+hot.length+") The Desk") : "The Desk";
 }
@@ -1389,14 +1476,35 @@ function renderETF(data){
 }
 
 /* =================== catalysts =================== */
-var catKind = "all", catHi = false;
+// Default rail view is curated (HIGH econ + anchors + any earnings/memory row
+// tied to a ticker on the desk) — see catPassesCurated. The kind pills
+// (Econ/Earnings/Memory/OpEx) are an explicit escape hatch: picking one shows
+// every row of that kind, un-curated, because asking for a whole kind is
+// asking to see all of it. The new "All" pill only widens the curated "All
+// kinds" view to also include MEDIUM econ; it doesn't touch the kind pills.
+var catKind = "all", catShowAll = false;
+function catOnDeskTickers(){
+  var set = {};
+  RAIL_GROUPS.forEach(function(g){ g.syms.forEach(function(s){ set[s]=true; }); });
+  ["conviction","swing","big_orders"].forEach(function(k){
+    var arr = STATE.data && STATE.data[k];
+    if(Array.isArray(arr)) arr.forEach(function(r){ if(r && r.ticker) set[r.ticker]=true; });
+  });
+  return set;
+}
+function catPassesCurated(c, desk, showAll){
+  if(c.anchor) return true;
+  if(c.kind==="econ") return c.importance==="HIGH" || (!!showAll && c.importance==="MEDIUM");
+  if((c.kind==="earnings"||c.kind==="memory") && c.ticker && desk[c.ticker]) return true;
+  return false;
+}
 function renderCatFilters(){
-  var kinds = [["all","All"],["econ","Econ"],["earnings","Earnings"],["memory","Memory"],["market","OpEx"]];
+  var kinds = [["all","All kinds"],["econ","Econ"],["earnings","Earnings"],["memory","Memory"],["market","OpEx"]];
   $("#catfilters").innerHTML = kinds.map(function(k){
     return '<button class="fbtn" data-kind="'+k[0]+'" aria-pressed="'+(catKind===k[0])+'">'+k[1]+'</button>';
-  }).join("") + '<button class="fbtn" id="fhi" aria-pressed="'+catHi+'">HIGH only</button>';
+  }).join("") + '<button class="fbtn" id="fall" aria-pressed="'+catShowAll+'" data-tip="Default: HIGH-importance econ, any earnings/memory event on the desk\'s tickers, and anchors (FOMC, CPI, each name\'s next earnings). All also shows MEDIUM econ releases.">All</button>';
   $$("#catfilters [data-kind]").forEach(function(b){ b.addEventListener("click", function(){ catKind=b.dataset.kind; renderCatFilters(); renderCats(); }); });
-  document.getElementById("fhi").addEventListener("click", function(){ catHi=!catHi; renderCatFilters(); renderCats(); });
+  document.getElementById("fall").addEventListener("click", function(){ catShowAll=!catShowAll; renderCatFilters(); renderCats(); });
 }
 function catWhen(c){ return ctDateTimeFromWall(c.date, c.time_ct); }
 function catDone(c, now){
@@ -1447,7 +1555,11 @@ function renderCats(){
     ["Next two weeks", function(c){ var ms=catWhen(c)-now; return ms>=3*86400e3 && ms<17*86400e3; }],
     ["Later + anchors", function(c){ return (catWhen(c)-now) >= 17*86400e3; }],
   ];
-  var list = arr.filter(function(c){ return (catKind==="all"||c.kind===catKind) && (!catHi||c.importance==="HIGH"); });
+  var list = arr.filter(function(c){ return catKind==="all"||c.kind===catKind; });
+  if(catKind==="all"){
+    var desk = catOnDeskTickers();
+    list = list.filter(function(c){ return catPassesCurated(c, desk, catShowAll); });
+  }
   if(FOCUS) list = list.filter(function(c){ return !c.ticker || c.ticker===FOCUS; });
   var out = groups.map(function(g){
     var label=g[0], fn=g[1];
@@ -1458,7 +1570,7 @@ function renderCats(){
       var impCls = c.importance==="HIGH"?"hi":c.importance==="MEDIUM"?"md":"lo";
       var impLabel = c.importance==="HIGH"?"HIGH":c.importance==="MEDIUM"?"MED":"LOW";
       var day = c.date ? (+c.date.slice(8)) : "?";
-      return '<div class="ct '+(cd.done?"done":"")+'" '+(c.ticker?('data-sym="'+esc(c.ticker)+'"'):'')+'>'
+      return '<div class="ct '+(cd.done?"done":"")+'" data-catid="'+c._id+'" '+(c.ticker?('data-sym="'+esc(c.ticker)+'"'):'')+'>'
         +'<div class="dt"><div class="w">'+wk(c.date)+'</div><div class="n tn">'+day+'</div></div>'
         +'<div><div class="tt">'+esc(c.title||"")+'</div><div class="me">'+catMetaLine(c)+'</div></div>'
         +'<div class="rg"><span class="imp '+impCls+'">'+impLabel+'</span><span class="cd tn '+cd.cls+'">'+cd.txt+'</span></div></div>';
@@ -1522,10 +1634,15 @@ function applyFocus(){
   });
 }
 
-/* =================== drawer: real chart from bars.json, MAs computed client-side =================== */
-var TFN = {"1W":5,"1M":21,"3M":63,"6M":126,"1Y":252};
+/* =================== drawer/modal: candle chart engine + fundamentals =================== */
+var TFN = {"1W":5,"1M":21,"3M":63,"6M":126,"1Y":252};       // v1 line-chart fallback timeframes
+var TFN2 = {"1M":21,"3M":63,"6M":126,"1Y":252};             // candle-chart timeframes — candles need daily
+                                                              // bars, so 1D/1W are dropped (tail-slice note in
+                                                              // the wave-2 spec) rather than faked from one point.
+var GTF = ["1M","3M","6M","1Y"];
 var dTF = "3M";
 var chartState = null;
+var DRAWER_SYM = null, DRAWER_FUND = null;   // fund/{SYM}.json sidecar for the currently open modal
 
 function fundCls(kind, f){
   if(!f) return "";
@@ -1533,6 +1650,9 @@ function fundCls(kind, f){
   if(kind==="rsi"){ var r=num(f.rsi); if(r===null) return ""; return r<=35?"u":r>=70?"d":""; }
   return "";
 }
+function safeMin(arr){ var f=arr.filter(function(v){return v!=null && isFinite(v);}); return f.length?Math.min.apply(null,f):0; }
+function safeMax(arr){ var f=arr.filter(function(v){return v!=null && isFinite(v);}); return f.length?Math.max.apply(null,f):1; }
+
 function chartDataFor(sym, tf){
   var hist = barsOf(sym);
   var full = seriesFull(sym);
@@ -1552,12 +1672,15 @@ function chartDataFor(sym, tf){
   var pct = pts.length>=2 ? (pts[pts.length-1]/pts[0]-1)*100 : null;
   return {pts:pts, m50:m50, m200:m200, pct:pct};
 }
+// v1 fallback — bars.json without OHLC (a flat array of closes). Still a real
+// line chart with MA overlays; 200-day is amber (var(--hi)) same as the candle
+// engine, per the wave-2 ruling that the color change applies everywhere.
 function chartSVG(sym, tf){
   var cd = chartDataFor(sym, tf);
   if(!cd) return {pct:null, pts:[], svg:'<div class="note" style="padding:20px 0;text-align:center">no chart history available</div>'};
   var pts=cd.pts, m50=cd.m50, m200=cd.m200, pct=cd.pct;
   var w=396, h=140;
-  var mn=Math.min.apply(null,pts), mx=Math.max.apply(null,pts);
+  var mn=safeMin(pts), mx=safeMax(pts);
   var pad=(mx-mn)*0.08||1, lo=mn-pad, hi=mx+pad, sp=hi-lo||1;
   var Y=function(v){ return h-((v-lo)/sp)*(h-10)-5; }, X=function(i){ return i/(pts.length-1||1)*w; };
   var path=function(a){ return a.map(function(v,i){ return v==null?null:(X(i).toFixed(1)+","+Y(v).toFixed(1)); }).filter(function(x){return x;}).join(" "); };
@@ -1576,14 +1699,310 @@ function chartSVG(sym, tf){
   }
   var pline = path(pts);
   var svg = '<svg viewBox="0 0 '+w+' '+h+'" id="dchart" preserveAspectRatio="none">'+grid
-    + '<polyline points="'+path(m200)+'" fill="none" stroke="var(--ink3)" stroke-width="1.2" stroke-dasharray="5 4" opacity=".8"/>'
-    + '<polyline points="'+path(m50)+'" fill="none" stroke="var(--acc)" stroke-width="1.2" stroke-dasharray="3 3" opacity=".9"/>'
+    + '<polyline points="'+path(m200)+'" fill="none" stroke="var(--hi)" stroke-width="1.3" opacity=".9"/>'
+    + '<polyline points="'+path(m50)+'" fill="none" stroke="var(--acc)" stroke-width="1.2" opacity=".9"/>'
     + '<polyline points="'+pline+' '+w+','+h+' 0,'+h+'" fill="'+col+'" opacity=".07" stroke="none"/>'
     + poslines
     + '<polyline points="'+pline+'" fill="none" stroke="'+col+'" stroke-width="1.7"/>'
     + '<circle cx="'+X(pts.length-1).toFixed(1)+'" cy="'+Y(pts[pts.length-1]).toFixed(1)+'" r="2.6" fill="'+col+'"/></svg>';
   return {pct:pct, pts:pts, svg:svg};
 }
+
+/* ---- candle engine (bars.json v2: [o,h,l,c] quads) ---- */
+var MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+// Daily bars carry no per-row date, only "built" (or today's session_date for
+// a live-appended candle) — so dates are reconstructed by walking back one
+// weekday per bar from the known end date. Ignores holidays; a deliberate
+// approximation (see report) that's still accurate to within a session or two,
+// plenty for "which month is this candle in".
+function weekdayDatesEndingAt(n, endStr){
+  var end = endStr ? new Date(endStr+"T12:00:00Z") : new Date();
+  var out = new Array(n); var d = new Date(end.getTime());
+  for(var i=n-1;i>=0;i--){
+    out[i] = new Date(d.getTime());
+    d.setUTCDate(d.getUTCDate()-1);
+    while(d.getUTCDay()===0||d.getUTCDay()===6) d.setUTCDate(d.getUTCDate()-1);
+  }
+  return out;
+}
+function candleDataFor(sym, tf){
+  var full = seriesQuads(sym);
+  if(!full || full.length < 2) return null;
+  var n = Math.max(2, Math.min(full.length, TFN2[tf]||63));
+  var slice = full.slice(-n);
+  var closesFull = full.map(function(r){ return num(r[3]); });
+  var m20f = rollMA(closesFull,20), m50f = rollMA(closesFull,50), m200f = rollMA(closesFull,200);
+  var closes = closesFull.slice(-n);
+  var pct = closes.length>=2 && closes[0] ? (closes[closes.length-1]/closes[0]-1)*100 : null;
+  return {slice:slice, m20:m20f.slice(-n), m50:m50f.slice(-n), m200:m200f.slice(-n), pct:pct, n:n};
+}
+function candleChartSVG(sym, tf, fund){
+  var cd = candleDataFor(sym, tf);
+  if(!cd) return {pct:null, n:0, slice:[], svg:'<div class="note" style="padding:30px 0;text-align:center">no chart history available</div>'};
+  var slice=cd.slice, m20=cd.m20, m50=cd.m50, m200=cd.m200, pct=cd.pct, n=cd.n;
+  // rightPad must clear the widest MA end-label ("200d 194.92" ~= 66px at this
+  // font size) plus its x-offset (plotW+6), or it clips against the viewBox
+  // edge; the catalyst gutter then gets its own lane further right still.
+  var W=980, H=340, axisH=22, rightPad=96, plotTop=6, plotBottom=H-axisH-2;
+  var plotW=W-rightPad, plotH=plotBottom-plotTop;
+  var highs=slice.map(function(r){return num(r[1]);}), lows=slice.map(function(r){return num(r[2]);});
+  var mn=safeMin(lows.concat(m200)), mx=safeMax(highs.concat(m200));
+  var pad=(mx-mn)*0.06||1, lo=mn-pad, hi=mx+pad, sp=(hi-lo)||1;
+  var Y=function(v){ return plotTop + (1-(v-lo)/sp)*plotH; };
+  var slotW=plotW/n, X=function(i){ return slotW*i+slotW/2; };
+  var bodyW=Math.max(1, slotW*0.7);
+
+  var endDateStr = (STATE.data && STATE.data.session_date) || (BARS_CACHE && BARS_CACHE.built) || null;
+  var dates = weekdayDatesEndingAt(n, endDateStr);
+
+  var axisHtml="";
+  for(var g=0; g<=4; g++){
+    var v = lo+sp*g/4, y=Y(v);
+    axisHtml += '<line x1="0" x2="'+plotW+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="var(--edge)" stroke-width="1" opacity=".5"/>'
+      + '<text x="'+(plotW+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9.5" fill="var(--ink3)">'+fmtpx(v)+'</text>';
+  }
+  var monthHtml="", lastMonth=-1;
+  for(var i=0;i<n;i++){
+    var mo = dates[i].getUTCMonth();
+    if(mo!==lastMonth){ lastMonth=mo; monthHtml += '<text x="'+X(i).toFixed(1)+'" y="'+(plotBottom+14)+'" font-size="9" fill="var(--ink3)" text-anchor="middle">'+MONTHS[mo]+'</text>'; }
+  }
+  var candleHtml = slice.map(function(r,i){
+    var o=num(r[0]), hh=num(r[1]), l=num(r[2]), c=num(r[3]);
+    if(o==null||hh==null||l==null||c==null) return "";
+    var col = c>=o ? "var(--up)" : "var(--dn)";
+    var x=X(i), yTop=Y(Math.max(o,c)), yBot=Y(Math.min(o,c)), bh=Math.max(1,yBot-yTop);
+    return '<line x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+Y(hh).toFixed(1)+'" y2="'+Y(l).toFixed(1)+'" stroke="'+col+'" stroke-width="1"/>'
+      + '<rect x="'+(x-bodyW/2).toFixed(1)+'" y="'+yTop.toFixed(1)+'" width="'+bodyW.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="'+col+'"/>';
+  }).join("");
+  function maPath(arr){ var pts=[]; for(var k=0;k<arr.length;k++){ if(arr[k]!=null) pts.push(X(k).toFixed(1)+","+Y(arr[k]).toFixed(1)); } return pts.join(" "); }
+  function lastDefined(arr){ for(var k=arr.length-1;k>=0;k--){ if(arr[k]!=null) return arr[k]; } return null; }
+  var maHtml = '<polyline points="'+maPath(m20)+'" fill="none" stroke="var(--ink3)" stroke-width="1.2" opacity=".85"/>'
+    + '<polyline points="'+maPath(m50)+'" fill="none" stroke="var(--acc)" stroke-width="1.3" opacity=".92"/>'
+    + '<polyline points="'+maPath(m200)+'" fill="none" stroke="var(--hi)" stroke-width="1.4" opacity=".95"/>';
+  var labelsHtml="";
+  [["20d",m20,"var(--ink3)"],["50d",m50,"var(--acc)"],["200d",m200,"var(--hi)"]].forEach(function(t){
+    var v=lastDefined(t[1]);
+    if(v!=null) labelsHtml += '<text x="'+(plotW+6)+'" y="'+(Y(v)+3).toFixed(1)+'" font-size="9.5" font-weight="700" fill="'+t[2]+'">'+t[0]+' '+fmtpx(v)+'</text>';
+  });
+
+  var earnRows = (fund && Array.isArray(fund.earnings)) ? fund.earnings : [];
+  var startDate=dates[0], endDate=dates[n-1], earnHtml="";
+  earnRows.forEach(function(er, ei){
+    if(!er || !er.date) return;
+    var ed = new Date(er.date+"T12:00:00Z");
+    if(ed < startDate || ed > endDate) return;
+    var bestI=0, bestDiff=Infinity;
+    for(var k=0;k<n;k++){ var diff=Math.abs(dates[k]-ed); if(diff<bestDiff){ bestDiff=diff; bestI=k; } }
+    var x=X(bestI);
+    earnHtml += '<g class="ebadge" data-etype="past" data-eidx="'+ei+'" transform="translate('+x.toFixed(1)+','+(plotBottom+8)+')">'
+      + '<circle r="7" fill="var(--hi)"/><text y="3" text-anchor="middle" font-size="8" font-weight="700" fill="var(--bg)">E</text></g>';
+  });
+  if(fund && fund.next_earnings && fund.next_earnings.date){
+    var x2 = plotW-2;
+    earnHtml += '<g class="ebadge" data-etype="next" transform="translate('+x2.toFixed(1)+','+(plotBottom+8)+')">'
+      + '<circle r="7" fill="none" stroke="var(--hi)" stroke-width="1.4"/><text y="3" text-anchor="middle" font-size="8" font-weight="700" fill="var(--hi)">E</text></g>';
+  }
+
+  var catsForSym = (STATE.data && Array.isArray(STATE.data.catalysts)) ? STATE.data.catalysts.filter(function(c){ return c.ticker===sym; }) : [];
+  var shown = catsForSym.slice(0,8);
+  var gutterX = W-8; // clear of the MA end-labels' own lane (see rightPad note above)
+  var catHtml = shown.map(function(c,ci){
+    var y = plotTop + (ci+0.5)*(plotH/Math.max(1,shown.length));
+    return '<polygon class="catdmd" data-catid="'+c._id+'" points="'+gutterX+','+(y-4)+' '+(gutterX+4)+','+y+' '+gutterX+','+(y+4)+' '+(gutterX-4)+','+y+'" fill="var(--acc)"/>';
+  }).join("");
+
+  var svg = '<svg viewBox="0 0 '+W+' '+H+'" id="dchart" preserveAspectRatio="none">'
+    + axisHtml + monthHtml + maHtml + candleHtml + labelsHtml + earnHtml + catHtml + '</svg>';
+  return {svg:svg, pct:pct, slice:slice, dates:dates, n:n, W:W, plotW:plotW};
+}
+
+/* ---- earnings popover ---- */
+function showEarnPopover(x, y, html){
+  var pop = document.getElementById("earnpop");
+  if(!pop) return;
+  pop.innerHTML = html;
+  pop.style.left = Math.max(0, x-80)+"px";
+  pop.style.top = y+"px";
+  pop.style.display = "block";
+  var cl = document.getElementById("popclose");
+  if(cl) cl.addEventListener("click", function(e){ e.stopPropagation(); pop.style.display="none"; });
+}
+function surpriseSpan(actual, estimate, surprisePct, isMoney){
+  if(actual==null) return "—";
+  var actStr = isMoney ? fmtCapDollars(actual) : numStr(actual);
+  var estStr = estimate!=null ? (isMoney?fmtCapDollars(estimate):numStr(estimate)) : "—";
+  var cls = surprisePct==null ? "m" : (surprisePct>=0?"u":"d");
+  var sp = surprisePct!=null ? ((surprisePct>=0?"+":"")+surprisePct.toFixed(2)+"%") : "";
+  return actStr+" vs "+estStr+(sp?(' <b class="'+cls+'">'+sp+'</b>'):"");
+}
+function earnPopoverHTML(row, nextRow, isNext){
+  if(isNext){
+    if(!nextRow) return '<span class="cl" id="popclose">×</span><div class="note">no upcoming estimate</div>';
+    return '<span class="cl" id="popclose">×</span><b>Upcoming'+(nextRow.session?(" · "+esc(nextRow.session)):"")+'</b><br>'+esc(nextRow.date||"—")
+      + '<div style="margin-top:4px">EPS est '+(nextRow.eps_estimate!=null?numStr(nextRow.eps_estimate):"—")+'</div>'
+      + '<div>Rev est '+(nextRow.rev_estimate!=null?fmtCapDollars(nextRow.rev_estimate):"—")+'</div>';
+  }
+  if(!row) return '<span class="cl" id="popclose">×</span><div class="note">no data</div>';
+  return '<span class="cl" id="popclose">×</span><b>'+esc(row.period||"—")+'</b><br>'
+    + esc(row.date||"—")+(row.session?(" · "+esc(row.session)):"")
+    + '<div style="margin-top:4px">EPS '+surpriseSpan(row.eps_actual, row.eps_estimate, row.eps_surprise_pct, false)+'</div>'
+    + '<div>Rev '+surpriseSpan(row.rev_actual, row.rev_estimate, row.rev_surprise_pct, true)+'</div>';
+}
+
+/* ---- catalyst jump (chart diamonds + mini-list -> the right-rail row) ---- */
+function jumpToCatalyst(id){
+  var sec = document.getElementById("s-cat");
+  if(sec) sec.classList.remove("closed");
+  var target = document.querySelector('.ct[data-catid="'+id+'"]');
+  if(!target){ catKind="all"; renderCatFilters(); renderCats(); target = document.querySelector('.ct[data-catid="'+id+'"]'); }
+  if(target){
+    target.scrollIntoView({behavior:"smooth", block:"center"});
+    target.classList.add("jumpflash");
+    setTimeout(function(){ target.classList.remove("jumpflash"); }, 1600);
+  }
+}
+function renderCatList(sym){
+  var el = document.getElementById("catlist");
+  if(!el) return;
+  var data = STATE.data;
+  var cats = (data && Array.isArray(data.catalysts)) ? data.catalysts.filter(function(c){ return c.ticker===sym; }) : [];
+  if(!cats.length){ el.innerHTML = ""; return; }
+  var now = new Date();
+  el.innerHTML = cats.map(function(c){
+    var cd = countdown(c, now);
+    var impCls = c.importance==="HIGH"?"hi":c.importance==="MEDIUM"?"md":"lo";
+    var wd = c.date ? WD_ABBR[new Date(c.date+"T12:00:00Z").getUTCDay()] : "—";
+    return '<div class="ct" style="cursor:pointer" data-jumpcat="'+c._id+'">'
+      + '<div class="dt"><div class="w">'+wd+'</div><div class="n tn">'+(c.date?(+c.date.slice(8)):"?")+'</div></div>'
+      + '<div><div class="tt">'+esc(c.title||"")+'</div><div class="me">'+catMetaLine(c)+'</div></div>'
+      + '<div class="rg"><span class="imp '+impCls+'">'+(c.importance||"")+'</span><span class="cd tn '+cd.cls+'">'+cd.txt+'</span></div></div>';
+  }).join("");
+  $$("[data-jumpcat]", el).forEach(function(row){
+    row.addEventListener("click", function(e){ e.stopPropagation(); jumpToCatalyst(+row.getAttribute("data-jumpcat")); });
+  });
+}
+
+/* ---- fundamentals grid (facts[] + fund sidecar, Finviz-snapshot-style) ---- */
+function numStr(v, dp){ var n=num(v); if(n===null) return "—"; return n.toFixed(dp==null?2:dp); }
+function pctStr(v, dp){ var n=num(v); if(n===null) return "—"; return n.toFixed(dp==null?1:dp)+"%"; }
+function recLabel(v){
+  var n = num(v);
+  if(n===null) return {t:"—", cls:""};
+  if(n<=1.5) return {t:"Strong buy", cls:"u"};
+  if(n<=2.5) return {t:"Buy", cls:"u"};
+  if(n<=3.5) return {t:"Hold", cls:"m"};
+  if(n<=4.5) return {t:"Sell", cls:"d"};
+  return {t:"Strong sell", cls:"d"};
+}
+function fcell(label, text, cls){ return '<div class="fcell"><span>'+esc(label)+'</span><b class="'+(cls||"")+'">'+text+'</b></div>'; }
+function renderFundamentals(sym, fund){
+  var f = factsOf(sym) || {};
+  var q = liveBySym(sym) || {};
+  var st = statsOf(sym);
+  // short_pct: facts.* is always null from the fetcher (see DATA_CONTRACT) —
+  // the sidecar is the only real source; prefer it whenever non-null.
+  var shortPct = (fund && num(fund.short_pct)!=null) ? num(fund.short_pct) : (f.short_pct!=null?num(f.short_pct):null);
+  var pegCls = f.peg!=null ? (f.peg<=1?"u":f.peg>=2?"d":"") : "";
+  var nmCls = f.net_margin!=null ? (f.net_margin>=20?"u":f.net_margin<0?"d":"") : "";
+  var deCls = f.debt_eq!=null ? (f.debt_eq<=0.5?"u":f.debt_eq>=2?"d":"") : "";
+  var shortCls = shortPct!=null ? (shortPct<=2?"u":shortPct>=5?"d":"") : "";
+  var targetPct = (f.target!=null && q.px!=null && q.px) ? (f.target/q.px-1)*100 : null;
+  var targetCls = targetPct!=null ? (targetPct>=15?"u":targetPct<0?"d":"") : "";
+  var rec = recLabel(f.rec_mark);
+  var posPct = st.pos!=null ? Math.round(st.pos*100) : null;
+  var fwdPe = (fund && fund.pe_forward!=null) ? numStr(fund.pe_forward,1) : "—";
+  var earnTxt = (f.earn_days!=null ? (Math.round(f.earn_days)+"d") : "—")
+    + (fund && fund.next_earnings && fund.next_earnings.date ? (" · "+esc(fund.next_earnings.date)) : "");
+  var targetTxt = f.target!=null ? (fmtpx(f.target)+(targetPct!=null?(" ("+(targetPct>=0?"+":"")+targetPct.toFixed(1)+"%)"):"")) : "—";
+
+  var cells = [
+    fcell("Market cap", f.cap!=null?fmtCapDollars(f.cap):"—"),
+    fcell("P/E (ttm)", numStr(f.pe,1)),
+    fcell("Fwd P/E", fwdPe),
+    fcell("PEG", numStr(f.peg), pegCls),
+    fcell("P/S", numStr(f.ps,1)),
+    fcell("P/B", numStr(f.pb,1)),
+    fcell("EV/EBITDA", numStr(f.ev_ebitda,1)),
+    fcell("Gross margin", pctStr(f.gross_margin)),
+    fcell("Oper margin", pctStr(f.op_margin)),
+    fcell("Net margin", pctStr(f.net_margin), nmCls),
+    fcell("FCF margin", pctStr(f.fcf_margin)),
+    fcell("ROE", pctStr(f.roe)),
+    fcell("Debt/Eq", numStr(f.debt_eq), deCls),
+    fcell("Dividend yield", pctStr(f.yld)),
+    fcell("Short % float", shortPct!=null?shortPct.toFixed(1)+"%":"—", shortCls),
+    fcell("Beta", numStr(f.beta)),
+    fcell("Avg volume", f.avol!=null?fmtShareCount(f.avol):"—"),
+    fcell("RVOL today", q.rvol!=null?q.rvol.toFixed(1)+"×":"—"),
+    fcell("RSI (14)", f.rsi!=null?Math.round(f.rsi):"—", fundCls("rsi",f)),
+    fcell("Avg daily move", f.avg_move!=null?f.avg_move+"%":"—"),
+    fcell("52w position", posPct!=null?posPct+"%":"—"),
+    fcell("Analyst target", targetTxt, targetCls),
+    fcell("Recommendation", rec.t, rec.cls),
+    fcell("Next earnings", earnTxt),
+  ];
+  return '<div class="dsec" id="fundgrid"><h3><span data-tip="'+esc(TIPS.fund)+'">Fundamentals</span></h3><div class="fgrid">'+cells.join("")+'</div></div>';
+}
+
+/* ---- growth charts (fund sidecar: quarterly up to 12 bars, annual up to 6) ---- */
+function fmtCompact(v){
+  var n=num(v); if(n===null) return "—";
+  var a=Math.abs(n);
+  if(a>=1e9) return (n/1e9).toFixed(1)+"B";
+  if(a>=1e6) return (n/1e6).toFixed(1)+"M";
+  if(a>=1e3) return (n/1e3).toFixed(1)+"K";
+  return n.toFixed(2);
+}
+function yoyPct(arr, i, back){
+  var a=num(arr[i]), b=num(arr[i-back]);
+  if(a==null||b==null||b===0) return null;
+  return (a/b-1)*100;
+}
+function miniBarSVG(labels, values, opts){
+  opts = opts||{};
+  var back = opts.back||1, negRed = !!opts.negRed;
+  var vals = values.map(num);
+  var n = vals.length;
+  if(!n) return "";
+  var W=280, H=82, padB=14, padT=12;
+  var mx = safeMax(vals.map(function(v){return v==null?0:Math.abs(v);})) || 1;
+  var slot = W/n, bw = Math.max(2, slot*0.62);
+  var hasNeg = vals.some(function(v){ return v!=null && v<0; });
+  var baseline = hasNeg ? padT+(H-padB-padT)/2 : H-padB;
+  var scale = hasNeg ? ((H-padB-padT)/2)/mx : (H-padB-padT)/mx;
+  var bars = vals.map(function(v,i){
+    if(v==null) return "";
+    var x = i*slot+(slot-bw)/2;
+    var hgt = Math.abs(v)*scale;
+    var y = v>=0 ? baseline-hgt : baseline;
+    var col = (negRed && v<0) ? "var(--dn)" : "var(--acc)";
+    var lastLabel = "";
+    if(i===n-1) lastLabel = '<text x="'+(x+bw/2)+'" y="'+(v>=0?Math.max(9,y-3):(y+hgt+10))+'" font-size="8.5" text-anchor="middle" fill="var(--ink2)">'+fmtCompact(v)+'</text>';
+    var yoy = yoyPct(vals, i, back);
+    var titleTxt = (labels[i]||"")+": "+fmtCompact(v)+(yoy!=null?(" · YoY "+(yoy>=0?"+":"")+yoy.toFixed(1)+"%"):"");
+    return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(1,hgt).toFixed(1)+'" fill="'+col+'"><title>'+esc(titleTxt)+'</title></rect>'+lastLabel;
+  }).join("");
+  var baseLine = hasNeg ? ('<line x1="0" x2="'+W+'" y1="'+baseline+'" y2="'+baseline+'" stroke="var(--edge)" stroke-width="1"/>') : "";
+  return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+baseLine+bars+'</svg>';
+}
+function renderGrowth(sym, fund){
+  var g = fund && fund.growth;
+  if(!g) return '<div id="growthbox"></div>';
+  var out = "";
+  [["quarterly","Quarterly",4],["annual","Annual",1]].forEach(function(t){
+    var d = g[t[0]];
+    if(!d || !Array.isArray(d.labels) || !d.labels.length) return;
+    var hasRev = Array.isArray(d.revenue) && d.revenue.length;
+    var hasEps = Array.isArray(d.eps) && d.eps.length;
+    if(!hasRev && !hasEps) return;
+    out += '<div class="gwrap"><div class="glabel">'+t[1]+'</div>';
+    if(hasRev) out += '<div class="gchart"><h4>Revenue</h4>'+miniBarSVG(d.labels, d.revenue, {back:t[2]})+'</div>';
+    if(hasEps) out += '<div class="gchart"><h4>EPS</h4>'+miniBarSVG(d.labels, d.eps, {back:t[2], negRed:true})+'</div>';
+    out += '</div>';
+  });
+  return out ? ('<div class="dsec" id="growthbox"><h3>Growth</h3>'+out+'</div>') : '<div id="growthbox"></div>';
+}
+
 function drawerPositionBlock(sym){
   if(!PG.unlocked) return "";
   var P = PG.positions && PG.positions[sym];
@@ -1613,39 +2032,59 @@ function drawerPositionBlock(sym){
     + '<div class="kvrow"><span data-tip="'+esc(TIPS.trim)+'">Trim watch</span><b class="m">'+(trimZone?"TRIM ZONE — top of range + hot RSI":"none — levels on the chart")+'</b></div>'
     + '<div class="note" style="margin-top:2px">Drawn on the chart above: entry + recommended stop. 50/200-day are the sell/trim reference levels. <span data-tip="'+esc(TIPS.gap)+'">Stops are not guarantees.</span></div></div>';
 }
+// The 52w range bar/position% needs both facts (sync, always available) and a
+// current price (live poll OR the last bars.json close) -- bars can still be
+// in flight when the modal first paints, so this is re-run once they land
+// (Promise.all callback below) and on every live-poll refresh, not just once.
+function rangeSecHTML(sym){
+  var st = statsOf(sym);
+  if(st.hi==null || st.lo==null) return "";
+  return '<div class="dsec"><h3><span data-tip="'+esc(TIPS.range)+'">52-week range</span></h3>'+rangeBarHTML(sym,true)
+    + '<div class="kvrow"><span>Position in range</span><b>'+(st.pos!=null?Math.round(st.pos*100):"—")+'%'
+    + (st.pos!=null && st.pos>0.85?" · hot runner":st.pos!=null && st.pos<0.25?" · near lows":"")+'</b></div></div>';
+}
+// Same freshness problem as the range bar: price/change/hot-chip are known at
+// open time only if the live poll or bars have already resolved. Both the
+// initial header and every later live-poll refresh call this.
+function drawerHeaderHTML(sym){
+  var q = liveBySym(sym) || {};
+  var h = hotOf(sym);
+  return '<div class="dh" id="dh"><span class="sy">'+esc(sym)+'</span>'
+    + '<span class="m" style="font-size:12px">'+esc(nameFor(sym))+'</span>'
+    + '<span class="px tn" style="font-size:21px;font-weight:750">'+(q.px!=null?fmtpx(q.px):"—")+'</span>'
+    + '<span class="ch tn '+sign(q.ch)+'" style="font-size:14px">'+(q.ch!=null?fm1(q.ch)+"%":"—")+'</span>'
+    + (h!=null && h>=HOT_AT ? ('<span class="hotb" data-tip="'+esc(TIPS.hot)+'">'+h.toFixed(1)+'× usual move</span>') : "")
+    + '<button class="x" id="dclose" aria-label="Close">×</button></div>';
+}
+function refreshDrawerLive(sym){
+  var drawer = document.getElementById("drawer");
+  if(!drawer || !drawer.classList.contains("open") || DRAWER_SYM !== sym) return;
+  var dh = document.getElementById("dh");
+  if(dh){
+    dh.outerHTML = drawerHeaderHTML(sym);
+    var cl = document.getElementById("dclose"); if(cl) cl.addEventListener("click", function(){ setFocus(null); });
+  }
+  var rs = document.getElementById("rangesec"); if(rs) rs.innerHTML = rangeSecHTML(sym);
+}
 function openDrawer(sym){
   var data = STATE.data;
-  var q = liveBySym(sym) || {};
-  var st = statsOf(sym);
-  var h = hotOf(sym);
   var conv = (data && Array.isArray(data.conviction)) ? data.conviction.filter(function(c){return c.ticker===sym;})[0] : null;
   var sw = (data && Array.isArray(data.swing)) ? data.swing.filter(function(c){return c.ticker===sym;})[0] : null;
-  var cats = (data && Array.isArray(data.catalysts)) ? data.catalysts.filter(function(c){return c.ticker===sym;}) : [];
   var newsItems = (data && data.news && Array.isArray(data.news.items)) ? data.news.items.filter(function(n){return n.ticker===sym;}) : [];
-  var f = factsOf(sym);
 
-  var header = '<div class="dh"><span class="sy">'+esc(sym)+'</span><span class="px tn">'+(q.px!=null?fmtpx(q.px):"—")+'</span>'
-    + '<span class="ch tn '+sign(q.ch)+'">'+(q.ch!=null?fm1(q.ch)+"%":"—")+'</span>'
-    + (h!=null && h>=HOT_AT ? ('<span class="hotb" data-tip="'+esc(TIPS.hot)+'">'+h.toFixed(1)+'× usual move</span>') : "")
-    + '<span class="m" style="font-size:11px">'+esc(nameFor(sym))+'</span>'
-    + '<button class="x" id="dclose" aria-label="Close">×</button></div>';
+  DRAWER_SYM = sym; DRAWER_FUND = null;
 
-  var snapshot = '<div class="dsec"><h3><span data-tip="'+esc(TIPS.fund)+'">Snapshot</span></h3>'
-    + '<div class="kvrow"><span>Market cap</span><b>'+(f&&f.cap!=null?fmtCapDollars(f.cap):"—")+'</b></div>'
-    + '<div class="kvrow"><span>Short % of float</span><b class="'+fundCls("short",f)+'">'+(f&&f.short_pct!=null?f.short_pct+"%":"—")+'</b></div>'
-    + '<div class="kvrow"><span>RSI (14d)</span><b class="'+fundCls("rsi",f)+'">'+(f&&f.rsi!=null?Math.round(f.rsi):"—")+'</b></div>'
-    + '<div class="kvrow"><span>Beta</span><b>'+(f&&f.beta!=null?f.beta:"—")+'</b></div>'
-    + '<div class="kvrow"><span>Avg volume</span><b>'+(f&&f.avol!=null?fmtShareCount(f.avol):"—")+'</b></div>'
-    + '<div class="kvrow"><span>Avg daily move</span><b>'+(f&&f.avg_move!=null?f.avg_move+"%":"—")+'</b></div>'
-    + (f&&f.earn_days!=null ? ('<div class="kvrow"><span>Next earnings</span><b>'+Math.round(f.earn_days)+'d</b></div>') : "")
-    + '<div class="kvrow"><span>Relative volume today</span><b>'+(q.rvol!=null?q.rvol.toFixed(1)+"×":"—")+'</b></div>'
-    + '<div class="note" style="margin-top:4px">Green/red here is a buyer\'s-lens gauge against rough thresholds — hover the header. Not a rating.</div></div>';
+  // Header: symbol, company name, live price + day change (big), hot chip —
+  // the 52-week range bar follows immediately below as its own dsec, so it
+  // reads as part of the header block (Finviz puts it right under the price).
+  var header = drawerHeaderHTML(sym);
 
-  var rangeSec = (st.hi!=null && st.lo!=null)
-    ? ('<div class="dsec"><h3><span data-tip="'+esc(TIPS.range)+'">52-week range</span></h3>'+rangeBarHTML(sym,true)
-       + '<div class="kvrow"><span>Position in range</span><b>'+(st.pos!=null?Math.round(st.pos*100):"—")+'%'
-       + (st.pos!=null && st.pos>0.85?" · hot runner":st.pos!=null && st.pos<0.25?" · near lows":"")+'</b></div></div>')
-    : "";
+  var rangeSec = '<div id="rangesec">'+rangeSecHTML(sym)+'</div>';
+
+  var chartCard = '<div class="dsec"><h3>Price</h3><div class="segrow"><div class="seg" role="group">'
+    + GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(t===dTF)+'">'+t+'</button>'; }).join("")
+    + '</div></div><div class="chart chartbig" id="dchartwrap"><div class="note" style="padding:30px 0;text-align:center">loading chart…</div></div>'
+    + '<div id="catlist"></div></div>';
 
   var convSec = conv ? ('<div class="dsec"><h3>Conviction board</h3>'
     + '<div class="kvrow"><span>Score</span><b>'+(num(conv.score)!=null?Math.round(conv.score):"—")+(conv.firing?" · FIRING":"")+'</b></div>'
@@ -1659,56 +2098,110 @@ function openDrawer(sym){
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-oiconfirm"])+'">OI-confirm</span></span><b>'+(sw.oi_confirm||"—")+'</b></div>'
     + '<div class="kvrow"><span>Suggested</span><b style="font-size:10.5px">'+suggestedContractLine(sw.suggested_contract)+'</b></div></div>') : "";
 
-  var catSec = cats.length ? ('<div class="dsec"><h3>Catalysts</h3>'+cats.map(function(c){
-      var cd = countdown(c, new Date());
-      return '<div class="kvrow"><span>'+esc(c.title||"")+'</span><b class="'+(cd.cls==="soon"?"":"m")+'">'+cd.txt+'</b></div>';
-    }).join("")+'</div>') : "";
   var newsSec = newsItems.length ? ('<div class="dsec"><h3>Headlines</h3>'+newsItems.map(function(n){
       return '<div class="kvrow"><span style="max-width:82%">'+esc(n.title||"")+'</span><b class="m tn">'+ctTimeShort(n.ts)+'</b></div>';
     }).join("")+'</div>') : "";
 
-  var chartPlaceholder = '<div class="dsec"><h3>Price</h3><div class="segrow"><div class="seg" role="group">'
-    + ["1D","1W","1M","3M","6M","1Y"].map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(t===dTF)+'">'+t+'</button>'; }).join("")
-    + '</div></div><div class="chart" id="dchartwrap"><div class="note" style="padding:20px 0;text-align:center">loading chart…</div></div></div>';
-
-  document.getElementById("drawer").innerHTML = header + chartPlaceholder + rangeSec + drawerPositionBlock(sym) + snapshot + convSec + swSec + catSec + newsSec
-    + '<div class="dsec note">Data is live: prices from the 30s TradingView poll, history from bars.json. Nothing here is investment advice.</div>';
+  document.getElementById("drawer").innerHTML = header + rangeSec + chartCard + drawerPositionBlock(sym)
+    + '<div id="fundgrid"></div>' + '<div id="growthbox"></div>'
+    + convSec + swSec + newsSec
+    + '<div class="dsec note">Data is live: prices from the 30s TradingView poll, history from bars.json, fundamentals from the fund sidecar (fund/'+esc(sym)+'.json). Nothing here is investment advice.</div>';
   document.getElementById("drawer").classList.add("open");
+  document.getElementById("modalback").classList.add("open");
   document.getElementById("dclose").addEventListener("click", function(){ setFocus(null); });
   $$("#drawer .seg button").forEach(function(b){ b.addEventListener("click", function(){ dTF=b.dataset.tf; redrawChart(sym); }); });
 
-  ensureBars().then(function(){ redrawChart(sym); });
+  renderCatList(sym);
+
+  Promise.all([ensureBars(), ensureFund(sym)]).then(function(vals){
+    if(DRAWER_SYM !== sym) return; // a different ticker was opened while this was in flight
+    var fund = vals[1];
+    DRAWER_FUND = fund;
+    var fg = document.getElementById("fundgrid"); if(fg) fg.outerHTML = renderFundamentals(sym, fund);
+    var gb = document.getElementById("growthbox"); if(gb) gb.outerHTML = renderGrowth(sym, fund);
+    var rs = document.getElementById("rangesec"); if(rs) rs.innerHTML = rangeSecHTML(sym);
+    redrawChart(sym, fund);
+  });
 }
-function redrawChart(sym){
+function redrawChart(sym, fund){
   var wrap = document.getElementById("dchartwrap");
   if(!wrap || !document.getElementById("drawer").classList.contains("open")) return;
-  var ch = chartSVG(sym, dTF);
-  chartState = {sym:sym, pts:ch.pts};
-  var segButtons = ["1D","1W","1M","3M","6M","1Y"].map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(t===dTF)+'">'+t+'</button>'; }).join("");
-  var pctChip = ch.pct!=null ? ('<span class="pchip tn '+(ch.pct>=0?"u":"d")+'">'+fm1(ch.pct)+'% this '+dTF+'</span>') : '';
-  var st = statsOf(sym);
-  wrap.parentElement.querySelector(".segrow").innerHTML = '<div class="seg" role="group">'+segButtons+'</div>'+pctChip;
+  if(fund===undefined) fund = DRAWER_FUND;
+  var quads = quadsRaw(sym);
+  var isCandle = !!quads;
+  var res = isCandle ? candleChartSVG(sym, dTF, fund) : chartSVG(sym, dTF);
+  chartState = {sym:sym, pts:res.pts||[]};
+
+  var segButtons = GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(t===dTF)+'">'+t+'</button>'; }).join("");
+  var pctChip = res.pct!=null ? ('<span class="pchip tn '+(res.pct>=0?"u":"d")+'">'+fm1(res.pct)+'% this '+dTF+'</span>') : '';
+  var segrow = wrap.parentElement.querySelector(".segrow");
+  if(segrow) segrow.innerHTML = '<div class="seg" role="group">'+segButtons+'</div>'+pctChip;
   $$(".seg button", wrap.parentElement).forEach(function(b){ b.addEventListener("click", function(){ dTF=b.dataset.tf; redrawChart(sym); }); });
-  wrap.innerHTML = ch.svg + '<div class="xh" id="xh"></div>';
-  var legHtml = ch.pts.length
-    ? ('<div class="leg"><span><i class="p"></i>price</span><span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span><span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span></div>')
-    : '';
+
+  wrap.innerHTML = res.svg + '<div class="xh" id="xh"></div><div class="pop" id="earnpop"></div>';
   var existingLeg = wrap.parentElement.querySelector(".leg");
   if(existingLeg) existingLeg.remove();
-  wrap.insertAdjacentHTML("afterend", legHtml);
-  var svg = document.getElementById("dchart");
-  if(svg && chartState.pts.length){
+  var st = statsOf(sym);
+
+  if(isCandle && res.n){
+    var legHtml = '<div class="leg"><span><i class="d20"></i>20-day</span>'
+      + '<span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span>'
+      + '<span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span></div>';
+    wrap.insertAdjacentHTML("afterend", legHtml);
+    var svg = document.getElementById("dchart");
     var xh = document.getElementById("xh");
     wrap.onmousemove = function(e){
-      var r = svg.getBoundingClientRect(); var fx=(e.clientX-r.left)/r.width;
-      var i = Math.max(0, Math.min(chartState.pts.length-1, Math.round(fx*(chartState.pts.length-1))));
-      xh.style.display="block"; xh.style.left=Math.min(r.width-110,Math.max(0,e.clientX-r.left+8))+"px"; xh.style.top="8px";
-      xh.textContent = dTF+" · $"+chartState.pts[i].toFixed(2);
+      var r = svg.getBoundingClientRect();
+      var fx = Math.max(0, Math.min(0.999999, (e.clientX-r.left)/Math.max(1,r.width)));
+      var px = fx*res.W;
+      var i = Math.max(0, Math.min(res.n-1, Math.floor(px/(res.plotW/res.n))));
+      var row = res.slice[i]; if(!row) return;
+      var d = res.dates[i];
+      var dateLbl = MONTHS[d.getUTCMonth()]+" "+d.getUTCDate();
+      xh.style.display = "block";
+      xh.style.left = Math.min(r.width-150, Math.max(0, e.clientX-r.left+8))+"px";
+      xh.style.top = "8px";
+      xh.innerHTML = '<b>'+dateLbl+'</b><br>O '+fmtpx(row[0])+' H '+fmtpx(row[1])+' L '+fmtpx(row[2])+' C '+fmtpx(row[3]);
     };
-    wrap.onmouseleave = function(){ xh.style.display="none"; };
+    wrap.onmouseleave = function(){ xh.style.display = "none"; };
+    $$(".ebadge", wrap).forEach(function(g){
+      g.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        var isNext = g.getAttribute("data-etype")==="next";
+        var html;
+        if(isNext){ html = earnPopoverHTML(null, fund && fund.next_earnings, true); }
+        else{
+          var idx = +g.getAttribute("data-eidx");
+          var row2 = (fund && Array.isArray(fund.earnings)) ? fund.earnings[idx] : null;
+          html = earnPopoverHTML(row2, null, false);
+        }
+        var wr = wrap.getBoundingClientRect(), gr = g.getBoundingClientRect();
+        showEarnPopover(gr.left-wr.left, gr.top-wr.top+16, html);
+      });
+    });
+    $$(".catdmd", wrap).forEach(function(p){
+      p.addEventListener("click", function(ev){ ev.stopPropagation(); jumpToCatalyst(+p.getAttribute("data-catid")); });
+    });
+  } else if(res.pts && res.pts.length){
+    var legHtml2 = '<div class="leg"><span><i class="p"></i>price</span><span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span><span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span></div>';
+    wrap.insertAdjacentHTML("afterend", legHtml2);
+    var svg2 = document.getElementById("dchart");
+    var xh2 = document.getElementById("xh");
+    wrap.onmousemove = function(e){
+      var r = svg2.getBoundingClientRect(); var fx=(e.clientX-r.left)/r.width;
+      var i = Math.max(0, Math.min(res.pts.length-1, Math.round(fx*(res.pts.length-1))));
+      xh2.style.display="block"; xh2.style.left=Math.min(r.width-110,Math.max(0,e.clientX-r.left+8))+"px"; xh2.style.top="8px";
+      xh2.textContent = dTF+" · $"+res.pts[i].toFixed(2);
+    };
+    wrap.onmouseleave = function(){ xh2.style.display="none"; };
   }
 }
-function closeDrawer(){ document.getElementById("drawer").classList.remove("open"); }
+function closeDrawer(){
+  document.getElementById("drawer").classList.remove("open");
+  document.getElementById("modalback").classList.remove("open");
+  var pop = document.getElementById("earnpop");
+  if(pop) pop.style.display = "none";
+}
 
 /* =================== master render + live-poll refresh =================== */
 function renderAll(data){
@@ -1737,7 +2230,7 @@ function refreshLiveUI(){
   renderWL();
   renderConv(data);
   renderSwing(data);
-  if(FOCUS) redrawChart(FOCUS);
+  if(FOCUS){ redrawChart(FOCUS); refreshDrawerLive(FOCUS); }
   applyFocus();
   updatePricesTimestamp();
 }
@@ -1854,6 +2347,14 @@ if(palinEl) palinEl.addEventListener("input", function(){ palIdx=0; palDraw(); }
 document.getElementById("palopen").addEventListener("click", palOpen);
 document.getElementById("pal").addEventListener("click", function(e){ if(e.target.id==="pal") palClose(); });
 document.getElementById("focclear").addEventListener("click", function(){ setFocus(null); });
+// Modal: clicking the dimmed backdrop closes it (Esc + the × already do, via
+// the existing keydown handler and #dclose above).
+document.getElementById("modalback").addEventListener("click", function(){ setFocus(null); });
+// Earnings popover: click anywhere outside it (or its own × ) hides it.
+document.addEventListener("click", function(e){
+  var pop = document.getElementById("earnpop");
+  if(pop && pop.style.display==="block" && !e.target.closest("#earnpop") && !e.target.closest(".ebadge")){ pop.style.display = "none"; }
+});
 
 /* =================== boot =================== */
 function tick(){ fetchData().then(pollTvPrices); }
