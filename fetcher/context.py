@@ -221,6 +221,16 @@ def _num_or_none(v):
     return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
 
+def _str_or_none(v):
+    """Non-empty trimmed string, else None. Used for the catalyst unit/scale/
+    period/agency labels, where "" and None must both mean "no label" so the
+    page's meta line can test one condition."""
+    if not isinstance(v, str):
+        return None
+    s = v.strip()
+    return s or None
+
+
 # ── Vault file fetchers ──────────────────────────────────────────────────────
 
 def fetch_vault_file(path: str, token: Optional[str], _get: Optional[Callable] = None) -> Optional[str]:
@@ -398,6 +408,19 @@ def fetch_econ_tv(days: int = 28, _get: Optional[Callable] = None) -> list[dict]
     kind="econ", source="tv_calendar". Needs Origin+Referer set to
     tradingview.com (confirmed live 2026-08 — a bare User-Agent alone 403s).
     importance -1/0/1 -> LOW/MEDIUM/HIGH (unmapped/missing -> MEDIUM).
+
+    UNITS (2026-08-17): the feed carries `unit` ("%" / "$", 68 of 224 rows in
+    the live probe), `scale` ("K"/"M"/"B"/"T", 20 rows), `period` ("Jul") and
+    `source` (the publishing agency, e.g. "Census Bureau") alongside the bare
+    forecast/previous NUMBERS — and every one of those was being dropped on
+    the floor. That is why the desk rendered "fc 1.35 · prior 1.427" for
+    Housing Starts (millions of homes) and "prior -911" for the payroll
+    revision (thousands of jobs): unitless numbers a reader cannot use.
+    `forecast`/`previous`/`actual` are ALREADY scaled to match `scale` (the
+    unscaled figures ride along as forecastRaw/previousRaw/actualRaw —
+    previousRaw 1427000 vs previous 1.427 with scale "M"), so the renderer
+    appends the suffix and never rescales. All four fields are optional and
+    fail soft to None; the page's meta line degrades to the bare number.
     """
     now = datetime.now(timezone.utc)
     frm = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
@@ -454,6 +477,10 @@ def fetch_econ_tv(days: int = 28, _get: Optional[Callable] = None) -> list[dict]
             "actual": _num_or_none(r.get("actual")),
             "anchor": False,
             "source": "tv_calendar",
+            "unit": _str_or_none(r.get("unit")),
+            "scale": _str_or_none(r.get("scale")),
+            "period": _str_or_none(r.get("period")),
+            "agency": _str_or_none(r.get("source")),
         })
     return out
 
@@ -881,7 +908,7 @@ def build_catalysts(econ_rows: list[dict], memory_rows: list[dict],
 # ── Bars (Yahoo daily OHLC, at most once per day) ───────────────────────────
 
 BARS_VERSION = 3   # bars.json schema version — see build_bars's docstring
-BARS_BUILD_SIG = "v3-2y-vol"   # bumped whenever build_bars's OUTPUT SHAPE
+BARS_BUILD_SIG = "v3-2y-vol-tape"  # bumped whenever build_bars's OUTPUT SHAPE
                                 # changes (not on an ordinary daily rebuild).
                                 # build_context's once-a-day gate keys off
                                 # BOTH bars_built_date AND this signature, so
@@ -950,8 +977,65 @@ def _avg_move(closes: list[float]) -> Optional[float]:
     return round(sum(changes) / len(changes), 2)
 
 
+# ── Tape symbols (added 2026-08-17) ─────────────────────────────────────────
+#
+# The page's index/macro strip (index.html MAIN_TAPE + MACRO_TAPE) showed
+# SPY/DIA/IWM/VIX/US10Y/crude/DXY as read-only tiles, because bars.json only
+# ever carried the 62 PINNED equity tickers — so clicking one had nothing to
+# chart. These seven ride along on the same once-daily Yahoo bars build.
+#
+# The keys are DESK keys, not Yahoo symbols, and the split matters in one
+# place specifically: **crude's desk key is "CRUDE", never "WTI".** "WTI" is
+# already taken by W&T Offshore, the oil-producer EQUITY in the rail (see the
+# wlnote in index.html and the exclusion note in build_snapshot.py). Keying
+# crude as "WTI" here would silently overwrite W&T Offshore's bars with the
+# crude future's and put an $82 oil chart behind a $3 microcap — the exact
+# ticker collision the exclusion note exists to prevent. index.html's
+# MACRO_TAPE keeps displaying the tile as "WTI · CRUDE"; only the bars key
+# and the chart lookup use "CRUDE".
+#
+# Yahoo symbols verified live 2026-08-17 (all seven return a usable 2y daily
+# series). ^VIX / ^TNX / DX-Y.NYB report volume 0 on every bar — that is real,
+# not missing data (an index has no share volume), and the page hides its
+# volume pane rather than drawing a flat zero line.
+TAPE_BARS = {
+    "SPY": "SPY",
+    "DIA": "DIA",
+    "IWM": "IWM",
+    "VIX": "^VIX",
+    "US10Y": "^TNX",
+    "CRUDE": "CL=F",
+    "DXY": "DX-Y.NYB",
+}
+
+# ── Short-series retry (added 2026-08-17) ───────────────────────────────────
+#
+# Yahoo intermittently serves a TRUNCATED daily series: HTTP 200, well-formed
+# JSON, every OHLC leg present — just 17 rows instead of ~502. Measured on
+# ^TNX (the 10-year yield, added with TAPE_BARS): six identical back-to-back
+# requests returned 17, 502, 17, 17, 502, 502. It is not the range (1y/2y/5y
+# all do it), not the User-Agent (a browser UA does it too), and not a young
+# listing — it is a bad shard or cache node answering some fraction of
+# requests, and a plain retry gets a good one.
+#
+# This mattered because nothing downstream could tell the difference: 17 bars
+# draw a chart with no 50-day and no 200-day average, and the tile would have
+# opened looking merely boring rather than broken. So a series that comes back
+# too short to carry the 200-day average is REFETCHED (up to
+# BARS_SHORT_RETRIES times) and the LONGEST response wins.
+#
+# Genuinely short listings exist (SKHY, DRAM, and other recent IPOs), so this
+# can never drop a symbol — it retries, keeps the best series it saw, and warns
+# once if the result is still short. No sleep between attempts: the failure is
+# per-request, not rate-based, and inserting one would slow the daily build and
+# the test suite for nothing.
+BARS_SHORT_WARN = 220
+BARS_SHORT_RETRIES = 2
+
+
 def build_bars(universe: list[str], session_date: date,
-                _get: Optional[Callable] = None) -> tuple[dict, dict[str, float]]:
+                _get: Optional[Callable] = None,
+                aliases: Optional[dict] = None) -> tuple[dict, dict[str, float]]:
     """Yahoo v8 chart API per symbol -> (bars_payload, avg_move_map).
 
     bars_payload matches bars.json's v3 shape exactly: {"built": <session_date
@@ -980,6 +1064,13 @@ def build_bars(universe: list[str], session_date: date,
     provably-inert guard against a future refactor accidentally coupling the
     two, not a behavior change from before this date.
 
+    `aliases` (added 2026-08-17, for TAPE_BARS) maps a DESK key in `universe`
+    to the Yahoo symbol to fetch it under, for the handful of symbols whose
+    desk key is not a valid Yahoo ticker (VIX -> ^VIX, CRUDE -> CL=F, …).
+    Absent from the map means the two are identical, which is every equity.
+    The OUTPUT is always keyed by the desk key, never the Yahoo symbol, so
+    the page looks up bars under the same string it shows.
+
     0.25s sleep between calls (skips the sleep before the first). A symbol
     that fails to fetch, or returns an unusable shape, is simply absent from
     both outputs — fail-soft, never zero-filled. A single bar missing any of
@@ -992,19 +1083,39 @@ def build_bars(universe: list[str], session_date: date,
     for i, sym in enumerate(universe):
         if i > 0:
             time.sleep(BARS_SLEEP_SEC)
-        url = YAHOO_CHART_URL.format(sym=sym) + "?range=2y&interval=1d"
+        fetch_sym = (aliases or {}).get(sym, sym)
+        url = YAHOO_CHART_URL.format(sym=urllib.parse.quote(fetch_sym, safe="")) + "?range=2y&interval=1d"
         headers = {"User-Agent": UA}
-        try:
-            raw = _http_get(url, headers, _get=_get)
-            obj = json.loads(raw)
-        except Exception as e:
-            log(f"skip {sym}: bars fetch failed ({type(e).__name__})")
-            continue
-        quints = _extract_yahoo_ohlcv(obj)
+        # Best series across the initial call plus up to BARS_SHORT_RETRIES
+        # refetches, taken only while the series is too short to be plausible
+        # (see the BARS_SHORT_WARN note above). A fetch error on a RETRY keeps
+        # whatever the earlier attempt returned; an error on the FIRST attempt
+        # skips the symbol exactly as before.
+        quints = None
+        for attempt in range(1 + BARS_SHORT_RETRIES):
+            try:
+                obj = json.loads(_http_get(url, headers, _get=_get))
+            except Exception as e:
+                if attempt == 0:
+                    log(f"skip {sym}: bars fetch failed ({type(e).__name__})")
+                    break
+                log(f"WARN {sym}: short-series refetch failed ({type(e).__name__}), keeping best so far")
+                break
+            got = _extract_yahoo_ohlcv(obj)
+            if got and (quints is None or len(got) > len(quints)):
+                quints = got
+            if quints is not None and len(quints) >= BARS_SHORT_WARN:
+                break
+            if attempt < BARS_SHORT_RETRIES:
+                log(f"{sym}: {len(got) if got else 0} bars — refetching (truncated-series retry)")
         if not quints:
             log(f"skip {sym}: no usable OHLC series")
             continue
         quints = quints[-BARS_MAX:]
+        if len(quints) < BARS_SHORT_WARN:
+            log(f"WARN {sym} ({fetch_sym}): still only {len(quints)} bars after "
+                f"{BARS_SHORT_RETRIES} refetches — the 50/200-day averages will not draw. "
+                f"Expected for a young listing; investigate for anything older.")
         bars[sym] = [[round(row[0], 2), round(row[1], 2), round(row[2], 2), round(row[3], 2), row[4]]
                      for row in quints]
         closes_for_avg_move = [row[3] for row in quints[-AVG_MOVE_BASIS:]]
@@ -1767,7 +1878,15 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
     fund_payload = None
     if (cache.get("bars_built_date") != session_date.isoformat()
             or cache.get("bars_sig") != BARS_BUILD_SIG):
-        bars_payload, new_avg_move = build_bars(pinned, session_date, _get=_get)
+        # Tape symbols ride along on the same build (see TAPE_BARS). They are
+        # appended, not merged into `pinned`, so nothing downstream of `pinned`
+        # (facts, fund sidecars, the boards, the flow universe) sees them — an
+        # index has no options chain and no fundamentals, and only bars.json
+        # should learn about it. Any desk key already in `pinned` is skipped
+        # rather than fetched twice.
+        bars_universe = pinned + [k for k in TAPE_BARS if k not in pinned]
+        bars_payload, new_avg_move = build_bars(bars_universe, session_date,
+                                                _get=_get, aliases=TAPE_BARS)
         cache["bars_built_date"] = bars_payload["built"]
         cache["bars_sig"] = BARS_BUILD_SIG
         # Merge (not replace): a ticker whose fetch failed THIS rebuild keeps

@@ -173,6 +173,37 @@ produced a bogus −74.9% in the Jul 1 2026 morning brief. The card detects it
 withholds the number rather than showing a zero, because a flat day isn't what
 was observed either.
 
+## Pre-market and after-hours prices (added 2026-08-17)
+
+Outside regular trading hours, prices carry a small amber **PRE** or **AFT**
+tag — on the index strip across the top, on the watchlist rail, and in the
+header of any chart you open. When you see that tag, two things are true:
+
+- The price shown is the latest extended-hours print, not yesterday's close.
+- The percentage next to it is measured from the right starting point — the
+  prior close for PRE, today's 3:00 PM CT close for AFT. Before this change the
+  page showed a pre-market price beside yesterday's finishing percentage, which
+  is two different days in one line.
+
+The mover tags (and the count in the browser tab) follow the same number, so at
+7am they describe this morning's gap rather than yesterday's session.
+
+Two things worth knowing. Extended-hours volume is thin, so a large pre-market
+move on light volume often doesn't survive the open — the tag is there partly
+to remind you of that. And the four macro tiles (VIX, the 10-year yield, crude,
+the dollar) never show a tag, because those markets trade nearly around the
+clock: the price already on the tile *is* the overnight read.
+
+## Clicking the index strip (added 2026-08-17)
+
+Every tile in the top strip now opens a chart, the same one the watchlist rows
+open — SPY, QQQ, the Dow, small caps, VIX, the 10-year yield, crude and the
+dollar, each with two years of daily candles and the 20/50/200-day averages.
+
+The four macro tiles and the index ETFs show no fundamentals panel, and that is
+correct rather than missing: an index has no earnings, no margins and no P/E.
+The chart, the moving averages and the catalyst calendar all work normally.
+
 ## Its limits
 
 - **Options data is 15 minutes delayed.** It's free CBOE data, not a live feed.

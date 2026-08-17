@@ -95,9 +95,25 @@ a{color:var(--acc);text-decoration:none}
   display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;gap:0 8px;align-items:baseline;
 }
 .tp:last-child{border-right:none}
-.tp .s{font-size:10px;letter-spacing:.08em;color:var(--ink3);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The label ellipsizes but the PRE/AFT badge must not: it used to sit inside
+   the truncated text, so on a long label ("SPY · S&P 500") the badge was the
+   part that got clipped away — the tile showed a pre-market price with nothing
+   saying so. The label text now truncates inside its own span while the badge
+   holds its width beside it. */
+.tp .s{font-size:10px;letter-spacing:.08em;color:var(--ink3);font-weight:600;
+  display:flex;align-items:center;gap:2px;min-width:0}
+.tp .s .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tp .s .sess{flex:none}
 .tp .p{font-size:14px;font-weight:650;grid-row:2}
 .tp .c{font-size:11px;font-weight:600;grid-row:2;justify-self:end}
+/* Tiles open a chart (2026-08-17) — same affordance the rail rows already use. */
+.tp{cursor:pointer}
+.tp:hover{background:var(--sel)}
+.tp:focus-visible{outline:1px solid var(--acc);outline-offset:-1px}
+/* PRE / AFT session tag — extended-hours print rather than a regular-session
+   price. Amber (--hi), the page's existing "read this differently" color. */
+.sess{display:inline-block;font-size:8px;font-weight:700;letter-spacing:.08em;
+  color:var(--hi);background:var(--hibg);border-radius:3px;padding:0 3px;margin-left:4px;vertical-align:1px}
 
 /* ============ columns ============ */
 .cols{display:grid;grid-template-columns:252px minmax(0,1fr) 332px}
@@ -207,6 +223,11 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .ct .dt{text-align:center;border:1px solid var(--edge);border-radius:5px;padding:2px 0;background:var(--srf2)}
 .ct .dt .w{font-size:8.5px;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase}
 .ct .dt .n{font-size:13.5px;font-weight:700}
+/* Month abbr, rendered ONLY when the row falls outside the current month —
+   the rail runs months out ("Later + anchors" reaches into 2027) and a bare
+   "30" gave no way to tell June 2027 from next week. Silent in-month so the
+   common case stays uncluttered. */
+.ct .dt .mo{font-size:8px;letter-spacing:.06em;color:var(--acc);text-transform:uppercase}
 .ct .tt{font-size:12px;font-weight:600}
 .ct .me{font-size:10px;color:var(--ink3);margin-top:1px}
 .ct .me b{color:var(--ink2);font-weight:600}
@@ -519,13 +540,19 @@ var STATIC_NAMES = {
   QQQ:"NASDAQ 100", SOXL:"Semis 3x (leveraged)", XLE:"Energy", XLK:"Technology",
   SPY:"S&P 500", DIA:"DOW", IWM:"SMALL CAPS", META:"Meta", AMD:"Advanced Micro", CVX:"Chevron",
   SOXS:"Semis 3x inverse", MUU:"MU 2x", RAM:"DRAM ETF 2x", SKHX:"SK Hynix 2x", STLL:"Sterling 2x",
-  AAOG:"Applied Opto 2x", NRGU:"Oil 3x ETN", OILU:"Oil 2x", WTI:"W&T Offshore"
+  AAOG:"Applied Opto 2x", NRGU:"Oil 3x ETN", OILU:"Oil 2x", WTI:"W&T Offshore",
+  // Tape-only keys (2026-08-17). CRUDE, not WTI — see the MACRO_TAPE note.
+  VIX:"Volatility index", US10Y:"10-year Treasury yield", CRUDE:"Crude oil (WTI front month)",
+  DXY:"US dollar index"
 };
+// `bk` = bars.json key, the string a tile's chart is looked up under. Equal to
+// `s` for every equity/ETF tile; it exists for the crude tile alone (see the
+// MACRO_TAPE note below). Kept on all tiles so the click path reads one field.
 var MAIN_TAPE = [
-  {s:"SPY", n:"S&P 500", tv:"AMEX:SPY"},
-  {s:"QQQ", n:"NASDAQ 100", tv:"NASDAQ:QQQ"},
-  {s:"DIA", n:"DOW", tv:"AMEX:DIA"},
-  {s:"IWM", n:"SMALL CAPS", tv:"AMEX:IWM"},
+  {s:"SPY", n:"S&P 500", tv:"AMEX:SPY", bk:"SPY"},
+  {s:"QQQ", n:"NASDAQ 100", tv:"NASDAQ:QQQ", bk:"QQQ"},
+  {s:"DIA", n:"DOW", tv:"AMEX:DIA", bk:"DIA"},
+  {s:"IWM", n:"SMALL CAPS", tv:"AMEX:IWM", bk:"IWM"},
 ];
 // Macro tiles: CLAUDE.md's exclusion note says a bare "WTI" ticker resolves to
 // W&T Offshore (a micro-cap E&P stock), NOT crude oil -- confirmed live: an
@@ -533,11 +560,16 @@ var MAIN_TAPE = [
 // carry US10Y or crude either. So these four go through the GLOBAL scanner
 // against verified index/futures symbols (TVC: macro feed + NYMEX continuous
 // crude future), never the bare commodity ticker.
+// CRUDE's bars key is "CRUDE", NOT "WTI", and that is deliberate: "WTI" is
+// already W&T Offshore, the oil-producer equity in the rail (see the wlnote
+// above). Charting this tile under "WTI" would open an $82 crude chart from a
+// tile the rail also uses for a small-cap stock. The tile still DISPLAYS
+// "WTI · CRUDE" — only the lookup differs. Matches context.py's TAPE_BARS.
 var MACRO_TAPE = [
-  {s:"VIX", n:"VOL", tv:"TVC:VIX"},
-  {s:"US10Y", n:"YIELD", tv:"TVC:US10Y", isYield:true},
-  {s:"WTI", n:"CRUDE", tv:"NYMEX:CL1!"},
-  {s:"DXY", n:"DOLLAR", tv:"TVC:DXY"},
+  {s:"VIX", n:"VOL", tv:"TVC:VIX", bk:"VIX"},
+  {s:"US10Y", n:"YIELD", tv:"TVC:US10Y", isYield:true, bk:"US10Y"},
+  {s:"WTI", n:"CRUDE", tv:"NYMEX:CL1!", bk:"CRUDE"},
+  {s:"DXY", n:"DOLLAR", tv:"TVC:DXY", bk:"DXY"},
 ];
 
 /* =================== utils =================== */
@@ -661,8 +693,21 @@ function rebuildDynamicTv(data){
     });
   });
 }
-function symbolForTicker(t){ return DYNAMIC_TV[t] || RAIL_TV_SYMBOL[t] || null; }
-function liveBySym(ticker){ var tv = symbolForTicker(ticker); return tv ? (LIVE[tv]||null) : null; }
+// Tape keys -> TV symbols, built from MAIN_TAPE/MACRO_TAPE so the two can't
+// drift (2026-08-17, for the clickable tiles). Deliberately consulted LAST in
+// symbolForTicker: QQQ and SPY sit on both the tape and the boards, and the
+// board's server-resolved tv_symbol stays authoritative.
+var TAPE_TV_SYMBOL = {};
+MAIN_TAPE.concat(MACRO_TAPE).forEach(function(t){ TAPE_TV_SYMBOL[t.bk||t.s] = t.tv; });
+function symbolForTicker(t){ return DYNAMIC_TV[t] || RAIL_TV_SYMBOL[t] || TAPE_TV_SYMBOL[t] || null; }
+// Macro symbols resolve out of MACRO_LIVE (the global scanner) rather than LIVE
+// (the america scanner) — a modal opened on VIX or crude needs a live price
+// from whichever of the two carries it.
+function liveBySym(ticker){
+  var tv = symbolForTicker(ticker);
+  if(!tv) return null;
+  return LIVE[tv] || MACRO_LIVE[tv] || null;
+}
 function nameFor(ticker){ return STATIC_NAMES[ticker] || ticker; }
 
 /* =================== CT time helpers (DST-safe via Intl, no hardcoded offset) =================== */
@@ -725,6 +770,54 @@ function ctTimeShort(iso){
 }
 
 /* =================== market state =================== */
+// data.json's market_state is stamped by the loop, and the loop only runs
+// 8:00-15:20 CT — so at 6:40am, mid-pre-market, the newest published value is
+// yesterday's "closed". That is correct for the flow boards (there is no new
+// chain) but useless for deciding whether to show a pre-market price, so the
+// SESSION used for price display is derived from the CT clock the page already
+// computes (ctWeekdayIndex/ctHour, both DST-safe via Intl). Windows are the
+// US extended-hours sessions: pre 03:00-08:30 CT, regular 08:30-15:00 CT,
+// post 15:00-19:00 CT, weekends closed. Minute-accurate at the 08:30/15:00
+// boundaries; the hour helpers alone would round a 08:15 pre-market read into
+// the regular session.
+function ctMinutesOfDay(d){
+  try{
+    var p = new Intl.DateTimeFormat("en-GB",{timeZone:"America/Chicago",hour:"2-digit",minute:"2-digit",hour12:false}).format(d);
+    return (+p.slice(0,2))*60 + (+p.slice(3,5));
+  }catch(e){ return ctHour(d)*60; }
+}
+function priceSessionNow(now){
+  now = now || new Date();
+  var wd = ctWeekdayIndex(now);
+  if(wd===0 || wd===6) return "closed";
+  var m = ctMinutesOfDay(now);
+  if(m >= 3*60 && m < 8*60+30) return "premarket";
+  if(m >= 8*60+30 && m < 15*60) return "open";
+  if(m >= 15*60 && m < 19*60) return "afterhours";
+  return "closed";
+}
+// One place that answers "what price and what change do I show for this
+// symbol right now" — used by the tape, the rail and the boards so they can
+// never disagree. During pre-market the regular-session `change` is still
+// YESTERDAY's final move, which is the misleading number; when TV has a real
+// pre-market print we show that instead and tag it PRE, so the % on screen is
+// always the % of the price next to it. No pre/post reading (an index, a thin
+// wrapper, or simply no extended-hours trade yet) falls back to the regular
+// figures untagged — never a dash, never a fabricated 0.
+function dispQuote(q){
+  if(!q) return {px:null, ch:null, tag:null};
+  var s = priceSessionNow();
+  if(s==="premarket" && q.prepx!=null && q.prech!=null) return {px:q.prepx, ch:q.prech, tag:"PRE"};
+  if(s==="afterhours" && q.postpx!=null && q.postch!=null) return {px:q.postpx, ch:q.postch, tag:"AFT"};
+  return {px:q.px, ch:q.ch, tag:null};
+}
+function sessTagHTML(tag){
+  if(!tag) return "";
+  var tip = tag==="PRE"
+    ? "Pre-market print from TradingView's delayed feed, with its % measured against yesterday's closing price. Extended-hours volume is thin, so a big pre-market move on light volume often does not survive the 8:30 CT open. Index and macro tiles (VIX, yields, crude, dollar) have no separate pre-market quote — they trade nearly around the clock, so the price shown there already is the overnight read."
+    : "After-hours print from TradingView's delayed feed, with its % measured against today's 3:00 PM CT close. Thin volume — treat a large after-hours move as a headline reaction, not a settled price.";
+  return '<span class="sess" data-tip="'+esc(tip)+'">'+esc(tag)+'</span>';
+}
 function marketStateOf(data){
   if(data && typeof data.market_state === "string") return data.market_state;
   return "closed";
@@ -742,7 +835,12 @@ function renderMarketState(data){
   var lamp = document.getElementById("raillamp");
   var txt = document.getElementById("railstatetext");
   var wrap = document.getElementById("railstate");
-  var ms = marketStateOf(data);
+  // Clock-derived, not data.market_state (2026-08-17): the loop is dark before
+  // 8:00 CT, so the published state reads "closed" through the whole
+  // pre-market. Leaving it that way would put a CLOSED lamp directly above
+  // prices tagged PRE. The clock knows the session; data.market_state stays
+  // the fallback for a browser whose Intl lookup fails.
+  var ms = priceSessionNow() || marketStateOf(data);
   var label, color, tip="";
   if(ms==="open"){ label="OPEN"; color="var(--up)"; }
   else if(ms==="premarket"){ label="PRE-MARKET"; color="var(--hi)"; }
@@ -827,8 +925,23 @@ function isStaleContext(data){
   var t = data && Date.parse(data.context_updated_at);
   return isFinite(t) && (Date.now()-t) > CONTEXT_STALE_MS;
 }
+// Callers pass a mix of label shapes: already-friendly CT strings
+// (data.generated_at_ct, the brief's date) and raw UTC ISO stamps
+// (context_updated_at, e.g. "2026-08-15T13:54:26Z", which the catalysts and
+// news headers were printing verbatim). prettyStamp collapses only the ISO
+// case to CT wall-clock and leaves everything else untouched.
+function prettyStamp(label){
+  if(typeof label!=="string" || !label) return null;
+  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(label)) return label;
+  var d = new Date(label.endsWith("Z")||/[+-]\d{2}:?\d{2}$/.test(label) ? label : label+"Z");
+  if(isNaN(d.getTime())) return label;
+  try{
+    return new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",month:"short",day:"numeric",
+      hour:"numeric",minute:"2-digit"}).format(d) + " CT";
+  }catch(e){ return label; }
+}
 function staleBadgeHTML(dateLabel){
-  return ' <span class="bc stale" data-tip="'+esc(TIPS.stale)+'">as of '+esc(dateLabel||"—")+'</span>';
+  return ' <span class="bc stale" data-tip="'+esc(TIPS.stale)+'">as of '+esc(prettyStamp(dateLabel)||"—")+'</span>';
 }
 
 /* =================== data fetch =================== */
@@ -958,14 +1071,25 @@ function collectPollSymbols(){
 function pollTvPrices(){
   var symbols = collectPollSymbols();
   if(symbols.length === 0) return Promise.resolve(false);
-  var body = JSON.stringify({ symbols:{tickers:symbols, query:{types:[]}}, columns:["rtc","change","relative_volume_10d_calc"] });
+  // premarket_*/postmarket_* added 2026-08-17 (Zach: "I need pre-market
+  // pricing pulled in for all"). Same scanner call, four more columns — no new
+  // request and no new source. premarket_change is a PERCENT against the prior
+  // regular close, same basis as `change`. Both blocks are null outside their
+  // session and on symbols that don't quote extended hours, which is why
+  // dispQuote falls back to the regular figures rather than rendering "—".
+  var body = JSON.stringify({ symbols:{tickers:symbols, query:{types:[]}},
+    columns:["rtc","change","relative_volume_10d_calc",
+             "premarket_close","premarket_change","premarket_volume",
+             "postmarket_close","postmarket_change"] });
   return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
     .then(function(json){
       var rows = (json && Array.isArray(json.data)) ? json.data : [];
       rows.forEach(function(row){
         if(!row || !row.s || !Array.isArray(row.d)) return;
-        LIVE[row.s] = { px:num(row.d[0]), ch:num(row.d[1]), rvol:num(row.d[2]) };
+        LIVE[row.s] = { px:num(row.d[0]), ch:num(row.d[1]), rvol:num(row.d[2]),
+                        prepx:num(row.d[3]), prech:num(row.d[4]), prevol:num(row.d[5]),
+                        postpx:num(row.d[6]), postch:num(row.d[7]) };
       });
       tvPollFailed = false;
       lastPriceUpdateTs = Date.now();
@@ -974,9 +1098,15 @@ function pollTvPrices(){
     })
     .catch(function(){ tvPollFailed = true; return false; });
 }
-// One-shot macro-tile attempt at boot only (not on the 30s interval) -- global
-// scanner for VIX/US10Y/WTI-crude/DXY. Fails soft: any error/CORS failure just
-// hides those four tiles, it never blocks the rest of the page.
+// Global scanner for VIX/US10Y/crude/DXY. Fails soft: any error/CORS failure
+// just hides those four tiles, it never blocks the rest of the page.
+// NOW ON THE 30s POLL (2026-08-17, was boot-only). Boot-only froze the four
+// macro tiles at page-load, which is wrong for a strip whose whole job is
+// telling Zach what rates and crude are doing right now — and these are the
+// tiles that carry the overnight read, since none of the four publishes a
+// separate premarket_close (probed live: null on all four). They trade nearly
+// around the clock, so their regular quote already IS the pre-market number.
+// Cost is one extra POST per 30s cycle.
 function attemptMacroTiles(){
   var tickers = MACRO_TAPE.map(function(m){return m.tv;});
   var body = JSON.stringify({ symbols:{tickers:tickers, query:{types:[]}}, columns:["close","change","rtc"] });
@@ -987,9 +1117,13 @@ function attemptMacroTiles(){
       rows.forEach(function(row){
         if(!row || !row.s || !Array.isArray(row.d)) return;
         var px = row.d[2]!=null ? row.d[2] : row.d[0]; // rtc ?? close
-        MACRO_LIVE[row.s] = { px:num(px), changePct:num(row.d[1]) };
+        // `ch` mirrors changePct so liveBySym's consumers (dispQuote, hotOf,
+        // the modal header, the chart's live last point) read one field name
+        // across both scanners. changePct is kept — macroTileHTML uses it.
+        MACRO_LIVE[row.s] = { px:num(px), changePct:num(row.d[1]), ch:num(row.d[1]) };
       });
       renderTape();
+      if(FOCUS) refreshLiveUI();
     })
     /* macro tiles: loop-side fallback is a fast-follow */
     .catch(function(){ renderTape(); });
@@ -997,13 +1131,16 @@ function attemptMacroTiles(){
 
 /* =================== tape =================== */
 function mainTileHTML(t){
-  var q = LIVE[t.tv];
-  var px = q && q.px!=null ? q.px : null;
-  var ch = q && q.ch!=null ? q.ch : null;
+  var d = dispQuote(LIVE[t.tv]);
+  var px = d.px, ch = d.ch;
   var cls = ch===null? "m" : (ch>0?"u":ch<0?"d":"m");
   var pxStr = px===null?"—":fmtpx(px);
   var chStr = ch===null?"—":((ch>0?"+":"−")+Math.abs(ch).toFixed(2)+"%");
-  return '<div class="tp"><span class="s">'+esc(t.s)+' · '+esc(t.n)+'</span>'
+  // data-sym makes the tile a chart target via the page's existing
+  // [data-sym] -> setFocus -> openDrawer path (2026-08-17). t.bk is the bars
+  // key, which is the tile symbol for the four index ETFs.
+  return '<div class="tp" data-sym="'+esc(t.bk||t.s)+'" role="button" tabindex="0">'
+    +'<span class="s"><span class="t">'+esc(t.s)+' · '+esc(t.n)+'</span>'+sessTagHTML(d.tag)+'</span>'
     +'<span class="p">'+pxStr+'</span><span class="c '+cls+'">'+chStr+'</span></div>';
 }
 function macroTileHTML(m){
@@ -1024,7 +1161,8 @@ function macroTileHTML(m){
     cls = chPct==null?"m":(chPct>0?"u":chPct<0?"d":"m");
     changeStr = chPct==null?"—":((chPct>0?"+":"−")+Math.abs(chPct).toFixed(2)+"%");
   }
-  return '<div class="tp"><span class="s">'+esc(m.s)+' · '+esc(m.n)+'</span>'
+  return '<div class="tp" data-sym="'+esc(m.bk||m.s)+'" role="button" tabindex="0">'
+    +'<span class="s"><span class="t">'+esc(m.s)+' · '+esc(m.n)+'</span></span>'
     +'<span class="p">'+priceStr+'</span><span class="c '+cls+'">'+changeStr+'</span></div>';
 }
 function renderTape(){
@@ -1059,12 +1197,18 @@ function statsOf(sym){
   var v200 = (px!=null && last200!=null) ? (px/last200-1)*100 : null;
   return {lo:lo, hi:hi, pos:pos, v50:v50, v200:v200, px:px};
 }
+// Reads the DISPLAYED change (dispQuote), so during pre-market the hot-mover
+// tags — and the "(n)" in the tab title they feed — describe this morning's
+// gap rather than yesterday's finish. avg_move is a full-session average, so a
+// pre-market ratio is being measured against a longer window than it covers;
+// that makes it a sensitive early flag, not a like-for-like reading, which is
+// what the PRE tag next to it is there to say.
 function hotOf(sym){
-  var q = liveBySym(sym), f = factsOf(sym);
-  if(!q || q.ch==null || !f || f.avg_move==null) return null;
+  var d = dispQuote(liveBySym(sym)), f = factsOf(sym);
+  if(d.ch==null || !f || f.avg_move==null) return null;
   var am = num(f.avg_move);
   if(am===null || am===0) return null;
-  return Math.abs(q.ch)/am;
+  return Math.abs(d.ch)/am;
 }
 var HOT_AT = 1.8;
 function rangeBarHTML(sym, big){
@@ -1080,14 +1224,16 @@ function rangeBarHTML(sym, big){
 var wlSort = "groups";
 function railRowHTML(s){
   var q = liveBySym(s) || {};
+  var d = dispQuote(q);
   var f = factsOf(s);
-  var cls = sign(q.ch);
+  var cls = sign(d.ch);
   var h = hotOf(s);
   var isHot = h!=null && h>=HOT_AT;
   var earnDays = f && f.earn_days!=null ? num(f.earn_days) : null;
   var metaHtml = earnDays!=null ? ("earn "+Math.round(earnDays)+"d") : esc(nameFor(s));
-  var pxStr = q.px!=null ? fmtpx(q.px) : "—";
-  var chStr = q.ch!=null ? (fm1(q.ch)+"%") : "—";
+  if(d.tag) metaHtml = sessTagHTML(d.tag) + " " + metaHtml;
+  var pxStr = d.px!=null ? fmtpx(d.px) : "—";
+  var chStr = d.ch!=null ? (fm1(d.ch)+"%") : "—";
   return '<div class="wr '+(isHot?"hot":"")+'" data-sym="'+esc(s)+'" role="button" tabindex="0">'
     +'<div class="l1"><span class="sy">'+esc(s)+'</span><span class="meta">'+metaHtml+'</span>'
     +(isHot? '<span class="hotb" data-tip="'+esc(TIPS.hot)+' Today: '+h.toFixed(1)+'× its usual '+(f.avg_move!=null?f.avg_move:"?")+'% day.">'+h.toFixed(1)+'×</span>' : "")
@@ -1116,8 +1262,8 @@ function renderWL(){
         return pa-pb;
       }
       if(wlSort==="chg"){
-        var ca=liveBySym(a), cb=liveBySym(b);
-        var va=ca&&ca.ch!=null?ca.ch:-Infinity, vb=cb&&cb.ch!=null?cb.ch:-Infinity;
+        var ca=dispQuote(liveBySym(a)), cb=dispQuote(liveBySym(b));
+        var va=ca.ch!=null?ca.ch:-Infinity, vb=cb.ch!=null?cb.ch:-Infinity;
         return vb-va;
       }
       var ha=hotOf(a), hb=hotOf(b);
@@ -1134,8 +1280,9 @@ function renderWL(){
   var lows = withPos.slice().sort(function(a,b){ return statsOf(a).pos-statsOf(b).pos; }).slice(0,3);
   var alertsHtml = '<b>MOVERS · RELATIVE TO THEIR OWN AVERAGE DAY</b>'
     + (hot.length ? hot.map(function(s){
-        var q=liveBySym(s)||{}; var f=factsOf(s)||{};
-        return '<span class="hm2">'+esc(s)+' '+hotOf(s).toFixed(1)+'×</span> <span class="m">('+fm1(q.ch)+'% vs '+(f.avg_move!=null?f.avg_move:"—")+'% usual)</span>';
+        var d=dispQuote(liveBySym(s)); var f=factsOf(s)||{};
+        return '<span class="hm2">'+esc(s)+' '+hotOf(s).toFixed(1)+'×</span> <span class="m">('
+          +(d.tag?esc(d.tag)+" ":"")+fm1(d.ch)+'% vs '+(f.avg_move!=null?f.avg_move:"—")+'% usual)</span>';
       }).join(" · ") : "none yet")
     + '<div style="margin-top:6px"><b>NEAR 52-WEEK LOWS · SHOPPING LIST</b>'
     + (lows.length ? lows.map(function(s){ return esc(s)+' <span class="m">'+Math.round(statsOf(s).pos*100)+'%</span>'; }).join(" · ") : "not enough range data yet")
@@ -1574,6 +1721,24 @@ function renderCatFilters(){
   document.getElementById("fall").addEventListener("click", function(){ catShowAll=!catShowAll; renderCatFilters(); renderCats(); });
 }
 function catWhen(c){ return ctDateTimeFromWall(c.date, c.time_ct); }
+var MO_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+// Month abbr for the date chip, or "" when the row is in the current CT month
+// (see the .ct .dt .mo CSS note). Compared against the CT calendar month, not
+// the browser's, so a late-evening session west of CT doesn't tag every row.
+function catMonthTag(dateStr, now){
+  if(typeof dateStr!=="string" || dateStr.length<7) return "";
+  var mo = +dateStr.slice(5,7), yr = +dateStr.slice(0,4);
+  if(!isFinite(mo) || mo<1 || mo>12) return "";
+  var ctNow = ctYmd(now || new Date());
+  if(ctNow && mo===ctNow.m && yr===ctNow.y) return "";
+  return MO_ABBR[mo-1] + (ctNow && yr!==ctNow.y ? " "+String(yr).slice(2) : "");
+}
+function ctYmd(d){
+  try{
+    var p = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit"}).format(d);
+    return {y:+p.slice(0,4), m:+p.slice(5,7), d:+p.slice(8,10)};
+  }catch(e){ return {y:d.getUTCFullYear(), m:d.getUTCMonth()+1, d:d.getUTCDate()}; }
+}
 function catDone(c, now){
   var ms = catWhen(c) - now;
   var hasActual = c.actual!=null && String(c.actual).trim()!=="";
@@ -1588,22 +1753,65 @@ function countdown(c, now){
   if(h < 48) return {txt:"in "+Math.round(h)+"h", cls:"soon"};
   return {txt:"in "+Math.round(h/24)+"d", cls:""};
 }
+// ---- econ figure formatting (2026-08-17) ----------------------------------
+// The meta line used to print TV's bare forecast/previous NUMBERS with no
+// units: "fc 1.35 · prior 1.427" for Housing Starts (millions of homes),
+// "prior -911" for the payroll revision (thousands of jobs), "prior 4.1" for
+// the unemployment rate (a percent). The feed carries `unit` ("%"/"$") and
+// `scale` ("K"/"M"/"B"/"T") for exactly this purpose and the fetcher now
+// passes both through, so a figure renders as the reader would say it out
+// loud. Rows without unit/scale (an index level like ISM 55.6) print bare,
+// which is correct — those readings have no unit.
+function fmtEcon(v, c){
+  var n = num(v);
+  if(n===null) return null;                       // note: `null`, not falsy —
+                                                   // a forecast of exactly 0.0
+                                                   // is a real number and used
+                                                   // to vanish from the row.
+  var scale = (c && typeof c.scale==="string") ? c.scale.trim().toUpperCase() : "";
+  var unit  = (c && typeof c.unit==="string")  ? c.unit.trim() : "";
+  var body = Math.abs(n).toLocaleString("en-US", {maximumFractionDigits:3});
+  if(scale==="K"||scale==="M"||scale==="B"||scale==="T") body += scale;
+  if(unit==="%") body += "%";
+  else if(unit==="$") body = "$"+body;
+  // Typographic minus, matching every other number on the page (the old line
+  // emitted a raw ASCII hyphen: "prior -911").
+  return (n<0 ? "−" : "") + body;
+}
 function fpaLine(c){
   var out = "";
-  var actual = c.actual ? esc(c.actual) : null;
-  var forecast = c.forecast ? esc(c.forecast) : null;
-  var prior = c.prior ? esc(c.prior) : null;
-  if(actual){ out = "actual "+actual; if(forecast) out += " vs fc "+forecast; }
-  else if(forecast){ out = "fc "+forecast; }
-  if(prior) out += (out?" · ":"") + "prior "+prior;
+  var actual = fmtEcon(c.actual, c), forecast = fmtEcon(c.forecast, c), prior = fmtEcon(c.prior, c);
+  if(actual!==null){ out = "actual "+esc(actual); if(forecast!==null) out += " vs forecast "+esc(forecast); }
+  else if(forecast!==null){ out = "forecast "+esc(forecast); }
+  if(prior!==null) out += (out?" · ":"") + "prior "+esc(prior);
   return out || null;
 }
+// Plain words for the earnings-timing flag. "premarket"/"afterhours" are the
+// data.json enum values, not English.
+var SESSION_WORDS = {premarket:"before the open", afterhours:"after the close"};
+// TradingView's own agency strings carry a few wrong names for US agencies —
+// "Bureau of Labour Statistics" (British spelling, for a US federal agency) and
+// "Bureau of Economics Analysis" (the real name is Economic). Corrected on the
+// way to the screen only; data.json keeps the feed's string verbatim so the
+// source stays inspectable. Anything not listed passes through untouched — this
+// is a short fix-up list, not a directory of every agency on the calendar.
+var AGENCY_FIX = {
+  "Bureau of Labour Statistics": "Bureau of Labor Statistics",
+  "Bureau of Economics Analysis": "Bureau of Economic Analysis"
+};
 function catMetaLine(c){
   var bits = [];
   var fpa = fpaLine(c);
   if(fpa) bits.push(fpa);
-  if(c.session) bits.push(esc(c.session));
-  if(c.source) bits.push("via "+esc(c.source));
+  if(c.period) bits.push("for "+esc(c.period));
+  if(c.session) bits.push(esc(SESSION_WORDS[c.session] || c.session));
+  // `agency` is the publishing body TV names for the release ("Census
+  // Bureau", "Bureau of Labor Statistics") — something a reader can use.
+  // What used to sit here was `source`, our own internal plumbing slug:
+  // every single row ended in "via tv_calendar" / "via tv_earnings" /
+  // "via memory_events". That told Zach nothing and it is now gone from the
+  // row entirely; `source` stays in data.json for debugging.
+  if(c.agency) bits.push(esc(AGENCY_FIX[c.agency] || c.agency));
   var prefix = c.anchor ? ('<span class="anch">anchor</span>'+(bits.length?' · ':'')) : '';
   return prefix + bits.join(' · ');
 }
@@ -1637,8 +1845,10 @@ function renderCats(){
       var impCls = c.importance==="HIGH"?"hi":c.importance==="MEDIUM"?"md":"lo";
       var impLabel = c.importance==="HIGH"?"HIGH":c.importance==="MEDIUM"?"MED":"LOW";
       var day = c.date ? (+c.date.slice(8)) : "?";
+      var moTag = catMonthTag(c.date, now);
       return '<div class="ct '+(cd.done?"done":"")+'" data-catid="'+c._id+'" '+(c.ticker?('data-sym="'+esc(c.ticker)+'"'):'')+'>'
-        +'<div class="dt"><div class="w">'+wk(c.date)+'</div><div class="n tn">'+day+'</div></div>'
+        +'<div class="dt"><div class="w">'+wk(c.date)+'</div><div class="n tn">'+day+'</div>'
+        +(moTag?('<div class="mo">'+moTag+'</div>'):'')+'</div>'
         +'<div><div class="tt">'+esc(c.title||"")+'</div><div class="me">'+catMetaLine(c)+'</div></div>'
         +'<div class="rg"><span class="imp '+impCls+'">'+impLabel+'</span><span class="cd tn '+cd.cls+'">'+cd.txt+'</span></div></div>';
     }).join("");
@@ -1815,7 +2025,18 @@ function candleDataFor(sym, tf){
   // sniffed per row (not a top-level version flag) so the live-appended
   // synthetic "today" candle (always a v-less quad -- see seriesQuads) can't
   // hide a real v3 file's volume: true as soon as ANY row carries a 5th leg.
-  var hasVolume = full.some(function(r){ return r && r.length>=5; });
+  // v3 shape AND at least one bar that actually traded. Index series (^VIX,
+  // ^TNX, DX-Y.NYB) are v3 quints whose volume is 0 on every single bar — an
+  // index has no share volume. Testing the shape alone reserved a 19%-tall
+  // pane and then drew a flat 1px line across it, which reads as a broken
+  // chart rather than "this thing has no volume". One non-zero bar anywhere in
+  // the window is enough, so a genuine zero-volume holiday still shows the
+  // pane for a real stock.
+  var hasVolume = full.some(function(r){
+    if(!r || r.length<5) return false;
+    var v = num(r[4]);
+    return v!=null && v>0;
+  });
   return {slice:slice, m20:m20f.slice(-n), m50:m50f.slice(-n), m200:m200f.slice(-n), pct:pct, n:n, hasVolume:hasVolume};
 }
 /* ---- volume-pane helpers (Task 4, v3 quints only) ---- */
@@ -2078,7 +2299,8 @@ function renderCatList(sym){
     var impCls = c.importance==="HIGH"?"hi":c.importance==="MEDIUM"?"md":"lo";
     var wd = c.date ? WD_ABBR[new Date(c.date+"T12:00:00Z").getUTCDay()] : "—";
     return '<div class="ct" style="cursor:pointer" data-jumpcat="'+c._id+'">'
-      + '<div class="dt"><div class="w">'+wd+'</div><div class="n tn">'+(c.date?(+c.date.slice(8)):"?")+'</div></div>'
+      + '<div class="dt"><div class="w">'+wd+'</div><div class="n tn">'+(c.date?(+c.date.slice(8)):"?")+'</div>'
+      + (catMonthTag(c.date, now)?('<div class="mo">'+catMonthTag(c.date, now)+'</div>'):'')+'</div>'
       + '<div><div class="tt">'+esc(c.title||"")+'</div><div class="me">'+catMetaLine(c)+'</div></div>'
       + '<div class="rg"><span class="imp '+impCls+'">'+(c.importance||"")+'</span><span class="cd tn '+cd.cls+'">'+cd.txt+'</span></div></div>';
   }).join("");
@@ -2100,7 +2322,21 @@ function recLabel(v){
   return {t:"Strong sell", cls:"d"};
 }
 function fcell(label, text, cls){ return '<div class="fcell"><span>'+esc(label)+'</span><b class="'+(cls||"")+'">'+text+'</b></div>'; }
+// Tape-only symbols (VIX, US10Y, CRUDE, DXY, and the index ETFs) have no
+// `facts` row and no fund sidecar — they are not in the pinned universe, which
+// is deliberate: an index has no market cap, no P/E and no margins. Rendering
+// the grid anyway produced a wall of 20 em dashes under every index chart.
+// Suppress it entirely, and say why in one line instead.
+function hasFundamentals(sym, fund){
+  return !!factsOf(sym) || !!(fund && typeof fund === "object");
+}
 function renderFundamentals(sym, fund){
+  if(!hasFundamentals(sym, fund)){
+    return '<div class="dsec" id="fundgrid"><div class="note">'
+      + esc(nameFor(sym))+' is a market reading, not a company, so there are no fundamentals '
+      + 'to report — no earnings, no margins, no P/E. The price history, moving averages and '
+      + 'catalyst calendar above all apply normally.</div></div>';
+  }
   var f = factsOf(sym) || {};
   var q = liveBySym(sym) || {};
   var st = statsOf(sym);
@@ -2252,12 +2488,15 @@ function rangeSecHTML(sym){
 // open time only if the live poll or bars have already resolved. Both the
 // initial header and every later live-poll refresh call this.
 function drawerHeaderHTML(sym){
-  var q = liveBySym(sym) || {};
+  // dispQuote, not the raw quote: the modal must show the same number the
+  // tile or rail row the user just clicked was showing. Reading q.px directly
+  // put a regular-session price under a PRE-tagged tile.
+  var d = dispQuote(liveBySym(sym));
   var h = hotOf(sym);
   return '<div class="dh" id="dh"><span class="sy">'+esc(sym)+'</span>'
-    + '<span class="m" style="font-size:12px">'+esc(nameFor(sym))+'</span>'
-    + '<span class="px tn" style="font-size:21px;font-weight:750">'+(q.px!=null?fmtpx(q.px):"—")+'</span>'
-    + '<span class="ch tn '+sign(q.ch)+'" style="font-size:14px">'+(q.ch!=null?fm1(q.ch)+"%":"—")+'</span>'
+    + '<span class="m" style="font-size:12px">'+esc(nameFor(sym))+sessTagHTML(d.tag)+'</span>'
+    + '<span class="px tn" style="font-size:21px;font-weight:750">'+(d.px!=null?fmtpx(d.px):"—")+'</span>'
+    + '<span class="ch tn '+sign(d.ch)+'" style="font-size:14px">'+(d.ch!=null?fm1(d.ch)+"%":"—")+'</span>'
     + (h!=null && h>=HOT_AT ? ('<span class="hotb" data-tip="'+esc(TIPS.hot)+'">'+h.toFixed(1)+'× usual move</span>') : "")
     + '<button class="x" id="dclose" aria-label="Close">×</button></div>';
 }
@@ -2310,7 +2549,7 @@ function openDrawer(sym){
   document.getElementById("drawer").innerHTML = header + rangeSec + chartCard + drawerPositionBlock(sym)
     + '<div id="fundgrid"></div>' + '<div id="growthbox"></div>'
     + convSec + swSec + newsSec
-    + '<div class="dsec note">Data is live: prices from the 30s TradingView poll, history from bars.json, fundamentals from the fund sidecar (fund/'+esc(sym)+'.json). Nothing here is investment advice.</div>';
+    + '<div class="dsec note" id="dfoot">Data is live: prices from the 30s TradingView poll, history from bars.json, fundamentals from the fund sidecar (fund/'+esc(sym)+'.json). Nothing here is investment advice.</div>';
   document.getElementById("drawer").classList.add("open");
   document.getElementById("modalback").classList.add("open");
   document.getElementById("dclose").addEventListener("click", function(){ setFocus(null); });
@@ -2324,6 +2563,11 @@ function openDrawer(sym){
     DRAWER_FUND = fund;
     var fg = document.getElementById("fundgrid"); if(fg) fg.outerHTML = renderFundamentals(sym, fund);
     var gb = document.getElementById("growthbox"); if(gb) gb.outerHTML = renderGrowth(sym, fund);
+    // Don't promise a fundamentals sidecar for a symbol that has none.
+    var ft = document.getElementById("dfoot");
+    if(ft && !hasFundamentals(sym, fund)){
+      ft.textContent = "Prices from the 30-second TradingView poll; history from bars.json. Nothing here is investment advice.";
+    }
     var rs = document.getElementById("rangesec"); if(rs) rs.innerHTML = rangeSecHTML(sym);
     redrawChart(sym, fund);
   });
@@ -2563,7 +2807,7 @@ document.addEventListener("click", function(e){
 });
 
 /* =================== boot =================== */
-function tick(){ fetchData().then(pollTvPrices); }
+function tick(){ fetchData().then(pollTvPrices); attemptMacroTiles(); }
 function start(){
   ["conv","swing","orders","sector","cats","news"].forEach(function(id){
     var el = document.getElementById(id);

@@ -765,3 +765,152 @@ Costs stay $0: public repo = free Actions minutes, free Pages, keyless feeds.
 4. Phone-usable at 390px — no horizontal scroll, dollar figures never clipped.
 5. All existing tests pass; new fetches covered; two screenshot checks in CI
    notes; zero changes to scores, weights, or the pinned universe.
+
+---
+
+## Wave 4 (2026-08-17) — Zach's three-item punch list
+
+Reported verbatim: *"Catalysts is showing some weird text. I need pre-market
+pricing pulled in for all. I need to be able to click the different indices like
+SPY, QQQ, VIX etc. and see their charts. also what is the (2) in the tab?"*
+
+### 1. The "weird text" in Catalysts — diagnosed, not guessed
+
+Rendered the live page in Chromium against the published `data.json` and read
+the rail. `data.json` itself was clean; **every defect was in the renderer.**
+Four of them, in descending loudness:
+
+- **`via tv_calendar` on every single row.** `catMetaLine` printed `c.source`,
+  our own internal provenance slug — "via tv_calendar", "via tv_earnings",
+  "via memory_events". Zach has no use for which of our five code paths
+  supplied a row. **The feed carries something he can use and we were throwing
+  it away:** TV's `source` field names the publishing agency ("Census Bureau",
+  "Bureau of Labor Statistics"). That is now what the row shows; `source` stays
+  in `data.json` for debugging and is no longer rendered anywhere.
+- **Unitless figures.** "fc 1.35 · prior 1.427" for Housing Starts (millions of
+  homes); "prior -911" for the payroll revision (thousands of jobs); "prior
+  4.1" for the unemployment rate (a percent). The feed carries `unit` ("%"/"$")
+  and `scale` ("K"/"M"/"B"/"T") for precisely this and `fetch_econ_tv` dropped
+  both. Now: "forecast 1.35M · prior 1.427M", "prior −911K", "prior 4.1%".
+  **`forecast`/`prior`/`actual` are already scaled to match `scale`** — the
+  renderer appends a suffix and must never rescale (feed proof: `previousRaw`
+  1427000 against `previous` 1.427 at scale "M"). A row with neither unit nor
+  scale still prints bare, which is right: ISM 55.6 is an index level.
+- **A forecast of exactly 0.0 vanished.** `c.forecast ? … : null` — 0 is falsy.
+  A zero forecast on a MoM print is a real, meaningful number. Now tested with
+  `!= null`.
+- **ASCII hyphen.** The line emitted `-911` while every other number on the
+  page uses a typographic minus.
+
+Two more found in the same pass and fixed: the section header printed a raw UTC
+ISO stamp ("as of 2026-08-15T13:54:26Z") where the rest of the page speaks CT
+wall-clock, and the date chip showed a bare day-of-month, so a row in June 2027
+read "TUE 30" exactly like next week. The chip now carries a month abbr **only
+when the row is outside the current CT month**, so the common case stays clean.
+
+Also normalized TV's two wrong US-agency names ("Bureau of Labour Statistics",
+"Bureau of Economics Analysis") on the way to the screen. That list is a short
+fix-up for known-wrong strings, deliberately not a directory of every agency —
+unlisted names pass through untouched.
+
+### 2. Pre-market pricing for all
+
+Done client-side on the existing 30-second TV poll: four more columns
+(`premarket_close`/`premarket_change`, `postmarket_close`/`postmarket_change`)
+on the same request, no new source and no fetcher change. One helper,
+`dispQuote`, decides the price-and-change pair, and the tape, the rail, the
+boards and the modal header all read it, so they cannot disagree.
+
+- **The session is derived from the CT clock, NOT `data.market_state`.** The
+  loop only runs 08:00–15:20 CT, so at 6:40am the newest published state is
+  yesterday's `"closed"`. Correct for the flow boards (no new chain exists),
+  useless for deciding whether to show a pre-market price. `renderMarketState`
+  now reads the clock too — otherwise the rail lamp said CLOSED directly above
+  prices tagged PRE.
+- **`hotOf` reads the displayed change**, so the mover tags and the tab-title
+  count describe this morning's gap at 7am instead of yesterday's finish.
+  `avg_move` is a full-session average, so a pre-market ratio is measured
+  against a longer window than it covers — a sensitive early flag, not a
+  like-for-like reading. The PRE tag beside it is what says so.
+- **The macro tiles carry no tag, by measurement:** `premarket_close` /
+  `premarket_change` come back null for `TVC:VIX`, `TVC:US10Y`, `NYMEX:CL1!`
+  and `TVC:DXY` (probed live 2026-08-17). They trade nearly around the clock,
+  so their regular quote already IS the overnight read. Don't "fix" this by
+  synthesizing a pre-market field for them.
+- **`attemptMacroTiles` moved onto the 30s poll** (was boot-only). Boot-only
+  froze rates and crude at page-load, which is wrong for the four tiles that
+  carry the overnight story. Cost: one extra POST per cycle.
+- Layout bug found by screenshot: the PRE badge started out inside the tile's
+  ellipsized label, so on a long label ("SPY · S&P 500") **the badge was the
+  part clipped away** — a pre-market price with nothing saying so. The label
+  now truncates inside its own span while the badge holds its width.
+
+### 3. Clickable index tiles
+
+`bars.json` only ever held the 62 pinned equities, so a tile had nothing to
+chart. `context.TAPE_BARS` adds seven keys (SPY/DIA/IWM/VIX/US10Y/CRUDE/DXY;
+QQQ was already pinned) on the same once-daily Yahoo build, fetched under the
+symbols Yahoo needs (`^VIX`, `^TNX`, `CL=F`, `DX-Y.NYB`) and stored under the
+desk key. Tiles get `data-sym` and reuse the page's existing
+`[data-sym]` → `setFocus` → `openDrawer` path. `BARS_BUILD_SIG` bumped to
+`v3-2y-vol-tape` so the shape change rebuilds same-day.
+
+- **`CRUDE`, never `WTI`.** `WTI` is W&T Offshore, an oil-producer equity in
+  the rail. Keying crude as `WTI` would have overwritten that stock's bars with
+  the crude future's and opened an ~$82 oil chart from a tile the rail uses for
+  a small-cap stock. The tile still displays "WTI · CRUDE". Pinned by a test.
+- **Tape symbols land in `bars.json` ONLY** — never `facts`, never a fund
+  sidecar, never a board. An index has no chain, no market cap, no margins. The
+  fundamentals grid was therefore rendering 20 em dashes under every index
+  chart; it is now replaced by one plain-English line, and the modal footer
+  stops promising a sidecar that doesn't exist.
+- **The volume pane gated on the wrong condition.** `hasVolume` tested only
+  that rows were v3 quints. `^VIX`/`^TNX`/`DX-Y.NYB` are v3 quints whose volume
+  is 0 on *every* bar (an index has no share volume), so the chart reserved a
+  19%-tall pane and drew a flat 1px line through it — it read as a broken
+  chart. Now requires one bar with volume > 0, so a real stock's genuine
+  zero-volume holiday still shows its pane.
+
+### A Yahoo defect found while building this — worth remembering
+
+`^TNX` intermittently returns a **truncated but perfectly well-formed** daily
+series: HTTP 200, valid JSON, every OHLC leg present, 17 rows instead of ~502.
+Six identical back-to-back requests gave 17, 502, 17, 17, 502, 502. It is not
+the range (1y/2y/5y all do it), not the User-Agent (a browser UA does it too),
+and not a short listing.
+
+This was worth chasing because **nothing downstream could tell**: 17 bars draw
+a chart with no 50-day and no 200-day average, so the tile would have looked
+merely boring rather than broken. `build_bars` now refetches a series too short
+to carry the 200-day average (`BARS_SHORT_WARN = 220`, up to
+`BARS_SHORT_RETRIES = 2`) and keeps the longest response. A genuinely short
+listing (SKHY, DRAM) is retried, then **kept and warned about, never dropped**.
+A first-attempt error still skips the symbol as before; an error on a retry
+keeps whatever the earlier attempt returned.
+
+**The first diagnosis was wrong and the record should say so:** it looked like
+`range=2y` was specifically broken for `^TNX`, and a `BARS_RANGE_OVERRIDES`
+map was written before a repeat measurement showed the same range succeeding.
+Fixing the range would have papered over a symbol-agnostic flake. The lesson
+is the general one: measure a suspected upstream defect more than once before
+encoding it, and prefer the fix that self-heals over the fix that hardcodes.
+
+### 4. "What is the (2) in the tab?"
+
+Already documented in `renderWL` and in a note under the movers panel: the count
+of watchlist names moving at least 1.8× their own average day. Nothing to fix.
+
+### Tests / verification
+
+10 new fetcher tests (147 total, all passing) covering the alias fetch and desk
+keying, the `WTI` collision guard, the truncated-series retry (including
+stop-on-success, genuinely-short listings, and both error paths), and the
+unit/scale/period/agency pass-through with blank-string normalization.
+
+Verified in Chromium against the live published `data.json` plus real Yahoo
+bars for all seven tape symbols, at 1500px and 390px, with the clock frozen in
+both the pre-market and regular sessions: PRE tags and lamp correct in each,
+SPY/VIX/CRUDE modals opening real candle charts with all three averages, MU
+unchanged (range bar, volume pane, full fundamentals grid), zero page errors.
+
+Unchanged, deliberately: no score, weight, board, or pinned-universe change.

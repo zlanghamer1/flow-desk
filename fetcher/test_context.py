@@ -1556,3 +1556,132 @@ def test_build_fund_universe_symbol_level_exception_is_fail_soft(monkeypatch):
 
     out = context.build_fund_universe(["GOOD", "BAD"], date(2026, 8, 15), _get=fake_get)
     assert set(out.keys()) == {"GOOD"}
+
+
+# ── tape bars + truncated-series retry (2026-08-17) ─────────────────────────
+
+def test_tape_bars_fetch_under_yahoo_alias_but_key_by_desk_key():
+    """TAPE_BARS symbols are FETCHED as their Yahoo ticker (^VIX, CL=F) and
+    STORED under the desk key the page looks them up by (VIX, CRUDE). The
+    URL-encoding matters: a bare "^" or "=" in the path is not a valid URL."""
+    seen = []
+    def fake_get(url, headers):
+        seen.append(url)
+        return _yahoo_json([float(100 + i) for i in range(300)])
+    payload, _ = context.build_bars(["VIX", "CRUDE", "MU"], date(2026, 8, 15),
+                                    _get=fake_get, aliases=context.TAPE_BARS)
+    assert sorted(payload["bars"].keys()) == ["CRUDE", "MU", "VIX"]
+    assert any("%5EVIX" in u for u in seen)      # ^VIX, percent-encoded
+    assert any("CL%3DF" in u for u in seen)      # CL=F, percent-encoded
+    assert any("/MU?" in u for u in seen)        # no alias -> fetched as itself
+    assert not any("/VIX?" in u for u in seen)   # never fetched under the desk key
+
+
+def test_crude_bars_key_is_not_wti():
+    """W&T Offshore (the oil-producer equity) owns the ticker "WTI" in the
+    rail. Crude must never be stored under it or the rail row and the tape
+    tile would chart the same key at two completely different prices."""
+    assert "WTI" not in context.TAPE_BARS
+    assert context.TAPE_BARS["CRUDE"] == "CL=F"
+
+
+def test_truncated_series_is_refetched_and_longest_response_wins():
+    """Yahoo intermittently answers with a well-formed but truncated series
+    (measured live on ^TNX: 17 rows instead of ~502, on roughly half of
+    identical back-to-back requests). The short response must be refetched,
+    not charted — 17 bars silently draw a chart with no 50/200-day averages."""
+    responses = [_yahoo_json([1.0] * 16),                              # truncated
+                 _yahoo_json([1.0] * 16),                              # truncated again
+                 _yahoo_json([float(i) for i in range(1, 401)])]       # good
+    calls = {"n": 0}
+    def fake_get(url, headers):
+        r = responses[min(calls["n"], len(responses) - 1)]
+        calls["n"] += 1
+        return r
+    payload, _ = context.build_bars(["US10Y"], date(2026, 8, 15), _get=fake_get)
+    assert calls["n"] == 3                       # initial + 2 retries
+    assert len(payload["bars"]["US10Y"]) == 400  # the good series, not the 16-row one
+
+
+def test_short_series_retry_stops_once_a_full_series_arrives():
+    """A healthy symbol costs exactly one request — the retry must be driven
+    by the short series, never run unconditionally."""
+    calls = {"n": 0}
+    def fake_get(url, headers):
+        calls["n"] += 1
+        return _yahoo_json([float(i) for i in range(1, 301)])
+    context.build_bars(["SPY"], date(2026, 8, 15), _get=fake_get)
+    assert calls["n"] == 1
+
+
+def test_genuinely_short_listing_survives_retries_and_is_kept():
+    """A young listing (SKHY, DRAM) really does have few bars. It gets
+    retried, then KEPT — never dropped — so the rail doesn't lose the name."""
+    calls = {"n": 0}
+    def fake_get(url, headers):
+        calls["n"] += 1
+        return _yahoo_json([float(i) for i in range(1, 41)])
+    payload, avg = context.build_bars(["SKHY"], date(2026, 8, 15), _get=fake_get)
+    assert calls["n"] == 1 + context.BARS_SHORT_RETRIES
+    assert len(payload["bars"]["SKHY"]) == 40
+    assert "SKHY" in avg
+
+
+def test_first_attempt_error_still_skips_symbol_without_retrying():
+    calls = {"n": 0}
+    def fake_get(url, headers):
+        calls["n"] += 1
+        raise urllib.error.URLError("boom")
+    payload, _ = context.build_bars(["BAD"], date(2026, 8, 15), _get=fake_get)
+    assert payload["bars"] == {} and calls["n"] == 1
+
+
+def test_retry_error_keeps_the_short_series_already_in_hand():
+    """A failure on a RETRY must not throw away the (short but real) series
+    the first attempt returned."""
+    calls = {"n": 0}
+    def fake_get(url, headers):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _yahoo_json([float(i) for i in range(1, 31)])
+        raise urllib.error.URLError("boom")
+    payload, _ = context.build_bars(["ZZZ"], date(2026, 8, 15), _get=fake_get)
+    assert len(payload["bars"]["ZZZ"]) == 30
+
+
+# ── catalyst units (2026-08-17) ─────────────────────────────────────────────
+
+def _econ_payload(**over):
+    row = {"title": "Housing Starts", "date": "2026-08-18T12:30:00.000Z",
+           "importance": 1, "forecast": 1.35, "previous": 1.427, "actual": None,
+           "unit": None, "scale": "M", "period": "Jul", "source": "Census Bureau"}
+    row.update(over)
+    return json.dumps({"result": [row]}).encode()
+
+
+def test_econ_rows_carry_unit_scale_period_and_agency():
+    """The feed's unit/scale/period/source were being dropped, which is why
+    the desk rendered "fc 1.35 · prior 1.427" for a figure denominated in
+    millions of homes. All four now ride along for the renderer."""
+    rows = context.fetch_econ_tv(_get=lambda url, headers: _econ_payload())
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["scale"] == "M" and r["period"] == "Jul"
+    assert r["agency"] == "Census Bureau"
+    assert r["unit"] is None                 # this release carries no unit
+    assert r["forecast"] == 1.35 and r["prior"] == 1.427   # already scaled, not rescaled
+
+
+def test_econ_percent_unit_passes_through():
+    rows = context.fetch_econ_tv(_get=lambda url, headers: _econ_payload(
+        title="Unemployment Rate", unit="%", scale=None, previous=4.1))
+    assert rows[0]["unit"] == "%" and rows[0]["scale"] is None
+
+
+def test_econ_blank_labels_normalize_to_none_not_empty_string():
+    """"" and None must both mean "no label" so the page tests one condition."""
+    rows = context.fetch_econ_tv(_get=lambda url, headers: _econ_payload(
+        unit="  ", scale="", period=None, source=""))
+    r = rows[0]
+    assert r["unit"] is None and r["scale"] is None
+    assert r["period"] is None and r["agency"] is None

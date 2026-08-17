@@ -146,10 +146,32 @@ values are `null` (never a string sentinel). All strings are already plain
 >   "actual": null,                   // econ rows only, filled in once the print
 >                                     // lands; else null
 >   "anchor": false,                  // true = kept past the 28-day window (see above)
->   "source": "tv_calendar"           // "econ_calendar" | "tv_calendar" | "tv_earnings"
->                                     // | "memory_events" | "market_calendar"
+>   "source": "tv_calendar",          // "econ_calendar" | "tv_calendar" | "tv_earnings"
+>                                     // | "memory_events" | "market_calendar".
+>                                     // INTERNAL provenance — the page does NOT
+>                                     // render this (it used to, as "via
+>                                     // tv_calendar" on every row); keep it for
+>                                     // debugging.
+>   "unit": null,                     // OPTIONAL, tv_calendar rows only: "%" | "$" | null
+>   "scale": "M",                     // OPTIONAL, tv_calendar rows only: "K"|"M"|"B"|"T"|null
+>   "period": "Jul",                  // OPTIONAL, tv_calendar rows only: the reporting
+>                                     // period the figure covers ("Jul", "Q2")
+>   "agency": "Census Bureau"         // OPTIONAL, tv_calendar rows only: the publishing
+>                                     // body TV names for the release
 > }
 > ```
+>
+> **Units on `forecast`/`prior`/`actual` (added 2026-08-17).** Those three are
+> bare numbers, and until this date the page printed them bare — "fc 1.35 ·
+> prior 1.427" for Housing Starts (millions of homes), "prior -911" for the
+> payroll revision (thousands of jobs). `unit` and `scale` are what make them
+> readable and both come straight from the TV feed. **The figures are ALREADY
+> scaled to match `scale`** (the feed's own `previousRaw` is 1427000 where
+> `previous` is 1.427 at scale "M"), so a consumer appends the suffix and must
+> never rescale. All four fields are optional: absent or null means "no label",
+> and a row with no unit and no scale is correct to print bare — an ISM
+> reading of 55.6 is an index level, not a quantity. Rows from the other four
+> sources do not carry them at all.
 >
 > **`news`** — up to 20 items total (not per ticker) across the pinned
 > universe, newest first, pulled from TradingView's per-symbol news endpoint.
@@ -282,6 +304,25 @@ when volume was appended after it.
   }
 }
 ```
+
+**Tape symbols (2026-08-17).** Beyond the pinned universe, `bars` also carries
+seven keys for the page's index/macro strip so its tiles can open a chart:
+`SPY`, `DIA`, `IWM`, `VIX`, `US10Y`, `CRUDE`, `DXY` (`QQQ` was already pinned).
+They are `context.TAPE_BARS`, fetched from Yahoo under the symbols that source
+needs (`^VIX`, `^TNX`, `CL=F`, `DX-Y.NYB`) but **keyed by the desk key**, which
+is the string `index.html` looks them up under.
+
+> **Crude's key is `CRUDE`, never `WTI`.** `WTI` is W&T Offshore, an
+> oil-producer equity that is in the rail. Keying crude as `WTI` would overwrite
+> that stock's bars with the crude future's and open an ~$82 oil chart from a
+> tile the rail uses for a small-cap stock. The tape still *displays* the tile
+> as "WTI · CRUDE"; only the bars key and chart lookup differ.
+
+These seven appear in `bars.json` ONLY. They are deliberately absent from
+`facts`, from `fund/{SYM}.json` and from every board — an index has no options
+chain, no market cap and no margins — so a consumer must treat "has bars, has
+no facts" as a normal, expected combination and not render an empty
+fundamentals table for it.
 
 - `built` — session date (`YYYY-MM-DD`) this file was last (re)built.
 - `v` — schema version, `3` as of 2026-08-15. Absent entirely on pre-2026-08-15
