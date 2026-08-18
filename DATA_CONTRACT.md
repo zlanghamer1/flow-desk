@@ -429,6 +429,48 @@ widen avg_move's own basis: the fetcher re-slices to its last 252 rows
 trailing-20-closes window, so this reading is unaffected by the 2026-08-15
 range change.
 
+## bars_intraday.json (added 2026-08-18 — published beside bars.json on the `data` branch)
+
+Intraday OHLCV for the same universe bars.json covers (pinned + tape symbols,
+keyed by desk key via the same alias map). Shape:
+
+```jsonc
+{
+  "built": "2026-08-18T13:05:00Z",   // UTC build time (not a session date —
+                                      // this file rebuilds intra-day)
+  "v": 1,
+  "i15": { "MU": [[t, o, h, l, c, v], ...], ... },  // 15-minute bars, ~5 trading days
+  "i60": { "MU": [[t, o, h, l, c, v], ...], ... }   // 60-minute bars, ~3 months
+}
+```
+
+- Rows are `[epoch_seconds, open, high, low, close, volume]` — one element
+  longer than bars.json's quints, with the timestamp FIRST. Intraday charts
+  cannot reconstruct bar times the way the daily chart reconstructs weekday
+  dates, so a bar with no usable timestamp is dropped at extraction rather
+  than kept.
+- Same per-row fail-soft rules as bars.json otherwise: a bar missing any OHLC
+  leg is dropped whole; a bar with good OHLC but no volume reading keeps
+  `v: null` (never zero-filled). A symbol/interval whose fetch failed is
+  simply absent.
+- Unlike bars.json, TODAY'S IN-PROGRESS bars are INCLUDED — freshness is the
+  point of these views, and the page draws the series as-is (no synthetic
+  live candle is appended).
+- EXTENDED-HOURS bars are included too (`includePrePost=true`, added
+  2026-08-18 — the 15m view was blind to premarket without it). The page
+  renders pre/post-market candles dimmed; consumers can classify a bar by its
+  CT clock time (regular session = 08:30–15:00 CT).
+- Rebuilt on its own **~25-minute gate** (`INTRA_STALE_SEC`,
+  `intraday_built_at` in `fetcher/.context_cache.json`), not the once-daily
+  bars gate. Source is the same Yahoo v8 chart call with
+  `interval=15m&range=5d` and `interval=60m&range=3mo`. Caps: 140 rows per
+  symbol for i15, 320 for i60 (`INTRA_MAX`).
+- The page derives the **4H** view by resampling i60 in 4-bar chunks within
+  each CT session day, and the **1W** view by resampling bars.json's daily
+  quints — neither is stored here.
+- A build where EVERY fetch failed returns nothing and the previous published
+  file stands (never overwrite good data with an empty shell).
+
 ## fund/{SYM}.json (added 2026-08-15, Task 4 — one file per tracked ticker,
 published beside data.json on the `data` branch)
 

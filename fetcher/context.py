@@ -1280,6 +1280,45 @@ def _extract_yahoo_ohlcv(obj, drop_on_or_after: Optional[date] = None) -> Option
     return out or None
 
 
+def _extract_yahoo_ohlcv_ts(obj) -> Optional[list[list]]:
+    """v8 chart API response -> [[t, o, h, l, c, v], ...] rows for INTRADAY
+    intervals — same drop rules as _extract_yahoo_ohlcv (a bar missing any
+    OHLC leg is dropped whole; missing volume keeps the bar with v: None)
+    plus one stricter rule: a bar with no usable epoch timestamp is DROPPED,
+    because intraday charts cannot reconstruct time positions the way the
+    daily chart reconstructs weekday dates. No today-bar filtering: intraday
+    series are SUPPOSED to include the live session — the freshness is the
+    point of these views, and the page draws them as-is without appending a
+    synthetic candle."""
+    try:
+        result = obj["chart"]["result"][0]
+        q = result["indicators"]["quote"][0]
+        opens, highs, lows, closes = q["open"], q["high"], q["low"], q["close"]
+    except Exception:
+        return None
+    if not all(isinstance(x, list) for x in (opens, highs, lows, closes)):
+        return None
+    volumes = q.get("volume")
+    if not isinstance(volumes, list):
+        volumes = []
+    timestamps = result.get("timestamp")
+    if not isinstance(timestamps, list):
+        return None
+    n = min(len(opens), len(highs), len(lows), len(closes), len(timestamps))
+    out: list[list] = []
+    for i in range(n):
+        row = (opens[i], highs[i], lows[i], closes[i])
+        ts = timestamps[i]
+        if not isinstance(ts, (int, float)) or isinstance(ts, bool):
+            continue
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in row):
+            continue
+        vol_raw = volumes[i] if i < len(volumes) else None
+        vol = int(vol_raw) if isinstance(vol_raw, (int, float)) and not isinstance(vol_raw, bool) else None
+        out.append([int(ts)] + [round(float(v), 4) for v in row] + [vol])
+    return out or None
+
+
 def _avg_move(closes: list[float]) -> Optional[float]:
     """Mean of abs(daily % change) over the last 20 closes, 2dp. None if
     fewer than 2 closes are available (nothing to difference)."""
@@ -1290,6 +1329,64 @@ def _avg_move(closes: list[float]) -> Optional[float]:
     if not changes:
         return None
     return round(sum(changes) / len(changes), 2)
+
+
+# ── Intraday bars (bars_intraday.json, added 2026-08-18 — Zach: charts need
+# 15m/1H/4H views with volume). Two Yahoo intervals are fetched; 4H is
+# resampled from 1H on the page, 1W from the daily file. Rebuilt on its own
+# INTRA_STALE_SEC gate (not the once-daily bars gate): intraday views die of
+# staleness in hours, and ~2 calls/symbol every ~25 min is well inside the
+# same Yahoo budget the daily build already spends once a day. ─────────────
+INTRA_STALE_SEC = 25 * 60
+INTRA_SPECS = [("i15", "15m", "5d"), ("i60", "60m", "3mo")]
+INTRA_MAX = {"i15": 140, "i60": 320}
+INTRA_SLEEP_SEC = 0.25
+INTRA_VERSION = 1
+
+
+def build_intraday_bars(universe: list[str],
+                        _get: Optional[Callable] = None,
+                        aliases: Optional[dict] = None,
+                        now_utc: Optional[datetime] = None) -> Optional[dict]:
+    """Yahoo v8 chart API per symbol/interval -> bars_intraday.json payload:
+    {"built": <UTC ISO>, "v": 1, "i15": {ticker: [[t,o,h,l,c,v],...]},
+    "i60": {...}} — t epoch seconds, oldest first, capped at INTRA_MAX rows.
+    Same alias/fail-soft rules as build_bars: output keyed by the desk key, a
+    failed symbol/interval is simply absent. Returns None only when EVERY
+    fetch failed (so a total outage never publishes an empty file over a good
+    one)."""
+    if now_utc is None:
+        now_utc = datetime.now(tz=timezone.utc)
+    out: dict = {"built": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"), "v": INTRA_VERSION}
+    any_ok = False
+    first = True
+    for key, interval, range_ in INTRA_SPECS:
+        bucket: dict[str, list[list]] = {}
+        for sym in universe:
+            if not first:
+                time.sleep(INTRA_SLEEP_SEC)
+            first = False
+            fetch_sym = (aliases or {}).get(sym, sym)
+            # includePrePost (2026-08-18, Zach: "charts aren't showing
+            # premarket pricing"): without it Yahoo serves RTH bars only, so
+            # the 15m view opened mornings showing nothing past yesterday's
+            # close. Extended-hours bars carry real volume; the page dims them
+            # so pre/post reads distinctly from the regular session.
+            url = (YAHOO_CHART_URL.format(sym=urllib.parse.quote(fetch_sym, safe=""))
+                   + f"?range={range_}&interval={interval}&includePrePost=true")
+            try:
+                obj = json.loads(_http_get(url, {"User-Agent": UA}, _get=_get))
+            except Exception as e:
+                log(f"intraday skip {sym} {interval}: fetch failed ({type(e).__name__})")
+                continue
+            rows = _extract_yahoo_ohlcv_ts(obj)
+            if not rows:
+                log(f"intraday skip {sym} {interval}: no usable series")
+                continue
+            bucket[sym] = rows[-INTRA_MAX[key]:]
+            any_ok = True
+        out[key] = bucket
+    return out if any_ok else None
 
 
 # ── Tape symbols (added 2026-08-17) ─────────────────────────────────────────
@@ -2091,6 +2188,8 @@ def load_context_cache() -> dict:
         # file through, so an unlisted key survives only until the next cycle
         # and the desk's Fed card would blink out between hourly refreshes.
         "fed_odds": raw.get("fed_odds") if isinstance(raw.get("fed_odds"), dict) else None,
+        # intraday bars gate (2026-08-18) — see build_intraday_bars
+        "intraday_built_at": raw.get("intraday_built_at") if isinstance(raw.get("intraday_built_at"), str) else None,
     }
 
 
@@ -2228,6 +2327,23 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
                        for t, q in quotes.items()}
         fund_payload = build_fund_universe(pinned, session_date, earn_ts_map=earn_ts_map, _get=_get)
 
+    # ── intraday bars rebuild (own gate — see build_intraday_bars) ────────
+    intraday_payload = None
+    _intra_at = cache.get("intraday_built_at")
+    _intra_stale = True
+    if isinstance(_intra_at, str):
+        try:
+            _prev = datetime.strptime(_intra_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            _intra_stale = (now_utc - _prev).total_seconds() >= INTRA_STALE_SEC
+        except Exception:
+            _intra_stale = True
+    if _intra_stale:
+        intra_universe = pinned + [k for k in TAPE_BARS if k not in pinned]
+        intraday_payload = build_intraday_bars(intra_universe, _get=_get,
+                                               aliases=TAPE_BARS, now_utc=now_utc)
+        if intraday_payload is not None:
+            cache["intraday_built_at"] = intraday_payload["built"]
+
     save_context_cache(cache)
 
     fields: dict = {}
@@ -2246,4 +2362,4 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
     if isinstance(cache.get("context_fetched_at"), str):
         fields["context_updated_at"] = cache["context_fetched_at"]
 
-    return fields, bars_payload, fund_payload
+    return fields, bars_payload, fund_payload, intraday_payload
