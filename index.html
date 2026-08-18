@@ -196,6 +196,10 @@ section.closed .sb{display:none}
 /* data-feed failure banner */
 .databanner{padding:6px 16px;border-bottom:1px solid var(--edge);background:var(--dnbg);color:var(--dn);font-size:11.5px}
 .databanner[hidden]{display:none}
+/* group eyebrows: FLOW BOARDS vs CONTEXT (2026-08-18) */
+.eyebrow{padding:12px 14px 2px;font-size:9px;letter-spacing:.16em;color:var(--ink3);font-weight:700;text-transform:uppercase;border-bottom:1px solid var(--edge2)}
+/* mobile watchlist toggle — hidden on desktop, a full-width bar on phones */
+.wltoggle{display:none}
 
 /* ============ tables ============ */
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -349,13 +353,28 @@ footer b{color:var(--ink2)}
 
 /* ============ responsive ============ */
 @media (max-width:1240px){ .cols{grid-template-columns:224px minmax(0,1fr)} .rr{grid-column:1/3;border-left:none;border-top:1px solid var(--edge)} .rr .inner{columns:2;column-gap:28px} }
+/* Multicolumn band (900–1240px): keep catalyst rows, news rows and section
+   headers from fracturing across the column gap. */
+.rr .inner .ct,.rr .inner .nw,.rr .inner .sh,.rr .inner .cg{break-inside:avoid}
 @media (max-width:900px){
   .rail{flex-wrap:wrap;row-gap:6px}
   .rail .grow{display:none}
   .kbtn{margin-left:auto}
   .cols{grid-template-columns:1fr}
-  .wl{border-right:none}
+  /* Mobile reading order (2026-08-18): the day's takeaway first. DOM order put
+     the ~50-row watchlist rail on top, so the Morning Brief verdict — the one
+     line the page exists for — sat ~1,800px below the fold on a phone. */
+  .mid{order:1}
+  .rr{order:2}
+  .wl{order:3}
+  .wl{border-right:none;border-top:1px solid var(--edge)}
   .wl .wrs{display:grid;grid-template-columns:1fr 1fr;column-gap:8px}
+  /* Group headers and the sort strip are grid CHILDREN here — without an
+     explicit span they became half-width cells sitting beside ticker rows. */
+  .wl .wrs .wg,.wl .wrs .wlsort{grid-column:1/-1}
+  /* Watchlist rows collapse behind a toggle on phones (default collapsed) */
+  .wltoggle{display:block;width:100%;text-align:left;padding:10px 14px;font-size:10px;letter-spacing:.13em;color:var(--ink2);font-weight:700;text-transform:uppercase;border-bottom:1px solid var(--edge2)}
+  .wl.collapsed .wrs,.wl.collapsed .wlnote{display:none}
   /* Bug fix (present in the approved prototype too): .rr keeps the 1240px
      breakpoint's grid-column:1/3 span with no explicit line 3 in this single-
      column grid, so the browser silently adds an implicit second column to
@@ -371,6 +390,12 @@ footer b{color:var(--ink2)}
 }
 @media (max-width:640px){
   .wl .wrs{grid-template-columns:1fr}
+  /* The horizontal-scroll tape showed ~2.6 of 8 tiles at 390px — VIX and the
+     10-year were simply invisible. A 4×2 grid shows everything, no gesture. */
+  .tape{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow-x:visible}
+  .tp{min-width:0;padding:7px 8px 5px}
+  .tp:nth-child(n+5){border-top:1px solid var(--edge2)}
+  .tp .p{font-size:12.5px}
   .t-orders th:nth-child(5),.t-orders td:nth-child(5),.t-orders th:nth-child(6),.t-orders td:nth-child(6),
   .t-sector th:nth-child(4),.t-sector td:nth-child(4),.t-sector th:nth-child(6),.t-sector td:nth-child(6),
   /* t-conv is 6 columns since the C/P + Tilt demotion (2026-08-18): hide RVOL
@@ -413,11 +438,17 @@ footer b{color:var(--ink2)}
 
   <div class="cols">
     <!-- ======= watchlist rail ======= -->
-    <aside class="wl">
+    <!-- Order (2026-08-18): act-on-this first. Position Guard (the only
+         element that can say "do something today" — RAISE nags) and the
+         movers/shopping-list box sit ABOVE the ~50 ticker rows instead of
+         buried beneath them. On phones the row list also collapses behind a
+         toggle — it was pure scroll tax between Zach and the brief. -->
+    <aside class="wl" id="wlrail">
+      <div class="alertbox" id="positions"></div>
+      <div class="alertbox" id="alerts"></div>
+      <button class="wltoggle" id="wltoggle">watchlist ▸</button>
       <div class="wrs" id="wl"></div>
       <div class="wlnote">leveraged wrappers included by rule (2026-08-15) · WTI here is W&amp;T Offshore, the oil producer — crude itself is the WTI tile in the tape</div>
-      <div class="alertbox" id="alerts"></div>
-      <div class="alertbox" id="positions"></div>
     </aside>
 
     <!-- ======= middle ======= -->
@@ -427,10 +458,12 @@ footer b{color:var(--ink2)}
         <div class="sb brief" id="briefbody"></div>
       </section>
 
-      <section id="s-sector">
-        <div class="sh" data-collapse="s-sector"><span class="car">▼</span><h2>Sector rotation — week vs SPY</h2><span class="st">click headers to sort · flows: own capture 1w, vendor 1m</span></div>
-        <div class="sb xwrap" id="sector"></div>
-      </section>
+      <!-- The two boards ARE the product; the three tables after them are
+           backdrop. The eyebrows make that legible at a glance, and the
+           context tables open collapsed by default (2026-08-18) — the footer
+           itself calls sector/ETF flows "context, never a signal", yet sector
+           rotation used to sit between the verdict and the primary board. -->
+      <div class="eyebrow">Flow boards — the signal</div>
 
       <section id="s-conv">
         <div class="sh" data-collapse="s-conv"><span class="car">▼</span><h2>Conviction — 0–7 day flow</h2><span class="st" id="convstat"></span></div>
@@ -442,6 +475,13 @@ footer b{color:var(--ink2)}
         <div class="sb xwrap" id="swing"></div>
       </section>
 
+      <div class="eyebrow">Context — backdrop, never a signal</div>
+
+      <section id="s-sector">
+        <div class="sh" data-collapse="s-sector"><span class="car">▼</span><h2>Sector rotation — week vs SPY</h2><span class="st">click headers to sort · flows: own capture 1w, vendor 1m</span></div>
+        <div class="sb xwrap" id="sector"></div>
+      </section>
+
       <section id="s-orders">
         <div class="sh" data-collapse="s-orders"><span class="car">▼</span><h2>Biggest option dollars today</h2><span class="st" id="ordersstat">day totals per contract — not single orders</span></div>
         <div class="sb xwrap" id="orders"></div>
@@ -451,15 +491,6 @@ footer b{color:var(--ink2)}
         <div class="sh" data-collapse="s-etf"><span class="car">▼</span><h2>Semi ETF flows</h2><span class="st" id="etfstat">one reading per session</span></div>
         <div class="sb xwrap" id="etf"></div>
       </section>
-
-      <footer>
-        <b>Honesty box</b> — options data is 15-minute-delayed CBOE; prices are live TradingView. Net flow is premium
-        changing hands; free data can't see buyer vs seller. FLOW % describes what traded today, not what happens next.
-        Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
-        Nothing here is financial advice.<br>
-        Freshness: prices 30s · flow boards ~7 min (8:00–15:20 CT) · brief daily · catalysts hourly.
-        Position Guard data is stored only as passphrase-encrypted ciphertext — public visitors cannot read it without the passphrase.
-      </footer>
     </main>
 
     <!-- ======= right rail ======= -->
@@ -479,6 +510,18 @@ footer b{color:var(--ink2)}
       </div>
     </aside>
   </div>
+
+  <!-- Footer lives OUTSIDE the three-column grid (2026-08-18): inside <main>
+       it rendered mid-page on phones — after the ETF card and BEFORE
+       catalysts/news — and read as the end of the page. -->
+  <footer>
+    <b>Honesty box</b> — options data is 15-minute-delayed CBOE; prices are live TradingView. Net flow is premium
+    changing hands; free data can't see buyer vs seller. FLOW % describes what traded today, not what happens next.
+    Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
+    Nothing here is financial advice.<br>
+    Freshness: prices 30s · flow boards ~7 min (8:00–15:20 CT) · brief daily · catalysts hourly.
+    Position Guard data is stored only as passphrase-encrypted ciphertext — public visitors cannot read it without the passphrase.
+  </footer>
 </div>
 
 <!-- drawer / palette / tooltip -->
@@ -716,7 +759,7 @@ var DYNAMIC_TV = {};    // ticker -> tv_symbol (from this cycle's board cards; a
 var BARS_CACHE = null;  // null = not yet fetched; {built,bars:{}} once attempted (lazy, on first drawer open)
 var tvPollFailed = false;
 var lastPriceUpdateTs = null;
-var PG = { unlocked:false, positions:null };  // Position Guard state
+var PG = { unlocked:false, positions:null, expanded:false };  // Position Guard state
 
 function rebuildDynamicTv(data){
   DYNAMIC_TV = {};
@@ -1469,6 +1512,24 @@ function renderPositions(){
     return;
   }
   var P = PG.positions || {};
+  // Quiet-when-nothing-to-do (2026-08-18): with no RAISE nag pending, the
+  // unlocked panel folds to one line — the full block earns its space only
+  // when something needs doing (or on request).
+  var anyNag = Object.keys(P).some(function(sym){
+    var p = P[sym];
+    if(!p || p.kind!=="trade") return false;
+    var lq = liveBySym(sym);
+    return positionTradeView(p, lq && lq.px!=null ? lq.px : null).nag;
+  });
+  var nPos = Object.keys(P).length;
+  if(!anyNag && !PG.expanded && nPos>0){
+    box.innerHTML = '<b>POSITION GUARD · UNLOCKED</b>'
+      + '<div>'+nPos+' position'+(nPos===1?"":"s")+' · <span class="u">stops OK — nothing needs doing</span>'
+      + ' <button id="pgexpand" style="text-decoration:underline;color:var(--acc);font-size:10.5px">details ▸</button></div>';
+    var ex = document.getElementById("pgexpand");
+    if(ex) ex.addEventListener("click", function(e){ e.stopPropagation(); PG.expanded = true; renderPositions(); });
+    return;
+  }
   var rows = [];
   Object.keys(P).forEach(function(sym){
     var p = P[sym];
@@ -1481,7 +1542,10 @@ function renderPositions(){
     } else if(p.kind === "trade"){
       var livePx = liveBySym(sym) && liveBySym(sym).px!=null ? liveBySym(sym).px : null;
       var v = positionTradeView(p, livePx);
-      var plStr = v.pl!=null ? fm1(v.pl)+"%" : "—";
+      // Dollars next to percent — "−1.8%" and "−$740" are different sentences
+      // to a person deciding whether to hold.
+      var plDollars = (livePx!=null && p.entry!=null && num(p.sh)!=null) ? (livePx-p.entry)*num(p.sh) : null;
+      var plStr = (v.pl!=null ? fm1(v.pl)+"%" : "—") + (plDollars!=null ? (" · "+fmDollarsSigned(plDollars)) : "");
       rows.push('<div class="kvrow" data-sym="'+esc(sym)+'" style="cursor:pointer"><span><b style="text-align:left">'+esc(sym)+'</b> <span class="m">'+(p.sh!=null?p.sh:"—")+' sh @ '+(p.entry!=null?p.entry.toFixed(2):"—")+'</span></span><b class="'+sign(v.pl)+'">'+plStr+'</b></div>');
       if(v.nag){
         rows.push('<div class="kvrow"><span data-tip="'+esc(TIPS.stop_resting)+'">resting stop '+(p.stop!=null?p.stop.toFixed(2):"—")+'</span><b class="d" data-tip="'+esc(TIPS.raise_nag)+'">RAISE → '+(p.rec!=null?p.rec.toFixed(2):"—")+'</b></div>');
@@ -1494,9 +1558,13 @@ function renderPositions(){
     }
   });
   box.innerHTML = '<b>POSITION GUARD · PRIVATE LAYER (UNLOCKED)</b>'+rows.join("")
-    + '<div class="note" style="margin-top:6px">Stops are trail math on trades only; levels are levels, not instructions. <button id="pglockbtn" style="text-decoration:underline;color:var(--ink3)">lock</button></div>';
+    + '<div class="note" style="margin-top:6px">Stops are trail math on trades only; levels are levels, not instructions.'
+    + (!anyNag && nPos>0 ? ' <button id="pgfold" style="text-decoration:underline;color:var(--ink3)">fold</button>' : '')
+    + ' <button id="pglockbtn" style="text-decoration:underline;color:var(--ink3)">lock</button></div>';
   var lockBtn = document.getElementById("pglockbtn");
   if(lockBtn) lockBtn.addEventListener("click", function(e){ e.stopPropagation(); lockPositions(); });
+  var foldBtn = document.getElementById("pgfold");
+  if(foldBtn) foldBtn.addEventListener("click", function(e){ e.stopPropagation(); PG.expanded = false; renderPositions(); });
 }
 
 /* =================== sortable table helper =================== */
@@ -1958,7 +2026,7 @@ function renderCatFilters(){
   var kinds = [["all","All kinds"],["econ","Econ"],["earnings","Earnings"],["memory","Memory"],["market","OpEx"]];
   $("#catfilters").innerHTML = kinds.map(function(k){
     return '<button class="fbtn" data-kind="'+k[0]+'" aria-pressed="'+(catKind===k[0])+'">'+k[1]+'</button>';
-  }).join("") + '<button class="fbtn" id="fall" aria-pressed="'+catShowAll+'" data-tip="Default: HIGH-importance econ, any earnings/memory event on the desk\'s tickers, and anchors (FOMC, CPI, each name\'s next earnings). All also shows MEDIUM econ releases.">All</button>';
+  }).join("") + '<button class="fbtn" id="fall" aria-pressed="'+catShowAll+'" data-tip="Default: HIGH-importance econ, any earnings/memory event on the desk\'s tickers, and anchors (FOMC, CPI, each name\'s next earnings). This adds MEDIUM-importance econ releases on top.">+ med econ</button>';
   $$("#catfilters [data-kind]").forEach(function(b){ b.addEventListener("click", function(){ catKind=b.dataset.kind; renderCatFilters(); renderCats(); }); });
   document.getElementById("fall").addEventListener("click", function(){ catShowAll=!catShowAll; renderCatFilters(); renderCats(); });
 }
@@ -2730,7 +2798,8 @@ function drawerPositionBlock(sym){
   }
   var q = liveBySym(sym); var livePx = q && q.px!=null ? q.px : null;
   var v = positionTradeView(P, livePx);
-  var plStr = v.pl!=null ? fm1(v.pl)+"%" : "—";
+  var plD = (livePx!=null && P.entry!=null && num(P.sh)!=null) ? (livePx-P.entry)*num(P.sh) : null;
+  var plStr = (v.pl!=null ? fm1(v.pl)+"%" : "—") + (plD!=null ? (" · "+fmDollarsSigned(plD)) : "");
   var stopLine = v.nag
     ? ('<div class="kvrow"><span data-tip="'+esc(TIPS.stop_rec)+'">Recommended stop</span><b class="d" data-tip="'+esc(TIPS.raise_nag)+'">RAISE → '+(P.rec!=null?P.rec.toFixed(2):"—")+(v.dist!=null?(' ('+v.dist.toFixed(1)+'% below)'):'')+'</b></div>')
     : ('<div class="kvrow"><span data-tip="'+esc(TIPS.stop_rec)+'">Recommended stop</span><b class="m">'+(P.rec!=null?P.rec.toFixed(2):"—")+'</b></div>');
@@ -3042,7 +3111,31 @@ $$(".sh").forEach(function(sh){
     store("desk."+sh.dataset.collapse, sec.classList.contains("closed")?"1":"0");
   });
 });
-$$("section[id^=s-]").forEach(function(s){ if(read("desk."+s.id)==="1") s.classList.add("closed"); });
+// Context tables (sector / big orders / ETF flows) open COLLAPSED by default
+// (2026-08-18) — they are backdrop, and the collapse state is still one click
+// and persisted either way. A stored "0" (user opened it) wins.
+var DEFAULT_CLOSED = {"s-sector":true, "s-orders":true, "s-etf":true};
+$$("section[id^=s-]").forEach(function(s){
+  var v = read("desk."+s.id);
+  if(v==="1" || (v===null && DEFAULT_CLOSED[s.id])) s.classList.add("closed");
+});
+
+// Mobile watchlist toggle: the ~50 rows default to collapsed on phones (the
+// CSS only applies <=900px, so the class is inert on desktop).
+(function(){
+  var rail = document.getElementById("wlrail");
+  var btn = document.getElementById("wltoggle");
+  if(!rail || !btn) return;
+  var n = 0; RAIL_GROUPS.forEach(function(g){ n += g.syms.length; });
+  function label(){ btn.textContent = "watchlist — "+n+" names "+(rail.classList.contains("collapsed")?"▸":"▾"); }
+  if(read("desk.wl")!=="0") rail.classList.add("collapsed");
+  label();
+  btn.addEventListener("click", function(){
+    rail.classList.toggle("collapsed");
+    store("desk.wl", rail.classList.contains("collapsed")?"1":"0");
+    label();
+  });
+})();
 
 document.getElementById("theme").addEventListener("click", function(){
   var r = document.documentElement, cur = r.dataset.theme;
