@@ -193,6 +193,9 @@ section.closed .sb{display:none}
 /* board threshold cut line + show-all toggle */
 .boardcut{margin-top:8px;font-size:10.5px;color:var(--ink3)}
 .boardcut button{color:var(--acc);font-size:10.5px;text-decoration:underline;padding:0}
+/* data-feed failure banner */
+.databanner{padding:6px 16px;border-bottom:1px solid var(--edge);background:var(--dnbg);color:var(--dn);font-size:11.5px}
+.databanner[hidden]{display:none}
 
 /* ============ tables ============ */
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -400,6 +403,10 @@ footer b{color:var(--ink2)}
     <span class="m" id="focname"></span>
     <button id="focclear">clear ×</button>
   </div>
+  <!-- data-feed failure banner: a failed data.json load used to be invisible —
+       the page kept "Loading…" forever under a CLOSED lamp and read as a quiet
+       market instead of a broken one. -->
+  <div class="databanner" id="databanner" hidden></div>
 
   <!-- ======= tape ======= -->
   <div class="tape tn" id="tape" aria-label="Index and macro strip"></div>
@@ -668,15 +675,15 @@ var TIPS = {
   "tip-cpratio": "Call option volume divided by put option volume today, for 0-7 day options only. Above 1x means more call-side activity.",
   "tip-flowpct": "The premium-weighted put/call split for 0-7 day options — of every dollar of option premium traded today on strikes NEAR the current price (within 20% either way), the share that went to the busier side. Shown as '73% PUT' or '69% CALL'. C/P counts contracts; this counts dollars, and the two disagree when one side's options are much more expensive. Why only near-the-money: an option deep in the money costs almost exactly what it's already worth, so a few of those contracts carry enormous 'premium' without being a bet on anything. Shows a dash when nothing traded near the money. Display only — it doesn't move the score.",
   "tip-tilt": "Aggressor tilt: each refresh, contracts that traded are checked against their bid/ask — trades near the ask count as bought, near the bid as sold. Calls bought + puts sold = bullish premium; calls sold + puts bought = bearish. +100% = everything classified leaned bullish. This samples one trade per contract per refresh (~7 min) — a rough proxy for who's initiating, not the full tape. Shows 'sampling' until enough trades classify.",
-  "tip-score-conviction": "0-100 score, six parts: RVOL 25, momentum 20, flow magnitude 25, call/put extremity 15, volume-vs-OI 10, contract concentration 5. Then the aggressor tilt nudges it ±5 if the sampled buy/sell lean agrees or disagrees. Higher = stronger signal, not a guarantee.",
-  "tip-score-swing": "0-100 score: persistence 35, 5-day flow magnitude 20, OI build 15, trend alignment 15, IV rank 10 (inverted — cheap vol scores higher), call/put skew 5. Then OI-confirm nudges it +5 (OPENING) or -10 (CLOSING) when yesterday's side matches today's direction. Higher = stronger signal, not a guarantee.",
+  "tip-score-conviction": "0-100 score, six parts: RVOL 25, momentum 20 (15 for the size of today's move, +5 only when the move is still running the way it opened), flow magnitude 25 (20 for size, +5 only when the flow's direction agrees with the price move), call/put extremity 15, volume-vs-OI 10, contract concentration 5. Then the aggressor tilt nudges the total ±5 when the sampled buy/sell lean agrees or disagrees (needs |tilt| ≥ 0.30 on $100K+ classified premium). Note the two +5 agreement bonuses reward flow CONFIRMING a move already underway — a chase lean is built into the number. It measures how loud and unusual today is; it is not a prediction, and no version of it has been backtested.",
+  "tip-score-swing": "0-100 score: persistence 35, 5-day flow magnitude 20, OI build 15, trend alignment 15 (a MIXED trend earns 7, an opposing trend 0), IV rank 10 (inverted — cheap vol scores higher; while history is still collecting it earns a neutral 5), call/put skew 5. Then OI-confirm nudges it +5 (OPENING) or -10 (CLOSING) when yesterday's side matches today's direction. Higher = stronger signal, not a guarantee — no version of this score has been backtested.",
   "tip-firing-badge": "Score is 80+, or this ticker's flow has clearly sped up since the last refresh.",
   "tip-persist": "How many of the last 5 trading days this name's options flow leaned the same direction (bullish or bearish).",
   "tip-flow5d": "Total net options premium (calls minus puts) added up over the last up-to-5 trading sessions.",
   "tip-flow5dpct": "The same 5-day net flow expressed as a percentage of all option premium (calls + puts) that traded over those sessions — i.e. how one-sided the flow was. +100% = every dollar leaned bullish, -100% = all bearish, 0% = evenly split.",
   "tip-oiconfirm": "Did yesterday's 2wk-6mo flow OPEN new positions or close them? OPENING = open interest grew by at least 25% of yesterday's volume on the flow's side (positions being held — conviction). CLOSING = it shrank that much (unwinding). CHURN = day-traded or rolled. Needs 2 days of data and real volume to show.",
   "tip-trend": "Whether the stock price is above its 20- and 50-day moving averages (UP), below both (DOWN), or split between them (MIXED).",
-  "tip-ivrank": "Where today's option prices (implied volatility) sit versus this stock's own past year of history. High = options are relatively expensive right now. Needs 20+ sessions of history to calculate; until then it shows the raw IV instead.",
+  "tip-ivrank": "Where today's option prices (implied volatility) sit versus this stock's own recent history — up to the last 60 trading sessions (about 3 months), not a full year. High = options are relatively expensive right now. Needs 20+ sessions of history to calculate; until then the cell shows a dash with the raw IV in its tooltip.",
   "tip-suggested": "The highest-premium contract with a delta between 0.30 and 0.60, expiring 2 weeks to 6 months out — a middle-of-the-road strike, not a lottery ticket.",
   "tip-entry-ref": "Entry reference = this contract's last traded price — 15-minute-delayed, and on a thin contract possibly hours old. Check the live bid/ask before treating it as a fillable price.",
   "tip-stop-ref": "Stop reference = 30% below the entry price — a fixed constant, not tuned to this name's volatility. A reference level, never a recommendation; real stops on share positions come from the trail math (Position Guard).",
@@ -944,11 +951,26 @@ function normalizePositions(payload){
 }
 
 function isStaleBrief(data){ return !!(data && data.brief && data.brief.stale); }
+// Staleness only means something while the loop is supposed to be publishing
+// (it runs 08:00–15:20 CT). Ungated, the amber badge fired on every board all
+// evening, all night, and all weekend — normal, correct operation — which
+// trains the reader to ignore it on the one Tuesday morning it matters.
+// Outside the live session the per-section "as of" stamps carry the age.
+function staleWindowActive(){
+  var s = priceSessionNow();
+  if(s==="open") return true;
+  // The loop wakes at 08:00 CT, half an hour before the open — inside that
+  // slice a fresh read is genuinely expected. Earlier pre-market it isn't
+  // (the newest data is legitimately yesterday's), so no badge.
+  return s==="premarket" && ctMinutesOfDay(new Date()) >= 8*60 + 15;
+}
 function isStaleFlow(data){
+  if(!staleWindowActive()) return false;
   var t = data && Date.parse(data.generated_at);
   return isFinite(t) && (Date.now()-t) > FLOW_STALE_MS;
 }
 function isStaleContext(data){
+  if(!staleWindowActive()) return false;
   var t = data && Date.parse(data.context_updated_at);
   return isFinite(t) && (Date.now()-t) > CONTEXT_STALE_MS;
 }
@@ -974,12 +996,29 @@ function staleBadgeHTML(dateLabel){
 /* =================== data fetch =================== */
 function cacheBust(url){ return url + (url.indexOf("?")===-1?"?":"&") + "t=" + Date.now(); }
 
+// Failure is a rendered state, not a silent one: failures count up, retries
+// back off (30s doubling to a 5-minute cap), and the banner says whether the
+// page is showing a last good read or nothing at all.
+var FETCH_STATE = { failures:0, lastOkTs:null, backoffUntil:0 };
+function renderDataBanner(){
+  var el = document.getElementById("databanner");
+  if(!el) return;
+  if(FETCH_STATE.failures===0){ el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = STATE.data
+    ? ("Can’t reach data.json — showing the last good read"
+       + (FETCH_STATE.lastOkTs ? (" from "+ctTimeShort(new Date(FETCH_STATE.lastOkTs).toISOString())+" CT") : "")
+       + ". Retrying with backoff; live prices keep updating separately.")
+    : "Can’t load data.json — nothing to show yet. Retrying with backoff (GitHub or the network may be down; the live price strip still works).";
+}
 function fetchData(){
   return fetch(cacheBust(DATA_URL), {cache:"no-store"})
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
     .then(function(data){
       if(!data || typeof data !== "object") throw new Error("bad payload");
       STATE.data = data;
+      FETCH_STATE.failures = 0; FETCH_STATE.lastOkTs = Date.now(); FETCH_STATE.backoffUntil = 0;
+      renderDataBanner();
       normalizeBrief(STATE.data);
       rebuildDynamicTv(data);
       // Stable per-row ids for the modal's catalyst diamonds/list to jump to
@@ -988,7 +1027,18 @@ function fetchData(){
       renderAll(data);
       return data;
     })
-    .catch(function(err){ return null; });
+    .catch(function(err){
+      FETCH_STATE.failures++;
+      FETCH_STATE.backoffUntil = Date.now() + Math.min(5*60e3, 30e3 * Math.pow(2, FETCH_STATE.failures-1));
+      renderDataBanner();
+      if(!STATE.data){
+        ["conv","swing","orders","sector","cats","news"].forEach(function(id){
+          var el = document.getElementById(id);
+          if(el) el.innerHTML = '<div class="boardmsg">data.json unreachable — retrying automatically.</div>';
+        });
+      }
+      return null;
+    });
 }
 
 function ensureBars(){
@@ -1123,7 +1173,7 @@ function pollTvPrices(){
       refreshLiveUI();
       return true;
     })
-    .catch(function(){ tvPollFailed = true; return false; });
+    .catch(function(){ tvPollFailed = true; updatePricesTimestamp(); return false; });
 }
 // Global scanner for VIX/US10Y/crude/DXY. Fails soft: any error/CORS failure
 // just hides those four tiles, it never blocks the rest of the page.
@@ -1342,7 +1392,10 @@ function decryptWithKeyBytes(keyBytes, blob){
 function tryUnlock(passphrase, remember){
   var blob = STATE.data && STATE.data.desk_private;
   if(!blob) return Promise.resolve(false);
-  return deriveKeyBits(passphrase, blob.salt, blob.iter)
+  // Clamp the published iteration count: a corrupted blob carrying 3.1e9
+  // would otherwise hard-lock the main thread inside PBKDF2 on unlock.
+  var iter = Math.min(2000000, Math.max(10000, num(blob.iter) || 310000));
+  return deriveKeyBits(passphrase, blob.salt, iter)
     .then(function(keyBytes){
       return decryptWithKeyBytes(keyBytes, blob).then(function(positions){
         PG.unlocked = true; PG.positions = normalizePositions(positions);
@@ -1451,18 +1504,25 @@ function renderPositions(){
 // sort redraws (draw() rewrites el.innerHTML wholesale, which used to wipe the
 // big-orders cap disclosure on the first header click). wire() re-attaches its
 // listeners after every draw.
+// Sort choice survives the 30s live-poll re-render: refreshLiveUI rebuilds
+// each board via a fresh table() call, and closure-held key/dir reset to the
+// default every time — sort by "Net flow", wait one poll, and you were back
+// on "Score". State now lives per-board (keyed by cls) across rebuilds.
+var SORT_STATE = {};
 function table(el, cls, cols, rows, rowHTML, defaultKey, foot){
-  var key=defaultKey, dir=-1;
+  var st = SORT_STATE[cls] || (SORT_STATE[cls] = {key:defaultKey, dir:-1});
+  // A remembered key may no longer exist after a column change — fall back.
+  if(!cols.some(function(c){ return c.key===st.key; })){ st.key = defaultKey; st.dir = -1; }
   function draw(){
-    var sorted = rows.slice().sort(function(a,b){ var va=a[key], vb=b[key]; return (va>vb?1:va<vb?-1:0)*dir; });
+    var sorted = rows.slice().sort(function(a,b){ var va=a[st.key], vb=b[st.key]; return (va>vb?1:va<vb?-1:0)*st.dir; });
     el.innerHTML = '<table class="tn '+cls+'"><thead><tr>'+cols.map(function(c){
-      var lab = (c.tip?('<span data-tip="'+esc(c.tip)+'">'+c.l+'</span>'):c.l) + (c.key===key?('<span class="ar">'+(dir<0?"▼":"▲")+'</span>'):"");
+      var lab = (c.tip?('<span data-tip="'+esc(c.tip)+'">'+c.l+'</span>'):c.l) + (c.key===st.key?('<span class="ar">'+(st.dir<0?"▼":"▲")+'</span>'):"");
       return '<th '+(c.key?('class="sort" data-k="'+c.key+'"'):"")+'>'+lab+'</th>';
     }).join("")+'</tr></thead><tbody>'+sorted.map(rowHTML).join("")+'</tbody></table>'
       + (foot && foot.html ? foot.html : "");
     el.querySelectorAll("th.sort").forEach(function(th){
       th.addEventListener("click", function(){
-        var k=th.dataset.k; if(k===key) dir*=-1; else { key=k; dir=-1; } draw(); applyFocus();
+        var k=th.dataset.k; if(k===st.key) st.dir*=-1; else { st.key=k; st.dir=-1; } draw(); applyFocus();
       });
     });
     if(foot && foot.wire) foot.wire();
@@ -1840,14 +1900,14 @@ function renderETF(data){
   var sec = document.getElementById("s-etf");
   var ef = data && data.etf_flows;
   var funds = (ef && Array.isArray(ef.funds)) ? ef.funds : [];
-  var stale = isStaleFlow(data);
   // The header used to hardcode "yesterday's money" while the payload's
   // flow_session said the dollars moved three sessions ago (every Monday, and
-  // worse after holidays). The label now names the actual session.
+  // worse after holidays). The label now names the actual session — which also
+  // retires the stale badge here: a once-per-session card wearing the flow
+  // boards' 14-minute staleness threshold was amber every day from 15:35 on.
   var sessLab = ef && ef.flow_session ? fmtSessionLabel(ef.flow_session) : null;
   document.getElementById("etfstat").innerHTML =
-    (sessLab ? ("money moved "+esc(sessLab)+" · one reading per session") : "one reading per session")
-    + (stale? staleBadgeHTML(data.generated_at_ct) : '');
+    (sessLab ? ("money moved "+esc(sessLab)+" · one reading per session") : "one reading per session");
   if(!ef || funds.length===0){ sec.hidden = true; return; }
   sec.hidden = false;
   var rows = funds.map(function(f){
@@ -1921,14 +1981,37 @@ function ctYmd(d){
     return {y:+p.slice(0,4), m:+p.slice(5,7), d:+p.slice(8,10)};
   }catch(e){ return {y:d.getUTCFullYear(), m:d.getUTCMonth()+1, d:d.getUTCDate()}; }
 }
+// Whole days from CT-today to the row's date; null when the date is unusable.
+function catDayDiff(c, now){
+  if(!c || typeof c.date!=="string" || c.date.length<10) return null;
+  var t = ctYmd(now || new Date());
+  if(!t) return null;
+  var a = Date.UTC(t.y, t.m-1, t.d);
+  var b = Date.UTC(+c.date.slice(0,4), +c.date.slice(5,7)-1, +c.date.slice(8,10));
+  if(!isFinite(b)) return null;
+  return Math.round((b-a)/86400e3);
+}
 function catDone(c, now){
-  var ms = catWhen(c) - now;
   var hasActual = c.actual!=null && String(c.actual).trim()!=="";
-  return hasActual || ms < -6*3600e3;
+  if(hasActual) return true;
+  // No published time (time_ct null — expected on some memory rows): the row
+  // is done when its DATE has passed, not 6h after an hour nobody published.
+  if(!c.time_ct){ var dd = catDayDiff(c, now); return dd!=null && dd < 0; }
+  return (catWhen(c) - now) < -6*3600e3;
 }
 function countdown(c, now){
+  if(catDone(c, now)) return {txt:"cleared", cls:"", done:true};
+  // Hour-precision countdowns come only from rows that PUBLISHED a time.
+  // ctDateTimeFromWall invents 09:00 for the rest (kept for date-bucketing),
+  // and "in 4h" derived from an invented hour is a fabricated number.
+  if(!c.time_ct){
+    var dd = catDayDiff(c, now);
+    if(dd==null) return {txt:"—", cls:""};
+    if(dd<=0) return {txt:"today", cls:"soon"};
+    if(dd===1) return {txt:"tomorrow", cls:"soon"};
+    return {txt:"in "+dd+"d", cls:""};
+  }
   var ms = catWhen(c) - now;
-  if(catDone(c, now) || ms < -6*3600e3) return {txt:"cleared", cls:"", done:true};
   if(ms < 0) return {txt:"now", cls:"soon"};
   var h = ms/3600e3;
   if(h < 1) return {txt:"in "+Math.max(1,Math.round(ms/60e3))+"m", cls:"soon"};
@@ -2051,8 +2134,15 @@ function renderNews(){
   var list = items;
   if(FOCUS) list = items.filter(function(n){ return n.ticker===FOCUS || !n.ticker; });
   var html = "";
+  // The contract's rotation_banner is a BOOLEAN (true when 2+ scanned titles
+  // carry rotation/derisking language, same keyword list as the brief). The
+  // old reader only handled arrays and strings, so the signal could never
+  // render. Array/string handling stays for older payload shapes.
   var banner = newsObj.rotation_banner;
-  var msgs = Array.isArray(banner) ? banner.filter(Boolean) : (typeof banner==="string" && banner ? [banner] : []);
+  var msgs = Array.isArray(banner) ? banner.filter(Boolean)
+    : (typeof banner==="string" && banner) ? [banner]
+    : (banner===true) ? ["Rotation watch: two or more of this hour's tagged headlines carry rotation or de-risking language — the same keyword scan the Morning Brief runs."]
+    : [];
   ROT_MSGS = msgs;
   if(msgs.length){ html += '<div class="rotbanner" id="rotbanner">'+esc(msgs[rotIdx % msgs.length])+'</div>'; }
   if(rotTimer){ clearInterval(rotTimer); rotTimer=null; }
@@ -2864,18 +2954,42 @@ function refreshLiveUI(){
   // the cheapest correct thing is to re-run the same render calls.
   var data = STATE.data;
   if(!data) return;
+  // The re-render rewrites each board's innerHTML, which zeroed .xwrap's
+  // horizontal scroll every 30s — and on a phone that scroll is the only way
+  // to read the right-hand columns. Capture and restore around the rebuild.
+  var scrolls = {};
+  $$(".xwrap").forEach(function(x){ if(x.id && x.scrollLeft) scrolls[x.id] = x.scrollLeft; });
   renderTape();
   renderWL();
   renderConv(data);
   renderSwing(data);
-  if(FOCUS){ redrawChart(FOCUS); refreshDrawerLive(FOCUS); }
+  $$(".xwrap").forEach(function(x){ if(x.id && scrolls[x.id]) x.scrollLeft = scrolls[x.id]; });
+  if(FOCUS){
+    // Skip the chart rebuild while an earnings popover is open — the rebuild
+    // wiped it mid-read every 30 seconds.
+    var pop = document.getElementById("earnpop");
+    if(!(pop && pop.style.display==="block")) redrawChart(FOCUS);
+    refreshDrawerLive(FOCUS);
+  }
   applyFocus();
   updatePricesTimestamp();
 }
+// Renders the rail clock — and, when the TV price poll is failing, an amber
+// "prices as of" stamp beside it. tvPollFailed/lastPriceUpdateTs were written
+// on every poll and read by nothing: a dead price feed left yesterday's
+// prices on screen next to a live ticking clock, the most trusted numbers on
+// the page silently frozen.
 function updatePricesTimestamp(){
   var el = document.getElementById("clock");
   if(!el) return;
-  el.textContent = ctClockString(new Date());
+  var nowStr = ctClockString(new Date());
+  if(tvPollFailed && lastPriceUpdateTs){
+    el.innerHTML = esc(nowStr)
+      + ' · <span style="color:var(--hi)" data-tip="The live price poll is failing, so every price on the page is frozen at the time shown here. The clock is your device; the prices are not.">prices as of '
+      + esc(ctTimeShort(new Date(lastPriceUpdateTs).toISOString()))+'</span>';
+  } else {
+    el.textContent = nowStr;
+  }
 }
 
 /* =================== command palette =================== */
@@ -2965,7 +3079,20 @@ document.addEventListener("click", function(e){
 /* =================== global events =================== */
 document.addEventListener("click", function(e){
   var row = e.target.closest("[data-sym]");
-  if(row && !e.target.closest("[data-tip]") && !e.target.closest("button") && !e.target.closest("input")){ setFocus(row.dataset.sym); }
+  // `a` excluded (2026-08-18): a headline link sits inside a [data-sym] row,
+  // and clicking it used to open the article AND hijack focus to the drawer.
+  if(row && !e.target.closest("[data-tip]") && !e.target.closest("button") && !e.target.closest("input") && !e.target.closest("a")){ setFocus(row.dataset.sym); }
+});
+// Keyboard activation for the rows that advertise it: rail rows and tape
+// tiles carry role="button" tabindex="0" but had no keydown path — Tab plus
+// Enter did nothing.
+document.addEventListener("keydown", function(e){
+  if(e.key!=="Enter" && e.key!==" ") return;
+  var t = e.target;
+  if(t && t.matches && t.matches('[data-sym][role="button"]')){
+    e.preventDefault();
+    setFocus(t.dataset.sym);
+  }
 });
 document.addEventListener("keydown", function(e){
   if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==="k"){ e.preventDefault(); palOpen(); return; }
@@ -2995,7 +3122,13 @@ document.addEventListener("click", function(e){
 });
 
 /* =================== boot =================== */
-function tick(){ fetchData().then(pollTvPrices); attemptMacroTiles(); }
+// Prices poll every tick regardless; data.json honors the failure backoff
+// (fetchData sets backoffUntil) instead of hammering a 429/outage at full rate.
+function tick(){
+  if(Date.now() >= FETCH_STATE.backoffUntil){ fetchData().then(pollTvPrices); }
+  else { pollTvPrices(); }
+  attemptMacroTiles();
+}
 function start(){
   ["conv","swing","orders","sector","cats","news"].forEach(function(id){
     var el = document.getElementById(id);

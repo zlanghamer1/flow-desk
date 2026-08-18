@@ -920,9 +920,20 @@ BARS_BUILD_SIG = "v3-2y-vol-tape"  # bumped whenever build_bars's OUTPUT SHAPE
                                 # midnight. See build_context.
 
 
-def _extract_yahoo_ohlcv(obj) -> Optional[list[list]]:
+def _extract_yahoo_ohlcv(obj, drop_on_or_after: Optional[date] = None) -> Optional[list[list]]:
     """v8 chart API response -> [[open, high, low, close, volume], ...] rows,
     one per available bar, in the API's own (oldest-first) order.
+
+    drop_on_or_after (added 2026-08-18): drop any bar whose CT calendar date
+    is on or after this date. Yahoo includes TODAY'S IN-PROGRESS bar when the
+    fetch runs mid-session, and the once-daily bars gate lives in a job-local
+    cache — so a mid-session workflow redispatch rebuilt bars WITH today's
+    partial bar, and the page (which always appends its own live synthetic
+    "today" candle) then drew two candles for today, the second opening at
+    today's close, shifting every reconstructed date label by one bar.
+    Callers pass session_date; rows with no usable timestamp are kept (the
+    filter fails open — better an occasional double candle than dropping a
+    year of history to a malformed timestamp array).
 
     A bar missing ANY of open/high/low/close is dropped ENTIRELY rather than
     partially filled — same "never zero-filled, never guessed" convention
@@ -953,12 +964,21 @@ def _extract_yahoo_ohlcv(obj) -> Optional[list[list]]:
     volumes = q.get("volume")
     if not isinstance(volumes, list):
         volumes = []
+    timestamps = result.get("timestamp")
+    if not isinstance(timestamps, list):
+        timestamps = []
     n = min(len(opens), len(highs), len(lows), len(closes))
     out: list[list] = []
     for i in range(n):
         row = (opens[i], highs[i], lows[i], closes[i])
         if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in row):
             continue
+        if drop_on_or_after is not None and i < len(timestamps):
+            ts = timestamps[i]
+            if isinstance(ts, (int, float)) and not isinstance(ts, bool):
+                bar_date = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(TZ_CT).date()
+                if bar_date >= drop_on_or_after:
+                    continue
         vol_raw = volumes[i] if i < len(volumes) else None
         vol = int(vol_raw) if isinstance(vol_raw, (int, float)) and not isinstance(vol_raw, bool) else None
         out.append([float(v) for v in row] + [vol])
@@ -1101,7 +1121,11 @@ def build_bars(universe: list[str], session_date: date,
                     break
                 log(f"WARN {sym}: short-series refetch failed ({type(e).__name__}), keeping best so far")
                 break
-            got = _extract_yahoo_ohlcv(obj)
+            # session_date: never store today's in-progress bar (see
+            # _extract_yahoo_ohlcv's drop_on_or_after note) — the page appends
+            # its own live "today" candle and used to draw two after a
+            # mid-session rebuild.
+            got = _extract_yahoo_ohlcv(obj, drop_on_or_after=session_date)
             if got and (quints is None or len(got) > len(quints)):
                 quints = got
             if quints is not None and len(quints) >= BARS_SHORT_WARN:
