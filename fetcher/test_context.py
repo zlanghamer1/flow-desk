@@ -711,6 +711,7 @@ def test_build_bars_caps_at_504_and_drops_nulls():
 
 def test_hourly_gate_fresh_timestamp_skips_network_and_carries_cache_forward(tmp_path, monkeypatch):
     monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    monkeypatch.setattr(context, "INTRA_SLEEP_SEC", 0)
     now = datetime(2026, 8, 15, 14, 0, 0, tzinfo=timezone.utc)
     cache = {
         "context_fetched_at": "2026-08-15T13:30:00Z",   # 30 min ago -> fresh (<55min)
@@ -726,7 +727,7 @@ def test_hourly_gate_fresh_timestamp_skips_network_and_carries_cache_forward(tmp
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None,
                      "lo52": None, "market_cap": None, "beta": None, "avol": None, "rsi": None}}
-    fields, bars_payload, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=_boom)
+    fields, bars_payload, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=_boom)
     assert bars_payload is None
     assert fund_payload is None   # same gate as bars — both fresh, neither rebuilds
     assert fields["brief"] == {"date": "2026-08-15", "stale": False}
@@ -738,6 +739,7 @@ def test_hourly_gate_fresh_timestamp_skips_network_and_carries_cache_forward(tmp
 
 def test_stale_context_triggers_full_refetch_and_updates_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    monkeypatch.setattr(context, "INTRA_SLEEP_SEC", 0)
     monkeypatch.setenv("VAULT_READ_TOKEN", "tok123")
     now = datetime(2026, 8, 15, 14, 0, 0, tzinfo=timezone.utc)
     # no cache file at all yet -> first cycle of the process -> definitely stale
@@ -768,7 +770,7 @@ def test_stale_context_triggers_full_refetch_and_updates_cache(tmp_path, monkeyp
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": 1.0, "lo52": 1.0,
                      "market_cap": 1.0, "beta": 1.0, "avol": 1.0, "rsi": 50.0}}
-    fields, bars_payload, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
+    fields, bars_payload, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert fields["brief"]["date"] == "2026-08-15" and fields["brief"]["stale"] is False
     assert fields["desk_private"] == {"v": 1, "blob": "abc"}
     assert fields["context_updated_at"] == "2026-08-15T14:00:00Z"
@@ -784,6 +786,7 @@ def test_stale_context_triggers_full_refetch_and_updates_cache(tmp_path, monkeyp
 
 def test_build_context_without_token_still_gets_tv_and_opex_but_not_vault(tmp_path, monkeypatch):
     monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    monkeypatch.setattr(context, "INTRA_SLEEP_SEC", 0)
     monkeypatch.delenv("VAULT_READ_TOKEN", raising=False)
     now = datetime(2026, 8, 15, 14, 0, 0, tzinfo=timezone.utc)
 
@@ -803,7 +806,7 @@ def test_build_context_without_token_still_gets_tv_and_opex_but_not_vault(tmp_pa
         raise AssertionError(f"unexpected URL: {url}")
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None}}
-    fields, _, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
+    fields, _, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert "brief" not in fields
     assert "desk_private" not in fields
     assert "catalysts" in fields
@@ -813,6 +816,7 @@ def test_build_context_without_token_still_gets_tv_and_opex_but_not_vault(tmp_pa
 
 def test_bars_only_gate_rebuilds_bars_without_refetching_context(tmp_path, monkeypatch):
     monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    monkeypatch.setattr(context, "INTRA_SLEEP_SEC", 0)
     now = datetime(2026, 8, 15, 14, 0, 0, tzinfo=timezone.utc)
     cache = {
         "context_fetched_at": "2026-08-15T13:50:00Z",   # 10 min ago -> fresh, no refetch
@@ -837,7 +841,7 @@ def test_bars_only_gate_rebuilds_bars_without_refetching_context(tmp_path, monke
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
                      "market_cap": None, "beta": None, "avol": None, "rsi": None}}
-    fields, bars_payload, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
+    fields, bars_payload, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert bars_payload is not None and bars_payload["built"] == "2026-08-15"
     assert bars_payload["v"] == 3
     assert fields["brief"] == {"date": "2026-08-15", "stale": False}   # carried from cache
@@ -853,6 +857,7 @@ def test_bars_gate_same_day_same_sig_is_cached_no_rebuild(tmp_path, monkeypatch)
     """Both halves of the gate agree today's cache is current -> no rebuild,
     no network at all (the _boom getter would raise on any attempted call)."""
     monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    monkeypatch.setattr(context, "INTRA_SLEEP_SEC", 0)
     now = datetime(2026, 8, 15, 14, 0, 0, tzinfo=timezone.utc)
     cache = {
         "context_fetched_at": "2026-08-15T13:50:00Z",   # fresh -> no context refetch either
@@ -865,7 +870,7 @@ def test_bars_gate_same_day_same_sig_is_cached_no_rebuild(tmp_path, monkeypatch)
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
                      "market_cap": None, "beta": None, "avol": None, "rsi": None}}
-    fields, bars_payload, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=_boom)
+    fields, bars_payload, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=_boom)
     assert bars_payload is None
     assert fund_payload is None
 
@@ -877,6 +882,7 @@ def test_bars_gate_same_day_different_sig_forces_rebuild(tmp_path, monkeypatch):
     signature is stale — the date match ALONE must not be enough to skip the
     rebuild, or this cycle would keep serving the old shape until midnight."""
     monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    monkeypatch.setattr(context, "INTRA_SLEEP_SEC", 0)
     now = datetime(2026, 8, 15, 14, 0, 0, tzinfo=timezone.utc)
     cache = {
         "context_fetched_at": "2026-08-15T13:50:00Z",   # fresh -> context leg still skips
@@ -898,7 +904,7 @@ def test_bars_gate_same_day_different_sig_forces_rebuild(tmp_path, monkeypatch):
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
                      "market_cap": None, "beta": None, "avol": None, "rsi": None}}
-    fields, bars_payload, fund_payload = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
+    fields, bars_payload, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert bars_payload is not None and bars_payload["v"] == context.BARS_VERSION
     assert fund_payload is not None and "MU" in fund_payload
 
@@ -1685,3 +1691,45 @@ def test_econ_blank_labels_normalize_to_none_not_empty_string():
     r = rows[0]
     assert r["unit"] is None and r["scale"] is None
     assert r["period"] is None and r["agency"] is None
+
+
+
+def test_intraday_gate_fresh_timestamp_skips_rebuild(tmp_path, monkeypatch):
+    """intraday_built_at newer than INTRA_STALE_SEC -> build_intraday_bars is
+    not called at all; stale/absent -> it is. The gate is independent of the
+    once-daily bars gate."""
+    from datetime import date, datetime, timezone
+    monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    monkeypatch.setattr(context, "INTRA_SLEEP_SEC", 0)
+    now = datetime(2026, 8, 18, 14, 0, tzinfo=timezone.utc)
+    calls = []
+    monkeypatch.setattr(context, "build_intraday_bars",
+                        lambda *a, **k: calls.append(1) or {"built": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "v": 1, "i15": {}, "i60": {}})
+    def _boom(*a, **k):
+        raise AssertionError("network")
+    quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
+                     "market_cap": None, "beta": None, "avol": None, "rsi": None}}
+    # 1st build: no timestamp in cache -> rebuild fires
+    context.build_context(quotes, ["MU"], date(2026, 8, 18), now, _get=_boom)
+    assert len(calls) == 1
+    # 2nd build 5 minutes later: fresh -> no rebuild
+    now2 = datetime(2026, 8, 18, 14, 5, tzinfo=timezone.utc)
+    context.build_context(quotes, ["MU"], date(2026, 8, 18), now2, _get=_boom)
+    assert len(calls) == 1
+    # 3rd build 30 minutes later: stale -> rebuild fires again
+    now3 = datetime(2026, 8, 18, 14, 35, tzinfo=timezone.utc)
+    context.build_context(quotes, ["MU"], date(2026, 8, 18), now3, _get=_boom)
+    assert len(calls) == 2
+
+
+def test_extract_yahoo_ohlcv_ts_drops_rows_without_timestamps():
+    obj = {"chart": {"result": [{
+        "timestamp": [100, None, 300],
+        "indicators": {"quote": [{
+            "open": [1.0, 2.0, 3.0], "high": [1.5, 2.5, 3.5],
+            "low": [0.5, 1.5, 2.5], "close": [1.2, 2.2, 3.2],
+            "volume": [10, 20, None]}]}}]}}
+    rows = context._extract_yahoo_ohlcv_ts(obj)
+    assert [r[0] for r in rows] == [100, 300]          # ts-less row dropped
+    assert rows[0][1:] == [1.0, 1.5, 0.5, 1.2, 10]
+    assert rows[1][5] is None                          # missing volume kept as None

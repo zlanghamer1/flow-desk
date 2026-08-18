@@ -478,11 +478,24 @@ footer b{color:var(--ink2)}
         <div class="sb brief" id="briefbody"></div>
       </section>
 
-      <!-- The two boards ARE the product; the three tables after them are
-           backdrop. The eyebrows make that legible at a glance, and the
-           context tables open collapsed by default (2026-08-18) — the footer
-           itself calls sector/ETF flows "context, never a signal", yet sector
-           rotation used to sit between the verdict and the primary board. -->
+      <!-- Section order is Zach's ruling (2026-08-18, second that day,
+           superseding the "boards first" ordering from the same morning):
+           sector rotation first, semi ETF flows second, boards after. He is
+           heavily levered into AI semis — where the money is rotating IS the
+           first thing he reads. The tables stay labeled context/backdrop:
+           position, not authority. -->
+      <div class="eyebrow">Where the money is — rotation &amp; semi flows</div>
+
+      <section id="s-sector">
+        <div class="sh" data-collapse="s-sector"><span class="car">▼</span><h2>Sector rotation — week vs SPY</h2><span class="st">click headers to sort · flows: own capture 1w, vendor 1m</span></div>
+        <div class="sb xwrap" id="sector"></div>
+      </section>
+
+      <section id="s-etf">
+        <div class="sh" data-collapse="s-etf"><span class="car">▼</span><h2>Semi ETF flows</h2><span class="st" id="etfstat">one reading per session</span></div>
+        <div class="sb xwrap" id="etf"></div>
+      </section>
+
       <div class="eyebrow">Flow boards — the signal</div>
 
       <section id="s-conv">
@@ -497,20 +510,11 @@ footer b{color:var(--ink2)}
 
       <div class="eyebrow">Context — backdrop, never a signal</div>
 
-      <section id="s-sector">
-        <div class="sh" data-collapse="s-sector"><span class="car">▼</span><h2>Sector rotation — week vs SPY</h2><span class="st">click headers to sort · flows: own capture 1w, vendor 1m</span></div>
-        <div class="sb xwrap" id="sector"></div>
-      </section>
-
       <section id="s-orders">
         <div class="sh" data-collapse="s-orders"><span class="car">▼</span><h2>Biggest option dollars today</h2><span class="st" id="ordersstat">day totals per contract — not single orders</span></div>
         <div class="sb xwrap" id="orders"></div>
       </section>
 
-      <section id="s-etf">
-        <div class="sh" data-collapse="s-etf"><span class="car">▼</span><h2>Semi ETF flows</h2><span class="st" id="etfstat">one reading per session</span></div>
-        <div class="sb xwrap" id="etf"></div>
-      </section>
     </main>
 
     <!-- ======= right rail ======= -->
@@ -568,6 +572,8 @@ var LOCAL_DATA_URL = "./data/data.json";
 var RAW_BARS_URL  = "https://raw.githubusercontent.com/zlanghamer1/flow-desk/data/bars.json";
 var LOCAL_BARS_URL = "./data/bars.json";
 var RAW_FUND_BASE  = "https://raw.githubusercontent.com/zlanghamer1/flow-desk/data/fund/";
+var RAW_INTRA_URL  = "https://raw.githubusercontent.com/zlanghamer1/flow-desk/data/bars_intraday.json";
+var LOCAL_INTRA_URL = "./data/bars_intraday.json";
 var LOCAL_FUND_BASE = "./data/fund/";
 var TV_SCANNER_URL = "https://scanner.tradingview.com/america/scan";
 var TV_GLOBAL_SCANNER_URL = "https://scanner.tradingview.com/global/scan";
@@ -590,6 +596,7 @@ var FLOWPCT_MIN_BASIS = 100000;
 var isLocalHost = (location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "");
 var DATA_URL = isLocalHost ? LOCAL_DATA_URL : RAW_DATA_URL;
 var BARS_URL = isLocalHost ? LOCAL_BARS_URL : RAW_BARS_URL;
+var INTRA_URL = isLocalHost ? LOCAL_INTRA_URL : RAW_INTRA_URL;
 var FUND_BASE = isLocalHost ? LOCAL_FUND_BASE : RAW_FUND_BASE;
 
 /* =================== static universe config =================== */
@@ -1138,6 +1145,18 @@ function ensureBars(){
     .catch(function(){ BARS_CACHE = {bars:{}}; return BARS_CACHE; });
 }
 function barsRaw(sym){ return (BARS_CACHE && BARS_CACHE.bars && BARS_CACHE.bars[sym]) || []; }
+/* bars_intraday.json (2026-08-18): {built, v, i15:{sym:[[t,o,h,l,c,v],...]},
+   i60:{...}} — t epoch seconds. Lazy-fetched on the first intraday tab click;
+   HTTP-cache validated the same way bars.json is. */
+var INTRA_CACHE = null;
+function ensureIntra(){
+  if(INTRA_CACHE) return Promise.resolve(INTRA_CACHE);
+  return fetch(INTRA_URL)
+    .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
+    .then(function(json){ INTRA_CACHE = (json && typeof json==="object") ? json : {}; return INTRA_CACHE; })
+    .catch(function(){ INTRA_CACHE = {}; return INTRA_CACHE; });
+}
+function intraRaw(sym, key){ return (INTRA_CACHE && INTRA_CACHE[key] && INTRA_CACHE[key][sym]) || []; }
 // bars.json v2 rows are [o,h,l,c] quads; v1 rows are plain close numbers. barsOf()
 // keeps returning a flat CLOSES array either way, so every pre-existing caller
 // (seriesFull/statsOf/hotOf/the v1 line-chart fallback) needs no change.
@@ -1748,6 +1767,14 @@ function renderSectorSection(data){
       {l:"$1w flow",key:"flow_1w",tip:TIPS.flows},{l:"$1m flow",key:"flow_1m"},{l:""}
     ], sectors, function(r){
       var rel = num(r.rel)||0;
+      /* IN/OUT = the MONEY's direction (Zach's ruling 2026-08-18): the sign of
+         the week's real flow, matching the $1w column beside it. It used to be
+         the price side (rel vs SPY), which read as a contradiction whenever a
+         sector took in dollars while lagging SPY — Materials +$190M tagged OUT
+         the same morning the semis banner named it the biggest taker. Price
+         rel is the fallback only when the flow reading is missing. */
+      var f1w = num(r.flow_1w);
+      var mtag = f1w!=null ? (f1w>=0?"IN":"OUT") : (r.tag||((rel>=0)?"IN":"OUT"));
       var wpx = Math.round(Math.abs(rel)/mx*56);
       var dim = Math.abs(rel)/mx<0.55 ? "opacity:.4" : "";
       var side = rel>=0 ? ("left:50%;width:"+wpx+"px;background:var(--up)") : ("left:calc(50% - "+wpx+"px);width:"+wpx+"px;background:var(--dn)");
@@ -1755,7 +1782,7 @@ function renderSectorSection(data){
         +'<td><span class="dvg"><em></em><i style="'+side+';'+dim+'"></i></span> <span class="'+sign(r.rel)+'">'+fm1(r.rel)+'</span></td>'
         +'<td class="'+sign(r.m)+'">'+fm1(r.m)+'</td>'
         +'<td class="'+sign(r.flow_1w)+'">'+fmB(r.flow_1w)+'</td><td class="'+sign(r.flow_1m)+'">'+fmB(r.flow_1m)+'</td>'
-        +'<td><span class="pill '+((r.tag||((rel>=0)?"IN":"OUT"))==="IN"?"b":"s")+'">'+esc(r.tag||((rel>=0)?"IN":"OUT"))+'</span></td></tr>';
+        +'<td><span class="pill '+(mtag==="IN"?"b":"s")+'">'+esc(mtag)+'</span></td></tr>';
     }, "rel");
   }
   if(havens.length){
@@ -2325,6 +2352,80 @@ function applyFocus(){
 // rebuild is signature-gated, so a v1 payload can never appear again — the
 // branch was unreachable maintenance surface.
 var TFN2 = {"1M":21,"3M":63,"6M":126,"1Y":252};             // candle-chart timeframes — candles need daily
+/* Bar-interval views (Zach 2026-08-18: "charts need 15m, 1H, 4H, 1D & 1W with
+   their volumes"). 15m/1H come straight from bars_intraday.json; 4H is
+   resampled from the hourly series; 1W from the daily file. 1D keeps the
+   existing chart exactly as it was, window buttons included. */
+var IVS = ["15m","1H","4H","1D","1W"];
+var dIV = "1D";
+var CT_DAY_FMT = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",weekday:"short",month:"numeric",day:"numeric"});
+var CT_TIME_FMT = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",hour:"numeric",minute:"2-digit"});
+var CT_DAYKEY_FMT = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit"});
+function ctDayKey(d){ return CT_DAYKEY_FMT.format(d); }
+function resample4H(rows){
+  // hourly [t,o,h,l,c,v] -> 4H buckets within each CT session day (RTH has ~7
+  // hourly bars, so a day yields a 4-bar and a 3-bar bucket — deliberate: a
+  // bucket never spans the overnight gap).
+  var out=[], cur=null, curKey=null, curCount=0;
+  rows.forEach(function(r){
+    var key = ctDayKey(new Date(r[0]*1000));
+    if(cur===null || key!==curKey || curCount>=4){
+      if(cur) out.push(cur);
+      cur=[r[0],r[1],r[2],r[3],r[4],r[5]]; curKey=key; curCount=1; return;
+    }
+    cur[2]=Math.max(cur[2],r[2]); cur[3]=Math.min(cur[3],r[3]); cur[4]=r[4];
+    if(r[5]!=null) cur[5]=(cur[5]==null?0:cur[5])+r[5];
+    curCount++;
+  });
+  if(cur) out.push(cur);
+  return out;
+}
+function resampleWeekly(quints, dates){
+  // daily [o,h,l,c,(v)] + parallel Date array -> weekly quints + week-start
+  // dates. Week key = the Monday of the bar's UTC week.
+  var out=[], odates=[], cur=null, curKey=null;
+  for(var i=0;i<quints.length;i++){
+    var r=quints[i], d=dates[i];
+    var day=(d.getUTCDay()+6)%7; // Mon=0
+    var mon=new Date(d); mon.setUTCDate(d.getUTCDate()-day);
+    var key=mon.toISOString().slice(0,10);
+    var v=(r.length>=5)?num(r[4]):null;
+    if(cur===null || key!==curKey){
+      if(cur) { out.push(cur.row); odates.push(cur.d); }
+      cur={row:[num(r[0]),num(r[1]),num(r[2]),num(r[3]),v], d:mon}; curKey=key; continue;
+    }
+    cur.row[1]=Math.max(cur.row[1],num(r[1])); cur.row[2]=Math.min(cur.row[2],num(r[2])); cur.row[3]=num(r[3]);
+    if(v!=null) cur.row[4]=(cur.row[4]==null?0:cur.row[4])+v;
+  }
+  if(cur){ out.push(cur.row); odates.push(cur.d); }
+  return {rows:out, dates:odates};
+}
+function intervalDataFor(sym, iv){
+  // -> same shape candleDataFor returns, plus dates + iv (MAs empty: a 20-BAR
+  // average on a 15m chart is not the 20-DAY line the legend promises).
+  var rows, dates;
+  if(iv==="1W"){
+    var full=seriesQuads(sym); if(!full || full.length<4) return null;
+    var endDateStr=(STATE.data && STATE.data.session_date)||(BARS_CACHE && BARS_CACHE.built)||null;
+    var ddates=weekdayDatesEndingAt(full.length, endDateStr);
+    var w=resampleWeekly(full, ddates);
+    rows=w.rows.slice(-104); dates=w.dates.slice(-104);
+  } else {
+    var key = iv==="15m" ? "i15" : "i60";
+    var raw = intraRaw(sym, key); if(!raw || raw.length<2) return null;
+    if(iv==="4H") raw=resample4H(raw);
+    if(iv==="1H") raw=raw.slice(-160);
+    rows=raw.map(function(r){ return [r[1],r[2],r[3],r[4],r[5]]; });
+    dates=raw.map(function(r){ return new Date(r[0]*1000); });
+  }
+  if(rows.length<2) return null;
+  var closes=rows.map(function(r){ return num(r[3]); });
+  var pct=closes.length>=2 && closes[0] ? (closes[closes.length-1]/closes[0]-1)*100 : null;
+  var hasVolume=rows.some(function(r){ var v=(r.length>=5)?num(r[4]):null; return v!=null && v>0; });
+  var empty=rows.map(function(){ return null; });
+  return {slice:rows, m20:empty, m50:empty, m200:empty, pct:pct, n:rows.length,
+          hasVolume:hasVolume, dates:dates, iv:iv};
+}
                                                               // bars, so 1D/1W are dropped (tail-slice note in
                                                               // the wave-2 spec) rather than faked from one point.
 var GTF = ["1M","3M","6M","1Y"];
@@ -2421,9 +2522,10 @@ function volAxisLines(maxVol){
   for(var k=1;k<=3;k++){ var v=step*k; if(v<=maxVol*1.001) lines.push(v); }
   return lines.length ? lines : [step];
 }
-function candleChartSVG(sym, tf, fund){
-  var cd = candleDataFor(sym, tf);
-  if(!cd) return {pct:null, n:0, slice:[], svg:'<div class="note" style="padding:30px 0;text-align:center">no chart history available</div>'};
+function candleChartSVG(sym, tf, fund, iv){
+  var isD = !iv || iv==="1D";
+  var cd = isD ? candleDataFor(sym, tf) : intervalDataFor(sym, iv);
+  if(!cd) return {pct:null, n:0, slice:[], svg:'<div class="note" style="padding:30px 0;text-align:center">no chart history available'+(isD?"":" for this view")+'</div>'};
   var slice=cd.slice, m20=cd.m20, m50=cd.m50, m200=cd.m200, pct=cd.pct, n=cd.n, hasVolume=!!cd.hasVolume;
   // rightPad must clear the widest MA end-label ("200d 194.92" ~= 66px at this
   // font size) plus its x-offset (plotW+6), or it clips against the viewBox
@@ -2447,7 +2549,7 @@ function candleChartSVG(sym, tf, fund){
   var bodyW=Math.max(1, slotW*0.7);
 
   var endDateStr = (STATE.data && STATE.data.session_date) || (BARS_CACHE && BARS_CACHE.built) || null;
-  var dates = weekdayDatesEndingAt(n, endDateStr);
+  var dates = cd.dates || weekdayDatesEndingAt(n, endDateStr);
 
   var axisHtml="";
   for(var g=0; g<=4; g++){
@@ -2455,10 +2557,19 @@ function candleChartSVG(sym, tf, fund){
     axisHtml += '<line x1="0" x2="'+plotW+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="var(--edge)" stroke-width="1" opacity=".5"/>'
       + '<text x="'+(plotW+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9.5" fill="var(--ink3)">'+fmtpx(v)+'</text>';
   }
-  var monthHtml="", lastMonth=-1;
-  for(var i=0;i<n;i++){
-    var mo = dates[i].getUTCMonth();
-    if(mo!==lastMonth){ lastMonth=mo; monthHtml += '<text x="'+X(i).toFixed(1)+'" y="'+(chartBottom+14)+'" font-size="9" fill="var(--ink3)" text-anchor="middle">'+MONTHS[mo]+'</text>'; }
+  var monthHtml="";
+  if(iv==="15m"||iv==="1H"||iv==="4H"){
+    var lastKey=null;
+    for(var i=0;i<n;i++){
+      var k2 = ctDayKey(dates[i]);
+      if(k2!==lastKey){ lastKey=k2; monthHtml += '<text x="'+X(i).toFixed(1)+'" y="'+(chartBottom+14)+'" font-size="9" fill="var(--ink3)" text-anchor="middle">'+CT_DAY_FMT.format(dates[i])+'</text>'; }
+    }
+  } else {
+    var lastMonth=-1;
+    for(var i=0;i<n;i++){
+      var mo = dates[i].getUTCMonth();
+      if(mo!==lastMonth){ lastMonth=mo; monthHtml += '<text x="'+X(i).toFixed(1)+'" y="'+(chartBottom+14)+'" font-size="9" fill="var(--ink3)" text-anchor="middle">'+MONTHS[mo]+'</text>'; }
+    }
   }
   var candleHtml = slice.map(function(r,i){
     var o=num(r[0]), hh=num(r[1]), l=num(r[2]), c=num(r[3]);
@@ -2509,7 +2620,7 @@ function candleChartSVG(sym, tf, fund){
     }
   }
 
-  var earnRows = (fund && Array.isArray(fund.earnings)) ? fund.earnings : [];
+  var earnRows = (isD && fund && Array.isArray(fund.earnings)) ? fund.earnings : [];
   var startDate=dates[0], endDate=dates[n-1], earnHtml="";
   earnRows.forEach(function(er, ei){
     if(!er || !(er.report_date || er.date)) return;
@@ -2523,13 +2634,13 @@ function candleChartSVG(sym, tf, fund){
     earnHtml += '<g class="ebadge" data-etype="past" data-eidx="'+ei+'" transform="translate('+x.toFixed(1)+','+(chartBottom+8)+')">'
       + '<circle r="7" fill="var(--hi)"/><text y="3" text-anchor="middle" font-size="8" font-weight="700" fill="var(--bg)">E</text></g>';
   });
-  if(fund && fund.next_earnings && fund.next_earnings.date){
+  if(isD && fund && fund.next_earnings && fund.next_earnings.date){
     var x2 = plotW-2;
     earnHtml += '<g class="ebadge" data-etype="next" transform="translate('+x2.toFixed(1)+','+(chartBottom+8)+')">'
       + '<circle r="7" fill="none" stroke="var(--hi)" stroke-width="1.4"/><text y="3" text-anchor="middle" font-size="8" font-weight="700" fill="var(--hi)">E</text></g>';
   }
 
-  var catsForSym = (STATE.data && Array.isArray(STATE.data.catalysts)) ? STATE.data.catalysts.filter(function(c){ return c.ticker===sym; }) : [];
+  var catsForSym = (isD && STATE.data && Array.isArray(STATE.data.catalysts)) ? STATE.data.catalysts.filter(function(c){ return c.ticker===sym; }) : [];
   var shown = catsForSym.slice(0,8);
   var gutterX = W-8; // clear of the MA end-labels' own lane (see rightPad note above)
   var catHtml = shown.map(function(c,ci){
@@ -2539,7 +2650,7 @@ function candleChartSVG(sym, tf, fund){
 
   var svg = '<svg viewBox="0 0 '+W+' '+H+'" id="dchart">'
     + axisHtml + monthHtml + maHtml + candleHtml + labelsHtml + volHtml + earnHtml + catHtml + '</svg>';
-  return {svg:svg, pct:pct, slice:slice, dates:dates, n:n, W:W, plotW:plotW};
+  return {svg:svg, pct:pct, slice:slice, dates:dates, n:n, W:W, plotW:plotW, iv:(iv||"1D")};
 }
 
 /* ---- earnings popover ---- */
@@ -2881,9 +2992,8 @@ function openDrawer(sym){
 
   var rangeSec = '<div id="rangesec">'+rangeSecHTML(sym)+'</div>';
 
-  var chartCard = '<div class="dsec"><h3>Price</h3><div class="segrow"><div class="seg" role="group">'
-    + GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(t===dTF)+'">'+t+'</button>'; }).join("")
-    + '</div></div><div class="chart chartbig" id="dchartwrap"><div class="note" style="padding:30px 0;text-align:center">loading chart…</div></div>'
+  var chartCard = '<div class="dsec"><h3>Price</h3><div class="segrow">'+chartSegHTML()
+    + '</div><div class="chart chartbig" id="dchartwrap"><div class="note" style="padding:30px 0;text-align:center">loading chart…</div></div>'
     + '<div id="catlist"></div></div>';
 
   // Tilt and C/P moved here from the board table (2026-08-18): they explain a
@@ -2915,7 +3025,7 @@ function openDrawer(sym){
   document.getElementById("drawer").classList.add("open");
   document.getElementById("modalback").classList.add("open");
   document.getElementById("dclose").addEventListener("click", function(){ setFocus(null); });
-  $$("#drawer .seg button").forEach(function(b){ b.addEventListener("click", function(){ dTF=b.dataset.tf; redrawChart(sym); }); });
+  wireChartSeg(document.getElementById("drawer"), sym);
 
   renderCatList(sym);
 
@@ -2934,22 +3044,44 @@ function openDrawer(sym){
     redrawChart(sym, fund);
   });
 }
+function chartSegHTML(){
+  var ivBtns = IVS.map(function(t){ return '<button data-iv="'+t+'" aria-pressed="'+(t===dIV)+'">'+t+'</button>'; }).join("");
+  var tfBtns = dIV==="1D" ? GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(t===dTF)+'">'+t+'</button>'; }).join("") : "";
+  return '<div class="seg" role="group">'+ivBtns+'</div>'+(tfBtns?('<div class="seg" role="group">'+tfBtns+'</div>'):'');
+}
+function wireChartSeg(scope, sym){
+  $$(".seg button", scope).forEach(function(b){ b.addEventListener("click", function(){
+    if(b.dataset.iv){ dIV=b.dataset.iv; } else if(b.dataset.tf){ dTF=b.dataset.tf; }
+    redrawChart(sym);
+  }); });
+}
 function redrawChart(sym, fund){
   var wrap = document.getElementById("dchartwrap");
   if(!wrap || !document.getElementById("drawer").classList.contains("open")) return;
   if(fund===undefined) fund = DRAWER_FUND;
+  var intraView = (dIV==="15m"||dIV==="1H"||dIV==="4H");
+  // Intraday views need bars_intraday.json — lazy-fetch on first use, repaint
+  // when it lands (same pattern openDrawer uses for bars.json itself).
+  if(intraView && INTRA_CACHE===null){
+    wrap.innerHTML = '<div class="note" style="padding:30px 0;text-align:center">loading intraday bars…</div>';
+    var segrow0 = wrap.parentElement.querySelector(".segrow");
+    if(segrow0){ segrow0.innerHTML = chartSegHTML(); wireChartSeg(wrap.parentElement, sym); }
+    ensureIntra().then(function(){ redrawChart(sym, fund); });
+    return;
+  }
   var quads = quadsRaw(sym);
-  // Bars not loaded yet (or absent for this symbol): keep whatever the wrap
-  // currently shows — openDrawer paints a "loading chart…" note, and this is
-  // re-run once ensureBars resolves.
-  if(!quads) return;
-  var res = candleChartSVG(sym, dTF, fund);
+  // Daily bars not loaded yet (or absent for this symbol): keep whatever the
+  // wrap currently shows — openDrawer paints a "loading chart…" note, and
+  // this is re-run once ensureBars resolves. Intraday/weekly views still need
+  // the daily file (the 1W resample and the live-quote overlay come from it).
+  if(!quads && !intraView) return;
+  var res = candleChartSVG(sym, dTF, fund, dIV);
 
-  var segButtons = GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(t===dTF)+'">'+t+'</button>'; }).join("");
-  var pctChip = res.pct!=null ? ('<span class="pchip tn '+(res.pct>=0?"u":"d")+'">'+fm1(res.pct)+'% this '+dTF+'</span>') : '';
+  var viewLbl = dIV==="1D" ? dTF : dIV+" view";
+  var pctChip = res.pct!=null ? ('<span class="pchip tn '+(res.pct>=0?"u":"d")+'">'+fm1(res.pct)+'% this '+viewLbl+'</span>') : '';
   var segrow = wrap.parentElement.querySelector(".segrow");
-  if(segrow) segrow.innerHTML = '<div class="seg" role="group">'+segButtons+'</div>'+pctChip;
-  $$(".seg button", wrap.parentElement).forEach(function(b){ b.addEventListener("click", function(){ dTF=b.dataset.tf; redrawChart(sym); }); });
+  if(segrow) segrow.innerHTML = chartSegHTML()+pctChip;
+  wireChartSeg(wrap.parentElement, sym);
 
   wrap.innerHTML = res.svg + '<div class="xh" id="xh"></div><div class="pop" id="earnpop"></div>';
   var existingLeg = wrap.parentElement.querySelector(".leg");
@@ -2957,10 +3089,12 @@ function redrawChart(sym, fund){
   var st = statsOf(sym);
 
   if(res.n){
-    var legHtml = '<div class="leg"><span><i class="d20"></i>20-day</span>'
-      + '<span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span>'
-      + '<span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span></div>';
-    wrap.insertAdjacentHTML("afterend", legHtml);
+    if(res.iv==="1D"){
+      var legHtml = '<div class="leg"><span><i class="d20"></i>20-day</span>'
+        + '<span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span>'
+        + '<span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span></div>';
+      wrap.insertAdjacentHTML("afterend", legHtml);
+    }
     var svg = document.getElementById("dchart");
     var xh = document.getElementById("xh");
     // Shared by mouse AND touch — the crosshair used to be mouse-only, so the
@@ -2972,7 +3106,9 @@ function redrawChart(sym, fund){
       var i = Math.max(0, Math.min(res.n-1, Math.floor(px/(res.plotW/res.n))));
       var row = res.slice[i]; if(!row) return;
       var d = res.dates[i];
-      var dateLbl = MONTHS[d.getUTCMonth()]+" "+d.getUTCDate();
+      var dateLbl = (res.iv==="15m"||res.iv==="1H"||res.iv==="4H")
+        ? (CT_DAY_FMT.format(d)+" "+CT_TIME_FMT.format(d)+" CT")
+        : (MONTHS[d.getUTCMonth()]+" "+d.getUTCDate());
       xh.style.display = "block";
       xh.style.left = Math.min(r.width-150, Math.max(0, clientX-r.left+8))+"px";
       xh.style.top = "8px";
@@ -3126,7 +3262,10 @@ $$(".sh").forEach(function(sh){
 // Context tables (sector / big orders / ETF flows) open COLLAPSED by default
 // (2026-08-18) — they are backdrop, and the collapse state is still one click
 // and persisted either way. A stored "0" (user opened it) wins.
-var DEFAULT_CLOSED = {"s-sector":true, "s-orders":true, "s-etf":true};
+/* s-sector / s-etf removed from the default-closed set 2026-08-18 (Zach's
+   reorder ruling, same day): the two money tables now lead the column and
+   open expanded. Users' own saved open/closed choices still win. */
+var DEFAULT_CLOSED = {"s-orders":true};
 $$("section[id^=s-]").forEach(function(s){
   var v = read("desk."+s.id);
   if(v==="1" || (v===null && DEFAULT_CLOSED[s.id])) s.classList.add("closed");

@@ -1698,8 +1698,10 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     context_fields: dict = {}
     bars_payload = None
     fund_payload = None
+    intraday_payload = None
     try:
-        context_fields, bars_payload, fund_payload = context.build_context(quotes, PINNED, session_date, now_utc)
+        context_fields, bars_payload, fund_payload, intraday_payload = \
+            context.build_context(quotes, PINNED, session_date, now_utc)
     except Exception as e:
         log(f"WARN context build failed: {e}")
 
@@ -1793,6 +1795,17 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
         bars_tmp.write_text(json.dumps(bars_payload, indent=2), encoding="utf-8")
         bars_tmp.replace(bars_path)
         log(f"wrote {bars_path} ({bars_path.stat().st_size} bytes)")
+
+    # bars_intraday.json (added 2026-08-18) — same mirrored write path, but on
+    # its own ~25-min gate (context.INTRA_STALE_SEC), because intraday chart
+    # views go stale in hours, not days. Only written on cycles that rebuilt
+    # it; a total-outage rebuild returns None and the last good file stands.
+    if intraday_payload is not None:
+        intra_path = out_dir / "bars_intraday.json"
+        intra_tmp = intra_path.with_suffix(".json.tmp")
+        intra_tmp.write_text(json.dumps(intraday_payload, separators=(",", ":")), encoding="utf-8")
+        intra_tmp.replace(intra_path)
+        log(f"wrote {intra_path} ({intra_path.stat().st_size} bytes)")
 
     # fund/{SYM}.json sidecars (added 2026-08-15, Task 4) — same mirrored
     # write-and-publish path as bars.json above: only written on cycles that
