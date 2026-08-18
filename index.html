@@ -242,7 +242,9 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .note b{color:var(--ink2)}
 .boardmsg{padding:14px 2px;text-align:center;color:var(--ink3);font-size:11.5px}
 .xwrap{overflow-x:auto}
-.t-swing td:last-child,.t-conv td:last-child{white-space:normal;min-width:200px;line-height:1.35}
+.t-conv td:last-child{white-space:normal;min-width:200px;line-height:1.35}
+/* wider floor since the liquidity + needs-% additions (2026-08-18) */
+.t-swing td:last-child{white-space:normal;min-width:300px;line-height:1.35}
 
 /* ============ catalysts ============ */
 .filters{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
