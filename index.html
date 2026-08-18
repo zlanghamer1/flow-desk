@@ -325,7 +325,6 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .pop .cl{position:absolute;top:1px;right:6px;color:var(--ink3);cursor:pointer;font-size:13px;padding:2px 4px}
 .leg{display:flex;gap:12px;font-size:9.5px;color:var(--ink3);margin-top:5px;flex-wrap:wrap}
 .leg i{display:inline-block;width:12px;border-top:2px solid var(--ink2);vertical-align:middle;margin-right:4px}
-.leg i.p{border-top:2px solid var(--acc)}
 .leg i.d20{border-top:2px solid var(--ink3)} /* solid — the chart strokes it solid; the swatch used to lie */
 .leg i.d50{border-top:2px solid var(--acc)}
 .leg i.d200{border-top:2px solid var(--hi)}
@@ -404,7 +403,6 @@ footer b{color:var(--ink2)}
   .rr .inner{columns:1}
   .kbtn{min-width:0}
   .kbtn span{display:none}
-  .hm{display:none!important}
   .rl.opt{display:none}
 }
 @media (max-width:640px){
@@ -845,15 +843,20 @@ function ctDateTimeFromWall(dateStr, timeStr){
   var off = ctOffsetMinutesAt(new Date(guess));
   return new Date(guess - off*60000);
 }
+// Formatters built once — this runs every second, and constructing two fresh
+// Intl.DateTimeFormat objects per tick was measurable waste.
+var CLOCK_DFMT = null, CLOCK_TFMT = null;
 function ctClockString(d){
   d = d || new Date();
   try{
-    var dfmt = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",weekday:"short",month:"short",day:"2-digit"});
-    var parts = {}; dfmt.formatToParts(d).forEach(function(p){ parts[p.type]=p.value; });
+    if(!CLOCK_DFMT){
+      CLOCK_DFMT = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",weekday:"short",month:"short",day:"2-digit"});
+      CLOCK_TFMT = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",hour:"numeric",minute:"2-digit",second:"2-digit",hour12:true});
+    }
+    var parts = {}; CLOCK_DFMT.formatToParts(d).forEach(function(p){ parts[p.type]=p.value; });
     var datePart = parts.weekday+" "+parts.month+" "+parts.day;
-    var tfmt = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",hour:"numeric",minute:"2-digit",second:"2-digit",hour12:true});
-    var timePart = tfmt.format(d).replace(/ /g," ");
-    return datePart+" · "+timePart+" CT";
+    var timePart = CLOCK_TFMT.format(d).replace(/\u202f/g," ");
+    return datePart+" \u00b7 "+timePart+" CT";
   }catch(e){ return d.toString(); }
 }
 function ctTimeShort(iso){
@@ -1078,9 +1081,15 @@ function fetchData(){
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
     .then(function(data){
       if(!data || typeof data !== "object") throw new Error("bad payload");
-      STATE.data = data;
       FETCH_STATE.failures = 0; FETCH_STATE.lastOkTs = Date.now(); FETCH_STATE.backoffUntil = 0;
       renderDataBanner();
+      // Skip the full re-render when the payload hasn't changed — the fetcher
+      // publishes every ~7 minutes, so most polls were re-rendering every
+      // section with byte-identical data.
+      var key = String(data.generated_at||"")+"|"+String(data.context_updated_at||"");
+      if(STATE.data && FETCH_STATE.lastRenderKey===key) return STATE.data;
+      FETCH_STATE.lastRenderKey = key;
+      STATE.data = data;
       normalizeBrief(STATE.data);
       rebuildDynamicTv(data);
       // Stable per-row ids for the modal's catalyst diamonds/list to jump to
@@ -1105,7 +1114,11 @@ function fetchData(){
 
 function ensureBars(){
   if(BARS_CACHE) return Promise.resolve(BARS_CACHE);
-  return fetch(cacheBust(BARS_URL), {cache:"no-store"})
+  // Plain fetch, no cache-buster (2026-08-18): bars.json changes once a DAY,
+  // yet ?t= plus no-store forced a full ~413KB (gzipped) download on every
+  // page load forever. Letting the HTTP cache validate with ETags makes the
+  // repeat-visit cost a 304.
+  return fetch(BARS_URL)
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
     .then(function(json){ BARS_CACHE = (json && typeof json==="object") ? json : {bars:{}}; return BARS_CACHE; })
     .catch(function(){ BARS_CACHE = {bars:{}}; return BARS_CACHE; });
@@ -1190,7 +1203,8 @@ function normalizeFund(f){
 }
 function ensureFund(sym){
   if(Object.prototype.hasOwnProperty.call(FUND_CACHE, sym)) return Promise.resolve(FUND_CACHE[sym]);
-  return fetch(cacheBust(fundUrl(sym)), {cache:"no-store"})
+  // Same reasoning as ensureBars: a once-a-day sidecar gets normal HTTP caching.
+  return fetch(fundUrl(sym))
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
     .then(function(json){ FUND_CACHE[sym] = normalizeFund(json); return FUND_CACHE[sym]; })
     .catch(function(){ FUND_CACHE[sym] = null; return null; });
@@ -1322,7 +1336,21 @@ function rollMA(a,n){
   for(var i=0;i<a.length;i++){ s+=a[i]; if(i>=n) s-=a[i-n]; if(i>=n-1) o[i]=s/n; }
   return o;
 }
+// Per-render-pass memo (2026-08-18): once bars are loaded, renderWL calls
+// statsOf ~350 times per 30s poll — once per row, again in filters, again
+// INSIDE sort comparators — each doing two 500-element rolling-MA passes.
+// The memo is flushed at the top of every render pass (renderAll /
+// refreshLiveUI), so values are never staler than the pass using them.
+var STATS_MEMO = {};
+function bumpStatsMemo(){ STATS_MEMO = {}; }
 function statsOf(sym){
+  var hit = STATS_MEMO[sym];
+  if(hit) return hit;
+  var out = statsOfUncached(sym);
+  STATS_MEMO[sym] = out;
+  return out;
+}
+function statsOfUncached(sym){
   var f = factsOf(sym) || {};
   var full = seriesFull(sym);
   var q = liveBySym(sym);
@@ -2215,14 +2243,13 @@ function renderCats(){
 }
 
 /* =================== news =================== */
-var ROT_MSGS = [], rotTimer = null, rotIdx = 0;
 function renderNews(){
   var data = STATE.data;
   var newsObj = data && data.news;
   var items = (newsObj && Array.isArray(newsObj.items)) ? newsObj.items : [];
   var stale = isStaleContext(data);
   document.getElementById("newsstat").innerHTML = "TradingView news · hourly" + (stale? staleBadgeHTML(data.context_updated_at) : '');
-  if(!newsObj || items.length===0){ document.getElementById("s-news").hidden = true; if(rotTimer){clearInterval(rotTimer);rotTimer=null;} return; }
+  if(!newsObj || items.length===0){ document.getElementById("s-news").hidden = true; return; }
   document.getElementById("s-news").hidden = false;
   var list = items;
   if(FOCUS) list = items.filter(function(n){ return n.ticker===FOCUS || !n.ticker; });
@@ -2236,15 +2263,11 @@ function renderNews(){
     : (typeof banner==="string" && banner) ? [banner]
     : (banner===true) ? ["Rotation watch: two or more of this hour's tagged headlines carry rotation or de-risking language — the same keyword scan the Morning Brief runs."]
     : [];
-  ROT_MSGS = msgs;
-  if(msgs.length){ html += '<div class="rotbanner" id="rotbanner">'+esc(msgs[rotIdx % msgs.length])+'</div>'; }
-  if(rotTimer){ clearInterval(rotTimer); rotTimer=null; }
-  if(msgs.length > 1){
-    rotTimer = setInterval(function(){
-      rotIdx = (rotIdx+1) % ROT_MSGS.length;
-      var el = document.getElementById("rotbanner");
-      if(el) el.textContent = ROT_MSGS[rotIdx];
-    }, 8000);
+  // Messages render STACKED (2026-08-18) — the old 8-second carousel hid
+  // content behind a timer, in a panel that gets read for ten seconds at a
+  // time, with no reduced-motion guard.
+  if(msgs.length){
+    html += msgs.map(function(m){ return '<div class="rotbanner">'+esc(m)+'</div>'; }).join("");
   }
   html += list.map(function(n){
     var href = safeHref(n.url);
@@ -2277,13 +2300,15 @@ function applyFocus(){
 }
 
 /* =================== drawer/modal: candle chart engine + fundamentals =================== */
-var TFN = {"1W":5,"1M":21,"3M":63,"6M":126,"1Y":252};       // v1 line-chart fallback timeframes
+// The v1 line-chart fallback engine (chartSVG/chartDataFor/TFN, ~70 lines) was
+// deleted 2026-08-18: bars.json has been v3 since 2026-08-15 and the daily
+// rebuild is signature-gated, so a v1 payload can never appear again — the
+// branch was unreachable maintenance surface.
 var TFN2 = {"1M":21,"3M":63,"6M":126,"1Y":252};             // candle-chart timeframes — candles need daily
                                                               // bars, so 1D/1W are dropped (tail-slice note in
                                                               // the wave-2 spec) rather than faked from one point.
 var GTF = ["1M","3M","6M","1Y"];
 var dTF = "3M";
-var chartState = null;
 var DRAWER_SYM = null, DRAWER_FUND = null;   // fund/{SYM}.json sidecar for the currently open modal
 
 function fundCls(kind, f){
@@ -2294,61 +2319,6 @@ function fundCls(kind, f){
 }
 function safeMin(arr){ var f=arr.filter(function(v){return v!=null && isFinite(v);}); return f.length?Math.min.apply(null,f):0; }
 function safeMax(arr){ var f=arr.filter(function(v){return v!=null && isFinite(v);}); return f.length?Math.max.apply(null,f):1; }
-
-function chartDataFor(sym, tf){
-  var hist = barsOf(sym);
-  var full = seriesFull(sym);
-  if(full.length < 2) return null; // no chart history available
-  if(tf==="1D"){
-    var q = liveBySym(sym);
-    if(hist.length && q && q.px!=null){
-      var prev = hist[hist.length-1], now_ = q.px;
-      return {pts:[prev, now_], m50:[null,null], m200:[null,null], pct:(now_/prev-1)*100};
-    }
-    var last = full[full.length-1];
-    return {pts:[last,last], m50:[null,null], m200:[null,null], pct:0};
-  }
-  var n = Math.max(2, Math.min(full.length, TFN[tf]||63));
-  var m50f = rollMA(full,50), m200f = rollMA(full,200);
-  var pts = full.slice(-n), m50 = m50f.slice(-n), m200 = m200f.slice(-n);
-  var pct = pts.length>=2 ? (pts[pts.length-1]/pts[0]-1)*100 : null;
-  return {pts:pts, m50:m50, m200:m200, pct:pct};
-}
-// v1 fallback — bars.json without OHLC (a flat array of closes). Still a real
-// line chart with MA overlays; 200-day is amber (var(--hi)) same as the candle
-// engine, per the wave-2 ruling that the color change applies everywhere.
-function chartSVG(sym, tf){
-  var cd = chartDataFor(sym, tf);
-  if(!cd) return {pct:null, pts:[], svg:'<div class="note" style="padding:20px 0;text-align:center">no chart history available</div>'};
-  var pts=cd.pts, m50=cd.m50, m200=cd.m200, pct=cd.pct;
-  var w=396, h=140;
-  var mn=safeMin(pts), mx=safeMax(pts);
-  var pad=(mx-mn)*0.08||1, lo=mn-pad, hi=mx+pad, sp=hi-lo||1;
-  var Y=function(v){ return h-((v-lo)/sp)*(h-10)-5; }, X=function(i){ return i/(pts.length-1||1)*w; };
-  var path=function(a){ return a.map(function(v,i){ return v==null?null:(X(i).toFixed(1)+","+Y(v).toFixed(1)); }).filter(function(x){return x;}).join(" "); };
-  var col = (pct==null||pct>=0) ? "var(--spark-up)" : "var(--spark-dn)";
-  var grid = [0.25,0.5,0.75].map(function(f){ return '<line x1="0" x2="'+w+'" y1="'+(h*f).toFixed(0)+'" y2="'+(h*f).toFixed(0)+'" stroke="var(--edge)" stroke-width="1" opacity=".5"/>'; }).join("");
-  var poslines = "";
-  if(PG.unlocked && PG.positions && PG.positions[sym] && PG.positions[sym].kind==="trade"){
-    var P = PG.positions[sym];
-    [[P.rec,"stop "+(P.rec!=null?P.rec.toFixed(2):""),"var(--dn)"],[P.entry,"entry "+(P.entry!=null?P.entry.toFixed(2):""),"var(--ink3)"]].forEach(function(t){
-      var v=t[0], lab=t[1], c=t[2];
-      if(v!=null && v>lo && v<hi){
-        poslines += '<line x1="0" x2="'+w+'" y1="'+Y(v).toFixed(1)+'" y2="'+Y(v).toFixed(1)+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="7 4" opacity=".85"/>'
-          + '<text x="4" y="'+(Y(v)-3).toFixed(1)+'" font-size="8.5" fill="'+c+'">'+esc(lab)+'</text>';
-      }
-    });
-  }
-  var pline = path(pts);
-  var svg = '<svg viewBox="0 0 '+w+' '+h+'" id="dchart" preserveAspectRatio="none">'+grid
-    + '<polyline points="'+path(m200)+'" fill="none" stroke="var(--hi)" stroke-width="1.3" opacity=".9"/>'
-    + '<polyline points="'+path(m50)+'" fill="none" stroke="var(--acc)" stroke-width="1.2" opacity=".9"/>'
-    + '<polyline points="'+pline+' '+w+','+h+' 0,'+h+'" fill="'+col+'" opacity=".07" stroke="none"/>'
-    + poslines
-    + '<polyline points="'+pline+'" fill="none" stroke="'+col+'" stroke-width="1.7"/>'
-    + '<circle cx="'+X(pts.length-1).toFixed(1)+'" cy="'+Y(pts[pts.length-1]).toFixed(1)+'" r="2.6" fill="'+col+'"/></svg>';
-  return {pct:pct, pts:pts, svg:svg};
-}
 
 /* ---- candle engine (bars.json v2: [o,h,l,c] quads) ---- */
 var MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -2949,9 +2919,11 @@ function redrawChart(sym, fund){
   if(!wrap || !document.getElementById("drawer").classList.contains("open")) return;
   if(fund===undefined) fund = DRAWER_FUND;
   var quads = quadsRaw(sym);
-  var isCandle = !!quads;
-  var res = isCandle ? candleChartSVG(sym, dTF, fund) : chartSVG(sym, dTF);
-  chartState = {sym:sym, pts:res.pts||[]};
+  // Bars not loaded yet (or absent for this symbol): keep whatever the wrap
+  // currently shows — openDrawer paints a "loading chart…" note, and this is
+  // re-run once ensureBars resolves.
+  if(!quads) return;
+  var res = candleChartSVG(sym, dTF, fund);
 
   var segButtons = GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(t===dTF)+'">'+t+'</button>'; }).join("");
   var pctChip = res.pct!=null ? ('<span class="pchip tn '+(res.pct>=0?"u":"d")+'">'+fm1(res.pct)+'% this '+dTF+'</span>') : '';
@@ -2964,7 +2936,7 @@ function redrawChart(sym, fund){
   if(existingLeg) existingLeg.remove();
   var st = statsOf(sym);
 
-  if(isCandle && res.n){
+  if(res.n){
     var legHtml = '<div class="leg"><span><i class="d20"></i>20-day</span>'
       + '<span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span>'
       + '<span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span></div>';
@@ -3010,18 +2982,6 @@ function redrawChart(sym, fund){
     $$(".catdmd", wrap).forEach(function(p){
       p.addEventListener("click", function(ev){ ev.stopPropagation(); jumpToCatalyst(+p.getAttribute("data-catid")); });
     });
-  } else if(res.pts && res.pts.length){
-    var legHtml2 = '<div class="leg"><span><i class="p"></i>price</span><span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span><span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span></div>';
-    wrap.insertAdjacentHTML("afterend", legHtml2);
-    var svg2 = document.getElementById("dchart");
-    var xh2 = document.getElementById("xh");
-    wrap.onmousemove = function(e){
-      var r = svg2.getBoundingClientRect(); var fx=(e.clientX-r.left)/r.width;
-      var i = Math.max(0, Math.min(res.pts.length-1, Math.round(fx*(res.pts.length-1))));
-      xh2.style.display="block"; xh2.style.left=Math.min(r.width-110,Math.max(0,e.clientX-r.left+8))+"px"; xh2.style.top="8px";
-      xh2.textContent = dTF+" · $"+res.pts[i].toFixed(2);
-    };
-    wrap.onmouseleave = function(){ xh2.style.display="none"; };
   }
 }
 function closeDrawer(){
@@ -3033,6 +2993,7 @@ function closeDrawer(){
 
 /* =================== master render + live-poll refresh =================== */
 function renderAll(data){
+  bumpStatsMemo();
   renderMarketState(data);
   renderBrief(data);
   renderSectorSection(data);
@@ -3054,6 +3015,7 @@ function refreshLiveUI(){
   // the cheapest correct thing is to re-run the same render calls.
   var data = STATE.data;
   if(!data) return;
+  bumpStatsMemo();
   // The re-render rewrites each board's innerHTML, which zeroed .xwrap's
   // horizontal scroll every 30s — and on a phone that scroll is the only way
   // to read the right-hand columns. Capture and restore around the rebuild.
@@ -3108,10 +3070,9 @@ var ACTIONS = [
   {k:"action", l:"Clear ticker focus", run:function(){ setFocus(null); }},
   {k:"action", l:"Collapse all sections", run:function(){ $$("section[id^=s-]").forEach(function(s){ s.classList.add("closed"); }); }},
   {k:"action", l:"Expand all sections", run:function(){ $$("section[id^=s-]").forEach(function(s){ s.classList.remove("closed"); }); }},
-  {k:"go", l:"Jump to Catalysts", run:function(){ document.getElementById("s-cat").scrollIntoView({behavior:"smooth"}); }},
-  {k:"go", l:"Jump to Sector rotation", run:function(){ document.getElementById("s-sector").scrollIntoView({behavior:"smooth"}); }},
-  {k:"go", l:"Jump to Biggest orders", run:function(){ document.getElementById("s-orders").scrollIntoView({behavior:"smooth"}); }},
 ];
+// (The three "Jump to <section>" entries were cut 2026-08-18 — keystroke
+// padding for a page that fits on two screens; ticker search is the feature.)
 var palIdx = 0;
 function palItems(q){
   q = (q||"").trim().toUpperCase();
@@ -3177,8 +3138,8 @@ document.getElementById("theme").addEventListener("click", function(){
 });
 (function(){ var t=read("desk.theme"); if(t){ document.documentElement.dataset.theme=t; document.getElementById("theme").setAttribute("aria-pressed", t==="light"); } })();
 
-setInterval(updatePricesTimestamp, 1000);
-setInterval(function(){ if(STATE.data) renderCats(); }, 30000);
+setInterval(function(){ if(!document.hidden) updatePricesTimestamp(); }, 1000);
+setInterval(function(){ if(STATE.data && !document.hidden) renderCats(); }, 30000);
 
 /* =================== tooltips =================== */
 var tipb = document.getElementById("tipb");
@@ -3253,13 +3214,25 @@ document.addEventListener("click", function(e){
 });
 
 /* =================== boot =================== */
-// Prices poll every tick regardless; data.json honors the failure backoff
-// (fetchData sets backoffUntil) instead of hammering a 429/outage at full rate.
+// Prices poll every 30s tick; data.json rides a slower 2-minute cadence (the
+// fetcher publishes every ~7 minutes — polling the whole 200KB payload at the
+// price rate was ~14 downloads per actual change) and honors the failure
+// backoff. A hidden tab polls nothing; on return to visibility one tick fires
+// immediately so the page is current the moment it's looked at.
+var DATA_POLL_MS = 120000;
+var lastDataFetchTs = 0;
 function tick(){
-  if(Date.now() >= FETCH_STATE.backoffUntil){ fetchData().then(pollTvPrices); }
-  else { pollTvPrices(); }
+  if(document.hidden) return;
+  var now = Date.now();
+  if(now >= FETCH_STATE.backoffUntil && now - lastDataFetchTs >= DATA_POLL_MS - 500){
+    lastDataFetchTs = now;
+    fetchData().then(pollTvPrices);
+  } else {
+    pollTvPrices();
+  }
   attemptMacroTiles();
 }
+document.addEventListener("visibilitychange", function(){ if(!document.hidden){ tick(); updatePricesTimestamp(); } });
 function start(){
   ["conv","swing","orders","sector","cats","news"].forEach(function(id){
     var el = document.getElementById(id);
@@ -3267,6 +3240,7 @@ function start(){
   });
   updatePricesTimestamp();
   renderMarketState(null);
+  lastDataFetchTs = Date.now();
   fetchData().then(function(){
     pollTvPrices();
     attemptMacroTiles();
