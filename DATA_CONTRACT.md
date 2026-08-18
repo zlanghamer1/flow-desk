@@ -391,6 +391,10 @@ keyed by desk key via the same alias map). Shape:
 - Unlike bars.json, TODAY'S IN-PROGRESS bars are INCLUDED — freshness is the
   point of these views, and the page draws the series as-is (no synthetic
   live candle is appended).
+- EXTENDED-HOURS bars are included too (`includePrePost=true`, added
+  2026-08-18 — the 15m view was blind to premarket without it). The page
+  renders pre/post-market candles dimmed; consumers can classify a bar by its
+  CT clock time (regular session = 08:30–15:00 CT).
 - Rebuilt on its own **~25-minute gate** (`INTRA_STALE_SEC`,
   `intraday_built_at` in `fetcher/.context_cache.json`), not the once-daily
   bars gate. Source is the same Yahoo v8 chart call with

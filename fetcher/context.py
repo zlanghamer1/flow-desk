@@ -1072,8 +1072,13 @@ def build_intraday_bars(universe: list[str],
                 time.sleep(INTRA_SLEEP_SEC)
             first = False
             fetch_sym = (aliases or {}).get(sym, sym)
+            # includePrePost (2026-08-18, Zach: "charts aren't showing
+            # premarket pricing"): without it Yahoo serves RTH bars only, so
+            # the 15m view opened mornings showing nothing past yesterday's
+            # close. Extended-hours bars carry real volume; the page dims them
+            # so pre/post reads distinctly from the regular session.
             url = (YAHOO_CHART_URL.format(sym=urllib.parse.quote(fetch_sym, safe=""))
-                   + f"?range={range_}&interval={interval}")
+                   + f"?range={range_}&interval={interval}&includePrePost=true")
             try:
                 obj = json.loads(_http_get(url, {"User-Agent": UA}, _get=_get))
             except Exception as e:

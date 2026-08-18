@@ -2362,6 +2362,14 @@ var CT_DAY_FMT = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",wee
 var CT_TIME_FMT = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",hour:"numeric",minute:"2-digit"});
 var CT_DAYKEY_FMT = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit"});
 function ctDayKey(d){ return CT_DAYKEY_FMT.format(d); }
+var CT_HM_FMT = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",hour12:false,hour:"2-digit",minute:"2-digit"});
+function isExtendedHours(d){
+  // regular session = 08:30–15:00 CT; anything else on an intraday bar is
+  // pre/post market (bars_intraday.json includes both since 2026-08-18)
+  var parts = CT_HM_FMT.format(d).split(":");
+  var m = (+parts[0])*60 + (+parts[1]);
+  return m < 510 || m >= 900;
+}
 function resample4H(rows){
   // hourly [t,o,h,l,c,v] -> 4H buckets within each CT session day (RTH has ~7
   // hourly bars, so a day yields a 4-bar and a 3-bar bucket — deliberate: a
@@ -2571,13 +2579,17 @@ function candleChartSVG(sym, tf, fund, iv){
       if(mo!==lastMonth){ lastMonth=mo; monthHtml += '<text x="'+X(i).toFixed(1)+'" y="'+(chartBottom+14)+'" font-size="9" fill="var(--ink3)" text-anchor="middle">'+MONTHS[mo]+'</text>'; }
     }
   }
+  var intraIv = (iv==="15m"||iv==="1H"||iv==="4H");
   var candleHtml = slice.map(function(r,i){
     var o=num(r[0]), hh=num(r[1]), l=num(r[2]), c=num(r[3]);
     if(o==null||hh==null||l==null||c==null) return "";
     var col = c>=o ? "var(--up)" : "var(--dn)";
+    // pre/post-market candles render dimmed so the regular session reads as
+    // the main tape and premarket as the overlay it is
+    var dim = (intraIv && isExtendedHours(dates[i])) ? ' opacity=".5"' : '';
     var x=X(i), yTop=Y(Math.max(o,c)), yBot=Y(Math.min(o,c)), bh=Math.max(1,yBot-yTop);
-    return '<line x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+Y(hh).toFixed(1)+'" y2="'+Y(l).toFixed(1)+'" stroke="'+col+'" stroke-width="1"/>'
-      + '<rect x="'+(x-bodyW/2).toFixed(1)+'" y="'+yTop.toFixed(1)+'" width="'+bodyW.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="'+col+'"/>';
+    return '<line x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+Y(hh).toFixed(1)+'" y2="'+Y(l).toFixed(1)+'" stroke="'+col+'" stroke-width="1"'+dim+'/>'
+      + '<rect x="'+(x-bodyW/2).toFixed(1)+'" y="'+yTop.toFixed(1)+'" width="'+bodyW.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="'+col+'"'+dim+'/>';
   }).join("");
   function maPath(arr){ var pts=[]; for(var k=0;k<arr.length;k++){ if(arr[k]!=null) pts.push(X(k).toFixed(1)+","+Y(arr[k]).toFixed(1)); } return pts.join(" "); }
   function lastDefined(arr){ for(var k=arr.length-1;k>=0;k--){ if(arr[k]!=null) return arr[k]; } return null; }
@@ -2607,7 +2619,8 @@ function candleChartSVG(sym, tf, fund, iv){
         var o=num(r[0]), c=num(r[3]);
         var col = (c>=o) ? "var(--up)" : "var(--dn)";
         var x=X(i), yTop=VY(vv), bh=Math.max(1, volBaseY-yTop);
-        return '<rect x="'+(x-bodyW/2).toFixed(1)+'" y="'+yTop.toFixed(1)+'" width="'+bodyW.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="'+col+'" opacity=".45"/>';
+        var vop = (intraIv && isExtendedHours(dates[i])) ? ".2" : ".45";
+        return '<rect x="'+(x-bodyW/2).toFixed(1)+'" y="'+yTop.toFixed(1)+'" width="'+bodyW.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="'+col+'" opacity="'+vop+'"/>';
       }).join("");
       var volAxisHtml = "";
       volAxisLines(maxVol).forEach(function(lv){
@@ -3106,8 +3119,9 @@ function redrawChart(sym, fund){
       var i = Math.max(0, Math.min(res.n-1, Math.floor(px/(res.plotW/res.n))));
       var row = res.slice[i]; if(!row) return;
       var d = res.dates[i];
-      var dateLbl = (res.iv==="15m"||res.iv==="1H"||res.iv==="4H")
-        ? (CT_DAY_FMT.format(d)+" "+CT_TIME_FMT.format(d)+" CT")
+      var isIvIntra = (res.iv==="15m"||res.iv==="1H"||res.iv==="4H");
+      var dateLbl = isIvIntra
+        ? (CT_DAY_FMT.format(d)+" "+CT_TIME_FMT.format(d)+" CT"+(isExtendedHours(d)?" · ext hrs":""))
         : (MONTHS[d.getUTCMonth()]+" "+d.getUTCDate());
       xh.style.display = "block";
       xh.style.left = Math.min(r.width-150, Math.max(0, clientX-r.left+8))+"px";
