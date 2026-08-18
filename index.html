@@ -180,6 +180,19 @@ section.closed .sb{display:none}
 .bc.stale{color:var(--hi);background:var(--hibg);border-color:transparent}
 .warn{margin-top:10px;border-left:2px solid var(--hi);padding:5px 10px;font-size:11.5px;color:var(--ink2);background:var(--hibg)}
 .warn b{color:var(--hi);letter-spacing:.08em;font-size:10px;margin-right:6px}
+/* stats tiles — the contract's "header tiles" (data.stats), finally rendered (2026-08-18) */
+.statrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.stat{border:1px solid var(--edge);border-radius:6px;padding:6px 12px 7px;background:var(--srf2);min-width:84px}
+.stat b{display:block;font-size:19px;font-weight:700}
+.stat b.hi{color:var(--hi)}
+.stat b.a{color:var(--acc)}
+.stat span{font-size:9px;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;font-weight:600}
+/* "since flagged" chase chip — spot_at_alert rendered at last (2026-08-18) */
+.chasef{font-size:9px;font-weight:600;color:var(--ink3);background:var(--srf2);border:1px solid var(--edge);border-radius:3px;padding:0 4px;margin-left:6px}
+.chasef.warn2{color:var(--hi);background:var(--hibg);border-color:transparent}
+/* board threshold cut line + show-all toggle */
+.boardcut{margin-top:8px;font-size:10.5px;color:var(--ink3)}
+.boardcut button{color:var(--acc);font-size:10.5px;text-decoration:underline;padding:0}
 
 /* ============ tables ============ */
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -357,7 +370,9 @@ footer b{color:var(--ink2)}
   .wl .wrs{grid-template-columns:1fr}
   .t-orders th:nth-child(5),.t-orders td:nth-child(5),.t-orders th:nth-child(6),.t-orders td:nth-child(6),
   .t-sector th:nth-child(4),.t-sector td:nth-child(4),.t-sector th:nth-child(6),.t-sector td:nth-child(6),
-  .t-conv th:nth-child(6),.t-conv td:nth-child(6),.t-conv th:nth-child(7),.t-conv td:nth-child(7),
+  /* t-conv is 6 columns since the C/P + Tilt demotion (2026-08-18): hide RVOL
+     (5) and the loudest-contract string (6) at phone width */
+  .t-conv th:nth-child(5),.t-conv td:nth-child(5),.t-conv th:nth-child(6),.t-conv td:nth-child(6),
   .t-swing th:nth-child(5),.t-swing td:nth-child(5),
   td .nm{display:none}
   .dvg{width:70px}
@@ -426,7 +441,7 @@ footer b{color:var(--ink2)}
       </section>
 
       <section id="s-etf">
-        <div class="sh" data-collapse="s-etf"><span class="car">▼</span><h2>Semi ETF flows</h2><span class="st" id="etfstat">yesterday's money · once per session</span></div>
+        <div class="sh" data-collapse="s-etf"><span class="car">▼</span><h2>Semi ETF flows</h2><span class="st" id="etfstat">one reading per session</span></div>
         <div class="sb xwrap" id="etf"></div>
       </section>
 
@@ -489,6 +504,18 @@ var TV_GLOBAL_SCANNER_URL = "https://scanner.tradingview.com/global/scan";
 var POLL_MS = 30000;
 var FLOW_STALE_MS = 2 * 7 * 60 * 1000;      // flow boards ~7min cadence -> stale at 2x
 var CONTEXT_STALE_MS = 2 * 60 * 60 * 1000;  // catalysts/news hourly cadence -> stale at 2x
+// The boards used to print the ENTIRE watchlist sorted (BOARD_CAP > universe),
+// with no line between signal and the rest — a spreadsheet, not a shortlist.
+// Default view now cuts at the contract's own high-conviction line (score>=60,
+// DATA_CONTRACT.md stats.high_conviction); "show all" reveals the rest. A
+// DISPLAY filter only — no score, weight, or pipeline change.
+var BOARD_SCORE_FLOOR = 60;
+// $ floor under the FLOW % display — a "95% CALL" computed on $6K of near-money
+// premium is noise wearing a percent sign. Mirrors the fetcher's
+// BIG_ORDERS_MIN_PREMIUM ($100K). Cells under the floor render an em dash with
+// the basis in the tooltip. Older snapshots without flow_pct_basis keep the
+// previous behavior (no basis -> no floor to apply).
+var FLOWPCT_MIN_BASIS = 100000;
 
 var isLocalHost = (location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "");
 var DATA_URL = isLocalHost ? LOCAL_DATA_URL : RAW_DATA_URL;
@@ -651,9 +678,9 @@ var TIPS = {
   "tip-trend": "Whether the stock price is above its 20- and 50-day moving averages (UP), below both (DOWN), or split between them (MIXED).",
   "tip-ivrank": "Where today's option prices (implied volatility) sit versus this stock's own past year of history. High = options are relatively expensive right now. Needs 20+ sessions of history to calculate; until then it shows the raw IV instead.",
   "tip-suggested": "The highest-premium contract with a delta between 0.30 and 0.60, expiring 2 weeks to 6 months out — a middle-of-the-road strike, not a lottery ticket.",
-  "tip-entry-ref": "Entry reference = this contract's last traded price.",
-  "tip-stop-ref": "Stop reference = 30% below the entry price. A reference level, not a recommendation.",
-  "tip-target-ref": "Target reference = entry price plus 105%. A reference level, not a recommendation.",
+  "tip-entry-ref": "Entry reference = this contract's last traded price — 15-minute-delayed, and on a thin contract possibly hours old. Check the live bid/ask before treating it as a fillable price.",
+  "tip-stop-ref": "Stop reference = 30% below the entry price — a fixed constant, not tuned to this name's volatility. A reference level, never a recommendation; real stops on share positions come from the trail math (Position Guard).",
+  "tip-target-ref": "Target reference = entry price plus 105% — a fixed constant. A reference level, never a recommendation; see the 'needs ~x% on the stock' figure for what the stock must do to get there.",
   "tip-bigorders": "The single options contracts with the most dollars traded today, ranked across the whole watch list. Dollars = contracts traded × the contract's last price × 100. IMPORTANT: each line is one contract's ENTIRE SESSION, not one order. Free data publishes a daily total per contract, never a trade-by-trade tape. Only strikes within 20% of the stock price count, and only expiries inside 6 months. At most 3 rows per ticker, so one busy name can't say the same thing five times. Any name that earned more rows than it shows is named in the line under the board, so the cap is never silent. Display only; it doesn't move any score.",
   "tip-etfflows": "Real invested money entering or leaving each semiconductor ETF, estimated as the day-over-day change in the fund's shares outstanding times its NAV (ETFs create and destroy shares as money moves in and out). One reading per session — slower than the options boards, and it mixes retail and institutional money. The 1M figure is the fund's trailing one-month net flow. Shows 'split — n/a' when a fund split that day: a split changes the share count without any money moving, so the day's flow is unknowable rather than zero. Context only; it doesn't affect any score.",
   netflow:"Call premium traded minus put premium traded (volume × last × 100). Free data can't see buy vs sell side — this is premium changing hands, not directional order flow.",
@@ -1419,20 +1446,26 @@ function renderPositions(){
   if(lockBtn) lockBtn.addEventListener("click", function(e){ e.stopPropagation(); lockPositions(); });
 }
 
-/* =================== sortable table helper (unchanged from prototype) =================== */
-function table(el, cls, cols, rows, rowHTML, defaultKey){
+/* =================== sortable table helper =================== */
+// foot (optional): {html, wire} — content that must live INSIDE el but survive
+// sort redraws (draw() rewrites el.innerHTML wholesale, which used to wipe the
+// big-orders cap disclosure on the first header click). wire() re-attaches its
+// listeners after every draw.
+function table(el, cls, cols, rows, rowHTML, defaultKey, foot){
   var key=defaultKey, dir=-1;
   function draw(){
     var sorted = rows.slice().sort(function(a,b){ var va=a[key], vb=b[key]; return (va>vb?1:va<vb?-1:0)*dir; });
     el.innerHTML = '<table class="tn '+cls+'"><thead><tr>'+cols.map(function(c){
       var lab = (c.tip?('<span data-tip="'+esc(c.tip)+'">'+c.l+'</span>'):c.l) + (c.key===key?('<span class="ar">'+(dir<0?"▼":"▲")+'</span>'):"");
       return '<th '+(c.key?('class="sort" data-k="'+c.key+'"'):"")+'>'+lab+'</th>';
-    }).join("")+'</tr></thead><tbody>'+sorted.map(rowHTML).join("")+'</tbody></table>';
+    }).join("")+'</tr></thead><tbody>'+sorted.map(rowHTML).join("")+'</tbody></table>'
+      + (foot && foot.html ? foot.html : "");
     el.querySelectorAll("th.sort").forEach(function(th){
       th.addEventListener("click", function(){
         var k=th.dataset.k; if(k===key) dir*=-1; else { key=k; dir=-1; } draw(); applyFocus();
       });
     });
+    if(foot && foot.wire) foot.wire();
   }
   draw();
   return {redraw:draw};
@@ -1464,6 +1497,24 @@ function renderBrief(data){
 
   var html = '<div class="verdict"><span class="v">'+esc(brief.verdict||"—")+'</span><span class="sc tn">score '+(brief.score!=null?fm1SignedInt(brief.score):"—")+((brief.date||data.session_date)?(' · '+esc(brief.date||data.session_date)):"")+'</span></div>';
   if(brief.plain_words) html += '<p>'+esc(brief.plain_words)+'</p>';
+  // data.stats — the contract's "header tiles", computed across BOTH boards
+  // deduped by ticker. Fetched on every cycle and never rendered until now.
+  var stt = data && data.stats;
+  if(stt && typeof stt==="object"){
+    var breadthTip = "Direction is the sign of net premium and this watchlist leans long, so bullish "
+      + "usually outnumbers bearish — read the split as today's tilt on these names, not market breadth.";
+    var tiles = [
+      ["bullish", stt.bullish_flow, "u", breadthTip],
+      ["bearish", stt.bearish_flow, "d", breadthTip],
+      ["firing", stt.firing, "hi", "Names scoring 80+ or clearly accelerating since the last refresh."],
+      ["score 60+", stt.high_conviction, "a", "Conviction-board names at or above the 60 line — the shortlist the Conviction board below opens on."]
+    ].filter(function(t){ return num(t[1])!=null; });
+    if(tiles.length){
+      html += '<div class="statrow tn">'+tiles.map(function(t){
+        return '<div class="stat"><b class="'+t[2]+'">'+Math.round(num(t[1]))+'</b><span data-tip="'+esc(t[3])+'">'+esc(t[0])+'</span></div>';
+      }).join("")+'</div>';
+    }
+  }
   if(brief.gap_note) html += '<p class="q">'+esc(brief.gap_note)+'</p>';
   var readings = (brief.backdrop && Array.isArray(brief.backdrop.readings)) ? brief.backdrop.readings : [];
   if(readings.length){
@@ -1538,19 +1589,66 @@ function contractLine(c){
   if(iv!=null) bits.push("IV "+Math.round(iv*100)+"%");
   return esc(bits.join(" · "));
 }
-function suggestedContractLine(c){
+function suggestedContractLine(c, spot){
   if(!c || typeof c !== "object") return '<span class="m">no liquid contract</span>';
   var side = c.side==="PUT"?"PUT":c.side==="CALL"?"CALL":"?";
   var strike = num(c.strike);
   var expiry = c.expiry ? esc(c.expiry) : "—";
   var delta = num(c.delta);
   var entry = num(c.entry), stop = num(c.stop), target = num(c.target);
+  var vol = num(c.volume), oi = num(c.open_interest);
   var head = esc(side + (strike!=null?(" $"+fmtStrike(strike)):"") + " · " + expiry) + (delta!=null? (" · Δ"+delta.toFixed(2)) : "");
   var trade = [];
   if(entry!=null) trade.push('<span data-tip="'+esc(TIPS["tip-entry-ref"])+'">entry '+entry.toFixed(2)+'</span>');
   if(stop!=null) trade.push('<span data-tip="'+esc(TIPS["tip-stop-ref"])+'">stop '+stop.toFixed(2)+'</span>');
   if(target!=null) trade.push('<span data-tip="'+esc(TIPS["tip-target-ref"])+'">tgt '+target.toFixed(2)+'</span>');
+  // Rough translation of the +105% option target into the stock move it needs,
+  // via delta — so "tgt 5.66" stops looking free. Understated on purpose (theta
+  // works against the position the whole time); the tooltip says so.
+  if(target!=null && entry!=null && delta!=null && delta!==0 && num(spot)){
+    var movePct = (target-entry)/Math.abs(delta)/num(spot)*100;
+    if(isFinite(movePct) && movePct>0){
+      trade.push('<span class="m" data-tip="Rough stock move needed to reach the target, translated through the contract’s delta. It ignores time decay working against the position the whole way, so the real move needed is LARGER than this.">needs ~'
+        +(side==="PUT"?"−":"+")+movePct.toFixed(0)+'% on the stock</span>');
+    }
+  }
+  // Liquidity check — the entry above is a 15-min-delayed LAST, and on a thin
+  // contract the spread can eat a third of the stated stop before anything moves.
+  if(vol!=null || oi!=null){
+    trade.push('<span class="m" data-tip="Today’s volume and open interest on this exact contract. Thin contracts trade at wide spreads — the delayed last price shown as entry may not be a fillable price. Check the live bid/ask before acting.">vol '
+      +(vol!=null?Math.round(vol).toLocaleString():"—")+' · OI '+(oi!=null?Math.round(oi).toLocaleString():"—")+'</span>');
+  }
   return head + (trade.length? (" · "+trade.join(" · ")) : "");
+}
+
+/* =================== board threshold + shared row chips (2026-08-18) =================== */
+var showAllBoards = { conv:false, swing:false };
+function boardCutApply(arr, key){
+  var strong = arr.filter(function(c){ return num(c.score)!=null && c.score >= BOARD_SCORE_FLOOR; });
+  var showAll = showAllBoards[key];
+  return { rows: showAll ? arr : strong, strong: strong.length, total: arr.length, showAll: showAll };
+}
+function boardCutNoteHTML(cut, key){
+  if(cut.total===0) return "";
+  var btn = '<button id="showall-'+key+'">';
+  if(cut.showAll) return '<div class="boardcut">showing all '+cut.total+' names · '+btn+'back to the '+BOARD_SCORE_FLOOR+'+ shortlist</button></div>';
+  return '<div class="boardcut">'+cut.strong+' of '+cut.total+' names score '+BOARD_SCORE_FLOOR+'+ — the rest of the watchlist sits below the line. '+btn+'show all '+cut.total+'</button></div>';
+}
+function wireBoardCut(el, key, rerender){
+  var b = el.querySelector("#showall-"+key);
+  if(b) b.addEventListener("click", function(e){ e.stopPropagation(); showAllBoards[key]=!showAllBoards[key]; rerender(); applyFocus(); });
+}
+// "since flagged" — spot_at_alert has shipped on every card since the history
+// enrichment landed and was rendered nowhere. It answers the one question a
+// sorted flow list can't: has the move this flow pointed at already happened?
+function chaseChipHTML(c, px){
+  var sa = num(c.spot_at_alert);
+  if(sa===null || sa===0 || px==null) return "";
+  var since = (px/sa-1)*100;
+  if(Math.abs(since) < 0.05) return "";
+  var f = factsOf(c.ticker) || {};
+  var big = num(f.avg_move)!=null && Math.abs(since) >= num(f.avg_move);
+  return ' <span class="chasef '+(big?"warn2":"")+' tn" data-tip="Move since this name first hit the board today ('+fmtpx(sa)+' → '+fmtpx(px)+'). A big number means the move the flow pointed at has already happened — a late entry is a chase.">'+fm1(since)+'% since flagged</span>';
 }
 
 /* =================== Conviction board (0-7 DTE) =================== */
@@ -1566,27 +1664,60 @@ function renderConv(data){
     + (stale? staleBadgeHTML(data.generated_at_ct) : '');
   var el = document.getElementById("conv");
   if(arr.length===0){ el.innerHTML = '<div class="boardmsg">No conviction setups on the board right now.</div>'; return; }
+  var cut = boardCutApply(arr, "conv");
+  var rerender = function(){ renderConv(STATE.data); };
+  if(cut.rows.length===0){
+    el.innerHTML = '<div class="boardmsg">No conviction names score '+BOARD_SCORE_FLOOR+'+ right now — a quiet tape is information too.</div>'
+      + boardCutNoteHTML(cut, "conv");
+    wireBoardCut(el, "conv", rerender);
+    return;
+  }
   table(el, "t-conv", [
     {l:"Name",key:"ticker"},{l:"Score",key:"score",tip:TIPS["tip-score-conviction"]},{l:"Net flow",key:"net_flow",tip:TIPS["tip-netflow"]},
-    {l:"Flow %",tip:TIPS["tip-flowpct"]},{l:"C/P",key:"cp_ratio",tip:TIPS["tip-cpratio"]},{l:"Tilt",tip:TIPS["tip-tilt"]},{l:"Loudest contract",tip:TIPS["tip-suggested"]}
-  ], arr, function(c){
+    {l:"Flow %",tip:TIPS["tip-flowpct"]},
+    {l:"RVOL",key:"rvol",tip:"Today's stock volume vs this name's own 10-day average. 25 of the score's 100 points come from it — shown so a loud score can be read against how loud the stock itself is."},
+    {l:"Loudest contract",tip:TIPS["tip-suggested"]}
+  ], cut.rows, rowHTMLConv, "score",
+  {html: boardCutNoteHTML(cut, "conv"), wire: function(){ wireBoardCut(el, "conv", rerender); }});
+  function rowHTMLConv(c){
     var q = liveBySym(c.ticker) || {};
     var px = q.px!=null?q.px:num(c.spot), ch = q.ch!=null?q.ch:num(c.change_pct);
-    var fp = num(c.flow_pct), fpSide = c.flow_side;
-    var fpStr = (fp!=null && fpSide) ? (fp.toFixed(0)+"% "+fpSide) : "—";
-    var fpCls = (fp!=null && fpSide==="CALL") ? "u" : (fp!=null && fpSide==="PUT") ? "d" : "m";
-    var tiltN = num(c.tilt);
-    var tiltStr = tiltN===null ? "sampling" : (fm1SignedInt(tiltN*100)+"%"+(num(c.tilt_prem)? (" · "+fmM(c.tilt_prem).replace("+","")) : ""));
+    // FLOW % with the $100K display floor; the basis rides in the tooltip
+    // either way. Older snapshots without flow_pct_basis skip the floor.
+    var fp = num(c.flow_pct), fpSide = c.flow_side, basis = num(c.flow_pct_basis);
+    var fpHtml;
+    if(fp!=null && fpSide && basis!=null && basis < FLOWPCT_MIN_BASIS){
+      fpHtml = '<span class="m" data-tip="Only $'+fmtDollarsUnit(basis)+' of near-money premium traded — under the $100K floor, too thin for a percentage to mean anything.">—</span>';
+    } else if(fp!=null && fpSide){
+      var fpCls = fpSide==="CALL" ? "u" : "d";
+      fpHtml = '<span class="'+fpCls+'"'+(basis!=null?(' data-tip="Of $'+fmtDollarsUnit(basis)+' near-money premium traded today."'):'')+'>'+fp.toFixed(0)+'% '+fpSide+'</span>';
+      // C/P's one real job: flagging when contract COUNTS and DOLLARS disagree
+      // (the MU 2026-07-24 case that motivated FLOW %). The raw ratio column is
+      // gone — the docs themselves call the count read misleading on its own.
+      var cp = num(c.cp_ratio);
+      if(cp!=null){
+        var countsSide = cp>=1 ? "CALL" : "PUT";
+        if(countsSide!==fpSide){
+          fpHtml += ' <span class="pill n" data-tip="Contract counts and dollars point opposite ways: C/P '+cp.toFixed(2)+'× says '+countsSide+'-heavy by count, but the premium dollars lean '+fpSide+'. Trust the dollars — a few expensive contracts outweigh many cheap ones.">counts ≠ $</span>';
+        }
+      }
+    } else fpHtml = "—";
+    var f = factsOf(c.ticker) || {};
+    var ed = f.earn_days!=null ? num(f.earn_days) : null;
+    var eHtml = (ed!=null && ed>=0 && ed<=7)
+      ? ' <span class="pill f" data-tip="Earnings in '+Math.round(ed)+' day'+(Math.round(ed)===1?"":"s")+' — inside this board’s 0–7 day window. Flow into a report is a bet on the report: a different trade.">E '+Math.round(ed)+'d</span>' : "";
+    var rv = q.rvol!=null ? q.rvol : num(c.rvol);
     return '<tr class="rw" data-sym="'+esc(c.ticker||"")+'">'
       +'<td><span class="sy2">'+esc(c.ticker||"?")+'</span> <span class="pill '+(c.direction==="BULL"?"b":"s")+'">'+(c.direction==="BULL"?"BULL":"BEAR")+'</span>'
       +(c.firing?' <span class="pill f" data-tip="'+esc(TIPS["tip-firing-badge"])+'">FIRING</span>':'')
+      + eHtml + chaseChipHTML(c, px)
       +'<span class="nm">'+(px!=null?px.toFixed(2):"—")+' · <span class="'+sign(ch)+'">'+fm1(ch)+'%</span></span></td>'
-      +'<td><b>'+(num(c.score)!=null?Math.round(c.score):"—")+'</b><span class="scoretrack"><i style="width:'+(num(c.score)||0)+'%"></i></span></td>'
+      +'<td><b>'+(num(c.score)!=null?Math.round(c.score):"—")+'</b></td>'
       +'<td class="'+sign(c.net_flow)+'">'+fmM(c.net_flow)+'</td>'
-      +'<td class="'+fpCls+'">'+fpStr+'</td>'
-      +'<td>'+(num(c.cp_ratio)!=null?c.cp_ratio.toFixed(2):"—")+'×</td><td>'+esc(tiltStr)+'</td>'
+      +'<td>'+fpHtml+'</td>'
+      +'<td>'+(rv!=null?rv.toFixed(1)+"×":"—")+'</td>'
       +'<td class="m" style="font-size:10.5px">'+contractLine(c.popular_contract)+'</td></tr>';
-  }, "score");
+  }
 }
 
 /* =================== Swing board (14d-6mo) =================== */
@@ -1596,29 +1727,51 @@ function renderSwing(data){
   document.getElementById("swingstat").innerHTML = "persistence-weighted" + (stale? staleBadgeHTML(data.generated_at_ct) : '');
   var el = document.getElementById("swing");
   if(arr.length===0){ el.innerHTML = '<div class="boardmsg">No swing setups on the board right now.</div>'; return; }
+  var cut = boardCutApply(arr, "swing");
+  var rerender = function(){ renderSwing(STATE.data); };
+  if(cut.rows.length===0){
+    el.innerHTML = '<div class="boardmsg">No swing names score '+BOARD_SCORE_FLOOR+'+ right now — a quiet tape is information too.</div>'
+      + boardCutNoteHTML(cut, "swing");
+    wireBoardCut(el, "swing", rerender);
+    return;
+  }
   table(el, "t-swing", [
-    {l:"Name",key:"ticker"},{l:"Score",key:"score",tip:TIPS["tip-score-swing"]},{l:"Persist",tip:TIPS["tip-persist"]},
+    {l:"Name",key:"ticker"},{l:"Score",key:"score",tip:TIPS["tip-score-swing"]},{l:"Persist",key:"persist",tip:TIPS["tip-persist"]},
     {l:"5d flow",key:"flow_5d",tip:TIPS["tip-flow5d"]},{l:"OI-confirm",tip:TIPS["tip-oiconfirm"]},{l:"Trend",tip:TIPS["tip-trend"]},
     {l:"IV rank",key:"iv_rank",tip:TIPS["tip-ivrank"]},{l:"Suggested contract",tip:TIPS["tip-suggested"]}
-  ], arr, function(c){
+  ], cut.rows, function(c){
     var persist = num(c.persist), persistMax = num(c.persist_max);
     var f5pct = num(c.flow_5d_pct);
     var f5Str = fmM(c.flow_5d) + (f5pct!=null ? (' <span class="m" style="font-size:9.5px">('+fm1SignedInt(f5pct)+'%)</span>') : '');
     var oic = c.oi_confirm;
     var oicCls = oic==="OPENING"?"u":oic==="CLOSING"?"d":"m";
-    var oicStr = oic ? (oic + (num(c.oi_confirm_frac)!=null ? (' '+fm1SignedInt(c.oi_confirm_frac*100)+'%') : '')) : "—";
+    var oicStr = oic ? (oic + (c.oi_confirm_side ? (" "+c.oi_confirm_side+"S") : "")
+      + (num(c.oi_confirm_frac)!=null ? (' '+fm1SignedInt(c.oi_confirm_frac*100)+'%') : '')) : "—";
     var trendStr = c.trend || "—";
     var ivr = num(c.iv_rank);
-    var ivrStr = c.iv_collecting ? ("collecting"+(num(c.iv30)!=null?(" · IV30 "+Math.round(c.iv30*100)+"%"):"")) : (ivr!=null?Math.round(ivr):"—");
+    // While collecting there is no percentile — a raw "IV30 98%" with no basis
+    // reads as a number when it's actually unknowable; the value now lives in
+    // the tooltip where the caveat travels with it.
+    var ivrStr = c.iv_collecting
+      ? '<span class="m" data-tip="IV rank needs 20+ sessions of this name’s own IV history and is still collecting. Today’s raw IV30 is '+(num(c.iv30)!=null?Math.round(c.iv30*100)+"%":"unknown")+' — with no history there is no basis to call that high or low.">—</span>'
+      : (ivr!=null?Math.round(ivr):"—");
+    var spot = num(c.spot);
+    var q = liveBySym(c.ticker) || {};
+    var px = q.px!=null ? q.px : spot;
+    var ed = num(c.earnings_days);
+    var eHtml = c.earnings_in_window
+      ? ' <span class="pill f" data-tip="An earnings report lands '+(ed!=null?("in "+Math.round(ed)+" day"+(Math.round(ed)===1?"":"s")+" "):"")+'inside this contract’s life. Earnings gap straight through option positions — a flow signal that spans a report is a bet on the report.">E'+(ed!=null?(" "+Math.round(ed)+"d"):"")+'</span>' : "";
     return '<tr class="rw" data-sym="'+esc(c.ticker||"")+'">'
-      +'<td><span class="sy2">'+esc(c.ticker||"?")+'</span> <span class="pill '+(c.direction==="BULL"?"b":"s")+'">'+(c.direction==="BULL"?"BULL":"BEAR")+'</span></td>'
-      +'<td><b>'+(num(c.score)!=null?Math.round(c.score):"—")+'</b><span class="scoretrack"><i style="width:'+(num(c.score)||0)+'%"></i></span></td>'
+      +'<td><span class="sy2">'+esc(c.ticker||"?")+'</span> <span class="pill '+(c.direction==="BULL"?"b":"s")+'">'+(c.direction==="BULL"?"BULL":"BEAR")+'</span>'
+      + eHtml + chaseChipHTML(c, px) + '</td>'
+      +'<td><b>'+(num(c.score)!=null?Math.round(c.score):"—")+'</b></td>'
       +'<td>'+(persist!=null?Math.round(persist):"—")+'/'+(persistMax!=null?Math.round(persistMax):"5")+'</td>'
       +'<td class="'+sign(c.flow_5d)+'">'+f5Str+'</td>'
       +'<td class="'+oicCls+'">'+esc(oicStr)+'</td>'
       +'<td class="m">'+esc(trendStr)+'</td><td>'+ivrStr+'</td>'
-      +'<td class="m" style="font-size:10.5px">'+suggestedContractLine(c.suggested_contract)+'</td></tr>';
-  }, "score");
+      +'<td class="m" style="font-size:10.5px">'+suggestedContractLine(c.suggested_contract, spot)+'</td></tr>';
+  }, "score",
+  {html: boardCutNoteHTML(cut, "swing"), wire: function(){ wireBoardCut(el, "swing", rerender); }});
 }
 
 /* =================== Biggest orders today =================== */
@@ -1638,36 +1791,63 @@ function renderOrders(data){
     {l:"Name",key:"ticker"},{l:"Side"},{l:"Strike"},{l:"Expiry",key:"dte"},{l:"Vol",key:"volume"},{l:"OI",key:"open_interest"},{l:"Premium",key:"premium",tip:TIPS["tip-bigorders"]}
   ], rows, function(o){
     var strike = num(o.strike);
+    var delta = num(o.delta);
+    // Δ next to the side: a −0.99-delta put is stock-in-disguise (hedge or
+    // substitute); a ±0.5 delta is an at-the-money bet. Same dollars, very
+    // different meaning.
+    var deltaHtml = delta!=null ? (' <span class="nm tn" data-tip="Delta near ±1.0 means deep in the money — the contract moves like the stock itself, often a hedge or stock substitute rather than a directional bet. Delta near ±0.5 is an at-the-money bet on the move.">Δ'+delta.toFixed(2)+'</span>') : '';
+    var vol = num(o.volume), oi = num(o.open_interest);
+    // New positioning vs churn: volume beyond everything previously held means
+    // this paper was opened TODAY (SMH 20,225 traded vs 42 held is a brand-new
+    // position; the same dollars against 300K held is recycling).
+    var newHtml = (vol!=null && vol>0 && oi!=null && (oi===0 || vol/oi>=1))
+      ? ' <span class="pill f" data-tip="Today’s volume exceeds all open interest carried into the day — this activity is NEW positioning being opened, not old positions churning.">NEW</span>' : '';
     return '<tr class="rw" data-sym="'+esc(o.ticker||"")+'">'
-      +'<td><span class="sy2">'+esc(o.ticker||"?")+'</span></td><td><span class="pill '+(o.side==="CALL"?"b":"s")+'">'+esc(o.side||"?")+'</span></td>'
+      +'<td><span class="sy2">'+esc(o.ticker||"?")+'</span></td><td><span class="pill '+(o.side==="CALL"?"b":"s")+'">'+esc(o.side||"?")+'</span>'+deltaHtml+'</td>'
       +'<td>'+(strike!=null?("$"+fmtStrike(strike)):"—")+'</td><td>'+(o.expiry?esc(o.expiry):"—")+(num(o.dte)!=null?(' ('+Math.round(o.dte)+'d)'):'')+'</td>'
-      +'<td>'+(num(o.volume)!=null?Math.round(o.volume).toLocaleString():"—")+'</td><td>'+(num(o.open_interest)!=null?Math.round(o.open_interest).toLocaleString():"—")+'</td>'
+      +'<td>'+(vol!=null?Math.round(vol).toLocaleString():"—")+'</td><td>'+(oi!=null?Math.round(oi).toLocaleString():"—")+newHtml+'</td>'
       +'<td><b>'+fmtOrderPremium(o.premium)+'</b></td></tr>';
-  }, "premium");
-  var cappedArr = (data && Array.isArray(data.big_orders_capped)) ? data.big_orders_capped : [];
-  if(cappedArr.length){
+  }, "premium",
+  {html: (function(){
+    var cappedArr = (data && Array.isArray(data.big_orders_capped)) ? data.big_orders_capped : [];
     var parts = cappedArr.map(function(c){
       var earned=num(c.earned), shown=num(c.shown);
       if(earned===null||shown===null) return null;
       return esc(c.ticker||"?")+" earned "+Math.round(earned)+" of these rows, showing "+Math.round(shown);
     }).filter(function(x){return x;});
-    if(parts.length){
-      el.insertAdjacentHTML("beforeend", '<div class="note" data-tip="'+esc(TIPS["tip-bigorders"])+'">'+parts.join(" · ")+" — capped so one busy name can't fill the board.</div>");
-    }
-  }
+    return parts.length ? ('<div class="note" data-tip="'+esc(TIPS["tip-bigorders"])+'">'+parts.join(" · ")+" — capped so one busy name can't fill the board.</div>") : "";
+  })()});
 }
+// Routed through the same unit-aware scaler as every other money figure
+// (a legit $100K row used to render "$0.1M" — this board was the one formatter
+// the wave-3 unit fix missed).
 function fmtOrderPremium(v){
   var n = num(v); if(n===null) return "—";
-  return "$"+(n/1e6).toFixed(1)+"M";
+  return "$"+fmtDollarsUnit(n);
 }
 
 /* =================== Semi ETF flows =================== */
+// "Fri Aug 14" from "2026-08-14" — the day the card's dollars actually moved.
+function fmtSessionLabel(dateStr){
+  if(typeof dateStr!=="string" || dateStr.length<10) return null;
+  try{
+    var d = new Date(dateStr+"T12:00:00Z");
+    if(isNaN(d.getTime())) return dateStr;
+    return WD_ABBR[d.getUTCDay()]+" "+MO_ABBR[d.getUTCMonth()]+" "+(+dateStr.slice(8,10));
+  }catch(e){ return dateStr; }
+}
 function renderETF(data){
   var sec = document.getElementById("s-etf");
   var ef = data && data.etf_flows;
   var funds = (ef && Array.isArray(ef.funds)) ? ef.funds : [];
   var stale = isStaleFlow(data);
-  document.getElementById("etfstat").innerHTML = "yesterday's money · once per session" + (stale? staleBadgeHTML(data.generated_at_ct) : '');
+  // The header used to hardcode "yesterday's money" while the payload's
+  // flow_session said the dollars moved three sessions ago (every Monday, and
+  // worse after holidays). The label now names the actual session.
+  var sessLab = ef && ef.flow_session ? fmtSessionLabel(ef.flow_session) : null;
+  document.getElementById("etfstat").innerHTML =
+    (sessLab ? ("money moved "+esc(sessLab)+" · one reading per session") : "one reading per session")
+    + (stale? staleBadgeHTML(data.generated_at_ct) : '');
   if(!ef || funds.length===0){ sec.hidden = true; return; }
   sec.hidden = false;
   var rows = funds.map(function(f){
@@ -1675,7 +1855,9 @@ function renderETF(data){
     if(fd===null){ d1Str = f.split_suppressed ? "split — n/a" : "collecting"; cls = "m"; }
     else { d1Str = fmM(fd); cls = fd>0?"u":fd<0?"d":"m"; }
     var streakN = num(f.streak);
-    var streakStr = (streakN!=null && streakN>=1) ? (Math.round(streakN)+"d "+(fd!=null&&fd<0?"out":"in")) : "—";
+    // The in/out word derives from the day's flow sign; with flow_1d null the
+    // sign is unknowable, so the whole streak cell stays a dash (not "3d in").
+    var streakStr = (streakN!=null && streakN>=1 && fd!=null) ? (Math.round(streakN)+"d "+(fd<0?"out":"in")) : "—";
     var m1 = num(f.flow_1m);
     var m1Str = m1===null?"—":fmM(m1);
     var m1cls = m1===null?"m":(m1>=0?"u":"d");
@@ -2530,17 +2712,23 @@ function openDrawer(sym){
     + '</div></div><div class="chart chartbig" id="dchartwrap"><div class="note" style="padding:30px 0;text-align:center">loading chart…</div></div>'
     + '<div id="catlist"></div></div>';
 
+  // Tilt and C/P moved here from the board table (2026-08-18): they explain a
+  // score, they don't need an always-on column.
+  var tiltN = conv ? num(conv.tilt) : null;
+  var tiltStr = conv ? (tiltN===null ? "sampling" : (fm1SignedInt(tiltN*100)+"%"+(num(conv.tilt_prem)? (" on "+fmDollarsSigned(Math.abs(num(conv.tilt_prem))).replace("+","")+" classified") : ""))) : "—";
   var convSec = conv ? ('<div class="dsec"><h3>Conviction board</h3>'
     + '<div class="kvrow"><span>Score</span><b>'+(num(conv.score)!=null?Math.round(conv.score):"—")+(conv.firing?" · FIRING":"")+'</b></div>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-netflow"])+'">Net flow 0–7d</span></span><b class="'+sign(conv.net_flow)+'">'+fmM(conv.net_flow)+'</b></div>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-flowpct"])+'">Flow %</span></span><b>'+(num(conv.flow_pct)!=null&&conv.flow_side?(conv.flow_pct.toFixed(0)+"% "+conv.flow_side):"—")+'</b></div>'
+    + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-cpratio"])+'">C/P by contract count</span></span><b>'+(num(conv.cp_ratio)!=null?conv.cp_ratio.toFixed(2)+"×":"—")+'</b></div>'
+    + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-tilt"])+'">Aggressor tilt</span></span><b>'+esc(tiltStr)+'</b></div>'
     + '<div class="kvrow"><span>Loudest contract</span><b style="font-size:10.5px">'+contractLine(conv.popular_contract)+'</b></div></div>') : "";
 
   var swSec = sw ? ('<div class="dsec"><h3>Swing board</h3>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-persist"])+'">Persistence</span></span><b>'+(num(sw.persist)!=null?Math.round(sw.persist):"—")+'/'+(num(sw.persist_max)!=null?Math.round(sw.persist_max):"5")+'</b></div>'
     + '<div class="kvrow"><span>5-day flow</span><b class="'+sign(sw.flow_5d)+'">'+fmM(sw.flow_5d)+'</b></div>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-oiconfirm"])+'">OI-confirm</span></span><b>'+(sw.oi_confirm||"—")+'</b></div>'
-    + '<div class="kvrow"><span>Suggested</span><b style="font-size:10.5px">'+suggestedContractLine(sw.suggested_contract)+'</b></div></div>') : "";
+    + '<div class="kvrow"><span>Suggested</span><b style="font-size:10.5px">'+suggestedContractLine(sw.suggested_contract, num(sw.spot))+'</b></div></div>') : "";
 
   var newsSec = newsItems.length ? ('<div class="dsec"><h3>Headlines</h3>'+newsItems.map(function(n){
       return '<div class="kvrow"><span style="max-width:82%">'+esc(n.title||"")+'</span><b class="m tn">'+ctTimeShort(n.ts)+'</b></div>';

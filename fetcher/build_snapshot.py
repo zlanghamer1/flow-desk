@@ -1553,6 +1553,12 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
                 "cp_ratio": analysis["cp_ratio"],
                 "flow_pct": analysis["flow_pct"],
                 "flow_side": analysis["flow_side"],
+                # The $ of near-money premium behind flow_pct (both sides), so
+                # the UI can suppress a percentage computed on trivia. null
+                # exactly when flow_pct is null. Display only (DATA_CONTRACT.md).
+                "flow_pct_basis": (
+                    round(analysis["nm_call_prem_0_7"] + analysis["nm_put_prem_0_7"], 2)
+                    if analysis["flow_pct"] is not None else None),
                 "rvol": quote["rvol"],
                 "change_pct": quote["change_pct"],
                 "tilt": round(tilt, 3) if tilt is not None else None,

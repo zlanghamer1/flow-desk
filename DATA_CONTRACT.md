@@ -30,12 +30,20 @@ values are `null` (never a string sentinel). All strings are already plain
   },
   "etf_flows": {             // semi ETF share-flow context card (added 2026-07-19); null if the fetch failed and no history exists
     "as_of_session": "2026-07-18",   // session the shares-outstanding snapshot belongs to
+    "flow_session": "2026-07-17",    // the session the DOLLARS in flow_1d actually moved (max of the
+                                     // per-fund flow_session values below; null when every fund is
+                                     // collecting). The card's honest date label: over a weekend or a
+                                     // Monday snapshot this can lag as_of_session by several sessions,
+                                     // and the UI must label the money with THIS date, never "yesterday".
+                                     // (Documented 2026-08-18; the fetcher has published it since the
+                                     // lag-correction fix — this entry catches the contract up.)
     "funds": [                        // fixed order: SMH, SOXX, SOXL, SOXS, DRAM; a fund with no data this cycle is omitted
       {
         "ticker": "SMH",
         "flow_1d": -123456789.0,      // (shares outstanding this session - previous session) x NAV, signed $;
                                       // null until 2 sessions of SO history exist ("collecting"), and also
                                       // null when split_suppressed is true (see below)
+        "flow_session": "2026-07-17", // session this fund's flow_1d dollars moved (documented 2026-08-18)
         "baseline_session": "2026-07-17",  // session the SO baseline came from; null when flow_1d is null
         "streak": 3,                  // consecutive sessions (incl. latest) of same-sign daily flow; null when flow_1d is null
                                       // split days contribute a 0 delta, so they break a streak rather than extend it
@@ -584,6 +592,12 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
   "flow_side": "PUT",              // "CALL" | "PUT" — which side flow_pct refers to; ties
                                    // (exactly 50/50) resolve to "PUT". null if no near-money
                                    // premium, or if spot is unknown.
+  "flow_pct_basis": 1834000.0,     // $ of near-money premium (both sides) behind flow_pct — the
+                                   // denominator, exposed so the UI can suppress a percentage
+                                   // computed on trivia ("95% CALL" of $6K is noise, not signal;
+                                   // the display floor mirrors BIG_ORDERS_MIN_PREMIUM = $100K).
+                                   // null exactly when flow_pct is null. Display only; not a
+                                   // scoring input. (Added 2026-08-18.)
   "rvol": 1.04,                    // relative_volume_10d_calc from TV
   "change_pct": -0.66,             // TV change (day % )
   "tilt": 0.64,                    // aggressor tilt, -1..+1: day-accumulated sampled buy/sell
