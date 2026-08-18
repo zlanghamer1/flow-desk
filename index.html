@@ -187,6 +187,7 @@ section.closed .sb{display:none}
    Muted slate keeps it legible without shouting (2026-08-18). */
 .bc.stale{color:var(--ink2);background:var(--srf2);border-color:var(--edge)}
 .warn{margin-top:10px;border-left:2px solid var(--hi);padding:5px 10px;font-size:11.5px;color:var(--ink2);background:var(--hibg)}
+.warn.wgood{border-left-color:var(--up);background:color-mix(in srgb,var(--up) 8%,transparent)}
 .warn b{color:var(--hi);letter-spacing:.08em;font-size:10px;margin-right:6px}
 /* stats tiles — the contract's "header tiles" (data.stats), finally rendered (2026-08-18) */
 .statrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
@@ -1004,6 +1005,17 @@ function normalizeBrief(d){
   } else if(b.retreat_watch===false) b.retreat_watch=null;
   if(b.whales_hiding===true) b.whales_hiding="haven inflows and sector outflows both ran heavy this week — money is hiding.";
   else if(b.whales_hiding===false) b.whales_hiding=null;
+  /* semi_flow (2026-08-18): money leaving/returning to the semi wrappers
+     (SMH+SOXX week flow as % of assets, from the vault brief). Display-only,
+     mirrors the brief's gauge; absent/null state renders nothing. */
+  if(b.semi_flow&&typeof b.semi_flow==="object"&&b.semi_flow.state){
+    var sf=b.semi_flow, amt=(typeof sf.week_total==="number")?("$"+(Math.abs(sf.week_total)/1e9).toFixed(2)+"B"):null,
+        pct=(typeof sf.week_pct==="number")?(sf.week_pct>=0?"+":"−")+Math.abs(sf.week_pct).toFixed(2)+"%":null,
+        qty=(amt&&pct)?(amt+" ("+pct+" of assets)"):(amt||pct||"");
+    if(sf.state==="LEAVING") b.semi_flow={tone:"bad",text:qty+" left SMH+SOXX this week"+(sf.top_sector_taker?(" — biggest sector taker: "+(SECTOR_NAMES[sf.top_sector_taker]||sf.top_sector_taker)):"")+"."};
+    else if(sf.state==="RETURNING") b.semi_flow={tone:"good",text:qty+" moved into SMH+SOXX this week."};
+    else b.semi_flow={tone:"flat",text:"NEUTRAL — SMH+SOXX "+qty+" this week."};
+  } else b.semi_flow=null;
 }
 function normalizePositions(payload){
   if(!payload||typeof payload!=="object") return payload;
@@ -1706,6 +1718,12 @@ function renderBrief(data){
   }
   if(brief.retreat_watch) html += '<div class="warn"><b>RETREAT WATCH</b>'+esc(brief.retreat_watch)+'</div>';
   if(brief.whales_hiding) html += '<div class="warn"><b>WHALES HIDING</b>'+esc(brief.whales_hiding)+'</div>';
+  if(brief.semi_flow){
+    var sfb=brief.semi_flow.tone==="bad"?'<div class="warn"><b>MONEY LEAVING SEMIS</b>':
+            brief.semi_flow.tone==="good"?'<div class="warn wgood"><b>MONEY RETURNING TO SEMIS</b>':
+            '<div class="warn" style="border-left-color:var(--ink3,#888);background:transparent"><b>SEMI FLOW</b>';
+    html += sfb+esc(brief.semi_flow.text)+'</div>';
+  }
   document.getElementById("briefbody").innerHTML = html;
 }
 function fm1SignedInt(v){ var n=num(v); if(n===null) return "—"; return (n>0?"+":n<0?"−":"")+Math.abs(Math.round(n)); }
