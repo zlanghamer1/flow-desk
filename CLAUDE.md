@@ -39,6 +39,15 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   Brief will disagree about what counts as a loud day. The `grade`/`alarm`
   fields are computed in the fetcher, never in the page; don't re-derive
   thresholds in JavaScript.
+- **Don't remove the split repair in `fetcher/context.py`, and don't trust
+  Yahoo's split events to replace it.** Yahoo served SOXS's pre-2026-05-26
+  history 15x too high and its own declared splits (1:20 on 2026-03-05, 1:10
+  on 2026-07-15) match neither that break's date nor its factor. The repair is
+  data-driven (a bar that OPENS 2.5x+ from the previous close) and its
+  threshold is set from the live universe: the only other outsized overnight
+  gaps in 69 tickers are NBIS/BE/APLD at ~0.65, all real news. Loosening the
+  threshold would rewrite a real gap into a fake split. `fetcher/test_split_repair.py`
+  pins both directions.
 - Forced test runs off-hours are fine for `data.json`, but must **not** create
   weekend/closed history sessions. `build_snapshot.run_cycle` guards this
   (`write_history = market_state != "closed"`) — do not remove that guard.

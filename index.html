@@ -787,6 +787,8 @@ var TIPS = {
   "tip-stop-ref": "Stop reference = 30% below the entry price — a fixed constant, not tuned to this name's volatility. A reference level, never a recommendation; real stops on share positions come from the trail math (Position Guard).",
   "tip-target-ref": "Target reference = entry price plus 105% — a fixed constant. A reference level, never a recommendation; see the 'needs ~x% on the stock' figure for what the stock must do to get there.",
   "tip-bigorders": "The single options contracts with the most dollars traded today, ranked across the whole watch list. Dollars = contracts traded × the contract's last price × 100. IMPORTANT: each line is one contract's ENTIRE SESSION, not one order. Free data publishes a daily total per contract, never a trade-by-trade tape. Only strikes within 20% of the stock price count, and only expiries inside 6 months. At most 3 rows per ticker, so one busy name can't say the same thing five times. Any name that earned more rows than it shows is named in the line under the board, so the cap is never silent. Display only; it doesn't move any score.",
+  "tip-logscale": "This chart is drawn on a log price scale, which the desk switches to on its own when a window spans more than 4x high-to-low AND its recent bars have been squeezed into less than a fifth of the pane. On the usual (linear) scale a name that has fallen 99% draws its whole recent history as a flat line along the bottom — a 3x inverse ETF like SOXS does exactly that. On a log scale the same percentage move takes the same vertical space anywhere on the chart, so a 10% week reads the same at $4,000 and at $40. Prices on the axis are real prices either way; only the spacing changes.",
+  "tip-splitfix": "This ticker's older bars arrived from the price feed on the wrong scale — a split the feed never applied to the history — so the desk divided everything before the break by the factor shown and scaled those days' volumes the other way. SOXS came back with every bar before 2026-05-26 priced 15x too high, which drew the 3-month chart as a flat line. The repaired series matches Polygon and TradingView bar for bar. Said out loud here rather than fixed silently.",
   "tip-etfflows": "Real invested money entering or leaving each semiconductor ETF, estimated as the day-over-day change in the fund's shares outstanding times its NAV (ETFs create and destroy shares as money moves in and out). One reading per session — slower than the options boards, and it mixes retail and institutional money. The 1M figure is the fund's trailing one-month net flow. Shows 'split — n/a' when a fund split that day: a split changes the share count without any money moving, so the day's flow is unknowable rather than zero. Context only; it doesn't affect any score.",
   netflow:"Call premium traded minus put premium traded (volume × last × 100). Free data can't see buy vs sell side — this is premium changing hands, not directional order flow.",
   flows:"Fund flows = change in shares outstanding × NAV (creations/redemptions). Flows chase returns — context, never a signal.",
@@ -1216,6 +1218,13 @@ function ensureIntra(){
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
     .then(function(json){ INTRA_CACHE = (json && typeof json==="object") ? json : {}; return INTRA_CACHE; })
     .catch(function(){ INTRA_CACHE = {}; return INTRA_CACHE; });
+}
+// bars.json's split_fixed map (2026-08-18): {sym: factor} for any ticker whose
+// pre-split history the fetcher had to rescale because Yahoo served it on the
+// wrong scale. Surfaced as a chip on the chart rather than applied silently.
+function splitFixedFor(sym){
+  var m = BARS_CACHE && BARS_CACHE.split_fixed;
+  return (m && typeof m[sym]==="number") ? m[sym] : null;
 }
 function intraRaw(sym, key){ return (INTRA_CACHE && INTRA_CACHE[key] && INTRA_CACHE[key][sym]) || []; }
 // bars.json v2 rows are [o,h,l,c] quads; v1 rows are plain close numbers. barsOf()
@@ -2496,6 +2505,15 @@ var TFN2 = {"1M":21,"3M":63,"6M":126,"1Y":252};             // candle-chart time
    resampled from the hourly series; 1W from the daily file. 1D keeps the
    existing chart exactly as it was, window buttons included. */
 var IVS = ["15m","1H","4H","1D","1W"];
+// A window draws on a log price axis only when BOTH are true: it spans more
+// than LOG_SCALE_RATIO high-to-low, AND its most recent fifth of bars occupies
+// less than LOG_TAIL_SHARE of the pane — i.e. the linear chart has actually
+// stopped being readable. The pair matters: MU's 1Y window spans 11x on its
+// own and reads fine linear (its recent bars still own a third of the pane),
+// so it stays linear. Across the live universe the pair fires on SOXS at every
+// window and on AAOG at 6M/1Y, and on nothing else.
+var LOG_SCALE_RATIO = 4;
+var LOG_TAIL_SHARE = 0.2;
 var dIV = "1D";
 var CT_DAY_FMT = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",weekday:"short",month:"numeric",day:"numeric"});
 var CT_TIME_FMT = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",hour:"numeric",minute:"2-digit"});
@@ -2690,8 +2708,24 @@ function candleChartSVG(sym, tf, fund, iv){
   var plotW=W-rightPad, plotH=plotBottom-plotTop;
   var highs=slice.map(function(r){return num(r[1]);}), lows=slice.map(function(r){return num(r[2]);});
   var mn=safeMin(lows.concat(m200)), mx=safeMax(highs.concat(m200));
-  var pad=(mx-mn)*0.06||1, lo=mn-pad, hi=mx+pad, sp=(hi-lo)||1;
-  var Y=function(v){ return plotTop + (1-(v-lo)/sp)*plotH; };
+  // LOG PRICE AXIS (2026-08-18, Zach: "check soxs chart for example at 1D, all
+  // flat"). SOXS is a 3x inverse semis ETF in a semi bull market: its real 6M
+  // range is $4,256 -> $40, so on a linear axis every recent candle collapses
+  // into a 1px line along the bottom and the chart says nothing. A log axis
+  // gives equal vertical space to equal PERCENTAGE moves, which is the honest
+  // way to draw a decay like that. Both conditions must hold (see
+  // LOG_SCALE_RATIO / LOG_TAIL_SHARE above), so an ordinary big winner keeps
+  // the linear axis it has always had. The chip in the seg row says which
+  // scale is in force, so nobody misreads a log chart as a linear one.
+  var tailN = Math.max(10, Math.floor(n/5));
+  var tailHi = safeMax(highs.slice(-tailN)), tailLo = safeMin(lows.slice(-tailN));
+  var tailShare = (mx>mn) ? (tailHi-tailLo)/(mx-mn) : 1;
+  var useLog = (mn>0 && mx/mn >= LOG_SCALE_RATIO && tailShare < LOG_TAIL_SHARE);
+  var T = useLog ? function(v){ return Math.log(Math.max(v, 1e-9)); } : function(v){ return v; };
+  var Tinv = useLog ? function(v){ return Math.exp(v); } : function(v){ return v; };
+  var tmn=T(mn), tmx=T(mx);
+  var pad=(tmx-tmn)*0.06||(useLog?0.02:1), lo=tmn-pad, hi=tmx+pad, sp=(hi-lo)||1;
+  var Y=function(v){ return plotTop + (1-(T(v)-lo)/sp)*plotH; };
   var slotW=plotW/n, X=function(i){ return slotW*i+slotW/2; };
   var bodyW=Math.max(1, slotW*0.7);
 
@@ -2700,7 +2734,7 @@ function candleChartSVG(sym, tf, fund, iv){
 
   var axisHtml="";
   for(var g=0; g<=4; g++){
-    var v = lo+sp*g/4, y=Y(v);
+    var v = Tinv(lo+sp*g/4), y=Y(v);
     axisHtml += '<line x1="0" x2="'+plotW+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="var(--edge)" stroke-width="1" opacity=".5"/>'
       + '<text x="'+(plotW+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9.5" fill="var(--ink3)">'+fmtpx(v)+'</text>';
   }
@@ -2802,7 +2836,7 @@ function candleChartSVG(sym, tf, fund, iv){
 
   var svg = '<svg viewBox="0 0 '+W+' '+H+'" id="dchart">'
     + axisHtml + monthHtml + maHtml + candleHtml + labelsHtml + volHtml + earnHtml + catHtml + '</svg>';
-  return {svg:svg, pct:pct, slice:slice, dates:dates, n:n, W:W, plotW:plotW, iv:(iv||"1D")};
+  return {svg:svg, pct:pct, slice:slice, dates:dates, n:n, W:W, plotW:plotW, iv:(iv||"1D"), log:useLog};
 }
 
 /* ---- earnings popover ---- */
@@ -3197,13 +3231,20 @@ function openDrawer(sym){
   });
 }
 function chartSegHTML(){
+  // Both rows ALWAYS render (Zach, 2026-08-18: "1M, 3M etc. only appear if I
+  // click 1D"). dIV is a global that survives closing the drawer, so one click
+  // on 15m used to strip the window buttons off every chart he opened after
+  // it, with nothing on screen saying why. The window row now stays put and
+  // simply carries no pressed state on an intraday/weekly view; clicking one
+  // of its buttons means "show me that much history", so it switches the chart
+  // back to daily candles rather than sitting inert.
   var ivBtns = IVS.map(function(t){ return '<button data-iv="'+t+'" aria-pressed="'+(t===dIV)+'">'+t+'</button>'; }).join("");
-  var tfBtns = dIV==="1D" ? GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(t===dTF)+'">'+t+'</button>'; }).join("") : "";
-  return '<div class="seg" role="group">'+ivBtns+'</div>'+(tfBtns?('<div class="seg" role="group">'+tfBtns+'</div>'):'');
+  var tfBtns = GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(dIV==="1D" && t===dTF)+'">'+t+'</button>'; }).join("");
+  return '<div class="seg" role="group">'+ivBtns+'</div><div class="seg" role="group">'+tfBtns+'</div>';
 }
 function wireChartSeg(scope, sym){
   $$(".seg button", scope).forEach(function(b){ b.addEventListener("click", function(){
-    if(b.dataset.iv){ dIV=b.dataset.iv; } else if(b.dataset.tf){ dTF=b.dataset.tf; }
+    if(b.dataset.iv){ dIV=b.dataset.iv; } else if(b.dataset.tf){ dTF=b.dataset.tf; dIV="1D"; }
     redrawChart(sym);
   }); });
 }
@@ -3231,6 +3272,9 @@ function redrawChart(sym, fund){
 
   var viewLbl = dIV==="1D" ? dTF : dIV+" view";
   var pctChip = res.pct!=null ? ('<span class="pchip tn '+(res.pct>=0?"u":"d")+'">'+fm1(res.pct)+'% this '+viewLbl+'</span>') : '';
+  if(res.log) pctChip += '<span class="pchip tn m" data-tip="'+esc(TIPS["tip-logscale"])+'">log scale</span>';
+  var fixedBy = splitFixedFor(sym);
+  if(fixedBy) pctChip += '<span class="pchip tn m" data-tip="'+esc(TIPS["tip-splitfix"])+'">split-rescaled '+fixedBy.toFixed(fixedBy>=10?0:1)+'×</span>';
   var segrow = wrap.parentElement.querySelector(".segrow");
   if(segrow) segrow.innerHTML = chartSegHTML()+pctChip;
   wireChartSeg(wrap.parentElement, sym);

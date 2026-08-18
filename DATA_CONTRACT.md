@@ -420,6 +420,24 @@ fundamentals table for it.
   its OHLC and should simply be skipped in a volume pane, not read as "no
   shares traded").
 
+- `split_fixed` — **present only when a repair fired** (added 2026-08-18):
+  `{ticker: factor}` for every symbol whose pre-split history Yahoo served on
+  the wrong scale and the fetcher rescaled. Yahoo returned SOXS with every bar
+  before 2026-05-26 priced exactly 15x too high (1159.50 against 77.30 from
+  both Polygon and TradingView), which drew three months of real trading as a
+  flat line along the bottom of a $31–$1,660 axis. `context._repair_split_breaks`
+  finds a bar that OPENS a factor of 2.5+ away from the previous CLOSE — the
+  signature of a split, since a real crash gaps small and moves intraday —
+  divides the earlier bars' prices by that factor and multiplies their volumes
+  by it. The published factor is what was applied (15.0 for SOXS; the repaired
+  series then matches Polygon bar for bar). The key exists so the page can SAY
+  a history was rescaled instead of silently redrawing it — index.html renders
+  it as a "split-rescaled 15×" chip on the chart. A consumer that ignores the
+  key still gets correct bars; it just can't tell Zach why they changed.
+  `bars_intraday.json` runs the same repair (its 60-minute series spans three
+  months, long enough to hold a split) but publishes no such key — an intraday
+  chart is too short a window to be worth annotating.
+
 `facts.*.avg_move` (see above) is derived from this same fetch — mean of
 `abs(daily % change)` over each ticker's last 20 CLOSES (the 4th element of
 each row in v2/v3) — but that reading is published in `data.json`'s `facts`,

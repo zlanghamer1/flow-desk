@@ -204,6 +204,40 @@ The four macro tiles and the index ETFs show no fundamentals panel, and that is
 correct rather than missing: an index has no earnings, no margins and no P/E.
 The chart, the moving averages and the catalyst calendar all work normally.
 
+## Chart windows, log scale, and one bad price history (added 2026-08-18)
+
+Three fixes to the chart in the drawer, all from opening SOXS.
+
+**The window buttons stay put.** 1M / 3M / 6M / 1Y used to vanish the moment
+you picked an intraday view (15m, 1H, 4H) and come back only when you clicked
+1D again. The chart remembers your last interval between tickers, so one click
+on 15m quietly stripped those buttons off every chart you opened afterward.
+They are always on screen now. On an intraday view none of them is highlighted,
+and clicking one means "show me that much history" — it switches the chart back
+to daily candles.
+
+**Charts that fall off a cliff now use a log scale.** SOXS is a 3x inverse
+semiconductor fund in a semiconductor bull market, so it decays: a year ago it
+traded near $4,250, today near $40. On a normal price axis that puts every
+recent candle in a 1-pixel line along the bottom — the chart was flat because
+the scale was, not because the fund stopped moving. When a window spans more
+than 4x top-to-bottom AND the recent bars have been squeezed into less than a
+fifth of the pane, the chart switches to a log scale, where the same percentage
+move takes the same vertical space anywhere on the chart. A **log scale** chip
+says when that is in force. Ordinary names are untouched — MU's 1Y chart spans
+11x on its own and still reads fine straight, so it stays as it was.
+
+**SOXS's older prices were simply wrong, and are now repaired.** Yahoo, which
+supplies the daily history, returned every SOXS bar before May 26 priced
+exactly 15 times too high — $1,159.50 for a day that Polygon and TradingView
+both put at $77.30. It is a split the feed never applied to its own history,
+and no version of the request fixes it. The fetcher now detects that kind of
+break (a bar that OPENS a factor away from the previous close, which is what a
+split looks like and what a crash does not) and rescales the earlier bars,
+volumes included. The repaired series matches Polygon day for day. A
+**split-rescaled 15×** chip on the chart says it happened, because a history
+that changes shape overnight should say why.
+
 ## Chance of a Fed rate increase (added 2026-08-18)
 
 The Morning Brief panel carries a card showing **the odds that the Fed raises

@@ -1203,8 +1203,12 @@ def build_catalysts(econ_rows: list[dict], memory_rows: list[dict],
 # ── Bars (Yahoo daily OHLC, at most once per day) ───────────────────────────
 
 BARS_VERSION = 3   # bars.json schema version — see build_bars's docstring
-BARS_BUILD_SIG = "v3-2y-vol-tape"  # bumped whenever build_bars's OUTPUT SHAPE
-                                # changes (not on an ordinary daily rebuild).
+BARS_BUILD_SIG = "v3-2y-vol-tape-splitfix"  # bumped whenever build_bars's OUTPUT
+                                # SHAPE or VALUES change (not on an ordinary
+                                # daily rebuild) — the 2026-08-18 split repair
+                                # below rewrites values, so it rides this gate
+                                # too and lands on the next cycle instead of
+                                # waiting for tomorrow's build.
                                 # build_context's once-a-day gate keys off
                                 # BOTH bars_built_date AND this signature, so
                                 # a code deploy that changes the shape forces
@@ -1213,6 +1217,109 @@ BARS_BUILD_SIG = "v3-2y-vol-tape"  # bumped whenever build_bars's OUTPUT SHAPE
                                 # a cached v2 bars.json from earlier the same
                                 # day would keep publishing, unchanged, until
                                 # midnight. See build_context.
+
+
+# ── Split-adjustment repair (added 2026-08-18) ──────────────────────────────
+#
+# Yahoo's chart series is NOT reliably split-adjusted, and when it breaks it
+# breaks by an order of magnitude. Live example that started this: SOXS (3x
+# inverse semis, two reverse splits in 2026) came back with every bar before
+# 2026-05-26 multiplied by EXACTLY 15.0 against the same bars from Polygon and
+# TradingView — 2026-05-22 read 1159.50 where both other sources read 77.30,
+# then the next bar dropped to 62.90 and the rest of the series was correct.
+# Verified against query1/query2, range=1y/2y/5y, period1/period2, events=split
+# and interval=1wk/1mo: every variant returns the same broken series, so there
+# is no request-shaped way out of it, and Yahoo's own declared split events
+# (1:20 on 2026-03-05, 1:10 on 2026-07-15) match neither the break's date nor
+# its factor — they cannot be used to undo it either.
+#
+# What it did to the desk: the 3M chart's y-axis spanned $31 to $1,660, so
+# three months of real trading drew as a flat line pinned to the bottom of the
+# pane (Zach, 2026-08-18: "check soxs chart for example at 1D, all flat"), the
+# SMA lines were meaningless, and avg_move counted an 18x one-day "return".
+#
+# The repair walks the series NEWEST to OLDEST and rescales the whole prefix
+# whenever a bar OPENS a factor of SPLIT_BREAK_MIN or more away from the
+# previous CLOSE. The open-vs-previous-close test is the load-bearing choice:
+# a split artifact lands entirely in the overnight gap (SOXS opened at 69.00
+# after closing at 1159.50, then traded a normal 62-70 range), while a real
+# crash gaps modestly and then moves INTRADAY (2025-04-09, the tariff-reversal
+# session: SOXS closed -56% on the day but opened only -2%). Prices in the
+# prefix are divided by the factor and volumes multiplied by it, because a
+# split moves the two reciprocally.
+#
+# SPLIT_BREAK_MIN = 2.5 is set from the live universe, not from taste: the only
+# other overnight gaps in the whole 69-ticker, 2-year bars.json are NBIS 0.66,
+# BE 0.63 and APLD 0.65 — all REAL news gaps, and all comfortably inside the
+# threshold. A genuine 2.5x overnight move on a listed ETF or large-cap does
+# not happen; a split does.
+#
+# The raw gap ratio still carries that session's real price move (SOXS: 16.80
+# measured, 15.0 true, because the fund also fell ~11% that day), so the
+# estimate is SNAPPED to the nearest clean split ratio when it lands within
+# SPLIT_SNAP_TOL of one — 16.80 snaps to 15 (12% away) rather than 20 (19%
+# away), which is the true factor. An estimate near no clean ratio is used
+# as-is: an approximate rescale is still within a few percent of the truth,
+# where leaving it alone is off by 1,500%.
+SPLIT_BREAK_MIN = 2.5
+SPLIT_RATIOS = [2, 2.5, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 25, 30, 40, 50, 100]
+SPLIT_SNAP_TOL = 0.15
+
+
+def _snap_split_ratio(f: float) -> float:
+    """Nearest clean split ratio to f (in log space, so 1/8 snaps like 8), or f
+    itself when nothing clean sits within SPLIT_SNAP_TOL."""
+    inv = f < 1
+    x = (1.0 / f) if inv else f
+    best, best_err = None, None
+    for c in SPLIT_RATIOS:
+        err = abs(x / c - 1.0)
+        if best_err is None or err < best_err:
+            best, best_err = c, err
+    if best_err is not None and best_err <= SPLIT_SNAP_TOL:
+        x = float(best)
+    return (1.0 / x) if inv else x
+
+
+def _repair_split_breaks(rows: list[list], sym: str, off: int = 0) -> Optional[float]:
+    """Rescale earlier bars across any split-sized overnight break, in place.
+
+    rows are oldest-first; `off` is the index of the OPEN leg (0 for daily
+    [o,h,l,c,v] quints, 1 for intraday [t,o,h,l,c,v] rows). Returns the total
+    factor applied to the oldest bar (None when the series was already clean),
+    so the caller can publish and log what it changed. Multiple breaks compose:
+    fixing a newer one rescales both sides of every older one equally, leaving
+    the older break's own ratio intact.
+    """
+    if not rows or len(rows) < 2:
+        return None
+    total = 1.0
+    for i in range(len(rows) - 1, 0, -1):
+        prev_close = rows[i - 1][off + 3]
+        opn = rows[i][off]
+        if not isinstance(prev_close, (int, float)) or not isinstance(opn, (int, float)):
+            continue
+        if prev_close <= 0 or opn <= 0:
+            continue
+        f = prev_close / opn
+        if 1.0 / SPLIT_BREAK_MIN < f < SPLIT_BREAK_MIN:
+            continue
+        f = _snap_split_ratio(f)
+        for j in range(i):
+            row = rows[j]
+            for k in range(off, off + 4):
+                if isinstance(row[k], (int, float)):
+                    # 4dp keeps an intraday row tidy (the daily path re-rounds
+                    # to 2dp on its way into bars.json either way)
+                    row[k] = round(row[k] / f, 4)
+            v = row[off + 4] if len(row) > off + 4 else None
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                row[off + 4] = int(round(v * f))
+        total *= f
+        log(f"{sym}: split-adjustment break at bar {i} of {len(rows)} "
+            f"(prev close {prev_close:g} -> open {opn:g}); rescaled the earlier "
+            f"{i} bars by 1/{f:g}")
+    return total if total != 1.0 else None
 
 
 def _extract_yahoo_ohlcv(obj, drop_on_or_after: Optional[date] = None) -> Optional[list[list]]:
@@ -1383,6 +1490,7 @@ def build_intraday_bars(universe: list[str],
             if not rows:
                 log(f"intraday skip {sym} {interval}: no usable series")
                 continue
+            _repair_split_breaks(rows, sym, off=1)   # i60 spans 3mo, long enough to hold a split
             bucket[sym] = rows[-INTRA_MAX[key]:]
             any_ok = True
         out[key] = bucket
@@ -1492,6 +1600,7 @@ def build_bars(universe: list[str], session_date: date,
     """
     bars: dict[str, list[list]] = {}
     avg_move: dict[str, float] = {}
+    split_fixed: dict[str, float] = {}
     for i, sym in enumerate(universe):
         if i > 0:
             time.sleep(BARS_SLEEP_SEC)
@@ -1527,6 +1636,9 @@ def build_bars(universe: list[str], session_date: date,
         if not quints:
             log(f"skip {sym}: no usable OHLC series")
             continue
+        fixed = _repair_split_breaks(quints, sym)
+        if fixed is not None:
+            split_fixed[sym] = round(fixed, 4)
         quints = quints[-BARS_MAX:]
         if len(quints) < BARS_SHORT_WARN:
             log(f"WARN {sym} ({fetch_sym}): still only {len(quints)} bars after "
@@ -1539,6 +1651,10 @@ def build_bars(universe: list[str], session_date: date,
         if mv is not None:
             avg_move[sym] = mv
     payload = {"built": session_date.isoformat(), "v": BARS_VERSION, "bars": bars}
+    if split_fixed:
+        # Published so the page can SAY it rescaled a history rather than
+        # silently redrawing it (see DATA_CONTRACT.md, split_fixed).
+        payload["split_fixed"] = split_fixed
     return payload, avg_move
 
 
