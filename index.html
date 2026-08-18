@@ -9,39 +9,39 @@
 /* ============ tokens — dark is the native theme ============ */
 :root{
   --bg:#0C0E11; --srf:#101318; --srf2:#14181E; --edge:#1D232B; --edge2:#161B21;
-  --ink:#DEE5EC; --ink2:#8E9AA8; --ink3:#61707F;
-  --up:#3ECF8E; --dn:#F06A5D; --upbg:rgba(62,207,142,.09); --dnbg:rgba(240,106,93,.09);
+  --ink:#DEE5EC; --ink2:#8E9AA8; --ink3:#8695A6;
+  --up:#3ECF8E; --dn:#F06A5D; --upbg:rgba(62,207,142,.16); --dnbg:rgba(240,106,93,.16);
   --acc:#5E9FD8; --accbg:rgba(94,159,216,.12);
-  --hi:#D9A845; --hibg:rgba(217,168,69,.10);
+  --hi:#D9A845; --hibg:rgba(217,168,69,.16);
   --sel:rgba(94,159,216,.07);
   --spark-up:#3ECF8E; --spark-dn:#F06A5D; --spark-n:#5C6B7A;
 }
 @media (prefers-color-scheme: light){
   :root:not([data-theme="dark"]){
     --bg:#F2F4F7; --srf:#FFFFFF; --srf2:#F7F9FB; --edge:#DDE3EA; --edge2:#E7ECF1;
-    --ink:#1C2530; --ink2:#5A6878; --ink3:#8794A3;
-    --up:#177E52; --dn:#C03A3A; --upbg:rgba(23,126,82,.08); --dnbg:rgba(192,58,58,.07);
+    --ink:#1C2530; --ink2:#5A6878; --ink3:#5F6C7B;
+    --up:#177E52; --dn:#C03A3A; --upbg:rgba(23,126,82,.13); --dnbg:rgba(192,58,58,.12);
     --acc:#2F6FAE; --accbg:rgba(47,111,174,.10);
-    --hi:#9A6B10; --hibg:rgba(154,107,16,.10);
+    --hi:#9A6B10; --hibg:rgba(154,107,16,.13);
     --sel:rgba(47,111,174,.06);
     --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   }
 }
 :root[data-theme="light"]{
   --bg:#F2F4F7; --srf:#FFFFFF; --srf2:#F7F9FB; --edge:#DDE3EA; --edge2:#E7ECF1;
-  --ink:#1C2530; --ink2:#5A6878; --ink3:#8794A3;
-  --up:#177E52; --dn:#C03A3A; --upbg:rgba(23,126,82,.08); --dnbg:rgba(192,58,58,.07);
+  --ink:#1C2530; --ink2:#5A6878; --ink3:#5F6C7B;
+  --up:#177E52; --dn:#C03A3A; --upbg:rgba(23,126,82,.13); --dnbg:rgba(192,58,58,.12);
   --acc:#2F6FAE; --accbg:rgba(47,111,174,.10);
-  --hi:#9A6B10; --hibg:rgba(154,107,16,.10);
+  --hi:#9A6B10; --hibg:rgba(154,107,16,.13);
   --sel:rgba(47,111,174,.06);
   --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
 }
 :root[data-theme="dark"]{
   --bg:#0C0E11; --srf:#101318; --srf2:#14181E; --edge:#1D232B; --edge2:#161B21;
-  --ink:#DEE5EC; --ink2:#8E9AA8; --ink3:#61707F;
-  --up:#3ECF8E; --dn:#F06A5D; --upbg:rgba(62,207,142,.09); --dnbg:rgba(240,106,93,.09);
+  --ink:#DEE5EC; --ink2:#8E9AA8; --ink3:#8695A6;
+  --up:#3ECF8E; --dn:#F06A5D; --upbg:rgba(62,207,142,.16); --dnbg:rgba(240,106,93,.16);
   --acc:#5E9FD8; --accbg:rgba(94,159,216,.12);
-  --hi:#D9A845; --hibg:rgba(217,168,69,.10);
+  --hi:#D9A845; --hibg:rgba(217,168,69,.16);
   --sel:rgba(94,159,216,.07);
   --spark-up:#3ECF8E; --spark-dn:#F06A5D; --spark-n:#5C6B7A;
 }
@@ -104,7 +104,7 @@ a{color:var(--acc);text-decoration:none}
   display:flex;align-items:center;gap:2px;min-width:0}
 .tp .s .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tp .s .sess{flex:none}
-.tp .p{font-size:14px;font-weight:650;grid-row:2}
+.tp .p{font-size:14px;font-weight:600;grid-row:2}
 .tp .c{font-size:11px;font-weight:600;grid-row:2;justify-self:end}
 /* Tiles open a chart (2026-08-17) — same affordance the rail rows already use. */
 .tp{cursor:pointer}
@@ -145,10 +145,11 @@ section.closed .sb{display:none}
 .wr .sy{font-weight:700;font-size:12px}
 .wr .meta{font-size:9px;color:var(--ink3);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wr .px{font-size:11.5px;text-align:right}
-.wr .ch{font-size:11px;font-weight:650;text-align:right;min-width:44px}
+.wr .ch{font-size:11px;font-weight:600;text-align:right;min-width:44px}
 .hotb{font-size:8.5px;font-weight:700;color:var(--hi);background:var(--hibg);border-radius:3px;padding:0 4px;letter-spacing:.03em}
 .rb{position:relative;height:4px;border-radius:2px;background:var(--edge);margin:7px 0 13px}
-.rb i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--up);opacity:.5}
+/* Neutral fill — the old always-green fill encoded nothing (2026-08-18) */
+.rb i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--ink3);opacity:.35}
 .rb b{position:absolute;top:50%;width:7px;height:7px;background:var(--ink);transform:translate(-50%,-50%) rotate(45deg);border-radius:1px}
 .rb .lo,.rb .hi{position:absolute;top:7px;font-size:8.5px;color:var(--ink3)}
 .rb .hi{right:0}
@@ -156,7 +157,7 @@ section.closed .sb{display:none}
 .wlsort{display:flex;gap:4px;padding:9px 14px 2px;flex-wrap:wrap}
 .alertbox{margin:8px 14px 12px;border:1px solid var(--edge);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--ink2);background:var(--srf2)}
 .alertbox b{display:block;font-size:9.5px;letter-spacing:.12em;color:var(--ink3);margin-bottom:3px}
-.alertbox .hm2{color:var(--hi);font-weight:650}
+.alertbox .hm2{color:var(--hi);font-weight:600}
 
 /* ============ position guard unlock form ============ */
 .pgform{margin-top:6px;display:flex;flex-direction:column;gap:6px}
@@ -169,7 +170,11 @@ section.closed .sb{display:none}
 
 /* ============ brief ============ */
 .verdict{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
-.verdict .v{font-size:19px;font-weight:750;letter-spacing:.03em}
+/* The verdict is the one line the page exists for — it now dominates
+   (2026-08-18; it used to be 19px, styled like context furniture). */
+.verdict .v{font-size:30px;font-weight:700;letter-spacing:-0.01em;line-height:1.1}
+#s-brief{background:var(--srf2)}
+#s-brief .sb{border-left:2px solid var(--acc);padding-left:12px}
 .verdict .sc{font-size:12px;color:var(--ink2)}
 .brief p{margin-top:6px;max-width:74ch;color:var(--ink);font-size:12.5px}
 .brief .q{color:var(--ink3);font-size:11px;margin-top:4px;max-width:74ch}
@@ -177,7 +182,10 @@ section.closed .sb{display:none}
 .bc{font-size:10px;border:1px solid var(--edge);border-radius:4px;padding:2px 7px;color:var(--ink2);letter-spacing:.03em}
 .bc.h{color:var(--dn);background:var(--dnbg);border-color:transparent}
 .bc.s{color:var(--up);background:var(--upbg);border-color:transparent}
-.bc.stale{color:var(--hi);background:var(--hibg);border-color:transparent}
+/* Stale is a CAVEAT, not an alarm — it used to wear the same amber as hot
+   movers and imminent catalysts, which taught the eye to ignore all three.
+   Muted slate keeps it legible without shouting (2026-08-18). */
+.bc.stale{color:var(--ink2);background:var(--srf2);border-color:var(--edge)}
 .warn{margin-top:10px;border-left:2px solid var(--hi);padding:5px 10px;font-size:11.5px;color:var(--ink2);background:var(--hibg)}
 .warn b{color:var(--hi);letter-spacing:.08em;font-size:10px;margin-right:6px}
 /* stats tiles — the contract's "header tiles" (data.stats), finally rendered (2026-08-18) */
@@ -204,18 +212,22 @@ section.closed .sb{display:none}
 /* ============ tables ============ */
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{
-  font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink3);font-weight:650;
+  font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink2);font-weight:600;
   text-align:right;padding:5px 8px;border-bottom:1px solid var(--edge);white-space:nowrap;
 }
-th:first-child,td:first-child{text-align:left;padding-left:2px}
+th:first-child,td:first-child{text-align:left;padding-left:0}
 th.sort{cursor:pointer} th.sort:hover{color:var(--ink2)}
 th .ar{font-size:8px;margin-left:2px;color:var(--acc)}
 td{padding:5px 8px;border-bottom:1px solid var(--edge2);text-align:right;white-space:nowrap}
 tr:last-child td{border-bottom:none}
 tr.rw{cursor:pointer}
 tr.rw:hover td{background:var(--sel)}
-tr.foc td{background:var(--sel);box-shadow:inset 2px 0 0 var(--acc)}
-tr.dim{opacity:.35}
+/* One stripe on the row's left edge — the inset shadow used to apply to EVERY
+   td, rendering a focused row as seven blue tick marks marching across it. */
+tr.foc td{background:var(--sel)}
+tr.foc td:first-child{box-shadow:inset 2px 0 0 var(--acc)}
+/* .55, not .35 — dimmed rows are de-emphasized, not unreadable */
+tr.dim{opacity:.55}
 td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .sy2{font-weight:700}
 .pill{font-size:9px;font-weight:700;letter-spacing:.07em;border-radius:3px;padding:1.5px 5px}
@@ -236,10 +248,12 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .filters{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
 .fbtn{font-size:10px;letter-spacing:.05em;border:1px solid var(--edge);border-radius:5px;padding:3px 8px;color:var(--ink2)}
 .fbtn[aria-pressed="true"]{color:var(--acc);border-color:var(--acc);background:var(--accbg)}
+/* interactive chrome answers the cursor — none of these had a hover state */
+.fbtn:hover,.ic:hover,.kbtn:hover,.seg button:hover{color:var(--ink);border-color:var(--ink3)}
 .cg{font-size:9px;letter-spacing:.13em;color:var(--ink3);font-weight:700;text-transform:uppercase;padding:8px 0 4px;border-bottom:1px solid var(--edge2)}
 .ct{display:grid;grid-template-columns:40px 1fr auto;gap:9px;padding:8px 0;border-bottom:1px solid var(--edge2);align-items:start}
 .ct:last-child{border-bottom:none}
-.ct.done{opacity:.45}
+.ct.done{opacity:.55}
 .ct .dt{text-align:center;border:1px solid var(--edge);border-radius:5px;padding:2px 0;background:var(--srf2)}
 .ct .dt .w{font-size:8.5px;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase}
 .ct .dt .n{font-size:13.5px;font-weight:700}
@@ -282,9 +296,9 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
   .drawer{width:100vw;height:100vh;top:0;left:0;transform:none;border-radius:0}
 }
 .dh{display:flex;align-items:baseline;gap:10px;padding:14px 16px 6px;position:sticky;top:0;background:var(--srf);border-bottom:1px solid var(--edge2);z-index:2;flex-wrap:wrap;border-radius:12px 12px 0 0}
-.dh .sy{font-size:19px;font-weight:750}
+.dh .sy{font-size:19px;font-weight:700}
 .dh .px{font-size:15px}
-.dh .ch{font-size:12px;font-weight:650}
+.dh .ch{font-size:12px;font-weight:600}
 .dh .x{margin-left:auto;color:var(--ink3);font-size:16px;padding:2px 8px}
 @media (max-width:640px){ .dh{border-radius:0} }
 .dsec{padding:10px 16px;border-bottom:1px solid var(--edge2)}
@@ -299,7 +313,11 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .chart{position:relative}
 .chart svg{width:100%;height:150px;display:block}
 .chartbig{position:relative}
-.chartbig svg{width:100%;height:min(46vh,360px);display:block}
+/* Height follows the viewBox's own 980:340 ratio — the old fixed height plus
+   preserveAspectRatio="none" stretched the SVG non-uniformly, distorting every
+   axis label, MA end-label and earnings glyph (the single most visible
+   "not a real terminal" tell). */
+.chartbig svg{width:100%;height:auto;aspect-ratio:980/340;display:block}
 .xh{position:absolute;pointer-events:none;display:none;font-size:10px;background:var(--srf2);border:1px solid var(--edge);border-radius:4px;padding:3px 7px;white-space:nowrap;z-index:5;line-height:1.5}
 .pop{position:absolute;z-index:8;display:none;max-width:230px;background:var(--srf2);border:1px solid var(--edge);border-radius:6px;padding:8px 10px 9px;font-size:11px;color:var(--ink2);box-shadow:0 12px 32px rgba(0,0,0,.4);line-height:1.55}
 .pop b{color:var(--ink)}
@@ -308,19 +326,20 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .leg{display:flex;gap:12px;font-size:9.5px;color:var(--ink3);margin-top:5px;flex-wrap:wrap}
 .leg i{display:inline-block;width:12px;border-top:2px solid var(--ink2);vertical-align:middle;margin-right:4px}
 .leg i.p{border-top:2px solid var(--acc)}
-.leg i.d20{border-top:2px dashed var(--ink3)}
+.leg i.d20{border-top:2px solid var(--ink3)} /* solid — the chart strokes it solid; the swatch used to lie */
 .leg i.d50{border-top:2px solid var(--acc)}
 .leg i.d200{border-top:2px solid var(--hi)}
 .fgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px 16px}
 @media (max-width:900px){ .fgrid{grid-template-columns:repeat(2,minmax(0,1fr))} }
 .fcell{display:flex;justify-content:space-between;gap:10px;padding:3.5px 0;border-bottom:1px solid var(--edge2);font-size:11.5px}
 .fcell span{color:var(--ink3)}
-.fcell b{font-weight:600}
+.fcell b{font-weight:600;font-variant-numeric:tabular-nums}
+.kvrow b{font-variant-numeric:tabular-nums}
 .gwrap{display:flex;gap:16px;flex-wrap:wrap;margin-top:4px}
 .gwrap .glabel{flex:1 1 100%;font-size:9.5px;letter-spacing:.12em;color:var(--ink3);font-weight:700;text-transform:uppercase;margin-top:8px}
 .gchart{flex:1 1 240px;min-width:200px}
-.gchart h4{font-size:9.5px;letter-spacing:.09em;color:var(--ink3);text-transform:uppercase;margin-bottom:3px;font-weight:650}
-.gchart svg{width:100%;height:82px;display:block}
+.gchart h4{font-size:9.5px;letter-spacing:.09em;color:var(--ink3);text-transform:uppercase;margin-bottom:3px;font-weight:600}
+.gchart svg{width:100%;height:auto;aspect-ratio:280/82;display:block}
 .jumpflash{background:var(--sel)!important;box-shadow:inset 2px 0 0 var(--acc)}
 .kvrow{display:flex;justify-content:space-between;gap:14px;font-size:11.5px;padding:3px 0;color:var(--ink3)}
 .kvrow b{color:var(--ink);font-weight:600;text-align:right}
@@ -397,7 +416,7 @@ footer b{color:var(--ink2)}
   .tp:nth-child(n+5){border-top:1px solid var(--edge2)}
   .tp .p{font-size:12.5px}
   .t-orders th:nth-child(5),.t-orders td:nth-child(5),.t-orders th:nth-child(6),.t-orders td:nth-child(6),
-  .t-sector th:nth-child(4),.t-sector td:nth-child(4),.t-sector th:nth-child(6),.t-sector td:nth-child(6),
+  .t-sector th:nth-child(3),.t-sector td:nth-child(3),.t-sector th:nth-child(5),.t-sector td:nth-child(5),
   /* t-conv is 6 columns since the C/P + Tilt demotion (2026-08-18): hide RVOL
      (5) and the loudest-contract string (6) at phone width */
   .t-conv th:nth-child(5),.t-conv td:nth-child(5),.t-conv th:nth-child(6),.t-conv td:nth-child(6),
@@ -420,7 +439,7 @@ footer b{color:var(--ink2)}
     <span class="rl" id="railverdict" data-tip="The Morning Brief engine's synthesis score, computed once pre-market — same number the daily brief computes. Most of its measured edge is the overnight gap." hidden>verdict <b id="railverdicttext">—</b></span>
     <span class="rl opt" id="railbackdrop" data-tip="Six level/trend readings: 10Y, real yield, MOVE, crude, HY spread, 2s10s. Display-only." hidden>backdrop <b id="railbackdroptext">—</b></span>
     <div class="grow"></div>
-    <button class="kbtn" id="palopen"><span>Search tickers, actions…</span><kbd>⌘K</kbd></button>
+    <button class="kbtn" id="palopen"><span>Search tickers, actions…</span><kbd id="palkbd">⌘K</kbd></button>
     <button class="ic" id="theme" aria-pressed="false">◐ theme</button>
   </div>
   <div class="focusbar" id="focusbar">
@@ -1358,7 +1377,10 @@ function railRowHTML(s){
     +'<div class="l1"><span class="sy">'+esc(s)+'</span><span class="meta">'+metaHtml+'</span>'
     +(isHot? '<span class="hotb" data-tip="'+esc(TIPS.hot)+' Today: '+h.toFixed(1)+'× its usual '+(f.avg_move!=null?f.avg_move:"?")+'% day.">'+h.toFixed(1)+'×</span>' : "")
     +'<span class="px tn">'+pxStr+'</span><span class="ch tn '+cls+'">'+chStr+'</span></div>'
-    +rangeBarHTML(s)+'</div>';
+    // The 52-week range bar draws only in the "52w ↑" sort view (2026-08-18):
+    // fifty always-on mini-charts ate ~40% of the rail's height for a datum
+    // the shopping-list box and the drawer's big bar already carry.
+    +(wlSort==="range" ? rangeBarHTML(s) : "")+'</div>';
 }
 function renderWL(){
   var railSyms = [];
@@ -1670,8 +1692,11 @@ function renderSectorSection(data){
   el.innerHTML = "";
   if(sectors.length){
     var mx = Math.max.apply(null, sectors.map(function(x){ return Math.abs(num(x.rel)||0); })) || 1;
+    // Bar and number share one column (2026-08-18): they are the same value
+    // (1-week pp vs SPY), and two columns of identical information spent a
+    // column's width saying it twice.
     table(el, "t-sector", [
-      {l:"Sector",key:"ticker"},{l:"1w vs SPY",tip:TIPS.flows},{l:"1w pp",key:"rel"},{l:"1m pp",key:"m"},
+      {l:"Sector",key:"ticker"},{l:"1w vs SPY (pp)",key:"rel",tip:TIPS.flows},{l:"1m pp",key:"m"},
       {l:"$1w flow",key:"flow_1w",tip:TIPS.flows},{l:"$1m flow",key:"flow_1m"},{l:""}
     ], sectors, function(r){
       var rel = num(r.rel)||0;
@@ -1679,8 +1704,8 @@ function renderSectorSection(data){
       var dim = Math.abs(rel)/mx<0.55 ? "opacity:.4" : "";
       var side = rel>=0 ? ("left:50%;width:"+wpx+"px;background:var(--up)") : ("left:calc(50% - "+wpx+"px);width:"+wpx+"px;background:var(--dn)");
       return '<tr class="rw" data-sym="'+esc(r.ticker||"")+'"><td><span class="sy2">'+esc(r.ticker||"?")+'</span><span class="nm">'+esc(r.name||"")+'</span></td>'
-        +'<td><span class="dvg"><em></em><i style="'+side+';'+dim+'"></i></span></td>'
-        +'<td class="'+sign(r.rel)+'">'+fm1(r.rel)+'</td><td class="'+sign(r.m)+'">'+fm1(r.m)+'</td>'
+        +'<td><span class="dvg"><em></em><i style="'+side+';'+dim+'"></i></span> <span class="'+sign(r.rel)+'">'+fm1(r.rel)+'</span></td>'
+        +'<td class="'+sign(r.m)+'">'+fm1(r.m)+'</td>'
         +'<td class="'+sign(r.flow_1w)+'">'+fmB(r.flow_1w)+'</td><td class="'+sign(r.flow_1m)+'">'+fmB(r.flow_1m)+'</td>'
         +'<td><span class="pill '+((r.tag||((rel>=0)?"IN":"OUT"))==="IN"?"b":"s")+'">'+esc(r.tag||((rel>=0)?"IN":"OUT"))+'</span></td></tr>';
     }, "rel");
@@ -2522,7 +2547,7 @@ function candleChartSVG(sym, tf, fund){
     return '<polygon class="catdmd" data-catid="'+c._id+'" points="'+gutterX+','+(y-4)+' '+(gutterX+4)+','+y+' '+gutterX+','+(y+4)+' '+(gutterX-4)+','+y+'" fill="var(--acc)"/>';
   }).join("");
 
-  var svg = '<svg viewBox="0 0 '+W+' '+H+'" id="dchart" preserveAspectRatio="none">'
+  var svg = '<svg viewBox="0 0 '+W+' '+H+'" id="dchart">'
     + axisHtml + monthHtml + maHtml + candleHtml + labelsHtml + volHtml + earnHtml + catHtml + '</svg>';
   return {svg:svg, pct:pct, slice:slice, dates:dates, n:n, W:W, plotW:plotW};
 }
@@ -2764,7 +2789,7 @@ function miniBarSVG(labels, values, opts){
     return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(1,hgt).toFixed(1)+'" fill="'+col+'"><title>'+esc(titleTxt)+'</title></rect>'+lastLabel;
   }).join("");
   var baseLine = hasNeg ? ('<line x1="0" x2="'+W+'" y1="'+baseline+'" y2="'+baseline+'" stroke="var(--edge)" stroke-width="1"/>') : "";
-  return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+baseLine+bars+'</svg>';
+  return '<svg viewBox="0 0 '+W+' '+H+'">'+baseLine+bars+'</svg>';
 }
 function renderGrowth(sym, fund){
   var g = fund && fund.growth;
@@ -2836,7 +2861,7 @@ function drawerHeaderHTML(sym){
   var h = hotOf(sym);
   return '<div class="dh" id="dh"><span class="sy">'+esc(sym)+'</span>'
     + '<span class="m" style="font-size:12px">'+esc(nameFor(sym))+sessTagHTML(d.tag)+'</span>'
-    + '<span class="px tn" style="font-size:21px;font-weight:750">'+(d.px!=null?fmtpx(d.px):"—")+'</span>'
+    + '<span class="px tn" style="font-size:21px;font-weight:700">'+(d.px!=null?fmtpx(d.px):"—")+'</span>'
     + '<span class="ch tn '+sign(d.ch)+'" style="font-size:14px">'+(d.ch!=null?fm1(d.ch)+"%":"—")+'</span>'
     + (h!=null && h>=HOT_AT ? ('<span class="hotb" data-tip="'+esc(TIPS.hot)+'">'+h.toFixed(1)+'× usual move</span>') : "")
     + '<button class="x" id="dclose" aria-label="Close">×</button></div>';
@@ -2946,21 +2971,27 @@ function redrawChart(sym, fund){
     wrap.insertAdjacentHTML("afterend", legHtml);
     var svg = document.getElementById("dchart");
     var xh = document.getElementById("xh");
-    wrap.onmousemove = function(e){
+    // Shared by mouse AND touch — the crosshair used to be mouse-only, so the
+    // candle chart had no readout at all on a phone.
+    var showXH = function(clientX){
       var r = svg.getBoundingClientRect();
-      var fx = Math.max(0, Math.min(0.999999, (e.clientX-r.left)/Math.max(1,r.width)));
+      var fx = Math.max(0, Math.min(0.999999, (clientX-r.left)/Math.max(1,r.width)));
       var px = fx*res.W;
       var i = Math.max(0, Math.min(res.n-1, Math.floor(px/(res.plotW/res.n))));
       var row = res.slice[i]; if(!row) return;
       var d = res.dates[i];
       var dateLbl = MONTHS[d.getUTCMonth()]+" "+d.getUTCDate();
       xh.style.display = "block";
-      xh.style.left = Math.min(r.width-150, Math.max(0, e.clientX-r.left+8))+"px";
+      xh.style.left = Math.min(r.width-150, Math.max(0, clientX-r.left+8))+"px";
       xh.style.top = "8px";
       var volPart = (row.length>=5 && row[4]!=null) ? (' · V '+fmtVolShort(row[4])) : '';
       xh.innerHTML = '<b>'+dateLbl+'</b><br>O '+fmtpx(row[0])+' H '+fmtpx(row[1])+' L '+fmtpx(row[2])+' C '+fmtpx(row[3])+volPart;
     };
+    wrap.onmousemove = function(e){ showXH(e.clientX); };
     wrap.onmouseleave = function(){ xh.style.display = "none"; };
+    wrap.ontouchstart = wrap.ontouchmove = function(e){
+      if(e.touches && e.touches[0]) showXH(e.touches[0].clientX);
+    };
     $$(".ebadge", wrap).forEach(function(g){
       g.addEventListener("click", function(ev){
         ev.stopPropagation();
@@ -3157,7 +3188,12 @@ function showTip(t){
   tipb.textContent = txt; tipb.style.display = "block";
   var r = t.getBoundingClientRect();
   tipb.style.left = Math.min(innerWidth-296, Math.max(8, r.left))+"px";
-  tipb.style.top = (r.bottom+8)+"px";
+  // Clamp to the viewport: tapping anything in the lower third used to push
+  // the tip off-screen. If it won't fit below, it renders above the target.
+  var h = tipb.offsetHeight || 60;
+  var top = r.bottom+8;
+  if(top + h > innerHeight - 8) top = Math.max(8, r.top - h - 8);
+  tipb.style.top = top+"px";
 }
 document.addEventListener("mouseover", function(e){
   var t = e.target.closest("[data-tip]"); if(!t){ tipb.style.display="none"; return; }
@@ -3203,6 +3239,8 @@ document.addEventListener("keydown", function(e){
 var palinEl = document.getElementById("palin");
 if(palinEl) palinEl.addEventListener("input", function(){ palIdx=0; palDraw(); });
 document.getElementById("palopen").addEventListener("click", palOpen);
+// The binding is Ctrl-K everywhere but a Mac; the label used to claim ⌘K on all platforms.
+(function(){ var k=document.getElementById("palkbd"); if(k && !/Mac|iPhone|iPad/.test(navigator.platform||"")) k.textContent="Ctrl K"; })();
 document.getElementById("pal").addEventListener("click", function(e){ if(e.target.id==="pal") palClose(); });
 document.getElementById("focclear").addEventListener("click", function(){ setFocus(null); });
 // Modal: clicking the dimmed backdrop closes it (Esc + the × already do, via
