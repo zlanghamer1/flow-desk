@@ -204,6 +204,45 @@ The four macro tiles and the index ETFs show no fundamentals panel, and that is
 correct rather than missing: an index has no earnings, no margins and no P/E.
 The chart, the moving averages and the catalyst calendar all work normally.
 
+## Chance of a Fed rate increase (added 2026-08-18)
+
+The Morning Brief panel carries a card showing **the odds that the Fed raises
+interest rates at its next meeting**, taken from Polymarket — a betting market
+where people put real money on the outcome. One big number, a bar showing the
+three possible results, and how the odds have moved.
+
+The bar splits 100% three ways: a rate **increase** in red, **no change** in
+grey, a **rate cut** in green. Red is the hostile outcome for stocks, which is
+the same colour logic the rest of the page uses.
+
+Underneath, three changes: **today**, **1 week**, and **1 month**. The daily one
+is there because it is usually the interesting one. Odds can sit still for a
+month and then move ten points in an afternoon on one speech, and a weekly
+number smears that flat.
+
+A red banner appears above the card when either the odds pass 40% — a rate rise
+is close to a coin flip — or they jump 10 points in a single day. A jump that
+size is news whatever the starting level, so an 8% chance becoming 19% shouts
+even though 19% still sounds small.
+
+Three things to keep in mind:
+
+- **This is a price, not a forecast.** It tells you what people betting money
+  currently think. Crowds priced this way are decent and not right.
+- **It does not move the verdict score.** The RISK-ON / RISK-OFF number at the
+  top of the panel is built from eight overnight inputs and has a measured
+  track record behind it. The Fed odds sit beside that number and colour the
+  wording, deliberately. Nothing gets to move a tested number on a hunch, and
+  there is no track record for this reading yet — every daily value is being
+  recorded so the question can actually be answered in a few months.
+- **A "hike" means any increase**, a quarter point or more, at that one meeting.
+  The separate "any hike this year" line at the bottom of the card is a looser
+  question and usually a much bigger number.
+
+If the card is missing, the odds could not be read — a market too thinly traded
+to mean anything, or a feed that was down. The card disappears rather than
+showing a 0%, because 0% would be a real claim and a wrong one.
+
 ## Its limits
 
 - **Options data is 15 minutes delayed.** It's free CBOE data, not a live feed.
@@ -216,6 +255,9 @@ The chart, the moving averages and the catalyst calendar all work normally.
   orders.** Individual blocks and sweeps need a paid trade-by-trade feed. See
   that section above — this is the difference that makes those social-media
   "big flow" posts look like they're seeing something you can't.
+- **The Fed-hike odds are a betting market, not the Fed.** Polymarket prices
+  what gamblers expect, and it has been wrong before. It also never moves the
+  verdict score — see that section above for why.
 - **This is not financial advice.** It's a personal research tool. Nothing on
   the boards is a recommendation to buy or sell anything.
 

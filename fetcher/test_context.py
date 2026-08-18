@@ -1685,3 +1685,266 @@ def test_econ_blank_labels_normalize_to_none_not_empty_string():
     r = rows[0]
     assert r["unit"] is None and r["scale"] is None
     assert r["period"] is None and r["agency"] is None
+
+
+# ── 10. Fed-hike odds (Polymarket, added 2026-08-18) ─────────────────────────
+# What these defend: the desk must never print a hike probability it cannot
+# stand behind. A thin book, a book that does not sum to ~100%, a flipped
+# Yes/No pair, or a dead endpoint all have to produce NO CARD rather than a
+# confident-looking number — and the card, once shown, has to carry the DAILY
+# change Zach asked for (2026-08-18), not just the weekly one.
+
+def _poly_market(label, yes, token="tok", closed=False):
+    """Gamma's real wire shape: outcomes / outcomePrices / clobTokenIds arrive
+    as JSON-encoded STRINGS inside the JSON, not as arrays."""
+    return {
+        "groupItemTitle": label,
+        "outcomes": json.dumps(["Yes", "No"]),
+        "outcomePrices": json.dumps([f"{yes}", f"{1 - yes:.4f}"]),
+        "clobTokenIds": json.dumps([token, token + "_no"]),
+        "closed": closed,
+    }
+
+
+def _poly_sept(volume=36_569_390.0):
+    return {
+        "title": "Fed Decision in September?",
+        "slug": "fed-decision-in-september-762",
+        "endDate": "2026-09-16T00:00:00Z",
+        "volume": volume, "liquidity": 3_828_616.38,
+        "markets": [
+            _poly_market("50+ bps decrease", 0.0035, "d50"),
+            _poly_market("25 bps decrease", 0.0075, "d25"),
+            _poly_market("No change", 0.715, "hold"),
+            _poly_market("25 bps increase", 0.285, "u25"),
+            _poly_market("50+ bps increase", 0.0035, "u50"),
+        ],
+    }
+
+
+def _poly_dec():
+    """Higher volume, LATER meeting — the shelf really does order December
+    above September, so picking by volume order would read the wrong meeting."""
+    e = _poly_sept(volume=99_000_000.0)
+    e["title"] = "Fed Decision in December?"
+    e["slug"] = "fed-decision-in-december-x"
+    e["endDate"] = "2026-12-09T23:59:00Z"
+    return e
+
+
+def _poly_year(yes=0.485):
+    return {"title": "Fed rate hike in 2026?", "slug": "fed-rate-hike-in-2026",
+            "endDate": "2026-12-09T00:00:00Z", "volume": 7_614_865.0,
+            "markets": [_poly_market("", yes, "yr")]}
+
+
+def _poly_get(events, history=None, fail_history=False):
+    hist = history or []
+
+    def fake_get(url, headers):
+        if url.startswith(context.POLY_EVENTS_URL):
+            return json.dumps(events).encode()
+        if url.startswith(context.POLY_HISTORY_URL):
+            if fail_history:
+                raise urllib.error.URLError("down")
+            return json.dumps({"history": hist}).encode()
+        raise AssertionError(f"unexpected URL {url}")
+    return fake_get
+
+
+def _poly_hist(points):
+    """CLOB history wire shape: [{"t": unix, "p": price}]. A fixture of bare
+    tuples parses to an EMPTY history and makes delta assertions vacuous."""
+    return [{"t": t, "p": p} for t, p in points]
+
+
+SESSION = date(2026, 8, 18)
+
+
+def test_fed_odds_happy_path_normalises_the_book_to_100():
+    out = context.fetch_fed_odds(SESSION, _get=_poly_get([_poly_sept(), _poly_year()]))
+    assert out["hike_pct"] == pytest.approx(28.4, abs=0.1)
+    assert out["hold_pct"] == pytest.approx(70.5, abs=0.1)
+    assert (out["hike_pct"] + out["hold_pct"] + out["cut_pct"]) == pytest.approx(100.0, abs=0.2)
+    assert out["hike_pct_raw"] == pytest.approx(28.85)
+    assert out["meeting_date"] == "2026-09-16"
+    assert out["days_to_meeting"] == 29
+    assert out["year_hike_pct"] == pytest.approx(48.5)
+    assert out["url"] == "https://polymarket.com/event/fed-decision-in-september-762"
+    assert out["grade"] == "HOSTILE"        # 28% clears FED_HIKE_HOSTILE_PCT
+    assert out["alarm"] is False           # but not the 40% alarm line
+
+
+def test_fed_odds_sums_every_increase_leg_not_just_the_headline_one():
+    """"Does the Fed raise" is satisfied by ANY increase, 25bp or 50bp."""
+    out = context.fetch_fed_odds(SESSION, _get=_poly_get([_poly_sept()]))
+    assert out["hike_pct_raw"] == pytest.approx(28.5 + 0.35)
+
+
+def test_fed_odds_picks_the_nearest_meeting_not_the_biggest_market():
+    out = context.fetch_fed_odds(SESSION, _get=_poly_get([_poly_dec(), _poly_sept()]))
+    assert out["meeting_date"] == "2026-09-16"
+
+
+def test_fed_odds_reads_yes_by_label_not_by_position():
+    """A flipped outcomes pair must not turn a 28% hike into a 72% one."""
+    e = _poly_sept()
+    e["markets"][3]["outcomes"] = json.dumps(["No", "Yes"])
+    e["markets"][3]["outcomePrices"] = json.dumps(["0.715", "0.285"])
+    out = context.fetch_fed_odds(SESSION, _get=_poly_get([e]))
+    assert out["hike_pct_raw"] == pytest.approx(28.85)
+
+
+def test_fed_odds_carries_the_daily_change_alongside_the_weekly():
+    """Zach, 2026-08-18: "I want the daily update, not just weekly." Each
+    window takes the last print at or before its cutoff; both hike legs read
+    the same fixture history here, so every figure doubles."""
+    import time
+    now = int(time.time())
+    hist = _poly_hist([(now - 40 * 86400, 0.10), (now - 8 * 86400, 0.20),
+                       (now - 2 * 86400, 0.30), (now - 60, 0.40)])
+    out = context.fetch_fed_odds(SESSION, _get=_poly_get([_poly_sept()], hist))
+    assert out["chg_1d_pp"] == pytest.approx(28.85 - 60.0, abs=0.1)
+    assert out["chg_1w_pp"] == pytest.approx(28.85 - 40.0, abs=0.1)
+    assert out["chg_1m_pp"] == pytest.approx(28.85 - 20.0, abs=0.1)
+
+
+def test_fed_odds_reports_no_delta_rather_than_a_partial_one():
+    """History that does not reach back a week must print nothing for the week,
+    never the oldest available number relabelled."""
+    import time
+    now = int(time.time())
+    hist = _poly_hist([(now - 3600, 0.28)])
+    out = context.fetch_fed_odds(SESSION, _get=_poly_get([_poly_sept()], hist))
+    assert out["chg_1d_pp"] is None
+    assert out["chg_1w_pp"] is None
+
+
+def test_fed_odds_survives_a_dead_history_endpoint():
+    """The probability comes from gamma; history is a nice-to-have."""
+    out = context.fetch_fed_odds(SESSION,
+                                 _get=_poly_get([_poly_sept()], fail_history=True))
+    assert out["hike_pct"] == pytest.approx(28.4, abs=0.1)
+    assert out["chg_1d_pp"] is None
+
+
+def test_fed_odds_a_hard_one_day_jump_grades_hostile_and_alarms():
+    import time
+    now = int(time.time())
+    e = _poly_sept()
+    # 12% hike now, 1% a day ago -> +11pp in a day, well past FED_HIKE_JUMP_PP
+    e["markets"][3] = _poly_market("25 bps increase", 0.12, "u25")
+    e["markets"][2] = _poly_market("No change", 0.875, "hold")
+    hist = _poly_hist([(now - 3 * 86400, 0.005), (now - 60, 0.06)])
+    out = context.fetch_fed_odds(SESSION, _get=_poly_get([e], hist))
+    assert out["chg_1d_pp"] >= context.FED_HIKE_JUMP_PP
+    assert out["grade"] == "HOSTILE"
+    assert out["alarm"] is True
+
+
+def test_fed_odds_an_expected_cut_grades_supportive():
+    e = _poly_sept()
+    e["markets"] = [_poly_market("25 bps decrease", 0.79, "d25"),
+                    _poly_market("No change", 0.20, "hold"),
+                    _poly_market("25 bps increase", 0.01, "u25")]
+    out = context.fetch_fed_odds(SESSION, _get=_poly_get([e]))
+    assert out["grade"] == "SUPPORTIVE"
+    assert out["alarm"] is False
+
+
+def test_fed_odds_thin_book_returns_none_not_a_number():
+    assert context.fetch_fed_odds(
+        SESSION, _get=_poly_get([_poly_sept(volume=1_000.0)])) is None
+
+
+def test_fed_odds_book_that_does_not_sum_to_about_100_returns_none():
+    e = _poly_sept()
+    e["markets"] = [_poly_market("25 bps increase", 0.285, "u25"),
+                    _poly_market("No change", 0.30, "hold")]
+    assert context.fetch_fed_odds(SESSION, _get=_poly_get([e])) is None
+
+
+def test_fed_odds_past_meeting_is_not_used():
+    assert context.fetch_fed_odds(
+        date(2026, 10, 1), _get=_poly_get([_poly_sept()])) is None
+
+
+def test_fed_odds_no_increase_leg_returns_none():
+    e = _poly_sept()
+    e["markets"] = [_poly_market("No change", 1.0, "hold")]
+    assert context.fetch_fed_odds(SESSION, _get=_poly_get([e])) is None
+
+
+def test_fed_odds_dead_endpoint_and_garbage_are_fail_soft():
+    def boom(url, headers):
+        raise urllib.error.URLError("network down")
+    assert context.fetch_fed_odds(SESSION, _get=boom) is None
+    for junk in (b"not json", b'{"not":"a list"}', b"[]", b'[{"title":null}]'):
+        assert context.fetch_fed_odds(SESSION, _get=lambda u, h, j=junk: j) is None
+
+
+def test_fed_odds_ignores_unrelated_events_on_the_fed_shelf():
+    noise = {"title": "Jerome Powell out of Fed Board by…?",
+             "endDate": "2026-12-31T00:00:00Z", "volume": 5_000_000.0,
+             "markets": [_poly_market("", 0.1)]}
+    assert context.fetch_fed_odds(SESSION, _get=_poly_get([noise])) is None
+
+
+# ── build_context wiring + cache survival ───────────────────────────────────
+
+def test_fed_odds_land_in_the_data_json_fields(tmp_path, monkeypatch):
+    monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    now = datetime(2026, 8, 18, 14, 0, 0, tzinfo=timezone.utc)
+    cache = {"context_fetched_at": None,            # stale -> the gate runs
+             "bars_built_date": "2026-08-18",       # bars fresh -> no bars work
+             "bars_sig": context.BARS_BUILD_SIG, "avg_move": {},
+             "brief": None, "catalysts": [], "news": None, "desk_private": None}
+    context.save_context_cache(cache)
+
+    poly = _poly_get([_poly_sept(), _poly_year()])
+
+    def fake_get(url, headers):
+        if url.startswith(context.POLY_EVENTS_URL) or url.startswith(context.POLY_HISTORY_URL):
+            return poly(url, headers)
+        return b"{}"          # every other leg fails soft on its own
+
+    quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None,
+                     "lo52": None, "market_cap": None, "beta": None,
+                     "avol": None, "rsi": None}}
+    fields, _, _ = context.build_context(quotes, ["MU"], SESSION, now, _get=fake_get)
+    assert fields["fed_odds"]["hike_pct"] == pytest.approx(28.4, abs=0.1)
+
+
+def test_fed_odds_survive_the_cache_round_trip_between_hourly_refreshes(tmp_path, monkeypatch):
+    """load_context_cache rebuilds a FIXED dict, so an unlisted key is dropped
+    on reload — that would blink the desk's Fed card out on every cycle between
+    the hourly fetches."""
+    monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    now = datetime(2026, 8, 18, 14, 0, 0, tzinfo=timezone.utc)
+    context.save_context_cache({
+        "context_fetched_at": "2026-08-18T13:30:00Z",     # 30 min ago -> fresh
+        "bars_built_date": "2026-08-18", "bars_sig": context.BARS_BUILD_SIG,
+        "avg_move": {}, "brief": None, "catalysts": [], "news": None,
+        "desk_private": None,
+        "fed_odds": {"hike_pct": 28.4, "grade": "HOSTILE"},
+    })
+    quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None,
+                     "lo52": None, "market_cap": None, "beta": None,
+                     "avol": None, "rsi": None}}
+    fields, _, _ = context.build_context(quotes, ["MU"], SESSION, now, _get=_boom)
+    assert fields["fed_odds"] == {"hike_pct": 28.4, "grade": "HOSTILE"}
+
+
+def test_absent_fed_odds_omit_the_key_entirely(tmp_path, monkeypatch):
+    """No key at all, so the page hides the card. Never a 0% hike."""
+    monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    now = datetime(2026, 8, 18, 14, 0, 0, tzinfo=timezone.utc)
+    context.save_context_cache({
+        "context_fetched_at": "2026-08-18T13:30:00Z", "bars_built_date": "2026-08-18",
+        "bars_sig": context.BARS_BUILD_SIG, "avg_move": {}, "brief": None,
+        "catalysts": [], "news": None, "desk_private": None, "fed_odds": None})
+    quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None,
+                     "lo52": None, "market_cap": None, "beta": None,
+                     "avol": None, "rsi": None}}
+    fields, _, _ = context.build_context(quotes, ["MU"], SESSION, now, _get=_boom)
+    assert "fed_odds" not in fields

@@ -90,12 +90,13 @@ values are `null` (never a string sentinel). All strings are already plain
   "news": { "items": [ <NewsItem>, ... ], "rotation_banner": false },  // OPTIONAL
   "facts": { "MU": { "hi52": null, "...": "..." } },  // OPTIONAL
   "desk_private": { "v": 1 },                    // OPTIONAL, opaque — see note below
+  "fed_odds": { "hike_pct": 28.4, "...": "..." },  // OPTIONAL — see note below
   "context_updated_at": "2026-08-15T14:32:00Z"   // OPTIONAL — see note below
 }
 ```
 
-> **All six keys above are OPTIONAL and were added in the context-layer build
-> (2026-08).** Absent on old snapshots and the site renders nothing for a
+> **All seven keys above are OPTIONAL and were added in the context-layer build
+> (2026-08; `fed_odds` 2026-08-18).** Absent on old snapshots and the site renders nothing for a
 > missing key — the same "old readers keep working" rule every prior addition
 > in this file follows. Each is OMITTED entirely (not present as a key) when
 > its own build produced nothing that cycle, never present with a `null`/`{}`
@@ -112,6 +113,70 @@ values are `null` (never a string sentinel). All strings are already plain
 > contract does not pin its inner shape, because the loop never inspects it
 > beyond the one `date` field needed for `stale`. Fetched on the hourly gate
 > (see `fetcher/.context_cache.json` below), not every cycle.
+>
+> **`fed_odds`** (added 2026-08-18, Zach's ask) — Polymarket's market-priced
+> chance that the Fed RAISES rates at the next FOMC meeting. The loop fetches
+> this itself on the hourly context gate (it is NOT a vault passthrough), so it
+> refreshes intraday rather than once a day like `brief`. Absent entirely when
+> nothing trustworthy resolved. Shape:
+>
+> ```json
+> {
+>   "as_of": "2026-08-18T12:34:24Z",   // UTC, when the loop read the book
+>   "source": "Polymarket",
+>   "event_title": "Fed Decision in September?",
+>   "url": "https://polymarket.com/event/fed-decision-in-september-762",
+>   "meeting_date": "2026-09-16",      // the FOMC decision this book settles on
+>   "days_to_meeting": 29,
+>   "hike_pct": 28.4,                  // chance of ANY increase, normalised (see below)
+>   "hold_pct": 70.5,
+>   "cut_pct": 1.1,                    // hike + hold + cut == 100
+>   "hike_pct_raw": 28.85,             // the same sum BEFORE normalising
+>   "book_sum_pct": 101.45,            // what every leg's Yes price summed to
+>   "legs": [ {"label": "25 bps increase", "pct": 28.5}, ... ],
+>   "volume_usd": 36569390.0,          // the event's traded volume, for the thin-book guard
+>   "liquidity_usd": 3873767.0,
+>   "chg_1d_pp": 5.0,                  // change in hike_pct_raw, in percentage POINTS
+>   "chg_1w_pp": -11.2,                //   over 1 day / 7 days / 30 days.
+>   "chg_1m_pp": -7.2,                 //   null when the history does not reach back that far
+>   "year_hike_pct": 48.5,             // "any hike this calendar year" — context only, may be null
+>   "grade": "HOSTILE",                // "HOSTILE" | "NEUTRAL" | "SUPPORTIVE"
+>   "alarm": false                     // true when the page should shout (see thresholds)
+> }
+> ```
+>
+> **`hike_pct` is the SUM of every increase leg** (25 bps + 50+ bps), not the
+> headline 25 bps leg: the question is whether the Fed raises, and any increase
+> answers it. Same for `cut_pct`. The legs are then divided by `book_sum_pct` so
+> the three numbers add to 100 on the page — the raw legs sum slightly over
+> because each carries its own bid/ask spread.
+>
+> **`grade` and `alarm` are computed in the fetcher, never on the page**, so the
+> desk and the Morning Brief can never disagree about what counts as loud.
+> `grade` is HOSTILE when `hike_pct >= 25` or `chg_1d_pp >= 10` (a sharp
+> one-day repricing is itself the news, even from a low base), SUPPORTIVE when
+> `cut_pct >= 50`, else NEUTRAL. `alarm` is true when `hike_pct >= 40` (near a
+> coin flip) or `chg_1d_pp >= 10`. **These thresholds are duplicated from
+> ClaudeVault's `market-data/morning-report/macro_backdrop.py` (`FED_HIKE_*`) on
+> purpose — two repos, two CI runs, one methodology. Move a number in one and
+> you must move it in the other in the same change** (same class of sync
+> obligation as `index.html`'s TIPS text vs `build_snapshot.py`'s scoring).
+>
+> **Guards — the key is OMITTED rather than guessed** when: the fed-rates shelf
+> has no live "Fed Decision in <month>" event; the nearest such event traded
+> under $250k (too thin to mean anything); the legs sum outside 80-120% (the
+> book is being read wrong, and a wrong read must fail rather than print a
+> confident number); or either endpoint is down. A delta is `null` rather than
+> partial when the price history does not reach its window — "no data" is not a
+> smaller move. **Never render an absent `hike_pct` as 0%**: a 0% chance of a
+> hike is a real and dramatic claim, and "we could not read the book" is not it.
+>
+> The Morning Brief also carries its own once-a-day copy of the same reading at
+> `brief.fed_hike` (written by the vault's `desk_summary.py`, same shape minus
+> `event_title`/`volume_usd`/`liquidity_usd`/`book_sum_pct`/`hike_pct_raw`). The
+> page prefers top-level `fed_odds` and falls back to `brief.fed_hike`, so the
+> card still appears when the loop's own fetch failed or when no
+> `VAULT_READ_TOKEN` is configured — see `normalizeFedOdds()` in `index.html`.
 >
 > **`catalysts`** — a merged, date-sorted list of upcoming market events: TV's
 > economic calendar (next 28 days), the vault's hand-kept
@@ -744,6 +809,7 @@ versa):
   "bars_sig": "v3-2y-vol",
   "avg_move": {"MU": 3.45},
   "brief": {"...": "..."},
+  "fed_odds": {"...": "..."},
   "catalysts": [ "..." ],
   "news": {"items": [], "rotation_banner": false},
   "desk_private": null
@@ -756,7 +822,7 @@ runs when EITHER `bars_built_date` differs from today's session date OR
 The signature half exists so a same-day code deploy that changes
 `bars.json`'s shape (e.g. the v2 -> v3 volume/2y upgrade) forces an immediate
 rebuild instead of matching on date alone and serving the OLD shape,
-unchanged, until midnight. `brief`/`catalysts`/`news`/`desk_private` hold the
+unchanged, until midnight. `brief`/`catalysts`/`news`/`desk_private`/`fed_odds` hold the
 LAST successfully fetched values (not just gate metadata) so data.json's
 fields keep publishing on the ~50 cycles/day that skip the hourly fetch,
 instead of flickering in and out every hour; `avg_move` does the same job for

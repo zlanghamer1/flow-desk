@@ -31,6 +31,14 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
 - Keep `index.html`'s `TIPS` text in sync with `build_snapshot.py` scoring
   whenever weights change — the two describe the same methodology and must not
   drift.
+- **Same rule ACROSS REPOS for the Fed-hike odds (added 2026-08-18):** the
+  grading thresholds live in both `fetcher/context.py` (`FED_HIKE_*`,
+  `POLY_*`) and ClaudeVault's `market-data/morning-report/macro_backdrop.py`
+  (`FED_HIKE_*`). Two repos, two CI runs, one methodology — move a number in
+  one and move it in the other in the same change, or the desk and the Morning
+  Brief will disagree about what counts as a loud day. The `grade`/`alarm`
+  fields are computed in the fetcher, never in the page; don't re-derive
+  thresholds in JavaScript.
 - Forced test runs off-hours are fine for `data.json`, but must **not** create
   weekend/closed history sessions. `build_snapshot.run_cycle` guards this
   (`write_history = market_state != "closed"`) — do not remove that guard.

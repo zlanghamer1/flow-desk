@@ -914,3 +914,75 @@ SPY/VIX/CRUDE modals opening real candle charts with all three averages, MU
 unchanged (range bar, volume pane, full fundamentals grid), zero page errors.
 
 Unchanged, deliberately: no score, weight, board, or pinned-universe change.
+
+---
+
+## Wave 6 (2026-08-18) — Fed rate-hike odds on the desk
+
+**Zach's ask:** "I want the poly market chance of a fed rate increase added to
+the desk and factored into the morning brief, verdict on market state etc."
+Follow-up the same day: "I want the daily update, not just weekly."
+
+**Dated amendment, per this plan's own rule.** This adds a card and a rail chip
+to the Morning Brief panel and one new top-level `data.json` key. It moves NO
+existing gauge threshold, board, score, weight, or pinned-universe entry.
+
+### What the page gained
+
+- **A Fed card in the Morning Brief panel** — one big percentage (the chance of a
+  rate INCREASE at the next FOMC meeting), a stacked bar splitting 100% three
+  ways (increase in the down colour, no change in grey, cut in the up colour,
+  matching how the rest of the page colours hostility), the meeting date and
+  days out, then three deltas: **today**, 1 week, 1 month. The daily one leads
+  because it is the one Zach asked for, and it is the one that carries
+  information — on the build day the book read +5pp on the day against −11pp on
+  the week, opposite signs.
+- **A `fed hike 28%` rail chip**, red when the reading is loud. `.rl.bad b` is a
+  new rule; the rail chips previously had no alarm state at all.
+- **A `FED HIKE RISK` banner** above the gap note, mirroring the Morning Brief's
+  own banner and firing on the SAME upstream `alarm` flag, so the page and the
+  brief cannot disagree about whether today is loud.
+- **`shortReading()` gained a `fed hike` label** so the backdrop chip row stays
+  compact.
+
+### Where the number comes from
+
+The loop fetches Polymarket itself on the hourly context gate
+(`fetch_fed_odds()` in `fetcher/context.py`), publishing a top-level `fed_odds`
+in `data.json`. It deliberately does NOT take the vault brief's copy as primary:
+`brief_summary.json` is written once a day on a real send, and these odds move
+intraday. `normalizeFedOdds()` prefers `data.fed_odds` and falls back to
+`data.brief.fed_hike`, so the card still appears when the loop's own fetch failed
+or no `VAULT_READ_TOKEN` is configured. Shape: `DATA_CONTRACT.md`.
+
+`grade` and `alarm` are computed in the fetcher, never in the page. The
+thresholds are duplicated from ClaudeVault's `macro_backdrop.py` on purpose and
+both repos' CLAUDE.md now carry the sync obligation.
+
+### Deliberately not done
+
+- **The odds do not touch the verdict score.** Zach was offered a 9th-score-input
+  option and chose the backdrop-reading wiring instead. The score's 8 inputs have
+  a 35-session validated record; this reading has none yet. Every daily value is
+  archived in the vault's `macro_backdrop_history.csv` so it becomes testable.
+- **`hike_pct` is never rendered as 0 when absent** — the card disappears
+  instead. A 0% chance of a hike is a real and dramatic claim.
+- No new panel, section, or collapse target; the card lives inside the existing
+  Morning Brief panel.
+
+### Tests / verification
+
+18 new fetcher tests (170 total, all passing) covering leg summing across both
+increase legs, label-not-index Yes reading, nearest-meeting-not-biggest-market
+picking, all three deltas, refusal to report a partial delta, survival of a dead
+history endpoint, the thin-book and book-sum guards, the one-day-jump alarm, the
+expected-cut grade, garbage/dead-endpoint fail-soft, `build_context` wiring, and
+the cache round-trip (an unlisted `load_context_cache` key would have blinked the
+card out between hourly refreshes — caught and fixed).
+
+Verified in Chromium against a fabricated `data.json` at 1280px across six
+states — normal (28%), alarm-by-level (44%), alarm-by-daily-jump (18% +12pp),
+expected-cut (79% cut), no-brief-but-live-odds, no-odds-at-all, and a
+partial payload carrying only `hike_pct` — with zero page errors in every case.
+Bar segment widths render proportional to the three probabilities; the
+partial payload renders one leg and no fabricated zeros.

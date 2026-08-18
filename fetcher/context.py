@@ -7,8 +7,8 @@ single warn line and returns None/[]/{} depending on its shape; nothing here
 ever raises out to build_snapshot.run_cycle. See
 /home/user/flow-desk/DATA_CONTRACT.md for the authoritative shape of every
 field this module produces (the data.json keys: brief, catalysts, news,
-facts, desk_private, context_updated_at; and the sidecar files bars.json
-and fund/{SYM}.json).
+facts, desk_private, fed_odds, context_updated_at; and the sidecar files
+bars.json and fund/{SYM}.json).
 
 ────────────────────────────────────────────────────────────────────────────
 SOURCES (see ClaudeVault's market-data/DATA_SOURCES.md for the routing table
@@ -28,6 +28,13 @@ environment while building this module, 2026-08)
   turned out to be what actually gates this endpoint).
 - TradingView news (news-mediator.tradingview.com/public/view/v1/symbol) —
   a plain User-Agent was sufficient live; no special headers needed.
+- Polymarket, keyless, both verified live 2026-08-18 (added that day on Zach's
+  ask for the market-priced chance of a Fed rate increase): gamma-api
+  .polymarket.com/events?tag_slug=fed-rates&closed=false for the hike/hold/cut
+  book on the next FOMC meeting, and clob.polymarket.com/prices-history for one
+  outcome token's hourly history (interval=1m&fidelity=60 returns ~744 points,
+  enough for the 1-day, 1-week and 1-month deltas from a single request per
+  leg). A plain User-Agent was sufficient for both. See fetch_fed_odds.
 - Yahoo v8 chart API (query1.finance.yahoo.com/v8/finance/chart/<SYM>) — a
   plain User-Agent was sufficient live.
 - TradingView scanner facts columns (price_52_week_high/low, beta_1_year,
@@ -149,6 +156,11 @@ VAULT_DESK_PRIVATE_PATH = "market-data/data/desk_private.enc.json"
 VAULT_MEMORY_EVENTS_PATH = "market-data/data/memory_events.csv"
 VAULT_ECON_CSV_PATH = "market-data/data/econ_calendar.csv"
 
+POLY_EVENTS_URL = "https://gamma-api.polymarket.com/events"
+POLY_HISTORY_URL = "https://clob.polymarket.com/prices-history"
+POLY_EVENT_BASE = "https://polymarket.com/event/"
+POLY_FED_TAG = "fed-rates"
+
 TV_ECON_URL = "https://economic-calendar.tradingview.com/events"
 TV_NEWS_URL = "https://news-mediator.tradingview.com/public/view/v1/symbol"
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
@@ -179,7 +191,34 @@ AVG_MOVE_BASIS = 252            # avg_move's own closes pool stays pinned at
                                 # sits well inside either value; this is a
                                 # defensive, redundant slice, not a change in
                                 # what avg_move measures (see build_bars).
-FETCH_STALE_SEC = 55 * 60       # hourly gate for vault/econ/news
+FETCH_STALE_SEC = 55 * 60       # hourly gate for vault/econ/news/fed odds
+
+# ── Fed-hike odds (Polymarket, added 2026-08-18 on Zach's ask) ───────────────
+# The desk reads this live on the hourly context gate rather than taking the
+# brief's copy, because brief_summary.json is written once a day on a real send
+# and these odds move intraday. Zach's follow-up the same day — "I want the
+# daily update, not just weekly" — is served twice over: the desk's own number
+# refreshes hourly, and the payload carries an explicit 1-day change beside the
+# 1-week and 1-month ones.
+#
+# GRADING THRESHOLDS ARE DUPLICATED FROM THE VAULT ON PURPOSE, and must be kept
+# in step with market-data/morning-report/macro_backdrop.py's FED_HIKE_* values
+# (same class of sync obligation as index.html's TIPS text vs build_snapshot's
+# scoring — see CLAUDE.md). Two repos, two CI runs, one methodology: if you
+# move a number here, move it there in the same change.
+POLY_MIN_EVENT_VOLUME_USD = 250_000.0   # a book too thin to mean anything
+POLY_BOOK_SUM_MIN_PCT = 80.0            # legs should sum to ~100%; far off that
+POLY_BOOK_SUM_MAX_PCT = 120.0           # means we are reading the book wrong
+FED_HIKE_HOSTILE_PCT = 25.0
+FED_HIKE_ALARM_PCT = 40.0
+FED_HIKE_JUMP_PP = 10.0
+FED_CUT_SUPPORTIVE_PCT = 50.0
+
+_FED_MEETING_TITLE_RE = re.compile(r"^Fed Decision in ([A-Za-z]+)\??$", re.I)
+_FED_YEAR_TITLE_RE = re.compile(r"^Fed rate hike in (\d{4})\??$", re.I)
+_FED_HIKE_LEG_RE = re.compile(r"increase", re.I)
+_FED_CUT_LEG_RE = re.compile(r"decrease", re.I)
+_FED_HOLD_LEG_RE = re.compile(r"no change", re.I)
 
 _IMPORTANCE_MAP = {-1: "LOW", 0: "MEDIUM", 1: "HIGH"}
 
@@ -298,6 +337,262 @@ def fetch_desk_private(token: Optional[str], _get: Optional[Callable] = None) ->
     except Exception:
         log("WARN desk_private fetch: invalid JSON")
         return None
+
+
+# ── Fed-hike odds (Polymarket) ───────────────────────────────────────────────
+
+def _poly_json(url: str, _get: Optional[Callable] = None):
+    """GET + parse JSON from Polymarket. Raises on any failure; every caller
+    below is wrapped so nothing escapes fetch_fed_odds."""
+    raw = _http_get(url, {"User-Agent": UA}, _get=_get)
+    return json.loads(raw.decode("utf-8", "replace"))
+
+
+def _poly_list(v):
+    """Gamma ships `outcomes` / `outcomePrices` / `clobTokenIds` as JSON-encoded
+    STRINGS inside the JSON ('["Yes", "No"]'), not as arrays. Accepts either."""
+    if isinstance(v, list):
+        return v
+    if isinstance(v, str):
+        try:
+            parsed = json.loads(v)
+        except Exception:
+            return []
+        return parsed if isinstance(parsed, list) else []
+    return []
+
+
+def _poly_yes_price(market: dict) -> Optional[float]:
+    """The market's Yes price, 0-1, read by MATCHING the "Yes" label rather
+    than assuming index 0 — a flipped pair would otherwise turn a 28% hike
+    into a 72% one silently."""
+    outcomes = [str(o).strip().lower() for o in _poly_list(market.get("outcomes"))]
+    prices = _poly_list(market.get("outcomePrices"))
+    if "yes" not in outcomes:
+        return None
+    idx = outcomes.index("yes")
+    if idx >= len(prices):
+        return None
+    try:
+        return float(prices[idx])
+    except (TypeError, ValueError):
+        return None
+
+
+def _poly_yes_token(market: dict) -> Optional[str]:
+    ids = _poly_list(market.get("clobTokenIds"))
+    if not ids:
+        return None
+    outcomes = [str(o).strip().lower() for o in _poly_list(market.get("outcomes"))]
+    idx = outcomes.index("yes") if "yes" in outcomes else 0
+    return str(ids[idx]) if idx < len(ids) else None
+
+
+def _poly_event_date(event: dict) -> Optional[date]:
+    v = event.get("endDate")
+    if isinstance(v, str) and len(v) >= 10:
+        try:
+            return date.fromisoformat(v[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _poly_price_at(history: list, ts: int) -> Optional[float]:
+    """Last price at or before `ts`, or None when the history starts later.
+
+    None rather than the earliest print: answering "what were the odds a day
+    ago" with a week-old number, unlabelled, misstates the move by an unknown
+    amount. No data means no delta.
+    """
+    best = None
+    for t, pr in history:
+        if t <= ts:
+            best = pr
+        else:
+            break
+    return best
+
+
+def _poly_sum_at(histories: list, ts: int) -> Optional[float]:
+    """Summed hike probability at `ts` as a percentage, or None if ANY leg
+    lacks a print — a partial total is unknown, not smaller."""
+    total = 0.0
+    for h in histories:
+        v = _poly_price_at(h, ts)
+        if v is None:
+            return None
+        total += v
+    return total * 100.0
+
+
+def _poly_fetch_history(token_id: str, _get: Optional[Callable] = None) -> list:
+    """One outcome token's hourly price history over the last month ->
+    [(unix_ts, price)] oldest-first. ~744 points, so one request per hike leg
+    yields the 1-day, 1-week AND 1-month deltas."""
+    obj = _poly_json(f"{POLY_HISTORY_URL}?market={token_id}&interval=1m&fidelity=60",
+                     _get=_get)
+    rows = obj.get("history") if isinstance(obj, dict) else None
+    out = []
+    for pt in rows or []:
+        if not isinstance(pt, dict):
+            continue
+        t, pr = pt.get("t"), pt.get("p")
+        if isinstance(t, (int, float)) and isinstance(pr, (int, float)):
+            out.append((int(t), float(pr)))
+    out.sort(key=lambda r: r[0])
+    return out
+
+
+def fetch_fed_odds(session_date: date, _get: Optional[Callable] = None) -> Optional[dict]:
+    """Polymarket's priced chance of a Fed rate HIKE at the next FOMC meeting.
+
+    Returns the data.json `fed_odds` object (shape authoritative in
+    DATA_CONTRACT.md), or None when nothing trustworthy resolved — the page
+    then hides the card rather than showing a number. Never raises.
+
+    "Chance of a hike" is the SUM of every increase leg (25 bps + 50+ bps):
+    the question is whether the Fed raises, and any increase satisfies it.
+    Reading only the headline 25 bps leg would understate it.
+
+    Mirrors market-data/morning-report/polymarket.py in the vault, which does
+    the same job for the Morning Brief's macro backdrop. Both are keyless.
+    """
+    try:
+        events = _poly_json(
+            f"{POLY_EVENTS_URL}?closed=false&limit=60&order=volume"
+            f"&ascending=false&tag_slug={POLY_FED_TAG}", _get=_get)
+    except Exception as e:
+        log(f"WARN fed-odds events fetch failed ({type(e).__name__})")
+        return None
+    if not isinstance(events, list):
+        log("WARN fed-odds: events response was not a list")
+        return None
+
+    # Pick by DATE, never by the response's volume order: the shelf routinely
+    # lists a higher-volume later meeting (December) above the nearer one.
+    candidates = []
+    for e in events:
+        if not isinstance(e, dict):
+            continue
+        if not _FED_MEETING_TITLE_RE.match((e.get("title") or "").strip()):
+            continue
+        d = _poly_event_date(e)
+        if d is None or d < session_date:
+            continue
+        if not isinstance(e.get("markets"), list) or not e["markets"]:
+            continue
+        candidates.append((d, e))
+    if not candidates:
+        log("WARN fed-odds: no live 'Fed Decision in <month>' event")
+        return None
+    candidates.sort(key=lambda r: r[0])
+    meeting_date, event = candidates[0]
+
+    hike, cut, hold, book = [], [], [], []
+    for m in event.get("markets") or []:
+        if not isinstance(m, dict) or m.get("closed") is True:
+            continue
+        label = (m.get("groupItemTitle") or m.get("question") or "").strip()
+        pct = _poly_yes_price(m)
+        if pct is None:
+            continue
+        leg = {"label": label, "pct": round(pct * 100.0, 2),
+               "token": _poly_yes_token(m)}
+        book.append(leg)
+        if _FED_HIKE_LEG_RE.search(label):
+            hike.append(leg)
+        elif _FED_CUT_LEG_RE.search(label):
+            cut.append(leg)
+        elif _FED_HOLD_LEG_RE.search(label):
+            hold.append(leg)
+    if not hike:
+        log("WARN fed-odds: no 'increase' leg priced")
+        return None
+
+    hike_raw = sum(l["pct"] for l in hike)
+    book_sum = sum(l["pct"] for l in book)
+
+    vol = _num_or_none(event.get("volume"))
+    if vol is not None and vol < POLY_MIN_EVENT_VOLUME_USD:
+        log(f"WARN fed-odds: event volume ${vol:,.0f} below floor — too thin")
+        return None
+    if not (POLY_BOOK_SUM_MIN_PCT <= book_sum <= POLY_BOOK_SUM_MAX_PCT):
+        log(f"WARN fed-odds: legs sum to {book_sum:.1f}% — book read looks wrong")
+        return None
+
+    # Normalise so hike/hold/cut add to 100 on the page. The raw legs sum
+    # slightly over because each carries its own spread.
+    hike_pct = round(hike_raw / book_sum * 100.0, 1)
+    cut_pct = round(sum(l["pct"] for l in cut) / book_sum * 100.0, 1)
+    hold_pct = round(sum(l["pct"] for l in hold) / book_sum * 100.0, 1)
+
+    now = datetime.now(tz=timezone.utc)
+    out = {
+        "as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "source": "Polymarket",
+        "event_title": (event.get("title") or "").strip() or None,
+        "url": (POLY_EVENT_BASE + event["slug"]) if event.get("slug") else None,
+        "meeting_date": meeting_date.isoformat(),
+        "days_to_meeting": (meeting_date - session_date).days,
+        "hike_pct": hike_pct,
+        "hold_pct": hold_pct,
+        "cut_pct": cut_pct,
+        "hike_pct_raw": round(hike_raw, 2),
+        "book_sum_pct": round(book_sum, 2),
+        "legs": [{"label": l["label"], "pct": l["pct"]} for l in book],
+        "volume_usd": vol,
+        "liquidity_usd": _num_or_none(event.get("liquidity")),
+        "chg_1d_pp": None,
+        "chg_1w_pp": None,
+        "chg_1m_pp": None,
+        "year_hike_pct": None,
+    }
+
+    # ── deltas: 1 day / 1 week / 1 month, one fetch per hike leg ────────────
+    histories = []
+    for l in hike:
+        if not l.get("token"):
+            histories = []
+            break
+        try:
+            histories.append(_poly_fetch_history(l["token"], _get=_get))
+        except Exception as e:
+            log(f"WARN fed-odds history failed for {l['label']} ({type(e).__name__})")
+            histories = []
+            break
+    if histories and all(histories):
+        now_ts = int(now.timestamp())
+        for key, days in (("chg_1d_pp", 1), ("chg_1w_pp", 7), ("chg_1m_pp", 30)):
+            then = _poly_sum_at(histories, now_ts - days * 86400)
+            out[key] = None if then is None else round(hike_raw - then, 1)
+
+    # ── secondary: any hike at all this calendar year (context only) ────────
+    for e in events:
+        if not isinstance(e, dict):
+            continue
+        m = _FED_YEAR_TITLE_RE.match((e.get("title") or "").strip())
+        if not m or int(m.group(1)) != session_date.year:
+            continue
+        markets = [x for x in (e.get("markets") or []) if isinstance(x, dict)]
+        pct = _poly_yes_price(markets[0]) if markets else None
+        if pct is not None:
+            out["year_hike_pct"] = round(pct * 100.0, 1)
+        break
+
+    # Grade + alarm computed HERE, not on the page, so the desk and the brief
+    # apply one methodology (thresholds mirrored from the vault — see the
+    # sync note beside them).
+    d1 = out["chg_1d_pp"]
+    if hike_pct >= FED_HIKE_HOSTILE_PCT or (d1 is not None and d1 >= FED_HIKE_JUMP_PP):
+        out["grade"] = "HOSTILE"
+    elif cut_pct >= FED_CUT_SUPPORTIVE_PCT:
+        out["grade"] = "SUPPORTIVE"
+    else:
+        out["grade"] = "NEUTRAL"
+    out["alarm"] = bool(hike_pct >= FED_HIKE_ALARM_PCT
+                        or (d1 is not None and d1 >= FED_HIKE_JUMP_PP))
+    return out
 
 
 def _looks_like_us_ticker(scope: str) -> bool:
@@ -1791,6 +2086,11 @@ def load_context_cache() -> dict:
         "catalysts": raw.get("catalysts") if isinstance(raw.get("catalysts"), list) else [],
         "news": raw.get("news") if isinstance(raw.get("news"), dict) else None,
         "desk_private": raw.get("desk_private") if raw.get("desk_private") is not None else None,
+        # fed_odds must be listed here or it is silently dropped on every
+        # reload: this function rebuilds a FIXED dict rather than passing the
+        # file through, so an unlisted key survives only until the next cycle
+        # and the desk's Fed card would blink out between hourly refreshes.
+        "fed_odds": raw.get("fed_odds") if isinstance(raw.get("fed_odds"), dict) else None,
     }
 
 
@@ -1863,6 +2163,7 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         memory_rows = fetch_memory_events(token, _get=_get)
         csv_mirror = fetch_econ_calendar_csv(token, _get=_get)
         econ_rows = fetch_econ_tv(days=ECON_WINDOW_DAYS, _get=_get)
+        fed_odds = fetch_fed_odds(session_date, _get=_get)
 
         earn_map: dict[str, dict] = {}
         for ticker, q in quotes.items():
@@ -1886,11 +2187,13 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         cache["catalysts"] = catalysts
         cache["news"] = news
         cache["desk_private"] = desk_private
+        cache["fed_odds"] = fed_odds
     else:
         brief = cache["brief"]
         catalysts = cache["catalysts"]
         news = cache["news"]
         desk_private = cache["desk_private"]
+        fed_odds = cache.get("fed_odds")
 
     # ── once-daily bars rebuild (+ fund sidecars, same gate — Task 4) ────
     # Gated on BOTH the date AND the build signature (added 2026-08-15,
@@ -1938,6 +2241,8 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         fields["facts"] = facts
     if desk_private is not None:
         fields["desk_private"] = desk_private
+    if fed_odds is not None:
+        fields["fed_odds"] = fed_odds
     if isinstance(cache.get("context_fetched_at"), str):
         fields["context_updated_at"] = cache["context_fetched_at"]
 
