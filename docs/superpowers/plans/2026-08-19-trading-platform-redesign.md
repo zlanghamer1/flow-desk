@@ -285,3 +285,69 @@ label, source lines built from real state, the price layer surviving a
 data.json outage, chart geometry following render width, one company per bar,
 the cap band on peers, medians excluding the subject, missing readings never
 rendering as zero, and unconditional age stamps.
+
+## Round 4 (same day) — the re-review, and the second fix pass
+
+The same nine reviewers re-scored the page after round 3's fixes. Nothing was
+credited for history: each reviewer drove the current build and reported only
+what they could reproduce.
+
+| Section | Round 1 | Round 2 |
+|---|---|---|
+| Chart stage | (died mid-run) | 42 |
+| Financials | 52 | 56 |
+| vs Peers | 44 | 56 |
+| Heatmap | 57 | 52 |
+| Inherited panels | 46 | 61 |
+| Auto-TA | 52 | 66 |
+| Left rail and search | 54 | 70 |
+| Cross-cutting quality | 62 | 71 |
+
+Scores went up where the fixes held and down where a fix opened a new seam —
+the heatmap lost points to an expand control that blanked the desk and to
+tile labels that were the only text on the page failing WCAG AA. A second
+pass of reviewers finds different defects, not the same ones twice.
+
+### What the second pass caught
+
+- **Physics the first pass never measured.** The tape's index labels were
+  clipped at every desktop width from 1240 to 1920 while the phone showed
+  them in full, because the ≤1160px grid rule rescued the narrow case and
+  nothing rescued the wide one. The top rail forced a horizontal page scroll
+  from 901 to 1060px. Moving the mouse over the chart made the whole page
+  jitter, because the OHLC readout wrapped and unwrapped in a flex row.
+- **Numbers that disagreed with each other on the same screen.** The
+  Conviction board's footer counted 60+ names and firing names together and
+  labelled the sum "score 60+", two feet from a Morning Brief tile that
+  counted only the 60+ names. Both are now printed, separately.
+- **Silence where a feed failed.** A macro quote that never resolved removed
+  its tape tile and let the survivors stretch. Sector rotation, ETF flows,
+  tagged headlines and the ticker each vanished on an empty payload. The
+  backdrop tooltip promised seven readings while the grade was computed on
+  four. All of them now say what happened.
+- **Colour that carried no information.** The Fed card's "no change" segment
+  — 70% of the bar — was painted in the track colour, so the bar read as
+  "29% hike and nothing else". Heatmap tile ink bottomed out at 3.77:1.
+- **Comparisons that formatted away their own point.** PEG printed MU 0.026
+  and SKHY 0.034 as the same "0.03" directly under a caption ranking one
+  above the other. Each chart now takes just enough decimals to keep its own
+  values apart.
+- **Vintage mixing.** One bar chart can hold desk names from the morning
+  snapshot and searched peers pulled from the scanner seconds ago. The tab
+  now names which is which.
+
+### Rulings this round adds
+
+- **A responsive rule that rescues the narrow case must be checked at the
+  wide one.** Two separate clipping defects lived above the breakpoint that
+  fixed them below it.
+- **A header that carries live text holds a fixed height.** The chart header
+  reserves its OHLC line at a constant 15px (30px on a phone), so the chart
+  below it never moves as the crosshair moves.
+- **Two numbers describing the same thing on one screen must agree, or say
+  why they differ.** Counting rules that differ get their own sentence.
+- **A clamp above the tallest bar is not a clamp.** When the spread is
+  genuinely wide and nothing can be clipped, the caption prints the ratio
+  instead of leaving a four-pixel bar to look like a rendering fault.
+- **Contrast is picked, not assumed.** Tile ink falls back to pure black or
+  white whenever both themed inks land under 4.5:1.

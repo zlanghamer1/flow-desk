@@ -135,5 +135,43 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   gated to 08:15-15:00 CT, so gating the stamp on it left the data undated
   exactly when it was oldest.
 
+## Guardrails added by the second review round (same day)
+- **A responsive rule that rescues the narrow case gets checked at the wide
+  one.** The tape's 4x2 grid started at 1160px, so the index labels were
+  clipped at every desktop width from 1240 to 1920 while the phone showed
+  them in full. The rail wrapped at 900px and forced a horizontal page scroll
+  from 901 to 1060. Measure every width, not the two you designed for.
+- **A header carrying live text holds a fixed height.** `.stagehead .ohlc`
+  reserves 15px (30px at <=640px) whether or not the crosshair is over a bar.
+  Without it the line wrapped and unwrapped as the cursor moved and the whole
+  chart jittered.
+- **Two numbers describing the same thing on one screen must agree.** The
+  Conviction footer counted score-60+ names and firing names together and
+  called the sum "score 60+", contradicting the Morning Brief tile. Different
+  counting rules get their own sentence.
+- **A feed that fails keeps its slot.** A macro tile with no quote renders an
+  em-dash and "no quote"; sector rotation, ETF flows, tagged headlines and
+  the ticker each print a one-line reason instead of hiding. `hidden` is for
+  a payload the desk never carries, not for one that came back empty.
+- **A grade says how many inputs it had.** `macro_backdrop.py` attempts seven
+  readings and ships the ones that resolve, so the panel prints a chip for
+  each missing reading and "graded on 4 of 7". `BACKDROP_ALL` in index.html
+  is that list; keep it in step with the components in macro_backdrop.py.
+- **Contrast is picked, not assumed.** `heatTextColor` falls back to pure
+  black or white whenever both themed inks land under 4.5:1, choosing the
+  side on the pure contrasts. Tile ink bottomed out at 3.77:1 before this.
+- **A tile too small to label is too small to be a keyboard stop.** Heatmap
+  tiles under 24px in either dimension keep their click and their tooltip but
+  leave the tab order and the a11y tree.
+- **A clamp above the tallest bar is not a clamp.** `peerBarsSVG` nulls it
+  and the caption prints the real ratio, so a genuinely 24:1 spread reads as
+  data rather than a rendering fault.
+- **A formatter must keep its own chart's values apart.** `peerFmtFor` adds
+  decimals until no two distinct values print the same label — PEG showed MU
+  0.026 and SKHY 0.034 as "0.03" under a caption ranking one above the other.
+- **One chart can hold two data vintages.** Desk names come from the morning
+  snapshot, searched peers from the scanner seconds ago. `vintageNote` says
+  which rows are which.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
