@@ -23,10 +23,14 @@
 @media (prefers-color-scheme: light){
   :root:not([data-theme="dark"]){
     --bg:#F2F4F7; --srf:#FFFFFF; --srf2:#F7F9FB; --edge:#DDE3EA; --edge2:#E7ECF1;
-    --ink:#1C2530; --ink2:#5A6878; --ink3:#5F6C7B;
-    --up:#177E52; --dn:#C03A3A; --upbg:rgba(23,126,82,.13); --dnbg:rgba(192,58,58,.12);
+    /* Darkened 2026-08-19: measured against the composited backgrounds, the
+       old --hi gave 3.78:1 on RETREAT WATCH and 3.97:1 on the hot/E/HIGH
+       badges, and --ink3 gave 4.15:1 on the 52-week range labels. Every one
+       of those carries meaning. Dark theme already passed. */
+    --ink:#1C2530; --ink2:#4E5B6B; --ink3:#52606F;
+    --up:#126541; --dn:#B02F2F; --upbg:rgba(18,101,65,.13); --dnbg:rgba(176,47,47,.12);
     --acc:#2F6FAE; --accbg:rgba(47,111,174,.10);
-    --hi:#9A6B10; --hibg:rgba(154,107,16,.13);
+    --hi:#7A5408; --hibg:rgba(122,84,8,.13);
     --sel:rgba(47,111,174,.06);
     --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   --grid:#D3DBE4; --gridzero:#B4C0CD;
@@ -34,10 +38,10 @@
 }
 :root[data-theme="light"]{
   --bg:#F2F4F7; --srf:#FFFFFF; --srf2:#F7F9FB; --edge:#DDE3EA; --edge2:#E7ECF1;
-  --ink:#1C2530; --ink2:#5A6878; --ink3:#5F6C7B;
-  --up:#177E52; --dn:#C03A3A; --upbg:rgba(23,126,82,.13); --dnbg:rgba(192,58,58,.12);
+  --ink:#1C2530; --ink2:#4E5B6B; --ink3:#52606F;
+  --up:#126541; --dn:#B02F2F; --upbg:rgba(18,101,65,.13); --dnbg:rgba(176,47,47,.12);
   --acc:#2F6FAE; --accbg:rgba(47,111,174,.10);
-  --hi:#9A6B10; --hibg:rgba(154,107,16,.13);
+  --hi:#7A5408; --hibg:rgba(122,84,8,.13);
   --sel:rgba(47,111,174,.06);
   --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   --grid:#D3DBE4; --gridzero:#B4C0CD;
@@ -142,7 +146,10 @@ a.nt-item:hover{color:var(--ink)}
 .tp:focus-visible{outline:1px solid var(--acc);outline-offset:-1px}
 /* PRE / AFT session tag — extended-hours print rather than a regular-session
    price. Amber (--hi), the page's existing "read this differently" color. */
-.sess{display:inline-block;font-size:8px;font-weight:700;letter-spacing:.08em;
+/* 10px floor for anything that carries data (2026-08-19). .sess is the badge
+   that says a quote is not from the regular session; at 8px it was the
+   smallest text on the page and, in light theme, also the lowest contrast. */
+.sess{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.06em;
   color:var(--hi);background:var(--hibg);border-radius:3px;padding:0 3px;margin-left:4px;vertical-align:1px}
 
 /* ============ columns ============ */
@@ -194,12 +201,12 @@ section.closed .sb{display:none}
 .wr .noq{font-size:9.5px;color:var(--hi);text-align:right;white-space:nowrap}
 .wr .px{font-size:11.5px;text-align:right;flex:none}
 .wr .ch{font-size:11px;font-weight:600;text-align:right;min-width:44px;flex:none}
-.hotb{font-size:8.5px;font-weight:700;color:var(--hi);background:var(--hibg);border-radius:3px;padding:0 4px;letter-spacing:.03em}
+.hotb{font-size:10px;font-weight:700;color:var(--hi);background:var(--hibg);border-radius:3px;padding:0 4px;letter-spacing:.03em}
 .rb{position:relative;height:4px;border-radius:2px;background:var(--edge);margin:7px 0 13px}
 /* Neutral fill — the old always-green fill encoded nothing (2026-08-18) */
 .rb i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--ink3);opacity:.35}
 .rb b{position:absolute;top:50%;width:7px;height:7px;background:var(--ink);transform:translate(-50%,-50%) rotate(45deg);border-radius:1px}
-.rb .lo,.rb .hi{position:absolute;top:7px;font-size:8.5px;color:var(--ink3)}
+.rb .lo,.rb .hi{position:absolute;top:7px;font-size:10px;color:var(--ink3)}
 .rb .hi{right:0}
 .wlnote{padding:4px 14px 8px;font-size:9.5px;color:var(--ink3)}
 .wlsort{display:flex;gap:4px;padding:9px 14px 2px;flex-wrap:wrap}
@@ -356,6 +363,24 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .note b{color:var(--ink2)}
 .boardmsg{padding:14px 2px;text-align:center;color:var(--ink3);font-size:11.5px}
 .xwrap{overflow-x:auto}
+/* A board wider than its column used to cut its last column with no
+   scrollbar gutter, no fade and no hint: on a 1920 monitor the Swing board's
+   "Suggested contract" column simply did not exist as far as the reader was
+   concerned. The fade paints only while there is more to the right, and the
+   scrollbar is always visible rather than an overlay that appears on gesture. */
+.xwrap{scrollbar-width:thin;scrollbar-color:var(--ink3) transparent;position:relative}
+.xwrap::-webkit-scrollbar{height:8px}
+.xwrap::-webkit-scrollbar-thumb{background:var(--edge);border-radius:4px}
+.xwrap::-webkit-scrollbar-thumb:hover{background:var(--ink3)}
+.xwrap::-webkit-scrollbar-track{background:transparent}
+.xscroll{position:relative}
+.xscroll::after{
+  content:"";position:absolute;top:0;right:0;bottom:8px;width:34px;pointer-events:none;
+  background:linear-gradient(90deg, transparent, var(--srf) 82%);opacity:0;transition:opacity .15s;
+}
+.xscroll.more::after{opacity:1}
+.xhint{font-size:9.5px;color:var(--ink3);padding:3px 0 0}
+@media (prefers-reduced-motion: reduce){ .xscroll::after{transition:none} }
 .t-conv td:last-child{white-space:normal;min-width:200px;line-height:1.35}
 /* wider floor since the liquidity + needs-% additions (2026-08-18) */
 .t-swing td:last-child{white-space:normal;min-width:300px;line-height:1.35}
@@ -377,12 +402,12 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
    the rail runs months out ("Later + anchors" reaches into 2027) and a bare
    "30" gave no way to tell June 2027 from next week. Silent in-month so the
    common case stays uncluttered. */
-.ct .dt .mo{font-size:8px;letter-spacing:.06em;color:var(--acc);text-transform:uppercase}
+.ct .dt .mo{font-size:10px;letter-spacing:.06em;color:var(--acc);text-transform:uppercase}
 .ct .tt{font-size:12px;font-weight:600}
 .ct .me{font-size:10px;color:var(--ink3);margin-top:1px}
 .ct .me b{color:var(--ink2);font-weight:600}
 .ct .rg{text-align:right}
-.imp{display:inline-block;font-size:8.5px;font-weight:700;letter-spacing:.08em;border-radius:3px;padding:1.5px 5px;margin-bottom:3px}
+.imp{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:3px;padding:1.5px 5px;margin-bottom:3px}
 .imp.hi{color:var(--hi);background:var(--hibg)} .imp.md{color:var(--acc);background:var(--accbg)} .imp.lo{color:var(--ink3);background:var(--srf2)}
 .cd{display:block;font-size:10.5px;color:var(--ink2)}
 .cd.soon{color:var(--hi);font-weight:700}
@@ -451,7 +476,7 @@ body.heatwide #s-stage>*:not(.viewseg):not(#heatbar):not(#stageheat){display:non
 .hm-tile span{font-weight:600;opacity:.92}
 .heatfoot{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:0 14px 10px;font-size:10px;color:var(--ink3)}
 .heatscale{display:flex;align-items:center;gap:2px}
-.heatscale i{width:26px;height:11px;border-radius:2px;display:inline-block;text-align:center;font-size:8px;line-height:11px;font-style:normal}
+.heatscale i{width:34px;height:14px;border-radius:2px;display:inline-block;text-align:center;font-size:10px;line-height:14px;font-style:normal}
 .heatmsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--ink3);font-size:12px;background:var(--bg);z-index:4;text-align:center;padding:20px}
 .heatmsg[hidden]{display:none}
 .dsec{padding:10px 16px;border-bottom:1px solid var(--edge2)}
@@ -471,7 +496,9 @@ body.heatwide #s-stage>*:not(.viewseg):not(#heatbar):not(#stageheat){display:non
    was clicking outside the chart entirely (Zach, 2026-08-19). */
 .pop .cl{position:absolute;top:0;right:2px;color:var(--ink2);cursor:pointer;font-size:15px;line-height:1;padding:5px 8px;z-index:1}
 .pop .cl:hover{color:var(--ink)}
-.leg{display:flex;gap:12px;font-size:9.5px;color:var(--ink3);margin-top:5px;flex-wrap:wrap}
+/* Inset 14px like .stagehead / .stagebar / .stagetabs — with no padding the
+   leading glyph of "auto-TA:" was sheared by the shell border at 900 and 390. */
+.leg{display:flex;gap:12px;font-size:9.5px;color:var(--ink3);margin-top:5px;flex-wrap:wrap;padding:0 14px}
 .leg i{display:inline-block;width:12px;border-top:2px solid var(--ink2);vertical-align:middle;margin-right:4px}
 .leg i.d20{border-top:2px solid var(--ink3)} /* solid — the chart strokes it solid; the swatch used to lie */
 .leg i.d50{border-top:2px solid var(--acc)}
@@ -509,6 +536,9 @@ body.heatwide #s-stage>*:not(.viewseg):not(#heatbar):not(#stageheat){display:non
 .rb.big .lo,.rb.big .hi{top:9px;font-size:9.5px}
 
 /* ============ palette ============ */
+.skip{position:absolute;left:-9999px;top:0;z-index:120;background:var(--srf);color:var(--ink);
+  border:1px solid var(--acc);border-radius:0 0 6px 0;padding:8px 14px;font-size:12px}
+.skip:focus{left:0}
 .pal{position:fixed;inset:0;z-index:80;display:none;background:rgba(6,8,10,.55);backdrop-filter:blur(2px)}
 .pal.open{display:block}
 .palbox{width:min(520px,92vw);margin:12vh auto 0;background:var(--srf);border:1px solid var(--edge);border-radius:10px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.5)}
@@ -529,6 +559,15 @@ footer{padding:12px 16px 26px;font-size:10.5px;color:var(--ink3);line-height:1.7
 footer b{color:var(--ink2)}
 
 /* ============ responsive ============ */
+/* The tape scrolled WTI and the dollar index out of view between 900 and
+   1100px with an overlay scrollbar and no edge cue. Wrap into two rows of
+   four instead of hiding two of the eight readings. */
+@media (max-width:1160px){
+  .tape{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow-x:visible}
+  .tp{min-width:0}
+  .tp:nth-child(n+5){border-top:1px solid var(--edge2)}
+  .tp:nth-child(4n){border-right:none}
+}
 @media (max-width:1240px){
   .cols{grid-template-columns:224px minmax(0,1fr)}
   .rr{grid-column:1/3;border-left:none;border-top:1px solid var(--edge)}
@@ -576,10 +615,16 @@ footer b{color:var(--ink2)}
   .wl .wrs{grid-template-columns:1fr}
   /* The horizontal-scroll tape showed ~2.6 of 8 tiles at 390px — VIX and the
      10-year were simply invisible. A 4×2 grid shows everything, no gesture. */
-  .tape{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow-x:visible}
-  .tp{min-width:0;padding:7px 8px 5px}
-  .tp:nth-child(n+5){border-top:1px solid var(--edge2)}
-  .tp .p{font-size:12.5px}
+  /* 2 columns, not 4, and each tile stacks label / price / change. At 4
+     columns the "auto" change column shared 97px with a six-digit price and
+     the % glyph printed on top of the next tile's first digit, while the body
+     picked up 14px of horizontal scroll. */
+  .tape{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow-x:visible}
+  .tp{min-width:0;padding:7px 9px 6px;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto}
+  .tp:nth-child(n+3){border-top:1px solid var(--edge2)}
+  .tp:nth-child(2n){border-right:none}
+  .tp .p{font-size:13px;grid-row:2}
+  .tp .c{font-size:11.5px;grid-row:3;justify-self:start}
   .t-orders th:nth-child(5),.t-orders td:nth-child(5),.t-orders th:nth-child(6),.t-orders td:nth-child(6),
   .t-sector th:nth-child(3),.t-sector td:nth-child(3),.t-sector th:nth-child(5),.t-sector td:nth-child(5),
   /* t-conv is 6 columns since the C/P + Tilt demotion (2026-08-18): hide RVOL
@@ -594,6 +639,9 @@ footer b{color:var(--ink2)}
 </style>
 </head>
 <body>
+<!-- The rolling news ticker owns the first 40 tab stops, so without this a
+     keyboard user could not reach the page at all. -->
+<a class="skip" href="#s-stage">Skip to the chart</a>
 <div class="shell">
 
   <!-- ======= rolling news ticker — the very top (2026-08-19, Zach's ask) ======= -->
@@ -741,8 +789,8 @@ footer b{color:var(--ink2)}
 </div>
 
 <!-- palette / tooltip -->
-<div class="pal" id="pal"><div class="palbox">
-  <input id="palin" placeholder="Search every US ticker, or type an action… (↑↓ + Enter)" autocomplete="off">
+<div class="pal" id="pal" role="dialog" aria-modal="true" aria-label="Search tickers and actions"><div class="palbox">
+  <input id="palin" aria-label="Search every US ticker, or type an action" placeholder="Search every US ticker, or type an action… (↑↓ + Enter)" autocomplete="off">
   <div class="pl" id="pallist"></div>
 </div></div>
 <div class="tipb" id="tipb"></div>
@@ -3162,7 +3210,14 @@ function renderNewsTicker(data){
   var half = items.map(itemHTML).join("");
   var dur = Math.min(150, Math.max(40, items.length*6));
   el.hidden = false;
-  el.innerHTML = '<div class="nt-track" style="--nt-dur:'+dur+'s">'+half+half+'</div>';
+  // The marquee duplicates its headlines to loop seamlessly, so both copies
+  // were focusable: 40 tab stops, a quarter of the page's focusable elements,
+  // all of them ahead of everything else and the first one off-screen to the
+  // left. The ticker is a decorative restatement of the Tagged headlines
+  // panel, which is keyboard reachable — so it leaves the tab order entirely.
+  el.innerHTML = '<div class="nt-track" style="--nt-dur:'+dur+'s">'
+    + half + '<span aria-hidden="true">' + half + '</span></div>';
+  $$("#newsticker a").forEach(function(a){ a.setAttribute("tabindex","-1"); });
 }
 function renderNews(){
   var data = STATE.data;
@@ -5425,6 +5480,16 @@ function heatRender(refetch){
     var tf = HEAT.tf;
     var rows = data.rows.filter(function(r){ return !HEAT.isolate || r.sector===HEAT.isolate; });
     var clamp = heatClampFrom(rows, tf);
+    // At 390px the full 502-name universe packed 378 tiles under 14px wide —
+    // unlabeled, untappable, and not a map. Keep the biggest names and say how
+    // many were left out. Must run BEFORE the sector grouping below.
+    var heatDropped = 0;
+    var wrapW = wrap.clientWidth || 0;
+    if(wrapW && wrapW < 700 && rows.length > 130){
+      rows = rows.slice().sort(function(a,b){ return b.cap-a.cap; });
+      heatDropped = rows.length - 120;
+      rows = rows.slice(0,120);
+    }
     // group by sector, keep Finviz's shape: sectors sized by summed cap
     var bySec = {};
     rows.forEach(function(r){ (bySec[r.sector] = bySec[r.sector]||[]).push(r); });
@@ -5489,6 +5554,7 @@ function heatRender(refetch){
         return '<i style="background:'+bg+';color:'+heatTextColor(bg)+'">'+(f===0?"0":fm1(v))+'</i>';
       }).join("")+'<i style="background:none;color:var(--ink3)">%</i></span>';
       var nFund = rows.filter(function(r){ return r.byVol; }).length;
+      var narrowNote = heatDropped ? (' \u00b7 '+heatDropped+' smaller names left off at this width — rotate or widen the window for the full map') : '';
       foot.innerHTML = scale
         + '<span data-tip="Full color is set from this universe today: the 90th percentile of absolute moves, never below the floor for the timeframe. It is printed here so you know what a saturated tile means.">'
         + 'full color = \u00b1'+clamp+'% · '+rows.length+' names · '+esc(HEAT_UNIVERSES[HEAT.univ].label)
@@ -5497,6 +5563,7 @@ function heatRender(refetch){
         + ((data.dropped && data.dropped.length && !HEAT.isolate)
             ? (' · not on the map: '+esc(data.dropped.join(", "))+' (no market cap and no traded volume to size '
                + (data.dropped.length===1?'it':'them')+' by)') : '')
+        + narrowNote
         + '</span>'
         + '<span>TradingView scanner, 15-minute delayed \u00b7 read at '+esc(ctTimeShort(new Date(data.fetchedAt).toISOString()))+' CT · click a tile to chart it</span>';
     }
@@ -6050,6 +6117,7 @@ function renderAll(data){
   renderStageTab();
   applyFocus();
   updatePricesTimestamp();
+  if(typeof markScrollables === "function") markScrollables();
 }
 function refreshLiveUI(){
   // Two halves. The PRICE half runs on every poll whether or not data.json
@@ -6073,6 +6141,7 @@ function refreshLiveUI(){
   stageHeader();
   applyFocus();
   updatePricesTimestamp();
+  if(typeof markScrollables === "function") markScrollables();
 }
 // Renders the rail clock — and, when the TV price poll is failing, an amber
 // "prices as of" stamp beside it. tvPollFailed/lastPriceUpdateTs were written
@@ -6167,18 +6236,50 @@ function palDraw(){
   $$("#pallist .pi").forEach(function(el){ el.addEventListener("click", function(){ items[+el.dataset.i].run(); palClose(); }); });
   return items;
 }
-function palOpen(){ document.getElementById("pal").classList.add("open"); document.getElementById("palin").value=""; palIdx=0; PAL_REMOTE=[]; palDraw(); document.getElementById("palin").focus(); }
-function palClose(){ document.getElementById("pal").classList.remove("open"); }
+// Escape used to drop focus on the document body rather than returning it to
+// the control that opened the palette, and Tab was not confined to it.
+var PAL_RETURN = null;
+function palOpen(){
+  PAL_RETURN = (document.activeElement && document.activeElement !== document.body) ? document.activeElement : null;
+  document.getElementById("pal").classList.add("open");
+  document.getElementById("palin").value=""; palIdx=0; PAL_REMOTE=[]; palDraw();
+  document.getElementById("palin").focus();
+}
+function palClose(){
+  document.getElementById("pal").classList.remove("open");
+  if(PAL_RETURN && document.contains(PAL_RETURN)){ try{ PAL_RETURN.focus(); }catch(e){} }
+  PAL_RETURN = null;
+}
 
 /* =================== collapse / theme persistence =================== */
 function store(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 function read(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+// Nine collapsible headers, all plain DIVs with no role, no tabindex and no
+// aria-expanded — a keyboard user could not collapse a panel and a screen
+// reader was never told which panels were already collapsed. The watchlist
+// rows two sections down already do this correctly; same pattern here.
+function shSetExpanded(sh){
+  var sec = document.getElementById(sh.dataset.collapse);
+  if(sec) sh.setAttribute("aria-expanded", String(!sec.classList.contains("closed")));
+}
 $$(".sh").forEach(function(sh){
-  sh.addEventListener("click", function(e){
+  if(!sh.dataset.collapse) return;
+  sh.setAttribute("role","button");
+  sh.setAttribute("tabindex","0");
+  var h2 = sh.querySelector("h2");
+  if(h2 && h2.textContent) sh.setAttribute("aria-label", h2.textContent.trim()+" section — collapse or expand");
+  shSetExpanded(sh);
+  function toggle(e){
     if(e.target.closest("[data-tip]")) return;
     var sec = document.getElementById(sh.dataset.collapse);
     sec.classList.toggle("closed");
     store("desk."+sh.dataset.collapse, sec.classList.contains("closed")?"1":"0");
+    shSetExpanded(sh);
+  }
+  sh.addEventListener("click", toggle);
+  sh.addEventListener("keydown", function(e){
+    if(e.key!=="Enter" && e.key!==" ") return;
+    e.preventDefault(); toggle(e);
   });
 });
 // Context tables (sector / big orders / ETF flows) open COLLAPSED by default
@@ -6192,6 +6293,8 @@ $$("section[id^=s-]").forEach(function(s){
   var v = read("desk."+s.id);
   if(v==="1" || (v===null && DEFAULT_CLOSED[s.id])) s.classList.add("closed");
 });
+// The restore above runs after the headers were wired, so re-sync aria-expanded.
+$$(".sh").forEach(function(sh){ if(sh.dataset.collapse) shSetExpanded(sh); });
 
 // Mobile watchlist toggle: the ~50 rows default to collapsed on phones (the
 // CSS only applies <=900px, so the class is inert on desktop).
@@ -6285,6 +6388,9 @@ document.addEventListener("keydown", function(e){
   if(e.key==="/" && !e.target.matches("input")){ e.preventDefault(); palOpen(); return; }
   if(document.getElementById("pal").classList.contains("open")){
     var items = palVisible(document.getElementById("palin").value).items;
+    // Trap Tab inside the dialog: the input is the only focusable child, so
+    // Tab and Shift+Tab both keep it.
+    if(e.key==="Tab"){ e.preventDefault(); document.getElementById("palin").focus(); return; }
     if(e.key==="Escape") palClose();
     else if(e.key==="ArrowDown"){ palIdx=Math.min(items.length-1,palIdx+1); palDraw(); }
     else if(e.key==="ArrowUp"){ palIdx=Math.max(0,palIdx-1); palDraw(); }
@@ -6392,6 +6498,31 @@ function start(){
 }
 if(document.readyState === "loading"){ document.addEventListener("DOMContentLoaded", start); }
 else { start(); }
+
+/* Announce a board that is cut off. .xscroll paints a right-edge fade while
+   there is more to the right, and a one-line hint names the column the reader
+   cannot see. Re-run on every render and on resize. */
+function markScrollables(){
+  $$(".xwrap").forEach(function(x){
+    var more = x.scrollWidth - x.clientWidth - x.scrollLeft > 4;
+    x.classList.toggle("xscroll", x.scrollWidth - x.clientWidth > 4);
+    x.classList.toggle("more", more);
+    var hint = x.querySelector(".xhint");
+    var cut = x.scrollWidth - x.clientWidth > 4;
+    if(cut && !hint){
+      var ths = [].slice.call(x.querySelectorAll("thead th"));
+      var lastLab = ths.length ? (ths[ths.length-1].textContent||"").replace(/[▲▼]/g,"").trim() : "";
+      var h = document.createElement("div");
+      h.className = "xhint";
+      h.textContent = "scroll this table sideways to read the rest" + (lastLab ? (" — the last column is “"+lastLab+"”") : "");
+      x.appendChild(h);
+    } else if(!cut && hint){ hint.remove(); }
+  });
+}
+$$(".xwrap").forEach(function(x){ x.addEventListener("scroll", function(){
+  x.classList.toggle("more", x.scrollWidth - x.clientWidth - x.scrollLeft > 4);
+}); });
+window.addEventListener("resize", markScrollables);
 
 // exposed for the verification harness only (no sensitive data)
 window.__theDeskDebug = { fetchData:fetchData, pollTvPrices:pollTvPrices, attemptMacroTiles:attemptMacroTiles, STATE:STATE, STAGE:STAGE, stageShow:stageShow };
