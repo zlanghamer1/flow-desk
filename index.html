@@ -415,6 +415,13 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 #s-stage.heatmode #heatbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 14px 8px}
 #s-stage.heatmode #stageheat{display:block}
 .heatwrap{position:relative;height:clamp(420px,56vh,660px);margin:0 14px 6px;border:1px solid var(--edge2);border-radius:6px;overflow:hidden;background:var(--bg)}
+/* Expanded map: both rails out, full window width, taller box. Only the stage
+   section stays on screen, so nothing below competes for the height. */
+body.heatwide .cols{grid-template-columns:minmax(0,1fr)}
+body.heatwide .wl,body.heatwide .rr{display:none}
+body.heatwide .heatwrap{height:calc(100vh - 210px);min-height:460px}
+body.heatwide .mid>*:not(#s-stage){display:none}
+body.heatwide #s-stage>*:not(.viewseg):not(#heatbar):not(#stageheat){display:none}
 .hm-sec{position:absolute;overflow:hidden}
 .hm-sechead{position:absolute;left:0;right:0;top:0;height:14px;line-height:14px;padding:0 4px;font-size:9px;font-weight:700;
   letter-spacing:.06em;color:var(--ink2);background:var(--srf);border-bottom:1px solid var(--edge2);
@@ -618,7 +625,7 @@ footer b{color:var(--ink2)}
       <section id="s-stage">
         <div class="viewseg"><div class="seg" role="group" aria-label="Stage view">
           <button id="view-chart" aria-pressed="true">CHART</button>
-          <button id="view-heat" aria-pressed="false" data-tip="Finviz-style sector map: tile size = market cap, color = the move over the selected period. TradingView scanner data, 15-minute delayed, refreshed every ~2 minutes while the map is open. Click a tile to chart it.">HEATMAP</button>
+          <button id="view-heat" aria-pressed="false" data-tiphold="0" data-tip="Finviz-style sector map: tile size = market cap, color = the move over the selected period. Same live TradingView scanner request the watchlist prices come from, refreshed every ~2 minutes while the map is open. Click a tile to chart it.">HEATMAP</button>
         </div></div>
         <div class="stagehead" id="stagehead"></div>
         <div class="stagebar" id="stagebar"></div>
@@ -4982,8 +4989,32 @@ var HEAT_UNIVERSES = {
   NDX: {label:"Nasdaq 100", symbolset:"SYML:NASDAQ;NDX"},
   DESK:{label:"Desk", symbolset:null}
 };
-var HEAT_TFS = [["1D","1D",3],["1W","1W",6],["1M","1M",12],["YTD","YTD",25]];  // [key,label,clamp %]
-var HEAT_COLS = ["name","description","close","change","market_cap_basic","sector","industry","Perf.W","Perf.1M","Perf.YTD"];
+// [key, label, minimum clamp %]. The clamp is now taken from the loaded
+// universe — the 90th percentile of |move|, floored at these numbers — because
+// a fixed ±25% YTD painted 148 of 502 S&P names the identical pure green while
+// the 95th percentile was +68% and MU was +215%. The footer prints what full
+// color means today.
+var HEAT_TFS = [["1D","1D",3],["1W","1W",6],["1M","1M",12],["YTD","YTD",25]];
+var HEAT_COLS = ["name","description","close","change","market_cap_basic","sector","industry","Perf.W","Perf.1M","Perf.YTD","average_volume_10d_calc","type"];
+// Short forms for the sector headers. Three of TradingView's names begin
+// "Consumer", and truncated to a box they all read "CONSUMER…" — three
+// different sectors, one label.
+var HEAT_SEC_SHORT = {
+  "Consumer Non-Durables":"CONS NON-DUR", "Consumer Durables":"CONS DURABLES",
+  "Consumer Services":"CONS SERVICES", "Producer Manufacturing":"PROD MFG",
+  "Electronic Technology":"ELEC TECH", "Process Industries":"PROCESS IND",
+  "Health Technology":"HEALTH TECH", "Health Services":"HEALTH SVCS",
+  "Transportation":"TRANSPORT", "Non-Energy Minerals":"NON-ENERGY MIN",
+  "Distribution Services":"DISTRIBUTION", "Industrial Services":"INDUSTRIAL SVC",
+  "Commercial Services":"COMMERCIAL SVC", "Technology Services":"TECH SERVICES",
+  "Retail Trade":"RETAIL", "Communications":"COMMS", "Miscellaneous":"MISC",
+  "Funds & wrappers":"FUNDS"
+};
+function heatSecLabel(name, wd){
+  var short = HEAT_SEC_SHORT[name] || name;
+  // ~5.4px per character at the header's 9px letter-spaced font.
+  return (wd/5.4 >= String(name).length) ? name : short;
+}
 function heatDeskTickers(){
   var set = {};
   RAIL_GROUPS.forEach(function(g){ g.syms.forEach(function(t){ var tv=symbolForTicker(t); if(tv) set[tv]=true; }); });
@@ -5007,19 +5038,30 @@ function heatFetch(force){
     .then(function(json){
       HEAT.inflight[univ] = false;
       var rows = (json && Array.isArray(json.data)) ? json.data : [];
-      var out = [];
+      var out = [], dropped = [];
       rows.forEach(function(row){
         if(!row || !row.s || !Array.isArray(row.d)) return;
         var d = row.d;
         var sym = (typeof d[0]==="string" && d[0]) ? d[0] : null;
+        if(!sym) return;
         var cap = num(d[4]);
-        if(!sym || cap==null || cap<=0) return;
+        // ETFs and ETNs report no market cap, and the old guard dropped them
+        // silently — 11 of the 50 desk names, including SOXL, SOXS and SMH,
+        // just were not on the map while the footer said "39 names · Desk".
+        // Size them by 10-day dollar volume instead and say so.
+        var byVol = false;
+        if(cap==null || cap<=0){
+          var px = num(d[2]), vol = num(d[10]);
+          if(px!=null && vol!=null && px>0 && vol>0){ cap = px*vol; byVol = true; }
+          else { dropped.push(sym); return; }
+        }
         out.push({ sym:sym, tv:row.s, name:(typeof d[1]==="string")?d[1]:"",
           close:num(d[2]), chg:{ "1D":num(d[3]), "1W":num(d[7]), "1M":num(d[8]), "YTD":num(d[9]) },
-          cap:cap, sector:(typeof d[5]==="string" && d[5])?d[5]:"Other",
+          cap:cap, byVol:byVol,
+          sector: byVol ? "Funds & wrappers" : ((typeof d[5]==="string" && d[5])?d[5]:"Other"),
           industry:(typeof d[6]==="string")?d[6]:null });
       });
-      HEAT.data[univ] = {rows:out, fetchedAt:Date.now()};
+      HEAT.data[univ] = {rows:out, fetchedAt:Date.now(), dropped:dropped};
       HEAT.lastFetch = Date.now();
       return HEAT.data[univ];
     })
@@ -5065,9 +5107,23 @@ function squarify(items, x, y, w, h){
   if(row.length) layoutRow();
   return rects;
 }
-function heatClampFor(tf){
+function heatClampFloor(tf){
   for(var i=0;i<HEAT_TFS.length;i++){ if(HEAT_TFS[i][0]===tf) return HEAT_TFS[i][2]; }
   return 3;
+}
+/* Full color = the 90th percentile of today's absolute moves in the loaded
+   universe, never below the floor for that timeframe, rounded to something a
+   person can read off a legend. */
+function heatClampFrom(rows, tf){
+  var floor = heatClampFloor(tf);
+  var mags = [];
+  rows.forEach(function(r){ var v=num(r.chg[tf]); if(v!=null) mags.push(Math.abs(v)); });
+  if(mags.length < 8) return floor;
+  mags.sort(function(a,b){ return a-b; });
+  var p90 = mags[Math.min(mags.length-1, Math.floor(mags.length*0.90))];
+  var c = Math.max(floor, p90);
+  var step = c>=50 ? 10 : c>=20 ? 5 : c>=8 ? 2 : 1;
+  return Math.max(floor, Math.round(c/step)*step);
 }
 var _heatRGB = {};
 function heatParseColor(name){
@@ -5085,16 +5141,32 @@ function heatColor(v, clamp){
   if(v==null) return "rgb("+neutral.join(",")+")";
   var t = Math.max(-1, Math.min(1, v/clamp));
   var pole = heatParseColor(t>=0 ? "--up" : "--dn");
-  var k = Math.abs(t);
-  k = 0.15 + 0.85*k;   // even a small move reads faintly off-neutral
+  // Gamma instead of the old 0.15 floor: a small move still reads off-neutral,
+  // but a flat name paints the neutral the legend's 0 chip shows. With the
+  // floor, 0.0% painted 15% green and the legend disagreed with the map.
+  var k = Math.pow(Math.abs(t), 0.62);
   var mix = neutral.map(function(nc, i){ return Math.round(nc + (pole[i]-nc)*k); });
   return "rgb("+mix.join(",")+")";
 }
+function _srgbL(c){ c/=255; return c<=0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); }
 function heatTextColor(bg){
   var m = /rgb\((\d+),(\d+),(\d+)\)/.exec(bg);
-  if(!m) return "#fff";
-  var lum = (0.299*+m[1] + 0.587*+m[2] + 0.114*+m[3]);
-  return lum > 150 ? "#1C2530" : "#F2F5F8";
+  if(!m) return "#F2F5F8";
+  // Pick by WCAG contrast, not by a 0-255 brightness cutoff. The old `lum>150`
+  // gate put white text on the red pole at 2.77:1 and on bright green at
+  // 2.05:1 — the biggest movers were the hardest labels on the map to read.
+  var L = 0.2126*_srgbL(+m[1]) + 0.7152*_srgbL(+m[2]) + 0.0722*_srgbL(+m[3]);
+  var darkC = (L+0.05)/(_srgbL(28)*0.2126 + _srgbL(37)*0.7152 + _srgbL(48)*0.0722 + 0.05);
+  var lightC = (_srgbL(242)*0.2126 + _srgbL(245)*0.7152 + _srgbL(248)*0.0722 + 0.05)/(L+0.05);
+  return darkC >= lightC ? "#1C2530" : "#F2F5F8";
+}
+// Finviz shows two decimals on a day move; one decimal collapsed a third of a
+// 1D map onto the same printed number, and a flat name printed "−0.0%".
+function heatPct(v, tf){
+  if(v==null) return "—";
+  var dp = (tf==="1D" || tf==="1W") ? 2 : 1;
+  if(Math.abs(v) < Math.pow(10, -dp)/2) return (0).toFixed(dp)+"%";
+  return (v>0?"+":"\u2212")+Math.abs(v).toFixed(dp)+"%";
 }
 function renderHeatBar(){
   var el = document.getElementById("heatbar");
@@ -5105,10 +5177,22 @@ function renderHeatBar(){
   var tfBtns = HEAT_TFS.map(function(t){
     return '<button data-htf="'+t[0]+'" aria-pressed="'+(HEAT.tf===t[0])+'">'+t[1]+'</button>';
   }).join("");
+  var wide = document.body.classList.contains("heatwide");
   el.innerHTML = '<div class="seg" role="group">'+univBtns+'</div><div class="seg" role="group">'+tfBtns+'</div>'
+    + '<button class="fbtn" id="heatwide" aria-pressed="'+wide+'" data-tiphold="0" data-tip="Hide both side rails and give the map the full window, the way Finviz does. The watchlist and the brief come straight back.">'
+    + (wide ? "\u21f2 shrink" : "\u21f1 expand")+'</button>'
     + (HEAT.isolate ? '<button class="fbtn" id="heatall" aria-pressed="true">'+esc(HEAT.isolate)+' only — show all sectors</button>' : '');
   $$("[data-hu]", el).forEach(function(b){ b.addEventListener("click", function(){ HEAT.univ=b.dataset.hu; HEAT.isolate=null; renderHeatBar(); heatRender(true); }); });
   $$("[data-htf]", el).forEach(function(b){ b.addEventListener("click", function(){ HEAT.tf=b.dataset.htf; renderHeatBar(); heatRender(); }); });
+  var hw = document.getElementById("heatwide");
+  if(hw) hw.addEventListener("click", function(){
+    document.body.classList.toggle("heatwide");
+    store("desk.heat.wide", document.body.classList.contains("heatwide") ? "1" : "0");
+    renderHeatBar();
+    // The container just changed size; the ResizeObserver picks it up, but
+    // render immediately so the map never shows one frame of old geometry.
+    heatRender();
+  });
   var ha = document.getElementById("heatall");
   if(ha) ha.addEventListener("click", function(){ HEAT.isolate=null; renderHeatBar(); heatRender(); });
 }
@@ -5126,11 +5210,20 @@ function heatRender(refetch){
     if(STAGE.view!=="heat") return;
     if(!data || !data.rows.length){
       if(!cached) heatMsg("map unreachable — TradingView's scanner didn't answer; retrying with the next refresh");
+      var ef = document.getElementById("heatfoot");
+      if(ef && ef.innerHTML){
+        // The footer used to keep advertising a live count and as-of stamp
+        // underneath the "unreachable" overlay.
+        ef.innerHTML = '<span>scanner unreachable — nothing on this map is current. '
+          + (cached ? ('Last good read '+esc(ctTimeShort(new Date(cached.fetchedAt).toISOString()))+' CT.') : '')
+          + '</span>';
+      }
       return;
     }
     heatMsg(null);
-    var tf = HEAT.tf, clamp = heatClampFor(tf);
+    var tf = HEAT.tf;
     var rows = data.rows.filter(function(r){ return !HEAT.isolate || r.sector===HEAT.isolate; });
+    var clamp = heatClampFrom(rows, tf);
     // group by sector, keep Finviz's shape: sectors sized by summed cap
     var bySec = {};
     rows.forEach(function(r){ (bySec[r.sector] = bySec[r.sector]||[]).push(r); });
@@ -5145,24 +5238,28 @@ function heatRender(refetch){
     secRects.forEach(function(sr){
       var sec = sr.it;
       var headH = (sr.ht>34 && sr.wd>52) ? 14 : 0;
-      html += '<div class="hm-sec" style="left:'+sr.x.toFixed(1)+'px;top:'+sr.y.toFixed(1)+'px;width:'+sr.wd.toFixed(1)+'px;height:'+sr.ht.toFixed(1)+'px">';
-      if(headH) html += '<div class="hm-sechead" data-hsec="'+esc(sec.name)+'" title="'+esc(sec.name)+' — click to isolate">'+esc(sec.name)+'</div>';
+      html += '<div class="hm-sec" data-hsecname="'+esc(sec.name)+'" title="'+esc(sec.name)+'" style="left:'+sr.x.toFixed(1)+'px;top:'+sr.y.toFixed(1)+'px;width:'+sr.wd.toFixed(1)+'px;height:'+sr.ht.toFixed(1)+'px">';
+      if(headH) html += '<div class="hm-sechead" data-hsec="'+esc(sec.name)+'" title="'+esc(sec.name)+' — click to isolate">'
+        + esc(heatSecLabel(sec.name, sr.wd))+'</div>';
       var tiles = squarify(sec.rows.map(function(r){ return {w:r.cap, r:r}; }), 0, headH, sr.wd, sr.ht-headH);
       tiles.forEach(function(t){
         var r = t.it.r;
         var v = r.chg[tf];
         var bg = heatColor(v, clamp);
         var fg = heatTextColor(bg);
-        var showSym = t.wd>=30 && t.ht>=15;
+        // Was 30x15, which labeled 76 of 502 tiles. 24x12 with a 7px floor
+        // labels ~115 without collisions.
+        var showSym = t.wd>=24 && t.ht>=12;
         var showPct = t.wd>=40 && t.ht>=28;
-        var fs = Math.max(8, Math.min(15, Math.floor(Math.min(t.wd/3.6, t.ht/2.6))));
+        var fs = Math.max(7, Math.min(15, Math.floor(Math.min(t.wd/3.6, t.ht/2.6))));
         var tip = r.sym+" · "+r.name+(r.industry?(" · "+r.industry):"")
-          + " · "+fmtCapDollars(r.cap)
-          + " · "+tf+" "+(v!=null?fm1(v)+"%":"—")+(tf!=="1D" && r.chg["1D"]!=null?(" · 1D "+fm1(r.chg["1D"])+"%"):"");
+          + " · "+(r.byVol ? ("~"+fmtCapDollars(r.cap)+" traded per day (a fund: no market cap, sized by dollar volume)")
+                           : fmtCapDollars(r.cap))
+          + " · "+tf+" "+heatPct(v, tf)+(tf!=="1D" && r.chg["1D"]!=null?(" · 1D "+heatPct(r.chg["1D"],"1D")):"");
         html += '<div class="hm-tile" data-sym="'+esc(r.sym)+'" data-htv="'+esc(r.tv)+'" role="button" tabindex="0" data-tip="'+esc(tip)+'"'
           + ' style="left:'+t.x.toFixed(1)+'px;top:'+t.y.toFixed(1)+'px;width:'+t.wd.toFixed(1)+'px;height:'+t.ht.toFixed(1)+'px;background:'+bg+';color:'+fg+'">'
           + (showSym ? ('<b style="font-size:'+fs+'px">'+esc(r.sym)+'</b>') : "")
-          + (showPct && v!=null ? ('<span style="font-size:'+Math.max(8,fs-3)+'px">'+fm1(v)+'%</span>') : "")
+          + (showPct && v!=null ? ('<span style="font-size:'+Math.max(7,fs-3)+'px">'+heatPct(v, tf)+'</span>') : "")
           + '</div>';
       });
       html += '</div>';
@@ -5185,15 +5282,41 @@ function heatRender(refetch){
       var stops = [-1,-0.5,-0.25,0,0.25,0.5,1];
       var scale = '<span class="heatscale">'+stops.map(function(f){
         var v = f*clamp;
-        var bg = heatColor(v===0?null:v, clamp);
+        // The 0 chip goes through the SAME path a 0.0% tile does, so the
+        // legend and the map agree at the point that matters most: flat.
+        var bg = heatColor(v, clamp);
         return '<i style="background:'+bg+';color:'+heatTextColor(bg)+'">'+(f===0?"0":fm1(v))+'</i>';
       }).join("")+'<i style="background:none;color:var(--ink3)">%</i></span>';
+      var nFund = rows.filter(function(r){ return r.byVol; }).length;
       foot.innerHTML = scale
-        + '<span>size = market cap · '+rows.length+' names · '+esc(HEAT_UNIVERSES[HEAT.univ].label)+(HEAT.isolate?(' · '+esc(HEAT.isolate)+' only'):'')+'</span>'
-        + '<span>TradingView scanner, 15-min delayed · as of '+esc(ctTimeShort(new Date(data.fetchedAt).toISOString()))+' CT · click a tile to chart it</span>';
+        + '<span data-tip="Full color is set from this universe today: the 90th percentile of absolute moves, never below the floor for the timeframe. It is printed here so you know what a saturated tile means.">'
+        + 'full color = \u00b1'+clamp+'% · '+rows.length+' names · '+esc(HEAT_UNIVERSES[HEAT.univ].label)
+        + (HEAT.isolate?(' · '+esc(HEAT.isolate)+' only'):'')
+        + ' · size = market cap'+(nFund?(', '+nFund+' fund'+(nFund===1?'':'s')+' sized by dollar volume'):'')
+        + ((data.dropped && data.dropped.length && !HEAT.isolate)
+            ? (' · not on the map: '+esc(data.dropped.join(", "))+' (no market cap and no traded volume to size '
+               + (data.dropped.length===1?'it':'them')+' by)') : '')
+        + '</span>'
+        + '<span>TradingView scanner, live \u00b7 as of '+esc(ctTimeShort(new Date(data.fetchedAt).toISOString()))+' CT · click a tile to chart it</span>';
     }
   });
 }
+// The tiles are inline px, computed once against the container's size, so a
+// window resize left 176 of 502 tiles hanging outside the box until the next
+// 2-minute refresh. Re-lay-out from the cache; it is a 24ms DOM rebuild, not a
+// network round trip.
+var _heatResizeT = null;
+function heatRelayout(){
+  if(STAGE.view!=="heat") return;
+  if(_heatResizeT) clearTimeout(_heatResizeT);
+  _heatResizeT = setTimeout(function(){ _heatResizeT = null; heatRender(); }, 140);
+}
+(function(){
+  var wrap = document.getElementById("heatwrap");
+  if(!wrap) return;
+  window.addEventListener("resize", heatRelayout);
+  if(window.ResizeObserver){ try{ new ResizeObserver(heatRelayout).observe(wrap); }catch(e){} }
+})();
 function stageSetView(view){
   STAGE.view = view;
   store("desk.stage.view", view);
@@ -5898,6 +6021,9 @@ document.addEventListener("mouseover", function(e){
 });
 document.addEventListener("click", function(e){
   var t = e.target.closest("[data-tip]");
+  // data-tiphold="0": the control changes the view underneath it, so leaving
+  // its four-line tip parked over the new content is worse than useless.
+  if(t && t.getAttribute("data-tiphold")==="0"){ tipb.style.display="none"; return; }
   if(t){ showTip(t); e.stopPropagation(); return; }
   if(!e.target.closest(".tipb")) tipb.style.display = "none";
 });
@@ -5915,6 +6041,10 @@ document.addEventListener("click", function(e){
 document.addEventListener("keydown", function(e){
   if(e.key!=="Enter" && e.key!==" ") return;
   var t = e.target;
+  // A heatmap tile needs its exchange prefix registered before it is charted;
+  // the click handler did that and this one did not, so Enter on a tile came
+  // up with a half-empty stage header.
+  if(t && t.matches && t.matches(".hm-tile")){ e.preventDefault(); t.click(); return; }
   if(t && t.matches && t.matches('[data-sym][role="button"]')){
     e.preventDefault();
     setFocus(t.dataset.sym);
@@ -6023,6 +6153,7 @@ function start(){
       }catch(e){ bootSym = saved; }   // legacy plain-string value
     }
     stageShow(bootSym);
+    if(read("desk.heat.wide")==="1") document.body.classList.add("heatwide");
     if(read("desk.stage.view")==="heat") stageSetView("heat");
     pollTvPrices();
     attemptMacroTiles();
