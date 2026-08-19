@@ -699,6 +699,7 @@ footer b{color:var(--ink2)}
        the page kept "Loading…" forever under a CLOSED lamp and read as a quiet
        market instead of a broken one. -->
   <div class="databanner" id="databanner" hidden></div>
+  <div class="databanner" id="pricebanner" hidden></div>
 
   <!-- ======= tape ======= -->
   <div class="tape tn" id="tape" aria-label="Index and macro strip"></div>
@@ -1126,6 +1127,7 @@ var MACRO_LIVE = {};    // tv symbol -> {px, changePct}
 var DYNAMIC_TV = {};    // ticker -> tv_symbol (from this cycle's board cards; authoritative over RAIL_TV_SYMBOL)
 var BARS_CACHE = null;  // null = not yet fetched; {built,bars:{}} once attempted (lazy, on first drawer open)
 var tvPollFailed = false;
+var tvPollMisses = 0;   // consecutive failed polls; 2+ raises the price banner
 var lastPriceUpdateTs = null;
 
 function rebuildDynamicTv(data){
@@ -1547,13 +1549,18 @@ var INTRA_CACHE = null;
 // not covered", so a network error was reported to the reader as a coverage
 // limit — naming the tracked watchlist as the reason a tracked name had no
 // intraday bars.
-var INTRA_FAILED = false;
+var INTRA_FAILED = false, INTRA_RETRY_AFTER = 0;
 function ensureIntra(){
+  // The failure path used to cache {} — truthy — so the early return
+  // short-circuited every later call and the "it retries" sentence was a
+  // promise the code could not keep. A failure leaves the cache null and
+  // schedules the next attempt instead.
   if(INTRA_CACHE) return Promise.resolve(INTRA_CACHE);
+  if(INTRA_FAILED && Date.now() < INTRA_RETRY_AFTER) return Promise.resolve({});
   return fetch(INTRA_URL)
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
     .then(function(json){ INTRA_CACHE = (json && typeof json==="object") ? json : {}; INTRA_FAILED = false; return INTRA_CACHE; })
-    .catch(function(){ INTRA_CACHE = {}; INTRA_FAILED = true; return INTRA_CACHE; });
+    .catch(function(){ INTRA_FAILED = true; INTRA_RETRY_AFTER = Date.now() + 20000; return {}; });
 }
 // bars.json's split_fixed map (2026-08-18): {sym: factor} for any ticker whose
 // pre-split history the fetcher had to rescale because Yahoo served it on the
@@ -1965,12 +1972,12 @@ function pollTvPrices(){
                         postpx:num(row.d[6]), postch:num(row.d[7]),
                         o:num(row.d[8]), h:num(row.d[9]), l:num(row.d[10]), v:num(row.d[11]) };
       });
-      tvPollFailed = false;
+      tvPollFailed = false; tvPollMisses = 0;
       lastPriceUpdateTs = Date.now();
       refreshLiveUI();
       return true;
     })
-    .catch(function(){ tvPollFailed = true; updatePricesTimestamp(); return false; });
+    .catch(function(){ tvPollFailed = true; tvPollMisses++; updatePricesTimestamp(); return false; });
 }
 // Global scanner for VIX/US10Y/crude/DXY. Fails soft: any error/CORS failure
 // just hides those four tiles, it never blocks the rest of the page.
@@ -3909,9 +3916,15 @@ function stageRender(){
   // stats with no history — flush so the legend/range read the real series.
   bumpStatsMemo();
   var intraView = (STAGE.iv==="15m"||STAGE.iv==="1H"||STAGE.iv==="4H");
-  if(intraView && INTRA_CACHE===null){
+  if(intraView && INTRA_CACHE===null && !(INTRA_FAILED && Date.now() < INTRA_RETRY_AFTER)){
     stageMsg("loading intraday bars…");
-    ensureIntra().then(function(){ if(STAGE.sym===sym) stageRender(); });
+    ensureIntra().then(function(){
+      if(STAGE.sym!==sym) return;
+      stageRender();
+      // The source line names which intraday file answered, so it has to be
+      // rebuilt once that file has actually been asked for.
+      if(STAGE.tab!=="fin" && STAGE.tab!=="peers") renderStageTab();
+    });
     return;
   }
   var d = stageViewData(sym, STAGE.iv);
@@ -3932,8 +3945,14 @@ function stageRender(){
     if(!already){
       stageMsg("fetching "+sym+" price history…");
       adhocEnsureDaily(sym).then(
-        function(){ if(STAGE.sym===sym) stageRender(); },
-        function(){ if(STAGE.sym===sym) stageSetEmpty("no price history available for "+sym+". Live quotes and fundamentals above still work."); });
+        function(){ if(STAGE.sym===sym){ stageRender(); if(STAGE.tab!=="fin" && STAGE.tab!=="peers") renderStageTab(); } },
+        function(){
+          if(STAGE.sym!==sym) return;
+          var resolvable = !!symbolForTicker(sym) || !!factsOf(sym);
+          stageSetEmpty(resolvable
+            ? ("no price history available for "+sym+". Live quotes and fundamentals above still work.")
+            : ("no US listing resolves for "+sym+", so there is no price, no history and no fundamentals. Check the symbol, or search the company by name in the box on the left."));
+        });
       return;
     }
     stageSetEmpty("no chart history available"+(STAGE.iv==="1D"?"":" for this view"));
@@ -4685,6 +4704,7 @@ function axisChartSVG(labels, defs, opts){
     out += '<text x="'+p2.tx.toFixed(1)+'" y="'+(H-9)+'" font-size="'+AX_LABEL_FS
       + '" text-anchor="'+p2.anchor+'" fill="var(--ink3)">'+esc(p2.txt)+'</text>';
   });
+  var endLabels = [];
   var barDefs = live.filter(function(d){ return d.type==="bar"; });
   var slot = plotW/n, groupW = Math.max(3, slot*0.7), bw = barDefs.length ? Math.max(2, groupW/barDefs.length) : 0;
   live.forEach(function(d){
@@ -4701,11 +4721,22 @@ function axisChartSVG(labels, defs, opts){
       }
       return;
     }
-    var pts = [], dots = "", lastX = null, lastY = null, lastV = null;
+    var segs = [], pts = [], dots = "", lastX = null, lastY = null, lastV = null, clippedAt = null;
     var own = (opts.perLabels && opts.perLabels[d.name]) || null;
     for(var j=0;j<d.vals.length;j++){
-      var vv = d.vals[j]; if(vv==null) continue;
-      var px = X(j), py = Y(Math.min(vv, mx));
+      var vv = d.vals[j];
+      // A point above the ceiling is CLIPPED, not redrawn at the ceiling. The
+      // first version pinned every one of them to mx, so a runaway series
+      // rendered as a solid flat plateau along the top of the plot — which
+      // reads as data.
+      if(vv!=null && vv > mx){
+        if(pts.length>1) segs.push(pts);
+        if(pts.length) clippedAt = X(j);
+        pts = [];
+        continue;
+      }
+      if(vv==null){ if(pts.length>1) segs.push(pts); pts = []; continue; }
+      var px = X(j), py = Y(vv);
       pts.push(px.toFixed(1)+","+py.toFixed(1));
       // A per-series label list wins over the shared axis: the axis counts
       // quarters back, but each company's own quarter belongs in its tooltip.
@@ -4714,15 +4745,40 @@ function axisChartSVG(labels, defs, opts){
         + '<title>'+esc(d.name+(per?(" · "+per):"")+": "+hfmt(vv))+'</title></circle>';
       lastX = px; lastY = py; lastV = vv;
     }
-    if(pts.length>1) out += '<polyline points="'+pts.join(" ")+'" fill="none" stroke="'+d.color+'" stroke-width="1.8"/>';
+    if(pts.length>1) segs.push(pts);
+    segs.forEach(function(sg){
+      out += '<polyline points="'+sg.join(" ")+'" fill="none" stroke="'+d.color+'" stroke-width="1.8"/>';
+    });
     out += dots;
-    if(opts.endLabels && lastX!=null){
-      var ly = Math.max(padT+4, Math.min(padT+plotH-2, lastY));
-      out += '<text x="'+(padL+plotW+5)+'" y="'+(ly+3.5).toFixed(1)+'" font-size="'+AX_LABEL_FS
-        + '" font-weight="600" text-anchor="start" fill="'+d.color+'">'+esc(d.name)
-        + (lastV>mx ? " ↑" : "")+'</text>';
+    // Where a series leaves the top of the plot, say so on the plot itself
+    // rather than only in the legend.
+    if(clippedAt!=null){
+      out += '<text x="'+clippedAt.toFixed(1)+'" y="'+(padT+8).toFixed(1)+'" font-size="'+AX_LABEL_FS
+        + '" text-anchor="middle" fill="'+d.color+'">\u2191</text>';
+    }
+    if(opts.endLabels && (lastX!=null || clippedAt!=null)){
+      var offTop = (lastX==null);
+      var ly = offTop ? (padT+4) : Math.max(padT+4, Math.min(padT+plotH-2, lastY));
+      endLabels.push({y:ly, name:d.name, color:d.color, off:offTop});
     }
   });
+  // End-of-line labels had no anti-collision pass, so on the peers indexed
+  // chart two companies finishing close together printed on top of each other
+  // — reproduced on 8 of 8 peer sets. Space them out after the fact.
+  if(opts.endLabels && endLabels.length){
+    endLabels.sort(function(a,b){ return a.y-b.y; });
+    var minSep = AX_LABEL_FS + 2;
+    for(var e1=1; e1<endLabels.length; e1++){
+      if(endLabels[e1].y - endLabels[e1-1].y < minSep) endLabels[e1].y = endLabels[e1-1].y + minSep;
+    }
+    var over = endLabels.length ? (endLabels[endLabels.length-1].y - (padT+plotH)) : 0;
+    if(over > 0) endLabels.forEach(function(e2){ e2.y = Math.max(padT+4, e2.y - over); });
+    endLabels.forEach(function(e2){
+      out += '<text x="'+(padL+plotW+5)+'" y="'+(e2.y+3.5).toFixed(1)+'" font-size="'+AX_LABEL_FS
+        + '" font-weight="600" text-anchor="start" fill="'+e2.color+'">'+esc(e2.name)
+        + (e2.off ? " \u2191" : "")+'</text>';
+    });
+  }
   return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img">'+out+'</svg>';
 }
 /* Legend carries each series' latest value — that is where the end-of-line
@@ -4750,7 +4806,7 @@ function medianOf(arr){
   if(!v.length) return null;
   return v.length%2 ? v[(v.length-1)/2] : (v[v.length/2-1]+v[v.length/2])/2;
 }
-function peerBarsSVG(entries, focusedSym, fmt, opts){
+function peerBarsSVG(entries, focusedSym, fmt, opts, kind){
   opts = opts || {};
   var vals = entries.map(function(e){ return num(e.val); });
   if(!vals.some(function(v){ return v!=null; })) return "";
@@ -4773,8 +4829,12 @@ function peerBarsSVG(entries, focusedSym, fmt, opts){
   if(mn===mx){ mx = mn + 1; }
   var pad = (mx-mn)*0.12; mx += pad; if(mn<0) mn -= pad;
   var ticks = niceTicks(mn, mx, 3);
+  // The axis used the caller's PER-VALUE formatter, so one peer axis printed
+  // "0.00 / 50.0 / 100 / 150" — three decimal conventions and a zero line that
+  // read as a price. Same one-unit formatter every other chart uses.
+  var tfmt = tickFormatter(ticks, kind || "num");
   var widest = 0;
-  ticks.forEach(function(t){ widest = Math.max(widest, String(fmt(t)).length); });
+  ticks.forEach(function(t){ widest = Math.max(widest, String(tfmt(t)).length); });
   var padL = Math.max(38, Math.ceil(widest*10*0.62) + 10);
   var plotW = W-padL-padR, plotH = H-padT-padB;
   var Y = function(v){ return padT + (1-(v-mn)/(mx-mn))*plotH; };
@@ -4785,7 +4845,7 @@ function peerBarsSVG(entries, focusedSym, fmt, opts){
     if(y<padT-1 || y>padT+plotH+1) return;
     out += '<line x1="'+padL+'" x2="'+(padL+plotW)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)
       + '" stroke="'+(Math.abs(t)<1e-9?"var(--gridzero)":"var(--grid)")+'" stroke-width="1"/>'
-      + '<text x="'+(padL-5)+'" y="'+(y+3.5).toFixed(1)+'" font-size="10" text-anchor="end" fill="var(--ink3)">'+esc(fmt(t))+'</text>';
+      + '<text x="'+(padL-5)+'" y="'+(y+3.5).toFixed(1)+'" font-size="10" text-anchor="end" fill="var(--ink3)">'+esc(tfmt(t))+'</text>';
   });
   if(med!=null){
     var my = Y(med);
@@ -6412,7 +6472,7 @@ function renderPeersInto(body, sym, res, seq){
       drew++;
       return;
     }
-    var svg = peerBarsSVG(rows, sym, fmt);
+    var svg = peerBarsSVG(rows, sym, fmt, null, (fmt===fmtAxisPct ? "pct" : "num"));
     if(!svg) return;
     var known = rows.map(function(r){ return r.val; }).filter(function(v){ return v!=null; });
     var sm = medianOf(known.map(Math.abs)) || 0, mxa = Math.max.apply(null, known.map(Math.abs));
@@ -6462,8 +6522,12 @@ function renderPeersInto(body, sym, res, seq){
       var ends = lines.map(function(L){ var v=L.values.filter(function(x){return x!=null;}); return v[v.length-1]; });
       var medEnd = medianOf(ends) || 100, maxEnd = Math.max.apply(null, ends);
       var clampTo = (maxEnd/medEnd > 4) ? medEnd*4 : null;
-      var svg2 = axisChartSVG(axis, lines, {kind:"num", W:600, H:220, endLabels:true,
-                                            clamp:clampTo, perLabels:perLabels});
+      // Every other chart in the kit picks its viewBox from the width it will
+      // render at; this one was hard-coded to 600 and scaled to 0.59 on a
+      // phone, putting its axis text at 6.5px.
+      var narrowP = (window.innerWidth || 1440) <= 760;
+      var svg2 = axisChartSVG(axis, lines, {kind:"num", W: narrowP?360:600, H: narrowP?250:220,
+                                            endLabels:true, clamp:clampTo, perLabels:perLabels});
       if(svg2){
         var runaway = clampTo!=null ? lines.filter(function(L, li){ return ends[li] > clampTo; }).map(function(L){ return L.name; }) : [];
         var el2 = document.createElement("div");
@@ -6507,6 +6571,14 @@ function stageTabsRender(){
   });
 }
 function stageFlowSecHTML(sym){
+  // With no snapshot the boards have not loaded, so "scored onto neither flow
+  // board this cycle: its options activity was ordinary" is a claim the page
+  // cannot make — and it contradicted the outage banner three inches above.
+  if(!STATE.data){
+    return '<div class="dsec note">The flow boards have not loaded this session, so there is nothing to say about '
+      + esc(sym)+'\u2019s options activity yet. The banner at the top of the page has the detail; the boards retry '
+      + 'automatically.</div>';
+  }
   var data = STATE.data;
   var conv = (data && Array.isArray(data.conviction)) ? data.conviction.filter(function(c){return c.ticker===sym;})[0] : null;
   var sw = (data && Array.isArray(data.swing)) ? data.swing.filter(function(c){return c.ticker===sym;})[0] : null;
@@ -6580,25 +6652,58 @@ function renderStageTab(){
    yet is a different sentence from a name that is genuinely off the desk. */
 function stageSourceLine(sym, fund){
   var pinned = railHasSym(sym);
-  var bits = ["Prices come from the TradingView scanner, 15 minutes behind the tape, re-read every 30 seconds"];
+  var bits = [];
+
+  // PRICES. Conditional: with the scanner unreachable there is no price on
+  // screen, and asserting a live re-read every 30 seconds under a row of
+  // dashes is the opposite of provenance. The nominal figure is the vendor's
+  // 15-minute delay; the measured one is in the honesty box, and the two used
+  // to disagree on this page.
+  var lq = liveBySym(sym);
+  if(lq && lq.px!=null){
+    bits.push("Prices come from the TradingView scanner's 15-minute delayed feed, re-read every 30 seconds");
+  } else if(typeof tvPollFailed !== "undefined" && tvPollFailed){
+    bits.push("the price poll is not answering, so nothing here is current");
+  } else {
+    bits.push("no live price for this symbol yet");
+  }
+
+  // BARS — whichever file actually supplied what is on screen.
   var adhocDaily = !!(ADHOC_BARS[sym] && ADHOC_BARS[sym].D && ADHOC_BARS[sym].D.rows && ADHOC_BARS[sym].D.rows.length);
   var deskDaily = barsRaw(sym).length > 0;
   if(deskDaily) bits.push("daily and weekly bars from the desk's own bars.json");
   else if(adhocDaily) bits.push("daily bars from stockanalysis.com");
-  // Only say something about intraday once the file has actually been asked
-  // for — it loads lazily on the first 15m/1H/4H click, and claiming "no
-  // intraday bars" before then was wrong for every covered name.
-  if(INTRA_FAILED) bits.push("the intraday file did not load this session, so the short timeframes are empty");
+
+  // INTRADAY. Only claim something once the file has been asked for, and name
+  // the REAL reason: the file covers the tracked list completely, so a name
+  // that is missing is a name that is not on that list.
+  if(INTRA_FAILED) bits.push("the intraday file did not load this session, so the short timeframes are empty until it is retried");
   else if(INTRA_CACHE!==null){
-    bits.push(intraRaw(sym, "i15").length > 0
-      ? "15-minute, hourly and 4-hour bars from the desk's intraday file"
-      : "no intraday bars for this name — the desk's intraday file covers part of the tracked watchlist");
+    if(intraRaw(sym, "i15").length > 0) bits.push("15-minute, hourly and 4-hour bars from the desk's intraday file");
+    else if(!pinned) bits.push("no intraday bars — that file covers the desk's tracked list and this name is not on it");
+    else bits.push("no intraday bars published for this name in the desk's intraday file");
   }
-  if(fund && fund.source==="scanner") bits.push("fundamentals from a TradingView scanner snapshot"
-    + (pinned ? ", because no daily sidecar has published for this name yet" : ", because this name is not on the desk's tracked list"));
-  else if(fund) bits.push("fundamentals from the daily sidecar (fund/"+esc(sym)+".json)"
-    + (fund.built ? (", built "+esc(fund.built)) : ""));
-  else bits.push("no fundamentals loaded for this name");
+
+  // FUNDAMENTALS. The grid above is mostly data.json's facts block; the
+  // sidecar supplies forward P/E, short interest, earnings history and rating
+  // changes. Saying "no fundamentals loaded" while that grid is full was
+  // simply wrong.
+  var f = factsOf(sym);
+  var hasDeskFacts = !!(STATE.data && STATE.data.facts && STATE.data.facts[sym]);
+  if(fund && fund.source==="scanner"){
+    bits.push("fundamentals from a TradingView scanner snapshot"
+      + (pinned ? ", because no daily sidecar has published for this name yet" : ", because this name is not on the desk's tracked list"));
+  } else if(fund){
+    bits.push("fundamentals from the desk's own snapshot"
+      + (hasDeskFacts ? " (data.json facts)" : "")
+      + ", with forward P/E, short interest, earnings history and rating changes from the daily sidecar (fund/"+esc(sym)+".json)"
+      + (fund.built ? (", built "+esc(fund.built)) : ""));
+  } else if(f){
+    bits.push("the fundamentals grid above comes from the desk's per-cycle scanner snapshot"
+      + (hasDeskFacts ? " in data.json" : "") + "; no daily sidecar for this name");
+  } else {
+    bits.push("no fundamentals loaded for this name");
+  }
   return bits.join(" · ") + ". Nothing here is investment advice.";
 }
 /* ---- stage entry point: what [data-sym] clicks now drive ---- */
@@ -6741,10 +6846,30 @@ function updatePricesTimestamp(){
   var nowStr = ctClockString(new Date());
   if(tvPollFailed && lastPriceUpdateTs){
     el.innerHTML = esc(nowStr)
-      + ' · <span style="color:var(--hi)" data-tip="The live price poll is failing, so every price on the page is frozen at the time shown here. The clock is your device; the prices are not.">prices as of '
+      + ' · <span style="color:var(--hi)" data-tip="The price poll is failing, so every price on the page is frozen at the time shown here. The clock is your device; the prices are not.">prices as of '
       + esc(ctTimeShort(new Date(lastPriceUpdateTs).toISOString()))+'</span>';
+  } else if(tvPollFailed){
+    // Never a successful poll, so there is no "as of" to show — and the page
+    // said nothing at all while every price on it read "—".
+    el.innerHTML = esc(nowStr)
+      + ' · <span style="color:var(--hi)" data-tip="The price poll has not answered once this session, so no price on this page is real. It retries every 30 seconds.">no prices yet</span>';
   } else {
     el.textContent = nowStr;
+  }
+  renderPriceBanner();
+}
+/* A dead price feed is a page-level fact, not a footnote. The data.json banner
+   already had this shape; prices had nothing. */
+function renderPriceBanner(){
+  var el = document.getElementById("pricebanner");
+  if(!el) return;
+  var dead = tvPollFailed && tvPollMisses >= 2;
+  el.hidden = !dead;
+  if(dead){
+    el.textContent = lastPriceUpdateTs
+      ? ("Price feed not answering — every price, change and chart candle on this page is frozen at "
+         + ctTimeShort(new Date(lastPriceUpdateTs).toISOString()) + " CT. Retrying every 30 seconds.")
+      : "Price feed not answering — no price on this page is real yet. Retrying every 30 seconds.";
   }
 }
 
