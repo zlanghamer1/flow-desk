@@ -1214,7 +1214,7 @@ BARS_BUILD_SIG = "v3-2y-vol-tape-splitfix"  # bumped whenever build_bars's OUTPU
                                 # below rewrites values, so it rides this gate
                                 # too and lands on the next cycle instead of
                                 # waiting for tomorrow's build.
-FUND_BUILD_SIG = "v3-ni-fcf-ratings"    # same idea for fund/{SYM}.json's OUTPUT SHAPE
+FUND_BUILD_SIG = "v4-ni-fcf-ratings-currency"    # same idea for fund/{SYM}.json's OUTPUT SHAPE
                                 # (added 2026-08-19: quarterly/annual ni+fcf).
                                 # The sidecars share the bars rebuild gate, so
                                 # without their own signature a shape change
@@ -1755,7 +1755,12 @@ SA_CASHFLOW_Q_PATH = "/financials/cash-flow-statement/__data.json?p=quarterly"
 YAHOO_FC_URL = "https://fc.yahoo.com"
 YAHOO_CRUMB_URL = "https://query1.finance.yahoo.com/v1/test/getcrumb"
 YAHOO_QUOTESUMMARY_URL = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{sym}"
-YAHOO_QS_MODULES = "defaultKeyStatistics,earningsHistory,earnings,calendarEvents,upgradeDowngradeHistory"
+# financialData added 2026-08-19 for ONE field: `financialCurrency`, the
+# currency a company REPORTS in, which is not the currency its US listing
+# trades in. SK hynix (SKHY) files in KRW and Taiwan Semi (TSM) in TWD, but
+# both price in USD, so the page was labeling trillions of won "reported
+# dollars". No extra HTTP call — it rides the same quoteSummary request.
+YAHOO_QS_MODULES = "defaultKeyStatistics,earningsHistory,earnings,calendarEvents,upgradeDowngradeHistory,financialData"
 
 FUND_SLEEP_SEC = 0.3
 # Analyst rating CHANGES (added 2026-08-19, Zach's ask: "analyst rating updates
@@ -2206,7 +2211,7 @@ def fetch_yahoo_fundamentals(sym: str, crumb: str, _get: Optional[Callable] = No
     None/[]/absent on a narrower miss (per-field fail-soft throughout).
     """
     empty = {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None,
-             "ratings": []}
+             "ratings": [], "currency": None}
     url = (YAHOO_QUOTESUMMARY_URL.format(sym=sym)
            + f"?modules={YAHOO_QS_MODULES}&crumb={urllib.parse.quote(crumb)}")
     try:
@@ -2226,6 +2231,11 @@ def fetch_yahoo_fundamentals(sym: str, crumb: str, _get: Optional[Callable] = No
     short_frac = _yahoo_num(dks.get("shortPercentOfFloat"))
     out["short_pct_float"] = round(short_frac * 100, 3) if short_frac is not None else None
     out["pe_forward"] = _yahoo_num(dks.get("forwardPE"))
+    # The reporting currency of the income statement, not the listing's
+    # trading currency. Anything that is not a 3-letter code is dropped.
+    fin_cur = ((result.get("financialData") or {}).get("financialCurrency"))
+    if isinstance(fin_cur, str) and len(fin_cur.strip()) == 3 and fin_cur.strip().isalpha():
+        out["currency"] = fin_cur.strip().upper()
 
     earnings_mod = result.get("earnings") or {}
     echart = ((earnings_mod.get("earningsChart") or {}).get("quarterly")) or []
@@ -2341,6 +2351,11 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
         "quarterly": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []},
         "annual": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []},
         "ratings": [],
+        # The currency the statements are REPORTED in. None means unknown, and
+        # the page says "as reported" rather than naming a currency it is
+        # guessing at. Never assume USD: a US-listed ADR files in its home
+        # currency (SKHY in KRW, TSM in TWD).
+        "currency": None,
     }
 
     sa_stats = fetch_sa_statistics(sym, _get=_get)
@@ -2379,6 +2394,8 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
             payload["earnings"] = yq["earnings"]
         if yq.get("ratings"):
             payload["ratings"] = yq["ratings"]
+        if yq.get("currency"):
+            payload["currency"] = yq["currency"]
         if yq["next_earnings"] is not None:
             ne = dict(yq["next_earnings"])
             if ne.get("session") is None:

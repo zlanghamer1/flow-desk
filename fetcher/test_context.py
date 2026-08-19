@@ -1486,12 +1486,12 @@ def test_fetch_yahoo_fundamentals_fetch_failure_is_all_empty():
         raise urllib.error.URLError("boom")
     out = context.fetch_yahoo_fundamentals("NVDA", "abc", _get=fake_fail)
     assert out == {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None,
-                   "ratings": []}
+                   "ratings": [], "currency": None}
 
     # A 200 with a shape quoteSummary doesn't recognize is equally fail-soft.
     out2 = context.fetch_yahoo_fundamentals("NVDA", "abc", _get=lambda u, h: json.dumps({"quoteSummary": {"result": []}}).encode())
     assert out2 == {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None,
-                    "ratings": []}
+                    "ratings": [], "currency": None}
 
 
 # ── earnings-row revenue backfill (added 2026-08-15, wave 3, Task C) ────────
@@ -2248,3 +2248,47 @@ def test_fund_sidecar_carries_ratings_and_survives_their_absence():
     yahoo_result.pop("upgradeDowngradeHistory")        # ETF-shaped response
     payload2 = context.build_fund_sidecar("SPY", date(2026, 8, 19), "crumbtoken", None, _get=fake_get)
     assert payload2["ratings"] == []
+
+
+def test_yahoo_fundamentals_carries_reporting_currency():
+    """A US-listed ADR reports in its home currency; the page must be able to
+    say so instead of labeling trillions of won "dollars"."""
+    body = json.dumps({"quoteSummary": {"result": [{
+        "defaultKeyStatistics": {},
+        "financialData": {"financialCurrency": "KRW"},
+    }]}}).encode()
+    out = context.fetch_yahoo_fundamentals("SKHY", "abc", _get=lambda u, h: body)
+    assert out["currency"] == "KRW"
+
+
+def test_yahoo_fundamentals_currency_rejects_junk():
+    for junk in ("", "US DOLLAR", "US$", "u", None, 7):
+        body = json.dumps({"quoteSummary": {"result": [{
+            "defaultKeyStatistics": {},
+            "financialData": {"financialCurrency": junk},
+        }]}}).encode()
+        out = context.fetch_yahoo_fundamentals("X", "abc", _get=lambda u, h: body)
+        assert out["currency"] is None, junk
+
+
+def test_yahoo_fundamentals_currency_absent_module_is_none():
+    body = json.dumps({"quoteSummary": {"result": [{"defaultKeyStatistics": {}}]}}).encode()
+    out = context.fetch_yahoo_fundamentals("SPY", "abc", _get=lambda u, h: body)
+    assert out["currency"] is None
+
+
+def test_quotesummary_request_asks_for_financial_data():
+    """The currency rides the existing call — no second request may appear."""
+    seen = []
+
+    def spy(url, headers):
+        seen.append(url)
+        return json.dumps({"quoteSummary": {"result": [{"defaultKeyStatistics": {}}]}}).encode()
+
+    context.fetch_yahoo_fundamentals("MU", "abc", _get=spy)
+    assert len(seen) == 1
+    assert "financialData" in seen[0]
+
+
+def test_fund_build_sig_forces_a_rebuild_for_currency():
+    assert context.FUND_BUILD_SIG == "v4-ni-fcf-ratings-currency"
