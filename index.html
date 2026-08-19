@@ -407,10 +407,14 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .segrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .pchip{font-size:10.5px;font-weight:700;border-radius:4px;padding:2px 7px}
 .pchip.u{background:var(--upbg)} .pchip.d{background:var(--dnbg)}
-.pop{position:absolute;z-index:8;display:none;max-width:230px;background:var(--srf2);border:1px solid var(--edge);border-radius:6px;padding:8px 10px 9px;font-size:11px;color:var(--ink2);box-shadow:0 12px 32px rgba(0,0,0,.4);line-height:1.55}
+.pop{position:absolute;z-index:30;display:none;max-width:250px;background:var(--srf2);border:1px solid var(--edge);border-radius:6px;padding:8px 10px 9px;font-size:11px;color:var(--ink2);box-shadow:0 12px 32px rgba(0,0,0,.4);line-height:1.55}
 .pop b{color:var(--ink)}
 .pop .u{color:var(--up)} .pop .d{color:var(--dn)}
-.pop .cl{position:absolute;top:1px;right:6px;color:var(--ink3);cursor:pointer;font-size:13px;padding:2px 4px}
+/* The × sits above the chart canvas and gets a real hit area — it used to be
+   painted under the canvas, so clicking it did nothing and the only way out
+   was clicking outside the chart entirely (Zach, 2026-08-19). */
+.pop .cl{position:absolute;top:0;right:2px;color:var(--ink2);cursor:pointer;font-size:15px;line-height:1;padding:5px 8px;z-index:1}
+.pop .cl:hover{color:var(--ink)}
 .leg{display:flex;gap:12px;font-size:9.5px;color:var(--ink3);margin-top:5px;flex-wrap:wrap}
 .leg i{display:inline-block;width:12px;border-top:2px solid var(--ink2);vertical-align:middle;margin-right:4px}
 .leg i.d20{border-top:2px solid var(--ink3)} /* solid — the chart strokes it solid; the swatch used to lie */
@@ -1451,7 +1455,14 @@ function ensureFund(sym){
   return fetch(fundUrl(sym))
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
     .then(function(json){ FUND_CACHE[sym] = normalizeFund(json); return FUND_CACHE[sym]; })
-    .catch(function(){ FUND_CACHE[sym] = null; return null; });
+    .catch(function(){
+      // No sidecar for this name (searched, off the desk universe). Build the
+      // financials from the scanner's own quarterly history instead of
+      // telling the user there are none.
+      return adhocEnsureFundamentals(sym).then(function(f){
+        FUND_CACHE[sym] = f; return f;
+      });
+    });
 }
 
 /* =================== ad-hoc bar history: stockanalysis.com ===================
@@ -1521,6 +1532,63 @@ function adhocEnsureDaily(sym){
       return out;
     }, function(err){ delete ADHOC_INFLIGHT[key]; throw err; });
   return ADHOC_INFLIGHT[key];
+}
+
+/* Quarterly financials for ANY ticker, from the scanner's own history arrays
+   (Zach 2026-08-19: "No quarterly financials for TSLA"). The daily sidecar
+   only covers desk-pinned names, and stockanalysis.com's financial pages are
+   NOT CORS-open — only its /api/ paths are, and those carry quotes and price
+   history, not statements. The TradingView scanner does carry them:
+   total_revenue_fq_h and friends return 32 quarters, newest first, for any
+   symbol, on the same CORS-open endpoint the page already polls.
+
+   PERIODS ARE LABELED BY PERIOD-END MONTH, not by fiscal quarter number.
+   The scanner gives the latest period end (fiscal_period_end_fq) but no
+   fiscal labels, and fiscal calendars are not calendar years — NVDA's latest
+   quarter ends in April. Stepping back three months per element and printing
+   the month is exact; inventing "Q2 26" for a company whose Q2 is our Q4
+   would not be. Annual bars are deliberately skipped for these names for the
+   same reason: the vendor's fiscal-year field disagrees with the array's own
+   newest year, so any FY label would be a guess. */
+var ADHOC_FIN_COLS = ["total_revenue_fq_h","net_income_fq_h","free_cash_flow_fq_h",
+                      "earnings_per_share_diluted_fq_h","fiscal_period_end_fq"];
+var ADHOC_FIN_QUARTERS = 12;
+function _adhocQuarterLabels(endEpoch, n){
+  var out = [];
+  if(!endEpoch) { for(var k=0;k<n;k++) out.push(""); return out; }
+  var d = new Date(endEpoch*1000);
+  for(var i=0;i<n;i++){
+    var dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()-3*i, 1));
+    out.push(MONTHS[dt.getUTCMonth()]+" '"+String(dt.getUTCFullYear()).slice(-2));
+  }
+  return out;                       // newest first, same order as the arrays
+}
+function adhocEnsureFundamentals(sym){
+  var tv = symbolForTicker(sym);
+  if(!tv) return Promise.resolve(null);
+  var body = JSON.stringify({ symbols:{tickers:[tv]}, columns:ADHOC_FIN_COLS });
+  return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(function(json){
+      var d = json && Array.isArray(json.data) && json.data[0] && json.data[0].d;
+      if(!Array.isArray(d)) return null;
+      function arr(i){ return Array.isArray(d[i]) ? d[i].map(num) : []; }
+      var rev = arr(0), ni = arr(1), fcf = arr(2), eps = arr(3);
+      var endEp = (typeof d[4]==="number") ? d[4] : null;
+      if(!rev.some(function(v){ return v!=null; })) return null;
+      var n = Math.min(ADHOC_FIN_QUARTERS,
+        Math.max(rev.length, ni.length, fcf.length, eps.length));
+      var labels = _adhocQuarterLabels(endEp, n);
+      function take(a){ return a.slice(0,n).reverse(); }               // -> oldest first
+      return {
+        short_pct: null, pe_forward: null, earnings: [], next_earnings: null, ratings: [],
+        source: "scanner",
+        growth: { quarterly: { labels: labels.slice(0,n).reverse(),
+                               revenue: take(rev), eps: take(eps), ni: take(ni), fcf: take(fcf) },
+                  annual: null }
+      };
+    })
+    .catch(function(){ return null; });
 }
 
 // Scanner-snapshot fundamentals for any symbol — the same fields facts
@@ -3419,6 +3487,9 @@ function showEarnPopover(x, y, html){
   var pop = document.getElementById("earnpop");
   if(!pop) return;
   pop.innerHTML = html;
+  // Stamped so the click that OPENED it cannot also close it, while any later
+  // click outside can — including a click on the chart itself.
+  pop.dataset.openedAt = String(Date.now());
   pop.style.left = Math.max(0, x-80)+"px";
   pop.style.top = y+"px";
   pop.style.display = "block";
@@ -3953,9 +4024,15 @@ function renderGrowth(sym, fund){
     if(arow) out += '<div class="gwrap"><div class="glabel">Annual — summed from complete fiscal years</div>'+arow+'</div>';
   }
   if(!out) return '<div id="growthbox"></div>';
-  out += '<div class="note">Reported figures from the daily fundamentals sidecar (stockanalysis.com income and cash-flow statements). '
-    + 'Fiscal quarters are labeled on each axis. Margins are derived per quarter only where both legs reported; annual rows sum '
-    + 'complete 4-quarter years. A missing quarter stays blank, never a zero. Hover any point or bar for its exact value.</div>';
+  out += '<div class="note">'
+    + (fund.source==="scanner"
+        ? 'Reported figures from TradingView\u2019s quarterly history for this symbol — the desk\u2019s own daily sidecar covers its tracked '
+          + 'watchlist, and this name is not on it. Periods are labeled by the month the quarter ENDED, because the vendor supplies no fiscal '
+          + 'labels and fiscal years are not calendar years. Annual rows and earnings-surprise history need the sidecar and are not shown here. '
+        : 'Reported figures from the daily fundamentals sidecar (stockanalysis.com income and cash-flow statements). '
+          + 'Fiscal quarters are labeled on each axis. Annual rows sum complete 4-quarter years. ')
+    + 'Margins are derived per quarter only where both legs reported. A missing quarter stays blank, never a zero. '
+    + 'Hover any point or bar for its exact value.</div>';
   return '<div class="dsec" id="growthbox"><h3>Financials</h3>'+out+'</div>';
 }
 
@@ -4854,8 +4931,17 @@ function stageFlowSecHTML(sym){
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-oiconfirm"])+'">OI-confirm</span></span><b>'+(sw.oi_confirm||"—")+'</b></div>'
     + '<div class="kvrow"><span>Suggested</span><b style="font-size:10.5px">'+suggestedContractLine(sw.suggested_contract, num(sw.spot))+'</b></div></div>') : "";
   if(!convSec && !swSec){
-    return '<div class="dsec note">'+esc(sym)+' is not on either flow board this cycle — no unusual options activity to report. '
-      + 'Boards refresh ~7 min during market hours; the full boards are below the chart.</div>';
+    var tracked = railHasSym(sym) || (STATE.data && STATE.data.facts && STATE.data.facts[sym]);
+    return '<div class="dsec note">'
+      + (tracked
+          ? esc(sym)+' scored onto neither flow board this cycle: its options activity was ordinary. The boards rebuild every ~7 minutes '
+            + 'during market hours from 15-minute-delayed CBOE chains, so this can change during the session — the full boards sit below this chart.'
+          : esc(sym)+' is outside the desk\u2019s options universe, so there is no chain data for it here. Options chains are fetched '
+            + 'server-side by the desk\u2019s own loop for a curated list of names: the free CBOE feed sends no CORS header, so this page '
+            + 'cannot read an options chain from your browser for any other ticker, and no amount of watchlisting changes that. '
+            + 'Price, chart, technicals and financials for '+esc(sym)+' all work above. To put it on the boards for real, ask Claude to add it '
+            + 'to the desk universe — that is a one-line change to the loop\u2019s pinned list.')
+      + '</div>';
   }
   return convSec + swSec;
 }
@@ -4866,7 +4952,8 @@ function renderStageTab(){
   if(STAGE.tab==="fin"){
     var g = renderGrowth(sym, fund);
     body.innerHTML = (g && g.indexOf("dsec")!==-1) ? g
-      : '<div class="dsec note">No quarterly financials for '+esc(sym)+' — the daily sidecar covers desk-pinned company names (indexes and funds have none).</div>';
+      : '<div class="dsec note">No quarterly financials for '+esc(sym)+'. Indexes, ETFs and other funds have no income statement '
+        + 'to report — they hold companies rather than being one. For a company this means no vendor published statements for it.</div>';
   } else if(STAGE.tab==="peers"){
     renderPeersTab(sym);
   } else if(STAGE.tab==="flow"){
@@ -5206,8 +5293,18 @@ document.getElementById("focclear").addEventListener("click", function(){ setFoc
 // Earnings popover: click anywhere outside it (or its own × ) hides it.
 document.addEventListener("click", function(e){
   var pop = document.getElementById("earnpop");
-  if(pop && pop.style.display==="block" && !e.target.closest("#earnpop") && !e.target.closest("#stagechart")){ pop.style.display = "none"; }
-});
+  if(!pop || pop.style.display!=="block") return;
+  if(e.target.closest("#earnpop")) return;                      // inside the card: the × handles itself
+  var age = Date.now() - (+pop.dataset.openedAt || 0);
+  if(age < 250) return;                                          // this is the click that opened it
+  pop.style.display = "none";
+}, true);
+// Esc closes it too, and never falls through to clearing the ticker focus.
+document.addEventListener("keydown", function(e){
+  if(e.key!=="Escape") return;
+  var pop = document.getElementById("earnpop");
+  if(pop && pop.style.display==="block"){ pop.style.display="none"; e.stopPropagation(); }
+}, true);
 
 /* =================== boot =================== */
 // Prices poll every 30s tick; data.json rides a slower 2-minute cadence (the
