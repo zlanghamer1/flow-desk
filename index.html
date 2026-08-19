@@ -433,8 +433,19 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .stagehead .clsf{font-size:10px;color:var(--ink3);letter-spacing:.02em}
 .stagehead .px{font-size:21px;font-weight:700}
 .stagehead .ch{font-size:14px;font-weight:600}
-.stagehead .ohlc{margin-left:auto;font-size:10.5px;color:var(--ink3);white-space:nowrap}
-.stagehead .ohlc b{color:var(--ink2);font-weight:600}
+/* The crosshair readout gets its OWN reserved line (2026-08-19, Zach: "moving
+   the mouse cursor around in a chart the chart becomes jittery and moves
+   around instead of staying in place"). It used to sit in the wrapping flex
+   row with margin-left:auto, so every change in the price digits changed its
+   width — and at most widths that flipped it between sharing the symbol row
+   and wrapping onto a second one. The header grew and shrank a line at a time
+   under the moving cursor and everything below it jumped. Now: always its own
+   full-width row, a reserved min-height so an empty readout still holds the
+   line, and tabular figures so the digits do not shuffle sideways either. */
+.stagehead .ohlc{flex:1 0 100%;margin-left:0;text-align:right;font-size:10.5px;color:var(--ink3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:15px;line-height:15px;
+  font-variant-numeric:tabular-nums}
+.stagehead .ohlc b{color:var(--ink2);font-weight:600;font-variant-numeric:tabular-nums}
 .stagebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 14px 8px}
 .stagechart{position:relative;height:clamp(380px,52vh,620px);border-top:1px solid var(--edge2)}
 .stagemsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;
