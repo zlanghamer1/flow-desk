@@ -426,7 +426,13 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .gwrap .glabel{flex:1 1 100%;font-size:9.5px;letter-spacing:.12em;color:var(--ink3);font-weight:700;text-transform:uppercase;margin-top:8px}
 .gchart{flex:1 1 240px;min-width:200px}
 .gchart h4{font-size:9.5px;letter-spacing:.09em;color:var(--ink3);text-transform:uppercase;margin-bottom:3px;font-weight:600}
-.gchart svg{width:100%;height:auto;aspect-ratio:280/82;display:block}
+.gchart svg{width:100%;height:auto;display:block}
+.gcap{font-size:10px;color:var(--ink3);margin-top:2px}
+.gcap b{color:var(--ink2);font-weight:600}
+.peerkey{display:flex;gap:10px;flex-wrap:wrap;font-size:10.5px;margin:2px 0 8px}
+.peerkey span{display:inline-flex;align-items:center;gap:4px;color:var(--ink2)}
+.peerkey i{width:9px;height:9px;border-radius:2px;display:inline-block}
+.fsub{font-size:9.5px;color:var(--ink3);font-weight:400;margin-left:5px}
 .jumpflash{background:var(--sel)!important;box-shadow:inset 2px 0 0 var(--acc)}
 .kvrow{display:flex;justify-content:space-between;gap:14px;font-size:11.5px;padding:3px 0;color:var(--ink3)}
 .kvrow b{color:var(--ink);font-weight:600;text-align:right}
@@ -530,7 +536,7 @@ footer b{color:var(--ink2)}
     <span class="rl opt" id="railbackdrop" data-tip="Seven level/trend readings: 10Y, real yield, MOVE, crude, HY spread, 2s10s, and the Fed rate-hike odds. Display-only." hidden>backdrop <b id="railbackdroptext">—</b></span>
     <span class="rl opt" id="railfed" data-tip="Polymarket's priced chance the Fed RAISES rates at its next meeting. A betting market, not a forecast — and the one macro reading here that is forward-looking about policy. Display-only." hidden>fed hike <b id="railfedtext">—</b></span>
     <div class="grow"></div>
-    <button class="kbtn" id="palopen"><span>Search tickers, actions…</span><kbd id="palkbd">⌘K</kbd></button>
+    <button class="kbtn" id="palopen"><span>Search any ticker or action…</span><kbd id="palkbd">⌘K</kbd></button>
     <button class="ic" id="theme" aria-pressed="false">◐ theme</button>
   </div>
   <div class="focusbar" id="focusbar">
@@ -657,7 +663,7 @@ footer b{color:var(--ink2)}
 
 <!-- palette / tooltip -->
 <div class="pal" id="pal"><div class="palbox">
-  <input id="palin" placeholder="Type a ticker or an action… (↑↓ + Enter)" autocomplete="off">
+  <input id="palin" placeholder="Search every US ticker, or type an action… (↑↓ + Enter)" autocomplete="off">
   <div class="pl" id="pallist"></div>
 </div></div>
 <div class="tipb" id="tipb"></div>
@@ -1430,6 +1436,13 @@ function normalizeFund(f){
   var g = (f.growth && typeof f.growth==="object") ? f.growth : f;
   var q = series(g.quarterly), a = series(g.annual);
   out.growth = (q || a) ? { quarterly:q, annual:a } : null;
+  // Analyst rating CHANGES (2026-08-19). Only rows the source itself labels an
+  // upgrade or a downgrade arrive here; initiations, reiterations and
+  // price-target-only moves are dropped upstream, so a marker on this chart
+  // always means the rating itself moved.
+  out.ratings = Array.isArray(f.ratings) ? f.ratings.filter(function(r){
+    return r && typeof r==="object" && (r.dir==="up"||r.dir==="down") && typeof r.date==="string";
+  }) : [];
   return out;
 }
 function ensureFund(sym){
@@ -1441,95 +1454,75 @@ function ensureFund(sym){
     .catch(function(){ FUND_CACHE[sym] = null; return null; });
 }
 
-/* =================== ad-hoc bar history: TradingView chart websocket ===================
-   The same protocol scripts/fetch_tv.py has used since 2026-07-16, ported to
-   the browser (verified 2026-08-19: the endpoint accepts any Origin, so a
-   github.io page can pull ~5,000 no-auth bars). Used ONLY for symbols
-   bars.json doesn't carry — searched/custom names. One-shot connection per
-   fetch, closed as soon as the series completes; 15s timeout; fail-soft to
-   a plain "no history" note. Completed bars are identical to the desk's
-   baked ones (delay only affects the forming bar).  */
-var TVWS_URL = "wss://data.tradingview.com/socket.io/websocket?from=chart";
-function tvwsFetchBars(tvSymbol, interval, nBars){
-  return new Promise(function(resolve, reject){
-    var ws;
-    try{ ws = new WebSocket(TVWS_URL); }
-    catch(e){ reject(e); return; }
-    var out = [], done = false;
-    function pack(m,p){ var j=JSON.stringify({m:m,p:p}); return "~m~"+j.length+"~m~"+j; }
-    function finish(err){
-      if(done) return; done = true; clearTimeout(timer);
-      try{ ws.close(); }catch(e){}
-      if(out.length){ out.sort(function(a,b){ return a[0]-b[0]; }); resolve(out); }
-      else reject(err || new Error("no bars"));
-    }
-    var timer = setTimeout(function(){ finish(new Error("timeout")); }, 15000);
-    ws.onopen = function(){
-      var cs = "cs_" + Math.random().toString(36).slice(2,14);
-      ws.send(pack("set_auth_token", ["unauthorized_user_token"]));
-      ws.send(pack("chart_create_session", [cs, ""]));
-      ws.send(pack("resolve_symbol", [cs, "sym1", '={"symbol":"'+tvSymbol+'","adjustment":"splits"}']));
-      ws.send(pack("create_series", [cs, "s1", "s1", "sym1", interval, nBars, ""]));
-    };
-    ws.onmessage = function(ev){
-      var raw = String(ev.data||"");
-      var hb = /~m~\d+~m~(~h~\d+)/.exec(raw);           // keepalive ping -> echo
-      if(hb){ try{ ws.send("~m~"+hb[1].length+"~m~"+hb[1]); }catch(e){} }
-      if(raw.indexOf("timescale_update")!==-1){
-        var re = /\{"i":\d+,"v":\[([-+\d.,eEnul]+)\]\}/g, m;
-        while((m = re.exec(raw))){
-          var v = m[1].split(",").map(Number);
-          if(v.length>=5 && isFinite(v[0])) out.push([v[0], v[1], v[2], v[3], v[4], (v.length>5 && isFinite(v[5]))?v[5]:null]);
-        }
-      }
-      if(raw.indexOf("series_completed")!==-1) finish();
-      if(raw.indexOf("critical_error")!==-1 || raw.indexOf("symbol_error")!==-1) finish(new Error("symbol error"));
-    };
-    ws.onerror = function(){ finish(new Error("websocket error")); };
-    ws.onclose = function(){ finish(new Error("closed")); };
-  });
-}
-// Daily WS rows -> the stage's shape: [o,h,l,c,v] quints + real per-bar dates
-// (no weekday reconstruction needed — the socket carries true timestamps).
+/* =================== ad-hoc bar history: stockanalysis.com ===================
+   WHY NOT TRADINGVIEW'S SOCKET: it enforces an exact-host allowlist on the
+   Origin header. Measured 2026-08-19 with byte-identical handshakes that
+   differed only in Origin — https://www.tradingview.com and
+   https://s.tradingview.com get 101 Switching Protocols, while
+   https://zlanghamer1.github.io, https://example.com and no-Origin all get
+   "HTTP/1.1 403 Forbidden" from Server: tv. Origin is a forbidden header
+   name, so page JavaScript cannot set it and the WebSocket constructor takes
+   no header options: from this site that path can NEVER work. It was the
+   cause of "no chart history available for TSLA". (The scanner host is a
+   different story — it reflects any Origin, which is why live quotes,
+   search and fundamentals work.)
+
+   THE REPLACEMENT: stockanalysis.com's history API answers a plain GET with
+   `access-control-allow-origin: *` and full daily OHLCV for any US ticker,
+   keyless. Measured quirks that shape the code below:
+     - Rows come back NEWEST FIRST; reverse before charting.
+     - range=2Y silently returns ONE year with HTTP 200. Only 3M, 6M, YTD,
+       1Y, 5Y and 10Y are honored, so this asks for 5Y and slices.
+     - Omitting range changes the response shape and appends a partial bar;
+       always pass an explicit range.
+     - `c` is the unadjusted close and `a` the split+dividend-adjusted one.
+       Charts use o/h/l/c so candles match every other quote on the page.
+   NO INTRADAY: every intraday source probed (Nasdaq, WSJ, CNBC, Cboe) sends
+   no CORS header at all, so 15m/1H/4H stay a desk-tracked-names feature and
+   the stage says so rather than pretending. */
+var SA_HISTORY_URL = "https://stockanalysis.com/api/symbol/s/{sym}/history?range=5Y";
 var ADHOC_INFLIGHT = {};
 function adhocEnsureDaily(sym){
   if(ADHOC_BARS[sym] && ADHOC_BARS[sym].D) return Promise.resolve(ADHOC_BARS[sym].D);
-  var tv = symbolForTicker(sym);
-  if(!tv) return Promise.reject(new Error("no tv symbol"));
   var key = sym+":D";
   if(ADHOC_INFLIGHT[key]) return ADHOC_INFLIGHT[key];
-  ADHOC_INFLIGHT[key] = tvwsFetchBars(tv, "D", 520).then(function(rows){
-    delete ADHOC_INFLIGHT[key];
-    var d = { rows: rows.map(function(r){ return [r[1],r[2],r[3],r[4],r[5]]; }),
-              dates: rows.map(function(r){ return new Date(r[0]*1000); }) };
-    ADHOC_BARS[sym] = ADHOC_BARS[sym] || {};
-    ADHOC_BARS[sym].D = d;
-    // avg_move for the hot-mover math: same definition the fetcher uses —
-    // mean |daily %| over the last 20 closes, 2dp.
-    var closes = d.rows.map(function(r){ return num(r[3]); }).filter(function(x){ return x!=null; });
-    if(closes.length>=21 && ADHOC_FACTS[sym] && ADHOC_FACTS[sym].avg_move==null){
-      var moves=[]; for(var i=closes.length-20;i<closes.length;i++){ if(closes[i-1]) moves.push(Math.abs(closes[i]/closes[i-1]-1)*100); }
-      if(moves.length) ADHOC_FACTS[sym].avg_move = Math.round(moves.reduce(function(a,b){return a+b;},0)/moves.length*100)/100;
-    }
-    return d;
-  }, function(err){ delete ADHOC_INFLIGHT[key]; throw err; });
+  var url = SA_HISTORY_URL.replace("{sym}", encodeURIComponent(String(sym).toLowerCase()));
+  ADHOC_INFLIGHT[key] = fetch(url)          // no custom headers: any would force a preflight
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(function(json){
+      delete ADHOC_INFLIGHT[key];
+      var raw = json && json.data;
+      if(raw && !Array.isArray(raw) && Array.isArray(raw.data)) raw = raw.data;   // range-less shape
+      if(!Array.isArray(raw) || !raw.length) throw new Error("no rows");
+      var rows = [], dates = [];
+      for(var i=raw.length-1; i>=0; i--){                                          // newest-first -> oldest-first
+        var b = raw[i];
+        if(!b || typeof b!=="object") continue;
+        var o=num(b.o), h=num(b.h), l=num(b.l), c=num(b.c), t=b.t;
+        if(c==null || typeof t!=="string" || t.length<10) continue;
+        if(o==null) o=c; if(h==null) h=Math.max(o,c); if(l==null) l=Math.min(o,c);
+        var d = new Date(t.slice(0,10)+"T12:00:00Z");
+        if(isNaN(d.getTime())) continue;
+        rows.push([o,h,l,c,num(b.v)]);
+        dates.push(d);
+      }
+      if(rows.length < 2) throw new Error("no usable rows");
+      var out = {rows:rows, dates:dates};
+      ADHOC_BARS[sym] = ADHOC_BARS[sym] || {};
+      ADHOC_BARS[sym].D = out;
+      // avg_move for the hot-mover math: the fetcher's own definition —
+      // mean |daily %| over the last 20 closes, 2dp.
+      var closes = rows.map(function(r){ return num(r[3]); }).filter(function(v){ return v!=null; });
+      if(closes.length>=21 && ADHOC_FACTS[sym] && ADHOC_FACTS[sym].avg_move==null){
+        var moves=[];
+        for(var k=closes.length-20;k<closes.length;k++){ if(closes[k-1]) moves.push(Math.abs(closes[k]/closes[k-1]-1)*100); }
+        if(moves.length) ADHOC_FACTS[sym].avg_move = Math.round(moves.reduce(function(a,b){return a+b;},0)/moves.length*100)/100;
+      }
+      return out;
+    }, function(err){ delete ADHOC_INFLIGHT[key]; throw err; });
   return ADHOC_INFLIGHT[key];
 }
-function adhocEnsureIntra(sym, iv){
-  var key = iv==="15m" ? "i15" : "i60";
-  if(ADHOC_BARS[sym] && ADHOC_BARS[sym][key]) return Promise.resolve(ADHOC_BARS[sym][key]);
-  var tv = symbolForTicker(sym);
-  if(!tv) return Promise.reject(new Error("no tv symbol"));
-  var fkey = sym+":"+key;
-  if(ADHOC_INFLIGHT[fkey]) return ADHOC_INFLIGHT[fkey];
-  ADHOC_INFLIGHT[fkey] = tvwsFetchBars(tv, key==="i15"?"15":"60", key==="i15"?600:420).then(function(rows){
-    delete ADHOC_INFLIGHT[fkey];
-    ADHOC_BARS[sym] = ADHOC_BARS[sym] || {};
-    ADHOC_BARS[sym][key] = rows;
-    return rows;
-  }, function(err){ delete ADHOC_INFLIGHT[fkey]; throw err; });
-  return ADHOC_INFLIGHT[fkey];
-}
+
 // Scanner-snapshot fundamentals for any symbol — the same fields facts
 // carries for pinned names (same taxonomy, same units), fetched client-side
 // once per session per symbol. Fail-soft: a dead scanner just leaves the
@@ -2936,9 +2929,10 @@ var STAGE = {
   sym:null, iv:"1D", tf:"3M", tab:"ov", view:"chart",
   chart:null, s:{}, markersApi:null,
   rows:[], dates:[], times:[], intraday:false, hasVolume:false,
+  vZoom:1,                   // vertical candle stretch, driven by the wheel over the price axis
   synthetic:false,           // last row is the live-appended today candle
   log:false, logManual:null, // null = auto rule decides; true/false = user override
-  markerByTime:{}, fund:null, hovering:false
+  markerByTime:{}, ratingByTime:{}, fund:null, hovering:false
 };
 function cssVar(name){
   var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -2996,21 +2990,86 @@ function stageInit(){
     timeScale: { rightOffset: 3, secondsVisible: false, tickMarkFormatter: stageTickFmt },
     localization: { locale: "en-US", timeFormatter: stageTimeLabel },
     crosshair: { mode: LWC.CrosshairMode.Normal },
-    handleScroll: true, handleScale: true
+    handleScroll: true,
+    // Dragging either axis scales it; the wheel handler below adds vertical
+    // zoom when the cursor sits over the price axis (Zach, 2026-08-19).
+    handleScale: { mouseWheel:true, pinch:true, axisPressedMouseMove:{time:true, price:true},
+                   axisDoubleClickReset:{time:true, price:true} }
   });
   STAGE.s.candle = STAGE.chart.addSeries(LWC.CandlestickSeries, { borderVisible:false });
   STAGE.s.volume = STAGE.chart.addSeries(LWC.HistogramSeries, {
     priceScaleId:"vol", priceFormat:{type:"volume"}, lastValueVisible:false, priceLineVisible:false });
   STAGE.chart.priceScale("vol").applyOptions({ scaleMargins:{top:0.82, bottom:0}, visible:false });
-  STAGE.s.ma20 = STAGE.chart.addSeries(LWC.LineSeries, { lineWidth:1, title:"20d", priceLineVisible:false, crosshairMarkerVisible:false });
-  STAGE.s.ma50 = STAGE.chart.addSeries(LWC.LineSeries, { lineWidth:1, title:"50d", priceLineVisible:false, crosshairMarkerVisible:false });
-  STAGE.s.ma200 = STAGE.chart.addSeries(LWC.LineSeries, { lineWidth:2, title:"200d", priceLineVisible:false, crosshairMarkerVisible:false });
+  // Moving averages are EXCLUDED from the price-scale autoscale (returning
+  // null from the provider does that). On a 1-month window MU's 200-day line
+  // sits ~40% below the candles, and letting it set the range squashed a
+  // month of trading into the top fifth of the pane. Every charting platform
+  // scales to price and clips the long average; now so does this one.
+  var maOpts = { priceLineVisible:false, crosshairMarkerVisible:false, autoscaleInfoProvider: function(){ return null; } };
+  STAGE.s.ma20 = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({ lineWidth:1, title:"20d" }, maOpts));
+  STAGE.s.ma50 = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({ lineWidth:1, title:"50d" }, maOpts));
+  STAGE.s.ma200 = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({ lineWidth:2, title:"200d" }, maOpts));
   STAGE.markersApi = LWC.createSeriesMarkers(STAGE.s.candle, []);
+  // Vertical zoom (Zach 2026-08-19: "scrolling over the price to the far right
+  // should expand/contract the candles vertically"). The library has no
+  // set-price-range call, but a series may supply its own autoscale range —
+  // so the wheel adjusts a stretch factor and this provider narrows or widens
+  // the auto-fitted range around its midpoint. Dragging the axis still does
+  // the library's own manual scaling, and double-clicking it resets both.
+  STAGE.s.candle.applyOptions({ autoscaleInfoProvider: function(original){
+    var res = original();
+    if(!res || !res.priceRange || !STAGE.vZoom || STAGE.vZoom===1) return res;
+    var pr = res.priceRange;
+    var mid = (pr.maxValue + pr.minValue)/2, half = (pr.maxValue - pr.minValue)/2;
+    if(!isFinite(mid) || !isFinite(half) || half<=0) return res;
+    half = half / STAGE.vZoom;
+    return { priceRange:{ minValue: mid-half, maxValue: mid+half }, margins: res.margins };
+  }});
+  stageWireVerticalZoom(el);
   stageTheme();
   STAGE.chart.subscribeCrosshairMove(stageOnCrosshair);
   STAGE.chart.subscribeClick(stageOnClick);
   STAGE.chart.timeScale().subscribeVisibleLogicalRangeChange(stageOnVisRange);
   return true;
+}
+// Wheel over the PRICE AXIS stretches the candles vertically; wheel anywhere
+// else keeps the library's own time zoom. Capture phase + preventDefault so the
+// two never both fire on one gesture.
+function stageWireVerticalZoom(el){
+  el.addEventListener("wheel", function(e){
+    if(!STAGE.chart) return;
+    var axisW = 0;
+    try{ axisW = STAGE.chart.priceScale("right").width() || 0; }catch(err){ axisW = 0; }
+    var r = el.getBoundingClientRect();
+    if(e.clientX < r.right - axisW) return;              // not over the axis: leave it to the chart
+    e.preventDefault(); e.stopPropagation();
+    var step = e.deltaY < 0 ? 1.12 : 1/1.12;
+    STAGE.vZoom = Math.min(12, Math.max(0.25, (STAGE.vZoom||1) * step));
+    stageApplyVZoom();
+  }, {passive:false, capture:true});
+  // Double-click the axis: back to the natural fit (the library resets its own
+  // manual scaling on the same gesture).
+  el.addEventListener("dblclick", function(e){
+    if(!STAGE.chart) return;
+    var axisW = 0;
+    try{ axisW = STAGE.chart.priceScale("right").width() || 0; }catch(err){ axisW = 0; }
+    var r = el.getBoundingClientRect();
+    if(e.clientX < r.right - axisW) return;
+    STAGE.vZoom = 1; stageApplyVZoom();
+  });
+}
+function stageApplyVZoom(){
+  if(!STAGE.chart || !STAGE.s.candle) return;
+  try{
+    STAGE.chart.priceScale("right").applyOptions({ autoScale:true });   // provider only runs while autoscaling
+    STAGE.s.candle.applyOptions({});                                    // force a rescale pass
+  }catch(e){}
+  var el = document.getElementById("stagevz");
+  if(el){
+    var on = Math.abs((STAGE.vZoom||1)-1) > 0.01;
+    el.hidden = !on;
+    if(on) el.textContent = "vertical "+(STAGE.vZoom).toFixed(1)+"× · dbl-click axis to reset";
+  }
 }
 function stageTheme(){
   if(!STAGE.chart) return;
@@ -3064,19 +3123,6 @@ function stageDailyData(sym){
            hasVolume: rows.some(function(r){ return r && r.length>=5 && num(r[4])!=null && num(r[4])>0; }),
            intraday:false, synthetic:synthetic };
 }
-function stageAdhocIntraData(sym, iv){
-  var key = iv==="15m" ? "i15" : "i60";
-  var raw = ADHOC_BARS[sym] && ADHOC_BARS[sym][key];
-  if(!raw || raw.length<2) return null;
-  var use = raw;
-  if(iv==="4H") use = resample4H(raw);
-  if(iv==="1H") use = raw.slice(-160);
-  return { rows: use.map(function(r){ return [r[1],r[2],r[3],r[4],r[5]]; }),
-           dates: use.map(function(r){ return new Date(r[0]*1000); }),
-           m20:[], m50:[], m200:[],
-           hasVolume: use.some(function(r){ return r[5]!=null && r[5]>0; }),
-           intraday:true, synthetic:false };
-}
 function stageViewData(sym, iv){
   if(iv==="1D") return stageDailyData(sym);
   if(iv==="1W"){
@@ -3096,7 +3142,7 @@ function stageViewData(sym, iv){
   var cd = intervalDataFor(sym, iv);
   if(cd) return { rows:cd.slice, dates:cd.dates, m20:[], m50:[], m200:[],
                   hasVolume:!!cd.hasVolume, intraday:true, synthetic:false };
-  return stageAdhocIntraData(sym, iv);
+  return null;      // searched names: no browser-fetchable intraday source exists
 }
 // The auto log-axis rule, unchanged from the SVG engine (see LOG_SCALE_RATIO /
 // LOG_TAIL_SHARE above): evaluated over the PRESET window the user selected,
@@ -3137,17 +3183,19 @@ function stageRender(){
     if(BARS_CACHE===null){ stageMsg("loading chart…"); return; }
     // Not in bars.json — a searched/custom name. Fetch history straight from
     // TradingView's chart websocket (one shot, fail-soft).
-    var tv = symbolForTicker(sym);
-    if(tv){
-      var wantIntra = intraView;
-      var already = ADHOC_BARS[sym] && (wantIntra ? ADHOC_BARS[sym][STAGE.iv==="15m"?"i15":"i60"] : ADHOC_BARS[sym].D);
-      if(!already){
-        stageMsg("fetching "+sym+" history from TradingView…");
-        var pr = wantIntra ? adhocEnsureIntra(sym, STAGE.iv==="4H"?"1H":STAGE.iv) : adhocEnsureDaily(sym);
-        pr.then(function(){ if(STAGE.sym===sym) stageRender(); },
-                function(){ if(STAGE.sym===sym) stageSetEmpty("no chart history available for "+sym+" — TradingView's chart socket didn't answer. Quotes and fundamentals still work."); });
-        return;
-      }
+    if(intraView){
+      stageSetEmpty("15-minute, hourly and 4-hour bars come from the desk's own intraday file, which covers the tracked "
+        + "watchlist only — no free source publishes intraday history a browser is allowed to read. "
+        + sym + " charts fine on the daily and weekly views; click 1D or 1W.");
+      return;
+    }
+    var already = ADHOC_BARS[sym] && ADHOC_BARS[sym].D;
+    if(!already){
+      stageMsg("fetching "+sym+" price history…");
+      adhocEnsureDaily(sym).then(
+        function(){ if(STAGE.sym===sym) stageRender(); },
+        function(){ if(STAGE.sym===sym) stageSetEmpty("no price history available for "+sym+". Live quotes and fundamentals above still work."); });
+      return;
     }
     stageSetEmpty("no chart history available"+(STAGE.iv==="1D"?"":" for this view"));
     return;
@@ -3232,6 +3280,7 @@ function stageApplyWindow(total){
 function stageMarkers(){
   if(!STAGE.markersApi) return;
   STAGE.markerByTime = {};
+  STAGE.ratingByTime = {};
   var fund = STAGE.fund;
   if(STAGE.iv!=="1D" || !fund || !STAGE.dates.length){ STAGE.markersApi.setMarkers([]); return; }
   var markers=[], hi=cssVar("--hi");
@@ -3253,7 +3302,44 @@ function stageMarkers(){
       STAGE.markerByTime[String(t2)] = {type:"next"};
     }
   }
+  // Analyst rating changes (Zach 2026-08-19: "red for downgrade, green for
+  // upgrade"). Snapped to the nearest bar, same as the earnings badges, and
+  // stacked ABOVE the bar so they never sit on top of an E. Clicking one
+  // opens the firm, the grade move and the price-target change.
+  var ups = cssVar("--up"), dns = cssVar("--dn");
+  var startD = STAGE.dates[0], endD = STAGE.dates[STAGE.dates.length-1];
+  (Array.isArray(fund.ratings) ? fund.ratings : []).forEach(function(r, ri){
+    var rd = new Date(String(r.date)+"T12:00:00Z");
+    if(isNaN(rd.getTime()) || rd < startD || rd > endD) return;
+    var bestI = 0, bestDiff = Infinity;
+    for(var k=0;k<STAGE.dates.length;k++){ var d2=Math.abs(STAGE.dates[k]-rd); if(d2<bestDiff){ bestDiff=d2; bestI=k; } }
+    var t = STAGE.times[bestI];
+    var up = r.dir==="up";
+    markers.push({ time:t, position: up?"belowBar":"aboveBar", color: up?ups:dns,
+                   shape: up?"arrowUp":"arrowDown", text:"", id:"r:"+ri });
+    (STAGE.ratingByTime[String(t)] = STAGE.ratingByTime[String(t)] || []).push(ri);
+  });
   STAGE.markersApi.setMarkers(markers);
+}
+function ratingPopoverHTML(rows){
+  if(!rows || !rows.length) return '<span class="cl" id="popclose">×</span><div class="note">no rating change</div>';
+  var fund = STAGE.fund;
+  var html = '<span class="cl" id="popclose">×</span><b>Analyst rating change'+(rows.length>1?"s":"")+'</b>';
+  rows.forEach(function(ri){
+    var r = (fund && fund.ratings) ? fund.ratings[ri] : null;
+    if(!r) return;
+    var up = r.dir==="up";
+    var move = (r.from ? esc(r.from)+" → " : "") + esc(r.to||"");
+    var pt = "";
+    if(num(r.pt)!=null){
+      pt = "target "+fmtpx(r.pt) + (num(r.pt_prior)!=null ? (" (was "+fmtpx(r.pt_prior)+")") : "");
+    }
+    html += '<div style="margin-top:5px"><b class="'+(up?"u":"d")+'">'+(up?"UPGRADE":"DOWNGRADE")+'</b> '
+      + esc(r.date)+'<br>'+esc(r.firm||"")+(move?('<br>'+move):"")+(pt?('<br><span class="m">'+esc(pt)+'</span>'):"")+'</div>';
+  });
+  html += '<div class="note" style="margin-top:6px">Rating changes only — initiations, reiterations and '
+    + 'price-target-only moves are left off the chart.</div>';
+  return html;
 }
 /* ---- crosshair readout + marker clicks ---- */
 function stageSetOhlc(param){
@@ -3280,20 +3366,28 @@ function stageOnCrosshair(param){
 }
 function stageOnClick(param){
   if(!param) return;
-  var hit = null;
-  if(param.hoveredObjectId && String(param.hoveredObjectId).slice(0,2)==="e:"){
-    var id = String(param.hoveredObjectId).slice(2);
-    hit = (id==="next") ? {type:"next"} : {type:"past", idx:+id};
-  } else if(param.time!=null){
-    var key = (typeof param.time==="object") ? [param.time.year,
+  var hit = null, ratingRows = null;
+  var oid = param.hoveredObjectId ? String(param.hoveredObjectId) : "";
+  var key = null;
+  if(param.time!=null){
+    key = (typeof param.time==="object") ? [param.time.year,
       ("0"+param.time.month).slice(-2), ("0"+param.time.day).slice(-2)].join("-") : String(param.time);
-    hit = STAGE.markerByTime[key] || null;
   }
-  if(!hit) return;
+  if(oid.slice(0,2)==="r:"){ ratingRows = [ +oid.slice(2) ]; }
+  else if(oid.slice(0,2)==="e:"){
+    var id = oid.slice(2);
+    hit = (id==="next") ? {type:"next"} : {type:"past", idx:+id};
+  } else if(key!=null){
+    ratingRows = STAGE.ratingByTime ? STAGE.ratingByTime[key] : null;
+    if(!ratingRows) hit = STAGE.markerByTime[key] || null;
+  }
+  if(!hit && !ratingRows) return;
   var fund = STAGE.fund;
-  var html = (hit.type==="next")
-    ? earnPopoverHTML(null, fund && fund.next_earnings, true)
-    : earnPopoverHTML(fund && Array.isArray(fund.earnings) ? fund.earnings[hit.idx] : null, null, false);
+  var html = ratingRows
+    ? ratingPopoverHTML(ratingRows)
+    : ((hit.type==="next")
+        ? earnPopoverHTML(null, fund && fund.next_earnings, true)
+        : earnPopoverHTML(fund && Array.isArray(fund.earnings) ? fund.earnings[hit.idx] : null, null, false));
   var x = (param.point && param.point.x!=null) ? param.point.x : 40;
   var y = (param.point && param.point.y!=null) ? param.point.y : 40;
   showEarnPopover(x, y, html);
@@ -3454,7 +3548,45 @@ function recLabel(v){
   if(n<=4.5) return {t:"Sell", cls:"d"};
   return {t:"Strong sell", cls:"d"};
 }
-function fcell(label, text, cls){ return '<div class="fcell"><span>'+esc(label)+'</span><b class="'+(cls||"")+'">'+text+'</b></div>'; }
+function fcell(label, text, cls, sub){
+  return '<div class="fcell"><span>'+esc(label)+'</span><b class="'+(cls||"")+'">'+text
+    + (sub ? ('<span class="fsub">'+sub+'</span>') : '') + '</b></div>';
+}
+/* Peer-relative colouring for the grid (Zach 2026-08-19: "should be color
+   coded in reference to peers and whether good or bad relative to market").
+   Green means better than the peer median for that metric, red worse, and the
+   grey sub-label carries the median itself so the number has a reference. The
+   tooltip adds the market rule of thumb where one exists. Needs the peers tab
+   data, which stageShow warms in the background; before it lands the cells
+   render exactly as they did. */
+var METRIC_MARKET_NOTE = {
+  peg:"Rule of thumb across the market: PEG at or below 1 is cheap for the growth, 2 or more is expensive.",
+  pe:"Market context: the S&P 500 has traded around 20-25x trailing earnings in recent years.",
+  ev_ebitda:"Market context: 10-14x EV/EBITDA is a typical large-cap range.",
+  gross_margin:"Market context: above 40% is a strong gross margin outside software; software runs 70%+.",
+  op_margin:"Market context: above 20% operating margin is strong for most industries.",
+  fcf_margin:"Market context: above 15% of revenue converting to free cash flow is strong.",
+  debt_eq:"Market context: below 0.5 is conservative leverage, above 2 is heavy."
+};
+function peerAnnotate(sym, key, fmt){
+  var st = peerStat(sym, key);
+  if(!st) return {cls:"", sub:"", tip:METRIC_MARKET_NOTE[key]||""};
+  var f = fmt || fmtAxisNum;
+  return {
+    cls: st.better ? "u" : "d",
+    sub: "peers "+esc(f(st.median)),
+    tip: (st.better ? "Better than " : "Worse than ") + "the peer median ("+f(st.median)+") — ranks "
+       + st.rank + " of " + st.n + " on the vs-Peers tab, where "
+       + ((METRIC_DIR[key]||1)>0 ? "higher is better." : "lower is better.")
+       + (METRIC_MARKET_NOTE[key] ? (" "+METRIC_MARKET_NOTE[key]) : "")
+  };
+}
+function fcellPeer(label, key, rawText, sym, fmt, fallbackCls){
+  var a = peerAnnotate(sym, key, fmt);
+  var cls = a.cls || fallbackCls || "";
+  var body = a.tip ? ('<span data-tip="'+esc(a.tip)+'">'+rawText+'</span>') : rawText;
+  return fcell(label, body, cls, a.sub);
+}
 // Tape-only symbols (VIX, US10Y, CRUDE, DXY, and the index ETFs) have no
 // `facts` row and no fund sidecar — they are not in the pinned universe, which
 // is deliberate: an index has no market cap, no P/E and no margins. Rendering
@@ -3476,7 +3608,27 @@ function renderFundamentals(sym, fund){
   // short_pct: facts.* is always null from the fetcher (see DATA_CONTRACT) —
   // the sidecar is the only real source; prefer it whenever non-null.
   var shortPct = (fund && num(fund.short_pct)!=null) ? num(fund.short_pct) : (f.short_pct!=null?num(f.short_pct):null);
-  var pegCls = f.peg!=null ? (f.peg<=1?"u":f.peg>=2?"d":"") : "";
+  // PEG: the vendor omits it for plenty of names, so fall back to P/E over TTM
+  // EPS growth and SAY it is derived. When even that is impossible — CRWD, for
+  // one, has NEGATIVE trailing earnings, so neither P/E nor PEG exists — the
+  // dash carries the reason instead of sitting there blank (Zach 2026-08-19).
+  var ttmEps = ttmEpsOf(fund);
+  var pegVal = metricValue(sym, "peg");
+  var pegDerived = (num(f.peg)==null && pegVal!=null);
+  var noEarnings = (num(f.pe)==null && ttmEps!=null && ttmEps<=0);
+  var pegText = pegVal!=null ? (numStr(pegVal) + (pegDerived ? ' <span class="fsub">derived</span>' : ""))
+    : (noEarnings ? '<span data-tip="'+esc("PEG cannot exist here: "+sym+"\u2019s trailing twelve-month earnings are negative ("
+        + ttmEps.toFixed(2)+" a share), so there is no P/E to divide and no growth rate to divide it by. Judge this name on revenue growth, "
+        + "margins and forward P/E instead \u2014 all on this page. A number here would be fiction.")+'">— <span class="fsub">no trailing earnings</span></span>'
+      : '<span data-tip="'+esc("TradingView reports no PEG for "+sym+" and the desk could not derive one: that needs a positive P/E and positive "
+        + "trailing-twelve-month EPS growth from the reported quarters.")+'">—</span>');
+  var pegCls = pegVal!=null ? (pegVal<=1?"u":pegVal>=2?"d":"") : "";
+  var peText = numStr(f.pe,1);
+  if(num(f.pe)==null && noEarnings){
+    peText = '<span data-tip="'+esc("No trailing P/E: "+sym+" earned "+ttmEps.toFixed(2)+" a share over the last four reported quarters. "
+      + "A P/E on negative earnings is meaningless, so the vendor omits it. The forward P/E beside this cell is the analyst estimate for next year.")
+      + '">— <span class="fsub">loss-making (ttm)</span></span>';
+  }
   var nmCls = f.net_margin!=null ? (f.net_margin>=20?"u":f.net_margin<0?"d":"") : "";
   var deCls = f.debt_eq!=null ? (f.debt_eq<=0.5?"u":f.debt_eq>=2?"d":"") : "";
   var shortCls = shortPct!=null ? (shortPct<=2?"u":shortPct>=5?"d":"") : "";
@@ -3491,18 +3643,18 @@ function renderFundamentals(sym, fund){
 
   var cells = [
     fcell("Market cap", f.cap!=null?fmtCapDollars(f.cap):"—"),
-    fcell("P/E (ttm)", numStr(f.pe,1)),
+    fcellPeer("P/E (ttm)", "pe", peText, sym, fmtAxisNum),
     fcell("Fwd P/E", fwdPe),
-    fcell("PEG", numStr(f.peg), pegCls),
+    fcellPeer("PEG", "peg", pegText, sym, fmtAxisNum, pegCls),
     fcell("P/S", numStr(f.ps,1)),
     fcell("P/B", numStr(f.pb,1)),
-    fcell("EV/EBITDA", numStr(f.ev_ebitda,1)),
-    fcell("Gross margin", pctStr(f.gross_margin)),
-    fcell("Oper margin", pctStr(f.op_margin)),
-    fcell("Net margin", pctStr(f.net_margin), nmCls),
-    fcell("FCF margin", pctStr(f.fcf_margin)),
+    fcellPeer("EV/EBITDA", "ev_ebitda", numStr(f.ev_ebitda,1), sym, fmtAxisNum),
+    fcellPeer("Gross margin", "gross_margin", pctStr(f.gross_margin), sym, fmtAxisPct),
+    fcellPeer("Oper margin", "op_margin", pctStr(f.op_margin), sym, fmtAxisPct),
+    fcellPeer("Net margin", "net_margin", pctStr(f.net_margin), sym, fmtAxisPct, nmCls),
+    fcellPeer("FCF margin", "fcf_margin", pctStr(f.fcf_margin), sym, fmtAxisPct),
     fcell("ROE", pctStr(f.roe)),
-    fcell("Debt/Eq", numStr(f.debt_eq), deCls),
+    fcellPeer("Debt/Eq", "debt_eq", numStr(f.debt_eq), sym, fmtAxisNum, deCls),
     fcell("Dividend yield", pctStr(f.yld)),
     fcell("Short % float", shortPct!=null?shortPct.toFixed(1)+"%":"—", shortCls),
     fcell("Beta", numStr(f.beta)),
@@ -3559,83 +3711,183 @@ function miniBarSVG(labels, values, opts){
   var baseLine = hasNeg ? ('<line x1="0" x2="'+W+'" y1="'+baseline+'" y2="'+baseline+'" stroke="var(--edge)" stroke-width="1"/>') : "";
   return '<svg viewBox="0 0 '+W+' '+H+'">'+baseLine+bars+'</svg>';
 }
-/* Multi-series mini line chart — the financials-tab workhorse (2026-08-19).
-   Series colors are page tokens validated as a trio (acc/up/hi) with the
-   dataviz six-checks; the CVD floor pair is covered by the direct last-value
-   labels and the legend the caller renders. Values hover via <title>. */
-function miniLineSVG(labels, seriesDefs, opts){
-  opts = opts||{};
-  var W=280, H=96, padT=10, padB=14, padR=44;
-  var defs = seriesDefs.map(function(sd){
-    return {name:sd.name, color:sd.color, vals:(sd.values||[]).map(num)};
-  }).filter(function(sd){ return sd.vals.some(function(v){ return v!=null; }); });
-  if(!defs.length) return "";
-  var n = Math.max.apply(null, defs.map(function(sd){ return sd.vals.length; }));
-  if(n<2) return "";
-  var all = [];
-  defs.forEach(function(sd){ sd.vals.forEach(function(v){ if(v!=null) all.push(v); }); });
-  var mn = Math.min.apply(null, all), mx = Math.max.apply(null, all);
-  if(opts.zeroFloor && mn>0) mn = 0;
-  if(mn===mx){ mn-=1; mx+=1; }
-  var pad=(mx-mn)*0.08; mn-=pad; mx+=pad;
-  var X=function(i){ return n<2?0:(i*(W-padR)/(n-1)); };
-  var Y=function(v){ return padT + (1-(v-mn)/(mx-mn))*(H-padT-padB); };
-  var out = "";
-  if(mn<0 && mx>0) out += '<line x1="0" x2="'+(W-padR)+'" y1="'+Y(0).toFixed(1)+'" y2="'+Y(0).toFixed(1)+'" stroke="var(--edge)" stroke-width="1"/>';
-  defs.forEach(function(sd){
-    var pts=[], dots="";
-    for(var i=0;i<sd.vals.length;i++){
-      var v=sd.vals[i]; if(v==null) continue;
-      var x=X(i), y=Y(v);
-      pts.push(x.toFixed(1)+","+y.toFixed(1));
-      dots += '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="2.4" fill="'+sd.color+'"><title>'
-        + esc((labels[i]||"")+" · "+sd.name+": "+(opts.pct?(v.toFixed(1)+"%"):fmtCompact(v)))+'</title></circle>';
-    }
-    if(pts.length<2) return;
-    out += '<polyline points="'+pts.join(" ")+'" fill="none" stroke="'+sd.color+'" stroke-width="1.6"/>'+dots;
-    var lastV=null; for(var k=sd.vals.length-1;k>=0;k--){ if(sd.vals[k]!=null){ lastV=sd.vals[k]; break; } }
-    if(lastV!=null) out += '<text x="'+(W-padR+4)+'" y="'+(Y(lastV)+3).toFixed(1)+'" font-size="8.5" font-weight="700" fill="'+sd.color+'">'
-      + esc(opts.pct? lastV.toFixed(1)+"%" : fmtCompact(lastV))+'</text>';
-  });
-  // sparse x labels: first + last
-  out += '<text x="0" y="'+(H-3)+'" font-size="8" fill="var(--ink3)">'+esc(labels[0]||"")+'</text>'
-    + '<text x="'+(W-padR)+'" y="'+(H-3)+'" font-size="8" text-anchor="end" fill="var(--ink3)">'+esc(labels[n-1]||"")+'</text>';
-  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+out+'</svg>';
+/* =================== chart kit: axes, ticks, labels (2026-08-19) ===================
+   Zach's punch list: quarter labels and value references were missing, and the
+   end-of-line value labels overlapped each other. Every chart below now draws
+   a real value axis with round-number gridlines, period labels along the
+   bottom, and carries the latest value in the LEGEND instead of stacking
+   labels on top of one another at the right edge.
+
+   Company colors come from a fixed categorical order, validated with the
+   dataviz six-checks for both themes (adjacent-pair CVD separation passes in
+   each; every bar is also labeled with its ticker, so identity never rests on
+   color alone). Color follows the entity, never its rank. */
+var SERIES_COLORS_DARK  = ["#4A8FD0","#C97A2E","#2FA36F","#9E74D8","#35A4B8"];
+var SERIES_COLORS_LIGHT = ["#2F6FAE","#A85A16","#177E52","#7346B8","#A63A6B"];
+function isLightTheme(){
+  var t = document.documentElement.dataset.theme;
+  if(t==="light") return true;
+  if(t==="dark") return false;
+  try{ return matchMedia("(prefers-color-scheme: light)").matches; }catch(e){ return false; }
 }
-function lineLegendHTML(seriesDefs){
-  return '<div class="leg" style="margin-top:2px">'+seriesDefs.map(function(sd){
-    return '<span><i style="border-top:2px solid '+sd.color+'"></i>'+esc(sd.name)+'</span>';
+function seriesColor(i){
+  var pal = isLightTheme() ? SERIES_COLORS_LIGHT : SERIES_COLORS_DARK;
+  return pal[i % pal.length];
+}
+function niceTicks(mn, mx, want){
+  want = want || 4;
+  if(!isFinite(mn) || !isFinite(mx)) return [];
+  if(mn === mx){ mn -= 1; mx += 1; }
+  var span = mx - mn, raw = span/want;
+  var mag = Math.pow(10, Math.floor(Math.log(raw)/Math.LN10));
+  var norm = raw/mag, step = mag * (norm>5?10 : norm>2.5?5 : norm>2?2.5 : norm>1?2 : 1);
+  var out = [], t = Math.ceil(mn/step)*step;
+  for(var i=0; i<12 && t<=mx+step*0.001; i++, t+=step){ out.push(Math.abs(t)<step*1e-9?0:t); }
+  return out;
+}
+function fmtAxisMoney(v){ return fmtCompact(v); }
+function fmtAxisPct(v){ return (Math.round(v*10)/10)+"%"; }
+function fmtAxisNum(v){ var a=Math.abs(v); return (a>=100? v.toFixed(0) : a>=10? v.toFixed(1) : v.toFixed(2)); }
+/* One renderer for every financials chart. defs: [{name,color,values,type}]
+   type is "line" (default) or "bar". opts: {fmt, W, H, zeroLine, xEvery}. */
+function axisChartSVG(labels, defs, opts){
+  opts = opts || {};
+  var fmt = opts.fmt || fmtAxisMoney;
+  var W = opts.W || 560, H = opts.H || 190;
+  var padL = opts.padL || 56, padR = 12, padT = 12, padB = 30;
+  var live = defs.map(function(d, i){
+    return {name:d.name, color:d.color||seriesColor(i), type:d.type||"line",
+            vals:(d.values||[]).map(num)};
+  }).filter(function(d){ return d.vals.some(function(v){ return v!=null; }); });
+  if(!live.length) return "";
+  var n = Math.max.apply(null, live.map(function(d){ return d.vals.length; }));
+  if(n < 2 && live.every(function(d){ return d.type!=="bar"; })) return "";
+  var all = [];
+  live.forEach(function(d){ d.vals.forEach(function(v){ if(v!=null) all.push(v); }); });
+  if(!all.length) return "";
+  var mn = Math.min.apply(null, all), mx = Math.max.apply(null, all);
+  var hasBar = live.some(function(d){ return d.type==="bar"; });
+  if(hasBar || opts.zeroLine){ mn = Math.min(0, mn); mx = Math.max(0, mx); }
+  if(mn === mx){ mn = mn - Math.abs(mn||1)*0.1; mx = mx + Math.abs(mx||1)*0.1; }
+  var pad = (mx-mn)*0.08; mn -= pad; mx += pad;
+  var plotW = W-padL-padR, plotH = H-padT-padB;
+  var X = function(i){ return padL + (n<=1 ? plotW/2 : i*plotW/(n-1)); };
+  var XB = function(i){ return padL + (i+0.5)*plotW/n; };            // bar-centre variant
+  var Y = function(v){ return padT + (1-(v-mn)/(mx-mn))*plotH; };
+  var out = "";
+  niceTicks(mn, mx, 4).forEach(function(t){
+    var y = Y(t);
+    if(y < padT-1 || y > padT+plotH+1) return;
+    var zero = Math.abs(t) < 1e-9;
+    out += '<line x1="'+padL+'" x2="'+(padL+plotW)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)
+      + '" stroke="'+(zero?"var(--edge)":"var(--edge2)")+'" stroke-width="1"/>'
+      + '<text x="'+(padL-6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" text-anchor="end" fill="var(--ink3)">'+esc(fmt(t))+'</text>';
+  });
+  // Period labels along the bottom, thinned so two can never overprint each
+  // other (Zach 2026-08-19: "Many financials missing Q# dates", and the ones
+  // that drew collided at the right edge). ~34px of clearance per label, and
+  // the last period always wins its slot.
+  var every = opts.xEvery || Math.max(1, Math.ceil(n/6));
+  var minGap = 34, drawn = [];
+  var order = [];
+  for(var i=n-1;i>=0;i--){ if(i===n-1 || i%every===0) order.push(i); }
+  order.forEach(function(i){
+    var lx = hasBar ? XB(i) : X(i);
+    if(drawn.some(function(x){ return Math.abs(x-lx) < minGap; })) return;
+    drawn.push(lx);
+    out += '<text x="'+lx.toFixed(1)+'" y="'+(H-10)+'" font-size="8.5" text-anchor="middle" fill="var(--ink3)">'+esc(labels[i]||"")+'</text>';
+  });
+  var barDefs = live.filter(function(d){ return d.type==="bar"; });
+  var slot = plotW/n, groupW = Math.max(3, slot*0.7), bw = barDefs.length ? Math.max(2, groupW/barDefs.length) : 0;
+  live.forEach(function(d){
+    if(d.type==="bar"){
+      var bi = barDefs.indexOf(d);
+      for(var k=0;k<d.vals.length;k++){
+        var v = d.vals[k]; if(v==null) continue;
+        var x = XB(k) - groupW/2 + bi*bw;
+        var y0 = Y(0), y1 = Y(v);
+        var top = Math.min(y0,y1), hgt = Math.max(1, Math.abs(y1-y0));
+        out += '<rect x="'+x.toFixed(1)+'" y="'+top.toFixed(1)+'" width="'+Math.max(1.5,bw-1).toFixed(1)
+          + '" height="'+hgt.toFixed(1)+'" rx="1.5" fill="'+d.color+'" opacity="'+(v<0?".85":"1")+'">'
+          + '<title>'+esc((labels[k]||"")+" · "+d.name+": "+fmt(v))+'</title></rect>';
+      }
+      return;
+    }
+    var pts = [], dots = "";
+    for(var j=0;j<d.vals.length;j++){
+      var vv = d.vals[j]; if(vv==null) continue;
+      var px = X(j), py = Y(vv);
+      pts.push(px.toFixed(1)+","+py.toFixed(1));
+      dots += '<circle cx="'+px.toFixed(1)+'" cy="'+py.toFixed(1)+'" r="2.6" fill="'+d.color+'">'
+        + '<title>'+esc((labels[j]||"")+" · "+d.name+": "+fmt(vv))+'</title></circle>';
+    }
+    if(pts.length>1) out += '<polyline points="'+pts.join(" ")+'" fill="none" stroke="'+d.color+'" stroke-width="1.8"/>';
+    out += dots;
+  });
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img">'+out+'</svg>';
+}
+/* Legend carries each series' latest value — that is where the end-of-line
+   labels went, and why they no longer collide. */
+function chartLegendHTML(defs, fmt){
+  fmt = fmt || fmtAxisMoney;
+  return '<div class="leg" style="margin-top:3px">'+defs.map(function(d, i){
+    var vals = (d.values||[]).map(num), last = null;
+    for(var k=vals.length-1;k>=0;k--){ if(vals[k]!=null){ last = vals[k]; break; } }
+    return '<span><i style="border-top:2px solid '+(d.color||seriesColor(i))+'"></i>'+esc(d.name)
+      + (last!=null ? (' <b>'+esc(fmt(last))+'</b>') : ' <span class="m">n/a</span>')+'</span>';
   }).join("")+'</div>';
 }
-/* Peer-compare bars: one metric, one bar per ticker, the focused name in the
-   accent color and peers in muted ink — identity by label + emphasis, so no
-   categorical palette is needed at all. */
-function barsCompareSVG(entries, focusedSym, fmt){
+/* Peer comparison: one bar per company, each in its own fixed color, ticker
+   labeled under it, a dashed peer-median reference line, and a caption saying
+   where the focused name ranks and which direction is good. */
+function peerBarsSVG(entries, focusedSym, fmt, opts){
+  opts = opts || {};
   var vals = entries.map(function(e){ return num(e.val); });
   if(!vals.some(function(v){ return v!=null; })) return "";
-  var W=280, H=96, padT=14, padB=13;
-  var mx = Math.max.apply(null, vals.map(function(v){ return v==null?0:Math.abs(v); })) || 1;
-  var n = entries.length, slot=W/n, bw=Math.max(6, Math.min(34, slot*0.56));
-  var hasNeg = vals.some(function(v){ return v!=null && v<0; });
-  var base = hasNeg ? padT+(H-padT-padB)/2 : H-padB;
-  var scale = hasNeg ? ((H-padT-padB)/2)/mx : (H-padT-padB)/mx;
-  var out = hasNeg ? ('<line x1="0" x2="'+W+'" y1="'+base+'" y2="'+base+'" stroke="var(--edge)" stroke-width="1"/>') : "";
-  entries.forEach(function(e, i){
-    var v = vals[i];
-    var x = i*slot+(slot-bw)/2, cx = i*slot+slot/2;
-    var isFoc = e.sym===focusedSym;
-    var col = isFoc ? "var(--acc)" : "var(--spark-n)";
-    if(v!=null){
-      var hgt = Math.abs(v)*scale, y = v>=0 ? base-hgt : base;
-      out += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(1,hgt).toFixed(1)+'" rx="2" fill="'+col+'"'+(isFoc?'':' opacity=".75"')+'>'
-        + '<title>'+esc(e.sym+": "+fmt(v))+'</title></rect>'
-        + '<text x="'+cx.toFixed(1)+'" y="'+(v>=0? Math.max(9,y-3) : y+hgt+9).toFixed(1)+'" font-size="8" text-anchor="middle" fill="var(--ink2)">'+esc(fmt(v))+'</text>';
-    } else {
-      out += '<text x="'+cx.toFixed(1)+'" y="'+(base-4)+'" font-size="8.5" text-anchor="middle" fill="var(--ink3)">—</text>';
-    }
-    out += '<text x="'+cx.toFixed(1)+'" y="'+(H-2)+'" font-size="8.5" font-weight="'+(isFoc?'700':'400')+'" text-anchor="middle" fill="'+(isFoc?'var(--acc)':'var(--ink3)')+'">'+esc(e.sym)+'</text>';
+  var W = 300, H = 150, padL = 44, padR = 8, padT = 14, padB = 28;
+  var known = vals.filter(function(v){ return v!=null; });
+  var mn = Math.min(0, Math.min.apply(null, known)), mx = Math.max(0, Math.max.apply(null, known));
+  if(mn===mx){ mx = mn + 1; }
+  var pad = (mx-mn)*0.12; mx += pad; if(mn<0) mn -= pad;
+  var plotW = W-padL-padR, plotH = H-padT-padB;
+  var Y = function(v){ return padT + (1-(v-mn)/(mx-mn))*plotH; };
+  var n = entries.length, slot = plotW/n, bw = Math.min(38, slot*0.62);
+  var out = "";
+  niceTicks(mn, mx, 3).forEach(function(t){
+    var y = Y(t);
+    if(y<padT-1 || y>padT+plotH+1) return;
+    out += '<line x1="'+padL+'" x2="'+(padL+plotW)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)
+      + '" stroke="'+(Math.abs(t)<1e-9?"var(--edge)":"var(--edge2)")+'" stroke-width="1"/>'
+      + '<text x="'+(padL-5)+'" y="'+(y+3).toFixed(1)+'" font-size="8.5" text-anchor="end" fill="var(--ink3)">'+esc(fmt(t))+'</text>';
   });
-  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+out+'</svg>';
+  var sorted = known.slice().sort(function(a,b){ return a-b; });
+  var med = sorted.length ? (sorted.length%2 ? sorted[(sorted.length-1)/2]
+            : (sorted[sorted.length/2-1]+sorted[sorted.length/2])/2) : null;
+  if(med!=null && sorted.length>=3){
+    var my = Y(med);
+    out += '<line x1="'+padL+'" x2="'+(padL+plotW)+'" y1="'+my.toFixed(1)+'" y2="'+my.toFixed(1)
+      + '" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="3 3" opacity=".75"><title>'
+      + esc("peer median "+fmt(med))+'</title></line>';
+  }
+  entries.forEach(function(e, i){
+    var v = vals[i], cx = padL + (i+0.5)*slot, col = e.color || seriesColor(i);
+    var isFoc = e.sym===focusedSym;
+    if(v!=null){
+      var y0 = Y(0), y1 = Y(v), top = Math.min(y0,y1), hgt = Math.max(1.5, Math.abs(y1-y0));
+      out += '<rect x="'+(cx-bw/2).toFixed(1)+'" y="'+top.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+hgt.toFixed(1)
+        + '" rx="2" fill="'+col+'"'+(isFoc?'':' opacity=".8"')+'>'
+        + '<title>'+esc(e.sym+": "+fmt(v)+(med!=null?(" · peer median "+fmt(med)):""))+'</title></rect>'
+        + '<text x="'+cx.toFixed(1)+'" y="'+(v>=0?Math.max(9,top-3):top+hgt+9).toFixed(1)
+        + '" font-size="8.5" font-weight="'+(isFoc?"700":"400")+'" text-anchor="middle" fill="var(--ink2)">'+esc(fmt(v))+'</text>';
+    } else {
+      out += '<text x="'+cx.toFixed(1)+'" y="'+(Y(0)-4).toFixed(1)+'" font-size="9" text-anchor="middle" fill="var(--ink3)">—</text>';
+    }
+    out += '<text x="'+cx.toFixed(1)+'" y="'+(H-9)+'" font-size="9" font-weight="'+(isFoc?"700":"600")
+      + '" text-anchor="middle" fill="'+col+'">'+esc(e.sym)+'</text>';
+    if(isFoc) out += '<line x1="'+(cx-bw/2-2).toFixed(1)+'" x2="'+(cx+bw/2+2).toFixed(1)+'" y1="'+(H-20)+'" y2="'+(H-20)
+      + '" stroke="'+col+'" stroke-width="1.5"/>';
+  });
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img">'+out+'</svg>';
 }
 function renderGrowth(sym, fund){
   var g = fund && fund.growth;
@@ -3643,56 +3895,168 @@ function renderGrowth(sym, fund){
   var out = "";
   var q = g.quarterly;
   if(q && Array.isArray(q.labels) && q.labels.length){
-    var accC = cssVar("--acc"), upC = cssVar("--up"), hiC = cssVar("--hi");
     var money = [
-      {name:"Revenue", color:accC, values:q.revenue},
-      {name:"Net income", color:upC, values:q.ni||[]},
-      {name:"Free cash flow", color:hiC, values:q.fcf||[]}
-    ].filter(function(sd){ return (sd.values||[]).some(function(v){ return num(v)!=null; }); });
-    var moneySvg = miniLineSVG(q.labels, money, {zeroFloor:false});
+      {name:"Revenue", color:seriesColor(0), values:q.revenue},
+      {name:"Net income", color:seriesColor(1), values:q.ni||[]},
+      {name:"Free cash flow", color:seriesColor(2), values:q.fcf||[]}
+    ].filter(function(d){ return (d.values||[]).some(function(v){ return num(v)!=null; }); });
+    var moneySvg = axisChartSVG(q.labels, money, {fmt:fmtAxisMoney, zeroLine:true});
     if(moneySvg){
-      out += '<div class="gwrap"><div class="glabel">Quarterly — dollars</div>'
-        + '<div class="gchart" style="flex:1 1 100%;max-width:560px"><h4>Revenue · net income · free cash flow</h4>'
-        + moneySvg + lineLegendHTML(money) + '</div></div>';
+      out += '<div class="gwrap"><div class="glabel">Quarterly — reported dollars</div>'
+        + '<div class="gchart" style="flex:1 1 100%;max-width:640px"><h4>Revenue · net income · free cash flow</h4>'
+        + moneySvg + chartLegendHTML(money, fmtAxisMoney) + '</div></div>';
     }
-    // margins derived per quarter, only where BOTH legs reported (None stays None)
-    function marginSeries(numArr){
-      if(!Array.isArray(numArr) || !numArr.length) return [];
+    function marginSeries(arr){
+      if(!Array.isArray(arr) || !arr.length) return [];
       return q.labels.map(function(_, i){
-        var a=num(numArr[i]), r=num(q.revenue[i]);
+        var a=num(arr[i]), r=num(q.revenue[i]);
         return (a!=null && r!=null && r!==0) ? (a/r*100) : null;
       });
     }
     var margins = [
-      {name:"Net margin", color:upC, values:marginSeries(q.ni||[])},
-      {name:"FCF margin", color:hiC, values:marginSeries(q.fcf||[])}
-    ].filter(function(sd){ return sd.values.some(function(v){ return v!=null; }); });
+      {name:"Net margin", color:seriesColor(1), values:marginSeries(q.ni||[])},
+      {name:"FCF margin", color:seriesColor(2), values:marginSeries(q.fcf||[])}
+    ].filter(function(d){ return d.values.some(function(v){ return v!=null; }); });
     var yoy = q.labels.map(function(_, i){ return yoyPct(q.revenue.map(num), i, 4); });
     var row2 = "";
-    var mSvg = margins.length ? miniLineSVG(q.labels, margins, {pct:true}) : "";
-    if(mSvg) row2 += '<div class="gchart"><h4>Margins %</h4>'+mSvg+lineLegendHTML(margins)+'</div>';
-    if(yoy.some(function(v){ return v!=null; })) row2 += '<div class="gchart"><h4>Revenue growth YoY %</h4>'+miniBarSVG(q.labels, yoy, {back:1, negRed:true})+'</div>';
-    if(Array.isArray(q.eps) && q.eps.length) row2 += '<div class="gchart"><h4>EPS (diluted)</h4>'+miniBarSVG(q.labels, q.eps, {back:4, negRed:true})+'</div>';
+    if(margins.length){
+      row2 += '<div class="gchart"><h4>Margins</h4>'
+        + axisChartSVG(q.labels, margins, {fmt:fmtAxisPct, W:340, H:170, padL:44, zeroLine:true})
+        + chartLegendHTML(margins, fmtAxisPct) + '</div>';
+    }
+    if(yoy.some(function(v){ return v!=null; })){
+      var yoyDef = [{name:"Revenue YoY", color:seriesColor(0), values:yoy, type:"bar"}];
+      row2 += '<div class="gchart"><h4>Revenue growth, year over year</h4>'
+        + axisChartSVG(q.labels, yoyDef, {fmt:fmtAxisPct, W:340, H:170, padL:44})
+        + chartLegendHTML(yoyDef, fmtAxisPct) + '</div>';
+    }
+    if(Array.isArray(q.eps) && q.eps.some(function(v){ return num(v)!=null; })){
+      var epsDef = [{name:"Diluted EPS", color:seriesColor(3), values:q.eps, type:"bar"}];
+      row2 += '<div class="gchart"><h4>Earnings per share</h4>'
+        + axisChartSVG(q.labels, epsDef, {fmt:fmtAxisNum, W:340, H:170, padL:44})
+        + chartLegendHTML(epsDef, fmtAxisNum) + '</div>';
+    }
     if(row2) out += '<div class="gwrap">'+row2+'</div>';
   }
   var a = g.annual;
   if(a && Array.isArray(a.labels) && a.labels.length){
     var arow = "";
-    [["revenue","Revenue"],["ni","Net income"],["fcf","Free cash flow"],["eps","EPS"]].forEach(function(t){
+    [["revenue","Revenue",0,fmtAxisMoney],["ni","Net income",1,fmtAxisMoney],
+     ["fcf","Free cash flow",2,fmtAxisMoney],["eps","EPS",3,fmtAxisNum]].forEach(function(t){
       var vals = a[t[0]];
-      if(Array.isArray(vals) && vals.some(function(v){ return num(v)!=null; })){
-        arow += '<div class="gchart"><h4>'+t[1]+' — annual</h4>'+miniBarSVG(a.labels, vals, {back:1, negRed:true})+'</div>';
-      }
+      if(!Array.isArray(vals) || !vals.some(function(v){ return num(v)!=null; })) return;
+      var def = [{name:t[1], color:seriesColor(t[2]), values:vals, type:"bar"}];
+      arow += '<div class="gchart"><h4>'+esc(t[1])+' — annual</h4>'
+        + axisChartSVG(a.labels, def, {fmt:t[3], W:340, H:170, padL:44, xEvery:1})
+        + chartLegendHTML(def, t[3]) + '</div>';
     });
-    if(arow) out += '<div class="gwrap"><div class="glabel">Annual (summed from quarters)</div>'+arow+'</div>';
+    if(arow) out += '<div class="gwrap"><div class="glabel">Annual — summed from complete fiscal years</div>'+arow+'</div>';
   }
   if(!out) return '<div id="growthbox"></div>';
-  out += '<div class="note">Reported figures from the daily fundamentals sidecar (stockanalysis.com income + cash-flow statements). '
-    + 'Margins are derived per quarter only where both legs were reported; annual rows sum complete 4-quarter fiscal years. '
-    + 'A missing quarter stays blank — never a zero.</div>';
+  out += '<div class="note">Reported figures from the daily fundamentals sidecar (stockanalysis.com income and cash-flow statements). '
+    + 'Fiscal quarters are labeled on each axis. Margins are derived per quarter only where both legs reported; annual rows sum '
+    + 'complete 4-quarter years. A missing quarter stays blank, never a zero. Hover any point or bar for its exact value.</div>';
   return '<div class="dsec" id="growthbox"><h3>Financials</h3>'+out+'</div>';
 }
 
+/* =================== vs Peers: curated groups + auto industry =================== */
+// Curated sets first — TV's industry taxonomy lumps memory makers in with
+// GPU designers, and MU's honest peer set is the memory complex (the same
+// concept the Action List's MEMORY_COMPLEX tracks), so the curated map wins
+// when it has an entry. Everything else: same TradingView `industry`, largest
+// by market cap, from facts locally then the live scanner.
+var PEER_GROUPS = {
+  MU:   [["SKHY","NASDAQ:SKHY"],["SNDK","NASDAQ:SNDK"],["WDC","NASDAQ:WDC"],["STX","NASDAQ:STX"]],
+  COHR: [["LITE","NASDAQ:LITE"],["AAOI","NASDAQ:AAOI"],["FN","NYSE:FN"]],
+};
+var PEER_SKIP_INDUSTRY = {"Investment Trusts/Mutual Funds":true};   // ETFs have no peers
+var PEERS_CACHE = {};
+function adhocFactsBatch(tvList){
+  var missing = tvList.filter(function(tv){ return tv && !ADHOC_FACTS[tv.split(":")[1]]; });
+  if(!missing.length) return Promise.resolve();
+  var body = JSON.stringify({ symbols:{tickers:missing}, columns:ADHOC_FACTS_COLS });
+  return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(function(json){
+      var rows = (json && Array.isArray(json.data)) ? json.data : [];
+      rows.forEach(function(row){
+        if(!row || !row.s || !Array.isArray(row.d)) return;
+        var d = row.d, symb = row.s.split(":")[1];
+        function n(i){ return (typeof d[i]==="number" && isFinite(d[i])) ? d[i] : null; }
+        function t(i){ return (typeof d[i]==="string" && d[i]) ? d[i] : null; }
+        ADHOC_FACTS[symb] = ADHOC_FACTS[symb] || { hi52:n(0), lo52:n(1), cap:n(2), beta:n(3), avol:n(4),
+          short_pct:null, earn_days:null, rsi:n(5), avg_move:null, pe:n(6), peg:n(7), net_margin:n(8),
+          gross_margin:n(9), op_margin:n(10), fcf_margin:n(11), debt_eq:n(12), roe:n(13),
+          ps:n(14), pb:n(15), ev_ebitda:n(16), yld:n(17), target:n(18), rec_mark:n(19),
+          sector:t(20), industry:t(21) };
+      });
+    })
+    .catch(function(){});
+}
+function peersFor(sym){
+  if(PEERS_CACHE[sym]) return Promise.resolve(PEERS_CACHE[sym]);
+  var cur = PEER_GROUPS[sym];
+  if(cur){
+    cur.forEach(function(p){ adhocRegister(p[0], p[1], null); });
+    var syms = cur.map(function(p){ return p[0]; });
+    return adhocFactsBatch(cur.map(function(p){ return p[1]; })).then(function(){
+      PEERS_CACHE[sym] = {peers:syms, source:"curated"};
+      return PEERS_CACHE[sym];
+    });
+  }
+  var f = factsOf(sym);
+  var ind = f && f.industry;
+  if(!ind || PEER_SKIP_INDUSTRY[ind]){
+    PEERS_CACHE[sym] = {peers:[], source:ind ? "fund" : "none"};
+    return Promise.resolve(PEERS_CACHE[sym]);
+  }
+  // local first: pinned facts sharing the industry
+  var local = [];
+  var allFacts = (STATE.data && STATE.data.facts) || {};
+  Object.keys(allFacts).forEach(function(t){
+    if(t===sym) return;
+    var pf = allFacts[t];
+    if(pf && pf.industry===ind && num(pf.cap)!=null) local.push({sym:t, cap:pf.cap});
+  });
+  local.sort(function(a,b){ return b.cap-a.cap; });
+  var picks = local.slice(0,4).map(function(x){ return x.sym; });
+  if(picks.length >= 3){
+    PEERS_CACHE[sym] = {peers:picks, source:"industry-local"};
+    return Promise.resolve(PEERS_CACHE[sym]);
+  }
+  // widen via the live scanner: biggest names in the same industry
+  var body = JSON.stringify({
+    columns:["name","description","market_cap_basic"],
+    filter:[{left:"industry",operation:"equal",right:ind}],
+    options:{lang:"en"}, range:[0,7],
+    sort:{sortBy:"market_cap_basic",sortOrder:"desc"},
+    symbols:{query:{types:["stock","dr"]}}, markets:["america"]});
+  return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(function(json){
+      var rows = (json && Array.isArray(json.data)) ? json.data : [];
+      var out = picks.slice(), tvs = [];
+      rows.forEach(function(row){
+        if(!row || !row.s || !Array.isArray(row.d)) return;
+        var t = row.d[0];
+        if(typeof t!=="string" || !t || t===sym || out.indexOf(t)!==-1) return;
+        if(out.length>=4) return;
+        out.push(t); tvs.push(row.s);
+        adhocRegister(t, row.s, (typeof row.d[1]==="string")?row.d[1]:null);
+      });
+      return adhocFactsBatch(tvs).then(function(){
+        PEERS_CACHE[sym] = {peers:out, source:"industry-scan"};
+        return PEERS_CACHE[sym];
+      });
+    })
+    .catch(function(){
+      PEERS_CACHE[sym] = {peers:picks, source:"industry-local"};
+      return PEERS_CACHE[sym];
+    });
+}
+/* Which direction is good, per metric: +1 higher is better, -1 lower is better.
+   Used for the rank caption and for the peer-relative coloring in the
+   fundamentals grid — never to score anything. */
 // The 52w range bar/position% needs both facts (sync, always available) and a
 // current price (live poll OR the last bars.json close) -- bars can still be
 // in flight when the modal first paints, so this is re-run once they land
@@ -3718,6 +4082,9 @@ var TA_MIN_SPAN = 20;      // .MIN_SPAN — bars between the two anchors
 var TA_TOUCH_TOL = 0.020;  // .TOUCH_TOL — within 2% of the line = a touch
 var TA_CONTAIN_TOL = 0.012;// .CONTAIN_TOL — pokes through beyond this kill the fit
 var TA_SR_TOL = 0.02;      // level clustering half-width (same 2% idea)
+var TA_MIN_ANCHOR_POS = 0.45;  // the newer anchor must sit in the recent 55% of the window
+var TA_MAX_DIST = 0.35;        // a line more than 35% from today's price is not this chart's story
+var TA_SR_MAX_DIST = 0.28;     // same idea for horizontal levels
 function taDefaults(){ return {trend:true, sr:true, rsi:true, ema:false}; }
 function taPrefs(){
   try{
@@ -3750,11 +4117,16 @@ function taPivotIdx(rows, k, leg){ // leg: 1=high, 2=low
 // loses to a live one. Returns {xa,xb,ya,yb,slope,touches} in WINDOW indices.
 function taFitLine(rows, piv, side){
   var N = rows.length, best = null;
+  var lastClose = num(rows[N-1][3]);
   function lineAt(ya, slope, xa, x){ return ya + slope*(x-xa); }
   for(var ai=0; ai<piv.length; ai++){
     for(var bi=ai+1; bi<piv.length; bi++){
       var xa=piv[ai], xb=piv[bi];
       if(xb-xa < TA_MIN_SPAN) continue;
+      // The second anchor has to be RECENT. Without this a line pinned to two
+      // ancient pivots satisfies containment trivially (nothing since has come
+      // near it) and draws a confident diagonal nobody trades against.
+      if(xb < N*TA_MIN_ANCHOR_POS) continue;
       var ya=num(rows[xa][side]), yb=num(rows[xb][side]);
       if(ya==null||yb==null||ya<=0) continue;
       var slope=(yb-ya)/(xb-xa);
@@ -3780,6 +4152,18 @@ function taFitLine(rows, piv, side){
         if(pv!=null && Math.abs(pv-lv2) <= lv2*TA_TOUCH_TOL) touches++;
       }
       if(touches<2) continue;
+      // Shape test. The pattern worth drawing is a DESCENDING ceiling over
+      // lower highs, or a RISING floor under higher lows — what the vault's
+      // scanner looks for. A rising "resistance" line clears containment for
+      // free (price never got near it) and says nothing, so a wrong-way slope
+      // is allowed only with three or more touches, which is a real channel.
+      var wrongWay = (side===1) ? (slope > 0) : (slope < 0);
+      if(wrongWay && touches < 3) continue;
+      // And it has to be relevant to today's price, not a line the stock left
+      // behind a year ago.
+      var lineNow = lineAt(ya, slope, xa, N-1);
+      if(lastClose==null || !(lineNow>0)) continue;
+      if(Math.abs(lineNow/lastClose - 1) > TA_MAX_DIST) continue;
       var score = touches*3 + (xb-xa)/20 - (N-1-xb)/40;
       if(!best || score>best.score) best={xa:xa,xb:xb,ya:ya,yb:yb,slope:slope,touches:touches,score:score};
     }
@@ -3790,6 +4174,7 @@ function taFitLine(rows, piv, side){
 // a level flips roles) within TA_SR_TOL, keep clusters with 2+ touches,
 // strongest three.
 function taLevels(rows, pivH, pivL){
+  var last = num(rows[rows.length-1][3]);
   var pts = [];
   pivH.forEach(function(i){ var v=num(rows[i][1]); if(v!=null) pts.push({px:v,i:i}); });
   pivL.forEach(function(i){ var v=num(rows[i][2]); if(v!=null) pts.push({px:v,i:i}); });
@@ -3803,7 +4188,14 @@ function taLevels(rows, pivH, pivL){
       c.last = Math.max(c.last, pt.i);
     } else clusters.push({mean:pt.px, pts:[pt], last:pt.i});
   });
-  return clusters.filter(function(c){ return c.pts.length>=2; })
+  return clusters.filter(function(c){
+      if(c.pts.length < 2) return false;
+      // A level the stock is nowhere near is noise on a name that has moved a
+      // long way — MU's 1-year window drew levels at $220 under a $937 stock,
+      // and because price lines join the price scale's autoscale it squashed
+      // the candles into the top third of the pane.
+      return last==null || Math.abs(c.mean/last - 1) <= TA_SR_MAX_DIST;
+    })
     .sort(function(a,b){ return b.pts.length-a.pts.length || b.last-a.last; })
     .slice(0,3)
     .map(function(c){ return {price:c.mean, touches:c.pts.length}; });
@@ -3834,6 +4226,12 @@ function taEMA(closes, n){
   return out;
 }
 /* apply/clear the TA overlays on the stage */
+function stageKeepView(fn){
+  var ts = null, range = null;
+  try{ ts = STAGE.chart && STAGE.chart.timeScale(); range = ts && ts.getVisibleLogicalRange(); }catch(e){}
+  fn();
+  if(ts && range){ try{ ts.setVisibleLogicalRange(range); }catch(e){} }
+}
 function stageTAClear(){
   var S = STAGE.s;
   ["tRes","tResProj","tSup","tSupProj","ema200","rsi"].forEach(function(k){
@@ -3864,14 +4262,15 @@ function stageTA(){
       var color = cssVar(cfg[0]===1 ? "--dn" : "--up");
       function lv(x){ return fit.ya + fit.slope*(x-fit.xa); }
       var seg = STAGE.chart.addSeries(LWC.LineSeries, {color:color, lineWidth:2,
-        priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false});
+        priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
+        autoscaleInfoProvider: function(){ return null; }});
       seg.setData([{time:times[off+fit.xa], value:lv(fit.xa)},
                    {time:times[off+fit.xb], value:lv(fit.xb)}]);
       STAGE.s[cfg[2]] = seg;
       if(off+fit.xb < n-1){
         var proj = STAGE.chart.addSeries(LWC.LineSeries, {color:color, lineWidth:1,
           lineStyle:LWC.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false,
-          crosshairMarkerVisible:false});
+          crosshairMarkerVisible:false, autoscaleInfoProvider: function(){ return null; }});
         proj.setData([{time:times[off+fit.xb], value:lv(fit.xb)},
                       {time:times[n-1], value:lv(winN-1)}]);
         STAGE.s[cfg[3]] = proj;
@@ -3894,7 +4293,8 @@ function stageTA(){
     for(var i=0;i<n;i++){ if(ema[i]!=null) data.push({time:times[i], value:ema[i]}); }
     if(data.length){
       STAGE.s.ema200 = STAGE.chart.addSeries(LWC.LineSeries, {color:cssVar("--hi"), lineWidth:1,
-        lineStyle:LWC.LineStyle.Dashed, title:"EMA200", priceLineVisible:false, crosshairMarkerVisible:false});
+        lineStyle:LWC.LineStyle.Dashed, title:"EMA200", priceLineVisible:false, crosshairMarkerVisible:false,
+        autoscaleInfoProvider: function(){ return null; }});
       STAGE.s.ema200.setData(data);
     }
   }
@@ -3927,7 +4327,15 @@ function stageTALegend(prefs){
   if(prefs.trend && sm && sm.res) bits.push('<span style="color:var(--dn)">resistance ×'+sm.res.touches+'</span>');
   if(prefs.trend && sm && sm.sup) bits.push('<span style="color:var(--up)">support ×'+sm.sup.touches+'</span>');
   if(prefs.sr && sm && sm.levels.length) bits.push(sm.levels.length+' level'+(sm.levels.length>1?"s":""));
-  el.innerHTML = bits.length ? ('auto-TA: '+bits.join(" · ")+' <span class="m">(fit on this window — display only, never a signal)</span>') : "";
+  // Say it plainly when nothing qualified. A silent empty row reads as broken;
+  // "no line met the test" is information — this window has no clean pattern.
+  if(bits.length){
+    el.innerHTML = 'auto-TA: '+bits.join(" · ")+' <span class="m">(fit on this window — display only, never a signal)</span>';
+  } else if(prefs.trend || prefs.sr){
+    el.innerHTML = '<span class="m">auto-TA: no trend line or level met the test on this window — '
+      + 'a line needs two or more swing points it actually respected, a recent anchor, and a level near today\u2019s price. '
+      + 'Try a longer window.</span>';
+  } else el.innerHTML = "";
 }
 
 /* =================== sector heatmap (Finviz-style, scanner symbolsets) ===================
@@ -4183,15 +4591,26 @@ function stageHeaderHTML(sym){
     + stageStarHTML(sym)
     + '<span class="ohlc tn" id="stageohlc"></span>';
 }
+// One control, both directions (Zach 2026-08-19: "not seeing a button to
+// remove from the watchlist while in the chart view"). It reads the rail's
+// CURRENT state, so a pinned name shows a working remove and a hidden one
+// shows a working restore. Macro tape readings (VIX, the 10-year, crude, the
+// dollar) are not list material and get no button.
+var WL_NOT_LISTABLE = {VIX:true, US10Y:true, CRUDE:true, DXY:true};
+function wlOnRail(sym){
+  if(wlIsCustom(sym)) return true;
+  return railHasSym(sym) && wlHidden().indexOf(sym)===-1;
+}
 function stageStarHTML(sym){
-  if(TAPE_TV_SYMBOL[sym] && !railHasSym(sym) && !wlIsCustom(sym)) return "";   // tape tiles aren't list material
-  var pinnedVisible = railHasSym(sym) && wlHidden().indexOf(sym)===-1;
-  if(pinnedVisible) return '<span class="clsf" data-tip="On the server-curated watchlist — boards, bars and the daily fundamentals sidecar all track it.">pinned</span>';
-  var isOn = wlIsCustom(sym);
-  return '<button class="fbtn" id="stagestar" aria-pressed="'+isOn+'" data-tip="'
-    + (isOn ? "On this browser\u2019s custom list — click to remove."
-            : "Add to this browser\u2019s watchlist: live quotes and charts here; options boards and the daily financials sidecar stay server-curated.")
-    + '">'+(isOn ? "★ on list" : "☆ add")+'</button>';
+  if(WL_NOT_LISTABLE[sym]) return "";
+  var on = wlOnRail(sym), pinned = railHasSym(sym);
+  var tip = on
+    ? (pinned ? "On the watchlist. Click to hide it from the rail — display only, the boards and the daily sidecar keep tracking it."
+              : "On this browser\u2019s custom list. Click to remove it.")
+    : (pinned ? "Hidden from the rail right now. Click to put it back."
+              : "Add to this browser\u2019s watchlist: live quotes and charts here. Options boards and the daily financials sidecar stay server-curated.");
+  return '<button class="fbtn" id="stagestar" aria-pressed="'+on+'" data-tip="'+esc(tip)+'">'
+    + (on ? "★ on watchlist · remove" : "☆ add to watchlist") + '</button>';
 }
 function stageHeader(){
   var el = document.getElementById("stagehead");
@@ -4201,7 +4620,7 @@ function stageHeader(){
   if(star) star.addEventListener("click", function(e){
     e.stopPropagation();
     var sym = STAGE.sym;
-    if(wlIsCustom(sym)) wlRemove(sym); else wlAdd(sym, ADHOC_TV[sym]||symbolForTicker(sym), ADHOC_NAMES[sym]||null);
+    if(wlOnRail(sym)) wlRemove(sym); else wlAdd(sym, ADHOC_TV[sym]||symbolForTicker(sym), ADHOC_NAMES[sym]||null);
   });
   stageSetOhlc(null);
 }
@@ -4214,6 +4633,7 @@ function stageBar(){
   var ivBtns = IVS.map(function(t){ return '<button data-iv="'+t+'" aria-pressed="'+(t===STAGE.iv)+'">'+t+'</button>'; }).join("");
   var tfBtns = GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(STAGE.iv==="1D" && t===STAGE.tf)+'">'+t+'</button>'; }).join("");
   var chips = '<span class="pchip tn" id="stagepct" hidden></span>'
+    + '<span class="pchip tn m" id="stagevz" hidden></span>'
     + '<button class="fbtn" id="stagelog" aria-pressed="'+STAGE.log+'" data-tip="'+esc(TIPS["tip-logscale"])+' The desk picks automatically; this button overrides it until the next symbol change.">log</button>';
   var fixedBy = STAGE.sym ? splitFixedFor(STAGE.sym) : null;
   if(fixedBy) chips += '<span class="pchip tn m" data-tip="'+esc(TIPS["tip-splitfix"])+'">split-rescaled '+fixedBy.toFixed(fixedBy>=10?0:1)+'×</span>';
@@ -4237,7 +4657,10 @@ function stageBar(){
       var prefs2 = taPrefs();
       prefs2[b.dataset.ta] = !prefs2[b.dataset.ta];
       taSave(prefs2);
-      stageBar(); stageTA();
+      // Toggling an overlay must SHOW or HIDE it, nothing else: adding or
+      // removing series (the RSI pane especially) re-lays-out the chart and
+      // dropped the zoom, so the visible range is captured and restored.
+      stageBar(); stageKeepView(stageTA);
     });
   });
 }
@@ -4246,162 +4669,142 @@ function stageLegend(){
   if(!el) return;
   if(STAGE.iv!=="1D" || !STAGE.sym || !STAGE.rows.length){ el.innerHTML=""; return; }
   var st = statsOf(STAGE.sym);
+  var nRat = (STAGE.fund && Array.isArray(STAGE.fund.ratings)) ? STAGE.fund.ratings.length : 0;
   el.innerHTML = '<span><i class="d20"></i>20-day</span>'
     + '<span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span>'
-    + '<span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span>';
+    + '<span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span>'
+    + '<span data-tip="Earnings reports (amber E) and analyst rating changes — green arrow up for an upgrade, red arrow down for a downgrade. Click any marker for the detail. Initiations, reiterations and price-target-only moves are deliberately left off.">'
+    + '<b style="color:var(--hi)">E</b> earnings'
+    + (nRat ? (' · <b style="color:var(--up)">▲</b> upgrade <b style="color:var(--dn)">▼</b> downgrade') : '')
+    + '</span>';
 }
-/* =================== vs Peers: curated groups + auto industry =================== */
-// Curated sets first — TV's industry taxonomy lumps memory makers in with
-// GPU designers, and MU's honest peer set is the memory complex (the same
-// concept the Action List's MEMORY_COMPLEX tracks), so the curated map wins
-// when it has an entry. Everything else: same TradingView `industry`, largest
-// by market cap, from facts locally then the live scanner.
-var PEER_GROUPS = {
-  MU:   [["SKHY","NASDAQ:SKHY"],["SNDK","NASDAQ:SNDK"],["WDC","NASDAQ:WDC"],["STX","NASDAQ:STX"]],
-  COHR: [["LITE","NASDAQ:LITE"],["AAOI","NASDAQ:AAOI"],["FN","NYSE:FN"]],
-};
-var PEER_SKIP_INDUSTRY = {"Investment Trusts/Mutual Funds":true};   // ETFs have no peers
-var PEERS_CACHE = {};
-function adhocFactsBatch(tvList){
-  var missing = tvList.filter(function(tv){ return tv && !ADHOC_FACTS[tv.split(":")[1]]; });
-  if(!missing.length) return Promise.resolve();
-  var body = JSON.stringify({ symbols:{tickers:missing}, columns:ADHOC_FACTS_COLS });
-  return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
-    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
-    .then(function(json){
-      var rows = (json && Array.isArray(json.data)) ? json.data : [];
-      rows.forEach(function(row){
-        if(!row || !row.s || !Array.isArray(row.d)) return;
-        var d = row.d, symb = row.s.split(":")[1];
-        function n(i){ return (typeof d[i]==="number" && isFinite(d[i])) ? d[i] : null; }
-        function t(i){ return (typeof d[i]==="string" && d[i]) ? d[i] : null; }
-        ADHOC_FACTS[symb] = ADHOC_FACTS[symb] || { hi52:n(0), lo52:n(1), cap:n(2), beta:n(3), avol:n(4),
-          short_pct:null, earn_days:null, rsi:n(5), avg_move:null, pe:n(6), peg:n(7), net_margin:n(8),
-          gross_margin:n(9), op_margin:n(10), fcf_margin:n(11), debt_eq:n(12), roe:n(13),
-          ps:n(14), pb:n(15), ev_ebitda:n(16), yld:n(17), target:n(18), rec_mark:n(19),
-          sector:t(20), industry:t(21) };
-      });
-    })
-    .catch(function(){});
-}
-function peersFor(sym){
-  if(PEERS_CACHE[sym]) return Promise.resolve(PEERS_CACHE[sym]);
-  var cur = PEER_GROUPS[sym];
-  if(cur){
-    cur.forEach(function(p){ adhocRegister(p[0], p[1], null); });
-    var syms = cur.map(function(p){ return p[0]; });
-    return adhocFactsBatch(cur.map(function(p){ return p[1]; })).then(function(){
-      PEERS_CACHE[sym] = {peers:syms, source:"curated"};
-      return PEERS_CACHE[sym];
-    });
-  }
-  var f = factsOf(sym);
-  var ind = f && f.industry;
-  if(!ind || PEER_SKIP_INDUSTRY[ind]){
-    PEERS_CACHE[sym] = {peers:[], source:ind ? "fund" : "none"};
-    return Promise.resolve(PEERS_CACHE[sym]);
-  }
-  // local first: pinned facts sharing the industry
-  var local = [];
-  var allFacts = (STATE.data && STATE.data.facts) || {};
-  Object.keys(allFacts).forEach(function(t){
-    if(t===sym) return;
-    var pf = allFacts[t];
-    if(pf && pf.industry===ind && num(pf.cap)!=null) local.push({sym:t, cap:pf.cap});
-  });
-  local.sort(function(a,b){ return b.cap-a.cap; });
-  var picks = local.slice(0,4).map(function(x){ return x.sym; });
-  if(picks.length >= 3){
-    PEERS_CACHE[sym] = {peers:picks, source:"industry-local"};
-    return Promise.resolve(PEERS_CACHE[sym]);
-  }
-  // widen via the live scanner: biggest names in the same industry
-  var body = JSON.stringify({
-    columns:["name","description","market_cap_basic"],
-    filter:[{left:"industry",operation:"equal",right:ind}],
-    options:{lang:"en"}, range:[0,7],
-    sort:{sortBy:"market_cap_basic",sortOrder:"desc"},
-    symbols:{query:{types:["stock","dr"]}}, markets:["america"]});
-  return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
-    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
-    .then(function(json){
-      var rows = (json && Array.isArray(json.data)) ? json.data : [];
-      var out = picks.slice(), tvs = [];
-      rows.forEach(function(row){
-        if(!row || !row.s || !Array.isArray(row.d)) return;
-        var t = row.d[0];
-        if(typeof t!=="string" || !t || t===sym || out.indexOf(t)!==-1) return;
-        if(out.length>=4) return;
-        out.push(t); tvs.push(row.s);
-        adhocRegister(t, row.s, (typeof row.d[1]==="string")?row.d[1]:null);
-      });
-      return adhocFactsBatch(tvs).then(function(){
-        PEERS_CACHE[sym] = {peers:out, source:"industry-scan"};
-        return PEERS_CACHE[sym];
-      });
-    })
-    .catch(function(){
-      PEERS_CACHE[sym] = {peers:picks, source:"industry-local"};
-      return PEERS_CACHE[sym];
-    });
-}
-var PEER_METRICS = [
-  ["gross_margin","Gross margin %", function(v){ return v.toFixed(0)+"%"; }],
-  ["op_margin","Operating margin %", function(v){ return v.toFixed(0)+"%"; }],
-  ["fcf_margin","FCF margin %", function(v){ return v.toFixed(0)+"%"; }],
-  ["pe","P/E (ttm)", function(v){ return v.toFixed(1); }],
-  ["ev_ebitda","EV/EBITDA", function(v){ return v.toFixed(1); }],
-  ["ps","P/S", function(v){ return v.toFixed(1); }],
-];
 var PEERS_SEQ = 0;
+var METRIC_DIR = { gross_margin:1, op_margin:1, fcf_margin:1, net_margin:1, roe:1,
+                   pe:-1, peg:-1, ps:-1, pb:-1, ev_ebitda:-1, debt_eq:-1 };
+var METRIC_LABEL = { gross_margin:"Gross margin", op_margin:"Operating margin", fcf_margin:"FCF margin",
+                     net_margin:"Net margin", roe:"Return on equity", pe:"P/E (ttm)", peg:"PEG",
+                     ps:"P/S", pb:"P/B", ev_ebitda:"EV/EBITDA", debt_eq:"Debt/Equity" };
+var PEER_METRICS = [
+  ["gross_margin", fmtAxisPct], ["op_margin", fmtAxisPct], ["fcf_margin", fmtAxisPct],
+  ["pe", fmtAxisNum], ["peg", fmtAxisNum], ["ev_ebitda", fmtAxisNum],
+];
+/* PEG comes back null from TradingView for plenty of names (CRWD among them).
+   When it does, derive it the textbook way — trailing P/E divided by the
+   percentage growth in trailing-twelve-month EPS — from the sidecar's own
+   reported quarters. Only when both TTM windows are complete and growth is
+   positive; a negative or zero growth rate makes PEG meaningless, so it stays
+   blank rather than printing a number nobody should read. */
+function derivedPeg(f, fund){
+  var pe = f ? num(f.pe) : null;
+  if(pe==null || pe<=0) return null;
+  var g = fund && fund.growth && fund.growth.quarterly;
+  var eps = (g && Array.isArray(g.eps)) ? g.eps.map(num) : null;
+  if(!eps || eps.length < 8) return null;
+  var ttm=0, prior=0, okT=0, okP=0;
+  for(var i=eps.length-4;i<eps.length;i++){ if(eps[i]!=null){ ttm+=eps[i]; okT++; } }
+  for(var j=eps.length-8;j<eps.length-4;j++){ if(eps[j]!=null){ prior+=eps[j]; okP++; } }
+  if(okT<4 || okP<4 || prior<=0 || ttm<=0) return null;
+  var growth = (ttm/prior - 1) * 100;
+  if(growth <= 0) return null;
+  return pe/growth;
+}
+// Trailing-twelve-month EPS straight from the sidecar's reported quarters —
+// used to explain a missing P/E or PEG rather than leave a bare dash.
+function ttmEpsOf(fund){
+  var g = fund && fund.growth && fund.growth.quarterly;
+  var eps = (g && Array.isArray(g.eps)) ? g.eps.map(num) : null;
+  if(!eps || eps.length < 4) return null;
+  var tail = eps.slice(-4);
+  if(tail.some(function(v){ return v==null; })) return null;
+  return tail.reduce(function(a,b){ return a+b; }, 0);
+}
+function metricValue(sym, key){
+  var f = factsOf(sym);
+  if(!f) return null;
+  var v = num(f[key]);
+  if(v==null && key==="peg") return derivedPeg(f, FUND_CACHE[sym]);
+  return v;
+}
+/* Where this name stands against the peers actually on screen. Returns null
+   when fewer than three peers reported the metric — two points is not a
+   comparison. */
+function peerStat(sym, key){
+  var res = PEERS_CACHE[sym];
+  if(!res || !res.peers || !res.peers.length) return null;
+  var group = [sym].concat(res.peers);
+  var pairs = group.map(function(t){ return {sym:t, v:metricValue(t, key)}; })
+                   .filter(function(x){ return x.v!=null; });
+  if(pairs.length < 3) return null;
+  var mine = pairs.filter(function(x){ return x.sym===sym; })[0];
+  if(!mine) return null;
+  var dir = METRIC_DIR[key] || 1;
+  var sorted = pairs.slice().sort(function(a,b){ return dir>0 ? b.v-a.v : a.v-b.v; });
+  var rank = 1 + sorted.map(function(x){ return x.sym; }).indexOf(sym);
+  var vals = pairs.map(function(x){ return x.v; }).sort(function(a,b){ return a-b; });
+  var med = vals.length%2 ? vals[(vals.length-1)/2] : (vals[vals.length/2-1]+vals[vals.length/2])/2;
+  var better = dir>0 ? mine.v > med : mine.v < med;
+  return {rank:rank, n:pairs.length, median:med, better:better, dir:dir, value:mine.v};
+}
 function renderPeersInto(body, sym, res, seq){
   var peers = res.peers;
   if(!peers.length){
     body.innerHTML = '<div class="dsec note">'
       + (res.source==="fund"
-         ? esc(sym)+' is a fund/wrapper — margins and multiples compare companies, not baskets.'
+         ? esc(sym)+' is a fund or wrapper — margins and multiples describe companies, not baskets.'
          : 'No peer set for '+esc(sym)+' — TradingView carries no industry classification for it this cycle.')
       + '</div>';
     return;
   }
-  var entries = [sym].concat(peers);
+  var entries = [sym].concat(peers).map(function(t, i){ return {sym:t, color:seriesColor(i)}; });
   var srcLine = res.source==="curated"
     ? "curated set (memory complex / documented comparisons)"
     : 'largest names in TradingView\u2019s "'+esc((factsOf(sym)||{}).industry||"")+'" industry'
       + (res.source==="industry-scan" ? ", via the live scanner" : ", from the desk universe");
-  var html = '<div class="dsec"><h3>'+esc(sym)+' vs peers — trailing twelve months</h3><div class="gwrap">';
+  var key = '<div class="peerkey">'+entries.map(function(e){
+      return '<span><i style="background:'+e.color+'"></i>'+esc(e.sym)+(e.sym===sym?" (focused)":"")+'</span>';
+    }).join("")+'</div>';
+  var html = '<div class="dsec"><h3>'+esc(sym)+' vs peers — trailing twelve months</h3>'+key+'<div class="gwrap">';
   var drew = 0;
   PEER_METRICS.forEach(function(m){
-    var rows = entries.map(function(t){ var pf = factsOf(t)||{}; return {sym:t, val:pf[m[0]]}; });
-    if(!rows.some(function(r){ return num(r.val)!=null; })) return;
-    var svg = barsCompareSVG(rows, sym, m[2]);
-    if(svg){ html += '<div class="gchart"><h4>'+m[1]+'</h4>'+svg+'</div>'; drew++; }
+    var mk = m[0], fmt = m[1];
+    var rows = entries.map(function(e){ return {sym:e.sym, color:e.color, val:metricValue(e.sym, mk)}; });
+    if(!rows.some(function(r){ return r.val!=null; })) return;
+    var svg = peerBarsSVG(rows, sym, fmt);
+    if(!svg) return;
+    var st = peerStat(sym, mk);
+    var dir = METRIC_DIR[mk] || 1;
+    var cap = st
+      ? ('<b class="'+(st.better?"u":"d")+'">'+esc(sym)+' ranks '+st.rank+' of '+st.n+'</b> · '
+         + (dir>0?"higher is better":"lower is better") + ' · peer median '+esc(fmt(st.median)))
+      : ('<span class="m">'+(dir>0?"higher is better":"lower is better")+' · too few peers reported to rank</span>');
+    html += '<div class="gchart"><h4>'+esc(METRIC_LABEL[mk]||mk)+'</h4>'+svg+'<div class="gcap">'+cap+'</div></div>';
+    drew++;
   });
-  html += '</div><div class="note">Peers: '+srcLine+'. Scanner TTM figures, same fields as the fundamentals grid; a dash means the vendor reports nothing. Display only.</div></div>';
-  if(!drew) html = '<div class="dsec note">No comparable TTM figures for this set.</div>';
-  // Quarterly revenue, indexed to each name's own first bar — only names with
-  // a daily sidecar (the pinned universe) can draw a line.
-  Promise.all(entries.map(function(t){ return ensureFund(t); })).then(function(funds){
-    if(STAGE.sym!==sym || STAGE.tab!=="peers" || seq!==PEERS_SEQ) return;   // a newer pass owns the tab
-    var accC = cssVar("--acc"), inkC = cssVar("--ink3");
+  html += '</div><div class="note">Peers: '+srcLine+'. Each company keeps one color across every chart here. '
+    + 'Bars are scanner trailing-twelve-month figures, the same fields the fundamentals grid shows; the dashed line is the peer median. '
+    + 'A dash means the vendor reports nothing for that name. PEG falls back to P/E divided by TTM EPS growth when the vendor omits it. '
+    + 'Display only — none of this scores anything.</div></div>';
+  if(!drew) html = '<div class="dsec note">No comparable trailing-twelve-month figures for this set.</div>';
+  Promise.all(entries.map(function(e){ return ensureFund(e.sym); })).then(function(funds){
+    if(STAGE.sym!==sym || STAGE.tab!=="peers" || seq!==PEERS_SEQ) return;
     var lines = [], labelsRef = null;
-    entries.forEach(function(t, i){
+    entries.forEach(function(e, i){
       var g = funds[i] && funds[i].growth && funds[i].growth.quarterly;
       if(!g || !Array.isArray(g.revenue)) return;
       var revs = g.revenue.map(num).filter(function(v){ return v!=null; }).slice(-8);
       if(revs.length<5 || !revs[0]) return;
       if(!labelsRef) labelsRef = g.labels.slice(-revs.length);
-      lines.push({name:t, color: t===sym?accC:inkC, values: revs.map(function(v){ return v/revs[0]*100; })});
+      lines.push({name:e.sym, color:e.color, values: revs.map(function(v){ return v/revs[0]*100; })});
     });
     if(lines.length>=2){
-      var idxLabels = labelsRef || [];
-      var svg2 = miniLineSVG(idxLabels, lines, {pct:false});
+      var svg2 = axisChartSVG(labelsRef||[], lines, {fmt:fmtAxisNum, W:600, H:200, padL:44});
       if(svg2){
         var el2 = document.createElement("div");
         el2.className = "dsec";
-        el2.innerHTML = '<h3>Revenue, indexed (first shown quarter = 100)</h3>'
-          + '<div class="gchart" style="max-width:560px">'+svg2+lineLegendHTML(lines)+'</div>'
-          + '<div class="note">Aligned by report recency, not by calendar — fiscal calendars differ across companies, so read this as growth shape, not same-quarter timing. Lines exist only for desk-pinned names (the daily sidecar covers those).</div>';
+        el2.innerHTML = '<h3>Revenue growth, indexed — first shown quarter = 100</h3>'
+          + '<div class="gchart" style="max-width:640px">'+svg2+chartLegendHTML(lines, fmtAxisNum)+'</div>'
+          + '<div class="note">Aligned by report recency, not by calendar: fiscal years differ across companies, so read this as growth shape, '
+          + 'not same-quarter timing. Lines exist only for names the daily sidecar covers.</div>';
         body.appendChild(el2);
       }
     }
@@ -4488,6 +4891,7 @@ function stageShow(sym, opts){
   STAGE.sym = sym;
   STAGE.fund = null; DRAWER_FUND = null;
   STAGE.logManual = null;
+  STAGE.vZoom = 1;
   // Persist the TV mapping too: a heatmap tile or searched name has a
   // session-only resolver entry, and restoring the bare symbol on the next
   // load would boot into a dead stage.
@@ -4504,13 +4908,21 @@ function stageShow(sym, opts){
   // (same fields, same taxonomy) fetched client-side.
   if(!factsOf(sym)){
     adhocEnsureFacts(sym).then(function(f){
-      if(f && STAGE.sym===sym){ stageHeader(); renderStageTab(); pollTvPrices(); }
+      if(f && STAGE.sym===sym){ stageHeader(); renderStageTab(); pollTvPrices(); warmPeers(sym); }
     });
-  }
+  } else warmPeers(sym);
   if(opts && opts.scroll && matchMedia("(max-width:900px)").matches){
     var sec = document.getElementById("s-stage");
     if(sec) sec.scrollIntoView({behavior:"smooth", block:"start"});
   }
+}
+// Resolve the peer set in the background so the Overview grid can annotate
+// its multiples against peers even before the vs-Peers tab is opened.
+function warmPeers(sym){
+  if(PEERS_CACHE[sym]) return;
+  peersFor(sym).then(function(){
+    if(STAGE.sym===sym && STAGE.tab==="ov") renderStageTab();
+  }, function(){});
 }
 /* ---- 30s live refresh: header quote + the synthetic today candle ---- */
 function stageLivePoke(){
@@ -4627,12 +5039,37 @@ var ACTIONS = [
 // (The three "Jump to <section>" entries were cut 2026-08-18 — keystroke
 // padding for a page that fits on two screens; ticker search is the feature.)
 var palIdx = 0;
+// The palette used to search ONLY the names already on the desk, while the
+// rail box searched every listed ticker — two boxes, two answers, and Zach
+// asked what the second one was even for. Both now run the same live scanner
+// search: desk names first (they carry flow and fundamentals), then anything
+// else that matched, then actions.
+var PAL_REMOTE = [], PAL_SEQ = 0, palTimer = null;
 function palItems(q){
   q = (q||"").trim().toUpperCase();
+  var local = {};
   var syms = paletteTickers().filter(function(s){ return !q || s.indexOf(q)!==-1 || nameFor(s).toUpperCase().indexOf(q)!==-1; })
-    .slice(0,7).map(function(s){ return {k:"ticker", l:s+" — "+nameFor(s), hint:"focus + open panel", run:function(){ setFocus(s); }}; });
+    .slice(0,6).map(function(s){ local[s]=true; return {k:"ticker", l:s+" — "+nameFor(s), hint:"on the desk", run:function(){ setFocus(s); }}; });
+  var remote = (q ? PAL_REMOTE : []).filter(function(it){ return !local[it.sym]; }).slice(0,6)
+    .map(function(it){
+      return {k:"search", l:it.sym+" — "+(it.name||it.sym), hint:esc(it.exch||"")+" · chart it",
+        run:function(){ adhocRegister(it.sym, it.tv, it.name); setFocus(it.sym); pollTvPrices(); }};
+    });
   var acts = ACTIONS.filter(function(a){ return !q || a.l.toUpperCase().indexOf(q)!==-1; });
-  return syms.concat(acts);
+  return syms.concat(remote).concat(acts);
+}
+function palSearchRemote(q){
+  if(palTimer) clearTimeout(palTimer);
+  q = (q||"").trim();
+  if(!q){ PAL_REMOTE = []; return; }
+  palTimer = setTimeout(function(){
+    var seq = ++PAL_SEQ;
+    tsSearch(q).then(function(items){
+      if(seq !== PAL_SEQ) return;
+      PAL_REMOTE = items;
+      if(document.getElementById("pal").classList.contains("open")) palDraw();
+    }, function(){ if(seq === PAL_SEQ){ PAL_REMOTE = []; } });
+  }, 260);
 }
 function palDraw(){
   var items = palItems(document.getElementById("palin").value);
@@ -4642,7 +5079,7 @@ function palDraw(){
   $$("#pallist .pi").forEach(function(el){ el.addEventListener("click", function(){ items[+el.dataset.i].run(); palClose(); }); });
   return items;
 }
-function palOpen(){ document.getElementById("pal").classList.add("open"); document.getElementById("palin").value=""; palIdx=0; palDraw(); document.getElementById("palin").focus(); }
+function palOpen(){ document.getElementById("pal").classList.add("open"); document.getElementById("palin").value=""; palIdx=0; PAL_REMOTE=[]; palDraw(); document.getElementById("palin").focus(); }
 function palClose(){ document.getElementById("pal").classList.remove("open"); }
 
 /* =================== collapse / theme persistence =================== */
@@ -4758,7 +5195,7 @@ document.addEventListener("keydown", function(e){
   if(e.key==="Escape"){ setFocus(null); }
 });
 var palinEl = document.getElementById("palin");
-if(palinEl) palinEl.addEventListener("input", function(){ palIdx=0; palDraw(); });
+if(palinEl) palinEl.addEventListener("input", function(){ palIdx=0; palSearchRemote(palinEl.value); palDraw(); });
 document.getElementById("palopen").addEventListener("click", palOpen);
 document.getElementById("view-chart").addEventListener("click", function(){ stageSetView("chart"); });
 document.getElementById("view-heat").addEventListener("click", function(){ stageSetView("heat"); });
