@@ -119,7 +119,9 @@ a{color:var(--acc);text-decoration:none}
   color:var(--hi);background:var(--hibg);border-radius:3px;padding:0 3px;margin-left:4px;vertical-align:1px}
 
 /* ============ columns ============ */
-.cols{display:grid;grid-template-columns:252px minmax(0,1fr) 332px}
+/* Right rail widened 332→372 for the redesign (2026-08-19): it now carries
+   the Morning Brief and the sector-rotation table, not just catalysts/news. */
+.cols{display:grid;grid-template-columns:248px minmax(0,1fr) 372px}
 .wl{border-right:1px solid var(--edge)}
 .rr{border-left:1px solid var(--edge)}
 .mid{min-width:0}
@@ -311,26 +313,31 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .nw .tm{margin-left:auto;font-size:9.5px;color:var(--ink3);flex:none}
 .rotbanner{font-size:10.5px;color:var(--ink2);padding:0 0 6px;border-bottom:1px solid var(--edge2);margin-bottom:6px}
 
-/* ============ ticker modal (Finviz-style — large, centered, backdrop) ============ */
-.modalback{position:fixed;inset:0;z-index:59;background:rgba(6,8,10,.6);backdrop-filter:blur(2px);display:none}
-.modalback.open{display:block}
-.drawer{
-  position:fixed;top:5vh;left:50%;width:min(1280px,94vw);height:90vh;z-index:60;background:var(--srf);
-  border:1px solid var(--edge);border-radius:12px;box-shadow:0 30px 80px rgba(0,0,0,.5);
-  transform:translateX(-50%);visibility:hidden;opacity:0;
-  transition:opacity .16s ease,visibility 0s .16s;overflow-y:auto;
-}
-.drawer.open{visibility:visible;opacity:1;transition:opacity .16s ease}
-@media (prefers-reduced-motion: reduce){ .drawer,.modalback{transition:none} }
-@media (max-width:640px){
-  .drawer{width:100vw;height:100vh;top:0;left:0;transform:none;border-radius:0}
-}
-.dh{display:flex;align-items:baseline;gap:10px;padding:14px 16px 6px;position:sticky;top:0;background:var(--srf);border-bottom:1px solid var(--edge2);z-index:2;flex-wrap:wrap;border-radius:12px 12px 0 0}
-.dh .sy{font-size:19px;font-weight:700}
-.dh .px{font-size:15px}
-.dh .ch{font-size:12px;font-weight:600}
-.dh .x{margin-left:auto;color:var(--ink3);font-size:16px;padding:2px 8px}
-@media (max-width:640px){ .dh{border-radius:0} }
+/* ============ center stage — the chart, front and center (2026-08-19) ============
+   Replaces the Finviz-style ticker modal: the chart is no longer a popup. The
+   drawing itself is TradingView Lightweight Charts (vendored, see footer);
+   these styles only frame it. */
+#s-stage{background:var(--srf)}
+.stagehead{display:flex;align-items:baseline;gap:10px;padding:11px 14px 2px;flex-wrap:wrap}
+.stagehead .sy{font-size:21px;font-weight:700}
+.stagehead .nm2{font-size:12px;color:var(--ink2)}
+.stagehead .clsf{font-size:10px;color:var(--ink3);letter-spacing:.02em}
+.stagehead .px{font-size:21px;font-weight:700}
+.stagehead .ch{font-size:14px;font-weight:600}
+.stagehead .ohlc{margin-left:auto;font-size:10.5px;color:var(--ink3);white-space:nowrap}
+.stagehead .ohlc b{color:var(--ink2);font-weight:600}
+.stagebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 14px 8px}
+.stagechart{position:relative;height:clamp(380px,52vh,620px);border-top:1px solid var(--edge2)}
+.stagemsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;
+  color:var(--ink3);font-size:12px;z-index:3;background:var(--srf);padding:20px}
+.stagemsg[hidden]{display:none}
+#stageleg{padding:5px 14px 0}
+.stagetabs{display:flex;gap:2px;padding:6px 14px 0;border-bottom:1px solid var(--edge);overflow-x:auto}
+.stagetabs button{font-size:10px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;color:var(--ink3);
+  padding:6px 10px;border-bottom:2px solid transparent;white-space:nowrap}
+.stagetabs button[aria-pressed="true"]{color:var(--acc);border-bottom-color:var(--acc)}
+.stagetabs button:hover{color:var(--ink)}
+@media (max-width:900px){ .stagechart{height:clamp(300px,46vh,480px)} }
 .dsec{padding:10px 16px;border-bottom:1px solid var(--edge2)}
 .dsec h3{font-size:9.5px;letter-spacing:.13em;color:var(--ink3);text-transform:uppercase;margin-bottom:7px}
 .seg{display:inline-flex;border:1px solid var(--edge);border-radius:6px;overflow:hidden}
@@ -340,15 +347,6 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .segrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .pchip{font-size:10.5px;font-weight:700;border-radius:4px;padding:2px 7px}
 .pchip.u{background:var(--upbg)} .pchip.d{background:var(--dnbg)}
-.chart{position:relative}
-.chart svg{width:100%;height:150px;display:block}
-.chartbig{position:relative}
-/* Height follows the viewBox's own 980:340 ratio — the old fixed height plus
-   preserveAspectRatio="none" stretched the SVG non-uniformly, distorting every
-   axis label, MA end-label and earnings glyph (the single most visible
-   "not a real terminal" tell). */
-.chartbig svg{width:100%;height:auto;aspect-ratio:980/340;display:block}
-.xh{position:absolute;pointer-events:none;display:none;font-size:10px;background:var(--srf2);border:1px solid var(--edge);border-radius:4px;padding:3px 7px;white-space:nowrap;z-index:5;line-height:1.5}
 .pop{position:absolute;z-index:8;display:none;max-width:230px;background:var(--srf2);border:1px solid var(--edge);border-radius:6px;padding:8px 10px 9px;font-size:11px;color:var(--ink2);box-shadow:0 12px 32px rgba(0,0,0,.4);line-height:1.55}
 .pop b{color:var(--ink)}
 .pop .u{color:var(--up)} .pop .d{color:var(--dn)}
@@ -499,29 +497,22 @@ footer b{color:var(--ink2)}
       <div class="wlnote">leveraged wrappers included by rule (2026-08-15) · WTI here is W&amp;T Offshore, the oil producer — crude itself is the WTI tile in the tape</div>
     </aside>
 
-    <!-- ======= middle ======= -->
+    <!-- ======= middle: the chart stage, then the boards ======= -->
+    <!-- Layout ruling (Zach, 2026-08-19 trading-platform redesign): the chart
+         is front-and-center, never a popup; the Morning Brief and sector
+         rotation move to the side rail. The 2026-08-18 "rotation first"
+         ordering is superseded by this — rotation still leads the RAIL. -->
     <main class="mid">
-      <section id="s-brief">
-        <div class="sh" data-collapse="s-brief"><span class="car">▼</span><h2>Morning Brief</h2><span class="st tn" id="briefstat"></span></div>
-        <div class="sb brief" id="briefbody"></div>
-      </section>
-
-      <!-- Section order is Zach's ruling (2026-08-18, second that day,
-           superseding the "boards first" ordering from the same morning):
-           sector rotation first, semi ETF flows second, boards after. He is
-           heavily levered into AI semis — where the money is rotating IS the
-           first thing he reads. The tables stay labeled context/backdrop:
-           position, not authority. -->
-      <div class="eyebrow">Where the money is — rotation &amp; semi flows</div>
-
-      <section id="s-sector">
-        <div class="sh" data-collapse="s-sector"><span class="car">▼</span><h2>Sector rotation — week vs SPY</h2><span class="st">click headers to sort · flows: own capture 1w, vendor 1m</span></div>
-        <div class="sb xwrap" id="sector"></div>
-      </section>
-
-      <section id="s-etf">
-        <div class="sh" data-collapse="s-etf"><span class="car">▼</span><h2>Semi ETF flows</h2><span class="st" id="etfstat">one reading per session</span></div>
-        <div class="sb xwrap" id="etf"></div>
+      <section id="s-stage">
+        <div class="stagehead" id="stagehead"></div>
+        <div class="stagebar" id="stagebar"></div>
+        <div class="stagechart" id="stagechart">
+          <div class="stagemsg" id="stagemsg">loading chart…</div>
+          <div class="pop" id="earnpop"></div>
+        </div>
+        <div class="leg" id="stageleg"></div>
+        <div class="stagetabs" id="stagetabs"></div>
+        <div class="stagetab" id="stagetabbody"></div>
       </section>
 
       <div class="eyebrow">Flow boards — the signal</div>
@@ -545,9 +536,21 @@ footer b{color:var(--ink2)}
 
     </main>
 
-    <!-- ======= right rail ======= -->
+    <!-- ======= right rail: brief + rotation to the side, then calendar/news ======= -->
     <aside class="rr">
       <div class="inner">
+      <section id="s-brief">
+        <div class="sh" data-collapse="s-brief"><span class="car">▼</span><h2>Morning Brief</h2><span class="st tn" id="briefstat"></span></div>
+        <div class="sb brief" id="briefbody"></div>
+      </section>
+      <section id="s-sector">
+        <div class="sh" data-collapse="s-sector"><span class="car">▼</span><h2>Sector rotation — week vs SPY</h2><span class="st">flows: 1w own, 1m vendor</span></div>
+        <div class="sb xwrap" id="sector"></div>
+      </section>
+      <section id="s-etf">
+        <div class="sh" data-collapse="s-etf"><span class="car">▼</span><h2>Semi ETF flows</h2><span class="st" id="etfstat">one reading per session</span></div>
+        <div class="sb xwrap" id="etf"></div>
+      </section>
       <section id="s-cat">
         <div class="sh" data-collapse="s-cat"><span class="car">▼</span><h2>Catalysts</h2><span class="st" id="catstat">countdowns live</span></div>
         <div class="sb">
@@ -572,19 +575,25 @@ footer b{color:var(--ink2)}
     Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
     Nothing here is financial advice.<br>
     Freshness: prices 30s · flow boards ~7 min (8:00–15:20 CT) · brief daily · catalysts hourly.
-    Position Guard data is stored only as passphrase-encrypted ciphertext — public visitors cannot read it without the passphrase.
+    Position Guard data is stored only as passphrase-encrypted ciphertext — public visitors cannot read it without the passphrase.<br>
+    Charts render with <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a>,
+    © TradingView, Inc., Apache-2.0. Auto trend lines and levels are drawn from this page's own pivot math — display only, never a signal.
   </footer>
 </div>
 
-<!-- drawer / palette / tooltip -->
-<div class="modalback" id="modalback"></div>
-<div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Ticker detail"></div>
+<!-- palette / tooltip -->
 <div class="pal" id="pal"><div class="palbox">
   <input id="palin" placeholder="Type a ticker or an action… (↑↓ + Enter)" autocomplete="off">
   <div class="pl" id="pallist"></div>
 </div></div>
 <div class="tipb" id="tipb"></div>
 
+<!-- Vendored, version-pinned chart engine: TradingView Lightweight Charts™
+     v5.2.1 (Apache-2.0; see vendor/LICENSE.lightweight-charts.txt). Loaded
+     synchronously so the stage module below can use it at boot. If the file
+     ever fails to load the stage renders a plain failure note — nothing else
+     on the page depends on it. -->
+<script src="vendor/lightweight-charts.standalone.production.js"></script>
 <script>
 /* ==================================================================
    THE DESK — live build. Ported wholesale from the approved prototype
@@ -1322,6 +1331,7 @@ function collectPollSymbols(){
     var arr = STATE.data && STATE.data[k];
     if(Array.isArray(arr)) arr.forEach(function(r){ if(r && r.tv_symbol) set[r.tv_symbol]=true; });
   });
+  if(STAGE.sym){ var stv = symbolForTicker(STAGE.sym); if(stv) set[stv]=true; }
   return Object.keys(set);
 }
 function pollTvPrices(){
@@ -1393,7 +1403,7 @@ function mainTileHTML(t){
   var pxStr = px===null?"—":fmtpx(px);
   var chStr = ch===null?"—":((ch>0?"+":"−")+Math.abs(ch).toFixed(2)+"%");
   // data-sym makes the tile a chart target via the page's existing
-  // [data-sym] -> setFocus -> openDrawer path (2026-08-17). t.bk is the bars
+  // [data-sym] -> setFocus -> stageShow path. t.bk is the bars
   // key, which is the tile symbol for the four index ETFs.
   return '<div class="tp" data-sym="'+esc(t.bk||t.s)+'" role="button" tabindex="0">'
     +'<span class="s"><span class="t">'+esc(t.s)+' · '+esc(t.n)+'</span>'+sessTagHTML(d.tag)+'</span>'
@@ -1597,7 +1607,7 @@ function tryUnlock(passphrase, remember){
         PG.unlocked = true; PG.positions = normalizePositions(positions);
         if(remember){ try{ sessionStorage.setItem("desk.pgkey", bytesToB64(keyBytes)); }catch(e){} }
         renderPositions();
-        if(FOCUS) openDrawer(FOCUS);
+        renderStageTab();
         return true;
       });
     })
@@ -1607,7 +1617,7 @@ function lockPositions(){
   PG.unlocked = false; PG.positions = null;
   try{ sessionStorage.removeItem("desk.pgkey"); }catch(e){}
   renderPositions();
-  if(FOCUS) openDrawer(FOCUS);
+  renderStageTab();
 }
 function tryAutoUnlock(){
   var blob = STATE.data && STATE.data.desk_private;
@@ -2484,7 +2494,7 @@ function setFocus(sym){
   document.getElementById("focusbar").classList.toggle("on", !!sym);
   if(sym){ document.getElementById("focsym").textContent = sym; document.getElementById("focname").textContent = nameFor(sym); }
   applyFocus(); renderCats(); renderNews();
-  if(sym) openDrawer(sym); else closeDrawer();
+  if(sym) stageShow(sym, {scroll:true});
 }
 function applyFocus(){
   $$(".wr").forEach(function(w){ w.classList.toggle("foc", w.dataset.sym===FOCUS); });
@@ -2595,7 +2605,7 @@ function intervalDataFor(sym, iv){
                                                               // the wave-2 spec) rather than faked from one point.
 var GTF = ["1M","3M","6M","1Y"];
 var dTF = "3M";
-var DRAWER_SYM = null, DRAWER_FUND = null;   // fund/{SYM}.json sidecar for the currently open modal
+var DRAWER_FUND = null;   // fund/{SYM}.json sidecar for the stage's current symbol (revYoyForRow reads it)
 
 function fundCls(kind, f){
   if(!f) return "";
@@ -2623,43 +2633,6 @@ function weekdayDatesEndingAt(n, endStr){
   }
   return out;
 }
-// SMA20/50/200 are computed over the FULL bar history (closesFull) BEFORE
-// slicing to the display window -- this is what makes a 200-day line span
-// edge-to-edge on the 1Y view once bars.json carries 2 years of history (v3):
-// with 504 bars, m200f's 200-bar warm-up finishes at index 199, well inside
-// the first (504-252)=252 bars that get sliced away, so all 252 points of the
-// sliced 1Y window are non-null. With only ~251 bars (today's pre-upgrade
-// data), the display window IS effectively the full history, so the 200-day
-// line still only starts once 200 bars of warm-up exist -- graceful
-// degradation, not a bug, and exactly why the fixture below builds a ~500-row
-// v3 copy to exercise the edge-to-edge case.
-function candleDataFor(sym, tf){
-  var full = seriesQuads(sym);
-  if(!full || full.length < 2) return null;
-  var n = Math.max(2, Math.min(full.length, TFN2[tf]||63));
-  var slice = full.slice(-n);
-  var closesFull = full.map(function(r){ return num(r[3]); });
-  var m20f = rollMA(closesFull,20), m50f = rollMA(closesFull,50), m200f = rollMA(closesFull,200);
-  var closes = closesFull.slice(-n);
-  var pct = closes.length>=2 && closes[0] ? (closes[closes.length-1]/closes[0]-1)*100 : null;
-  // bars.json v3 rows are [o,h,l,c,v] quints -- v2 stays [o,h,l,c]. Shape-
-  // sniffed per row (not a top-level version flag) so the live-appended
-  // synthetic "today" candle (always a v-less quad -- see seriesQuads) can't
-  // hide a real v3 file's volume: true as soon as ANY row carries a 5th leg.
-  // v3 shape AND at least one bar that actually traded. Index series (^VIX,
-  // ^TNX, DX-Y.NYB) are v3 quints whose volume is 0 on every single bar — an
-  // index has no share volume. Testing the shape alone reserved a 19%-tall
-  // pane and then drew a flat 1px line across it, which reads as a broken
-  // chart rather than "this thing has no volume". One non-zero bar anywhere in
-  // the window is enough, so a genuine zero-volume holiday still shows the
-  // pane for a real stock.
-  var hasVolume = full.some(function(r){
-    if(!r || r.length<5) return false;
-    var v = num(r[4]);
-    return v!=null && v>0;
-  });
-  return {slice:slice, m20:m20f.slice(-n), m50:m50f.slice(-n), m200:m200f.slice(-n), pct:pct, n:n, hasVolume:hasVolume};
-}
 /* ---- volume-pane helpers (Task 4, v3 quints only) ---- */
 function fmtVolShort(v){
   var n=num(v); if(n===null) return "";
@@ -2670,173 +2643,347 @@ function fmtVolShort(v){
   if(s.slice(-2)===".0") s=s.slice(0,-2);
   return s+suf;
 }
-function niceVolStep(maxVol){
-  var mult=[1,2,2.5,5], steps=[];
-  for(var e=4;e<=12;e++){ for(var mi=0;mi<mult.length;mi++){ steps.push(mult[mi]*Math.pow(10,e)); } }
-  steps.sort(function(a,b){return a-b;});
-  var target = maxVol/3;
-  for(var i=0;i<steps.length;i++){ if(steps[i]>=target) return steps[i]; }
-  return steps[steps.length-1];
+/* =================== center stage chart (TradingView Lightweight Charts) ===================
+   Replaces the hand-rolled SVG candle engine (2026-08-19 redesign). The
+   library gives what the SVG never had — wheel/pinch zoom, drag pan, and a
+   crosshair whose price/date labels track the cursor — while everything the
+   old engine was TRUSTED for is re-implemented on top of it and pinned by the
+   Chromium checks: the two-condition auto log axis, the split-rescale chip,
+   earnings badges with click popovers, extended-hours dimming, and the
+   live-appended synthetic "today" candle. */
+var STAGE = {
+  sym:null, iv:"1D", tf:"3M", tab:"ov",
+  chart:null, s:{}, markersApi:null,
+  rows:[], dates:[], times:[], intraday:false, hasVolume:false,
+  synthetic:false,           // last row is the live-appended today candle
+  log:false, logManual:null, // null = auto rule decides; true/false = user override
+  markerByTime:{}, fund:null, hovering:false
+};
+function cssVar(name){
+  var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || "#888888";
 }
-// 1-3 round-step gridlines that fit under maxVol: pick the smallest "nice"
-// step (10M/25M/50M/100M/200M/250M/500M/1B/... ladder) whose first multiple
-// already clears maxVol/3, then take k=1..3 multiples of it that stay <=maxVol.
-function volAxisLines(maxVol){
-  if(!maxVol || maxVol<=0) return [];
-  var step = niceVolStep(maxVol), lines=[];
-  for(var k=1;k<=3;k++){ var v=step*k; if(v<=maxVol*1.001) lines.push(v); }
-  return lines.length ? lines : [step];
+function hexA(hex, a){
+  var m = /^#?([0-9a-f]{6})$/i.exec((hex||"").trim());
+  if(!m) return hex;
+  var v = parseInt(m[1],16);
+  return "rgba("+((v>>16)&255)+","+((v>>8)&255)+","+(v&255)+","+a+")";
 }
-function candleChartSVG(sym, tf, fund, iv){
-  var isD = !iv || iv==="1D";
-  var cd = isD ? candleDataFor(sym, tf) : intervalDataFor(sym, iv);
-  if(!cd) return {pct:null, n:0, slice:[], svg:'<div class="note" style="padding:30px 0;text-align:center">no chart history available'+(isD?"":" for this view")+'</div>'};
-  var slice=cd.slice, m20=cd.m20, m50=cd.m50, m200=cd.m200, pct=cd.pct, n=cd.n, hasVolume=!!cd.hasVolume;
-  // rightPad must clear the widest MA end-label ("200d 194.92" ~= 66px at this
-  // font size) plus its x-offset (plotW+6), or it clips against the viewBox
-  // edge; the catalyst gutter then gets its own lane further right still.
-  var W=980, H=340, axisH=22, rightPad=96, plotTop=6;
-  // chartBottom is the fixed structural floor of the whole drawing -- the
-  // month axis + earnings badges anchor to chartBottom+8/+14 exactly as
-  // before this task. Volume, when present, carves its own band out of the
-  // PRICE plot (shrinking plotBottom upward) instead of pushing chartBottom
-  // down, so the badge/month-label row can never collide with the new pane.
-  var chartBottom = H-axisH-2;
-  var volGap = hasVolume ? 6 : 0;
-  var volH = hasVolume ? Math.round(H*0.19) : 0;
-  var plotBottom = chartBottom - volH - volGap;
-  var plotW=W-rightPad, plotH=plotBottom-plotTop;
-  var highs=slice.map(function(r){return num(r[1]);}), lows=slice.map(function(r){return num(r[2]);});
-  var mn=safeMin(lows.concat(m200)), mx=safeMax(highs.concat(m200));
-  // LOG PRICE AXIS (2026-08-18, Zach: "check soxs chart for example at 1D, all
-  // flat"). SOXS is a 3x inverse semis ETF in a semi bull market: its real 6M
-  // range is $4,256 -> $40, so on a linear axis every recent candle collapses
-  // into a 1px line along the bottom and the chart says nothing. A log axis
-  // gives equal vertical space to equal PERCENTAGE moves, which is the honest
-  // way to draw a decay like that. Both conditions must hold (see
-  // LOG_SCALE_RATIO / LOG_TAIL_SHARE above), so an ordinary big winner keeps
-  // the linear axis it has always had. The chip in the seg row says which
-  // scale is in force, so nobody misreads a log chart as a linear one.
-  var tailN = Math.max(10, Math.floor(n/5));
+function stageMsg(txt){
+  var el = document.getElementById("stagemsg");
+  if(!el) return;
+  if(txt){ el.hidden = false; el.textContent = txt; }
+  else el.hidden = true;
+}
+// Tick/crosshair time labels. Daily times are business-day objects (from
+// "YYYY-MM-DD" strings); intraday times are epoch seconds rendered in CT —
+// same clock every other timestamp on this page uses.
+function stageTickFmt(time, type){
+  if(typeof time === "number"){
+    var d = new Date(time*1000);
+    if(type >= 3) return CT_TIME_FMT.format(d);
+    return CT_DAY_FMT.format(d);
+  }
+  if(time && typeof time === "object"){
+    if(type === 0) return String(time.year);
+    if(type === 1) return MONTHS[time.month-1] || String(time.month);
+    return String(time.day);
+  }
+  return String(time);
+}
+function stageTimeLabel(time){
+  if(typeof time === "number"){
+    var d = new Date(time*1000);
+    return CT_DAY_FMT.format(d)+" "+CT_TIME_FMT.format(d)+" CT"+(isExtendedHours(d)?" · ext hrs":"");
+  }
+  if(time && typeof time === "object") return (MONTHS[time.month-1]||time.month)+" "+time.day+", "+time.year;
+  if(typeof time === "string"){
+    var p = time.split("-");
+    if(p.length===3) return (MONTHS[+p[1]-1]||p[1])+" "+(+p[2])+", "+p[0];
+  }
+  return String(time);
+}
+function stageInit(){
+  if(STAGE.chart) return true;
+  if(!window.LightweightCharts){ stageMsg("chart engine failed to load — reload the page"); return false; }
+  var el = document.getElementById("stagechart");
+  if(!el) return false;
+  var LWC = window.LightweightCharts;
+  STAGE.chart = LWC.createChart(el, {
+    autoSize: true,
+    layout: { attributionLogo: true },   // TradingView attribution — license requirement, keep on
+    timeScale: { rightOffset: 3, secondsVisible: false, tickMarkFormatter: stageTickFmt },
+    localization: { locale: "en-US", timeFormatter: stageTimeLabel },
+    crosshair: { mode: LWC.CrosshairMode.Normal },
+    handleScroll: true, handleScale: true
+  });
+  STAGE.s.candle = STAGE.chart.addSeries(LWC.CandlestickSeries, { borderVisible:false });
+  STAGE.s.volume = STAGE.chart.addSeries(LWC.HistogramSeries, {
+    priceScaleId:"vol", priceFormat:{type:"volume"}, lastValueVisible:false, priceLineVisible:false });
+  STAGE.chart.priceScale("vol").applyOptions({ scaleMargins:{top:0.82, bottom:0}, visible:false });
+  STAGE.s.ma20 = STAGE.chart.addSeries(LWC.LineSeries, { lineWidth:1, title:"20d", priceLineVisible:false, crosshairMarkerVisible:false });
+  STAGE.s.ma50 = STAGE.chart.addSeries(LWC.LineSeries, { lineWidth:1, title:"50d", priceLineVisible:false, crosshairMarkerVisible:false });
+  STAGE.s.ma200 = STAGE.chart.addSeries(LWC.LineSeries, { lineWidth:2, title:"200d", priceLineVisible:false, crosshairMarkerVisible:false });
+  STAGE.markersApi = LWC.createSeriesMarkers(STAGE.s.candle, []);
+  stageTheme();
+  STAGE.chart.subscribeCrosshairMove(stageOnCrosshair);
+  STAGE.chart.subscribeClick(stageOnClick);
+  STAGE.chart.timeScale().subscribeVisibleLogicalRangeChange(stageOnVisRange);
+  return true;
+}
+function stageTheme(){
+  if(!STAGE.chart) return;
+  var up=cssVar("--up"), dn=cssVar("--dn");
+  STAGE.chart.applyOptions({
+    layout:{ background:{type:"solid", color:cssVar("--srf")}, textColor:cssVar("--ink3"),
+             fontSize:11, fontFamily:'"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif',
+             attributionLogo:true },
+    grid:{ vertLines:{color:cssVar("--edge2")}, horzLines:{color:cssVar("--edge2")} },
+    crosshair:{ vertLine:{labelBackgroundColor:cssVar("--acc")}, horzLine:{labelBackgroundColor:cssVar("--acc")} },
+    rightPriceScale:{ borderColor:cssVar("--edge") },
+    timeScale:{ borderColor:cssVar("--edge") }
+  });
+  STAGE.s.candle.applyOptions({ upColor:up, downColor:dn, wickUpColor:up, wickDownColor:dn });
+  STAGE.s.ma20.applyOptions({ color:cssVar("--ink3") });
+  STAGE.s.ma50.applyOptions({ color:cssVar("--acc") });
+  STAGE.s.ma200.applyOptions({ color:cssVar("--hi") });
+}
+/* ---- stage data builders ---- */
+// Daily rows for the stage: the FULL bars.json history (no window slicing —
+// the window buttons set the visible range instead, so zooming out reveals
+// the rest), full-history SMAs, and the live synthetic "today" candle
+// appended exactly the way seriesQuads always did it (o=prevClose, h/l
+// bracket prevClose..live, c=live).
+function stageDailyData(sym){
+  var q = quadsRaw(sym);
+  if(!q || q.length < 2) return null;
+  var rows = q.slice(), synthetic = false;
+  var live = liveBySym(sym);
+  if(live && live.px!=null){
+    var prevClose = num(rows[rows.length-1][3]);
+    if(prevClose!=null){
+      rows = rows.concat([[prevClose, Math.max(prevClose, live.px), Math.min(prevClose, live.px), live.px]]);
+      synthetic = true;
+    }
+  }
+  var endDateStr = (STATE.data && STATE.data.session_date) || (BARS_CACHE && BARS_CACHE.built) || null;
+  var dates = weekdayDatesEndingAt(rows.length, endDateStr);
+  var closes = rows.map(function(r){ return num(r[3]); });
+  return { rows:rows, dates:dates, m20:rollMA(closes,20), m50:rollMA(closes,50), m200:rollMA(closes,200),
+           hasVolume: rows.some(function(r){ return r && r.length>=5 && num(r[4])!=null && num(r[4])>0; }),
+           intraday:false, synthetic:synthetic };
+}
+function stageViewData(sym, iv){
+  if(iv==="1D") return stageDailyData(sym);
+  var cd = intervalDataFor(sym, iv);
+  if(!cd) return null;
+  return { rows:cd.slice, dates:cd.dates, m20:[], m50:[], m200:[],
+           hasVolume:!!cd.hasVolume, intraday:(iv==="15m"||iv==="1H"||iv==="4H"), synthetic:false };
+}
+// The auto log-axis rule, unchanged from the SVG engine (see LOG_SCALE_RATIO /
+// LOG_TAIL_SHARE above): evaluated over the PRESET window the user selected,
+// not the freely-zoomed view, so the scale doesn't flip mid-drag. The manual
+// "log" button overrides it until the next symbol change.
+function stageLogAuto(rows){
+  var n = rows.length;
+  if(!n) return false;
+  var win = rows;
+  if(STAGE.iv==="1D"){
+    var N = Math.max(2, Math.min(n, TFN2[STAGE.tf]||63));
+    win = rows.slice(-N);
+  }
+  var highs = win.map(function(r){ return num(r[1]); }), lows = win.map(function(r){ return num(r[2]); });
+  var mn = safeMin(lows), mx = safeMax(highs);
+  if(!(mn>0) || !(mx/mn >= LOG_SCALE_RATIO)) return false;
+  var tailN = Math.max(10, Math.floor(win.length/5));
   var tailHi = safeMax(highs.slice(-tailN)), tailLo = safeMin(lows.slice(-tailN));
   var tailShare = (mx>mn) ? (tailHi-tailLo)/(mx-mn) : 1;
-  var useLog = (mn>0 && mx/mn >= LOG_SCALE_RATIO && tailShare < LOG_TAIL_SHARE);
-  var T = useLog ? function(v){ return Math.log(Math.max(v, 1e-9)); } : function(v){ return v; };
-  var Tinv = useLog ? function(v){ return Math.exp(v); } : function(v){ return v; };
-  var tmn=T(mn), tmx=T(mx);
-  var pad=(tmx-tmn)*0.06||(useLog?0.02:1), lo=tmn-pad, hi=tmx+pad, sp=(hi-lo)||1;
-  var Y=function(v){ return plotTop + (1-(T(v)-lo)/sp)*plotH; };
-  var slotW=plotW/n, X=function(i){ return slotW*i+slotW/2; };
-  var bodyW=Math.max(1, slotW*0.7);
-
-  var endDateStr = (STATE.data && STATE.data.session_date) || (BARS_CACHE && BARS_CACHE.built) || null;
-  var dates = cd.dates || weekdayDatesEndingAt(n, endDateStr);
-
-  var axisHtml="";
-  for(var g=0; g<=4; g++){
-    var v = Tinv(lo+sp*g/4), y=Y(v);
-    axisHtml += '<line x1="0" x2="'+plotW+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="var(--edge)" stroke-width="1" opacity=".5"/>'
-      + '<text x="'+(plotW+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9.5" fill="var(--ink3)">'+fmtpx(v)+'</text>';
+  return tailShare < LOG_TAIL_SHARE;
+}
+/* ---- stage render ---- */
+function stageRender(){
+  if(!stageInit()) return;
+  var sym = STAGE.sym;
+  if(!sym) return;
+  // Bars may have landed after the last render pass memoized this symbol's
+  // stats with no history — flush so the legend/range read the real series.
+  bumpStatsMemo();
+  var intraView = (STAGE.iv==="15m"||STAGE.iv==="1H"||STAGE.iv==="4H");
+  if(intraView && INTRA_CACHE===null){
+    stageMsg("loading intraday bars…");
+    ensureIntra().then(function(){ if(STAGE.sym===sym) stageRender(); });
+    return;
   }
-  var monthHtml="";
-  if(iv==="15m"||iv==="1H"||iv==="4H"){
-    var lastKey=null;
-    for(var i=0;i<n;i++){
-      var k2 = ctDayKey(dates[i]);
-      if(k2!==lastKey){ lastKey=k2; monthHtml += '<text x="'+X(i).toFixed(1)+'" y="'+(chartBottom+14)+'" font-size="9" fill="var(--ink3)" text-anchor="middle">'+CT_DAY_FMT.format(dates[i])+'</text>'; }
-    }
-  } else {
-    var lastMonth=-1;
-    for(var i=0;i<n;i++){
-      var mo = dates[i].getUTCMonth();
-      if(mo!==lastMonth){ lastMonth=mo; monthHtml += '<text x="'+X(i).toFixed(1)+'" y="'+(chartBottom+14)+'" font-size="9" fill="var(--ink3)" text-anchor="middle">'+MONTHS[mo]+'</text>'; }
-    }
+  var d = stageViewData(sym, STAGE.iv);
+  if(!d){
+    if(BARS_CACHE===null){ stageMsg("loading chart…"); return; }
+    stageSetEmpty("no chart history available"+(STAGE.iv==="1D"?"":" for this view"));
+    return;
   }
-  var intraIv = (iv==="15m"||iv==="1H"||iv==="4H");
-  var candleHtml = slice.map(function(r,i){
-    var o=num(r[0]), hh=num(r[1]), l=num(r[2]), c=num(r[3]);
-    if(o==null||hh==null||l==null||c==null) return "";
-    var col = c>=o ? "var(--up)" : "var(--dn)";
-    // pre/post-market candles render dimmed so the regular session reads as
-    // the main tape and premarket as the overlay it is
-    var dim = (intraIv && isExtendedHours(dates[i])) ? ' opacity=".5"' : '';
-    var x=X(i), yTop=Y(Math.max(o,c)), yBot=Y(Math.min(o,c)), bh=Math.max(1,yBot-yTop);
-    return '<line x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+Y(hh).toFixed(1)+'" y2="'+Y(l).toFixed(1)+'" stroke="'+col+'" stroke-width="1"'+dim+'/>'
-      + '<rect x="'+(x-bodyW/2).toFixed(1)+'" y="'+yTop.toFixed(1)+'" width="'+bodyW.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="'+col+'"'+dim+'/>';
-  }).join("");
-  function maPath(arr){ var pts=[]; for(var k=0;k<arr.length;k++){ if(arr[k]!=null) pts.push(X(k).toFixed(1)+","+Y(arr[k]).toFixed(1)); } return pts.join(" "); }
-  function lastDefined(arr){ for(var k=arr.length-1;k>=0;k--){ if(arr[k]!=null) return arr[k]; } return null; }
-  var maHtml = '<polyline points="'+maPath(m20)+'" fill="none" stroke="var(--ink3)" stroke-width="1.2" opacity=".85"/>'
-    + '<polyline points="'+maPath(m50)+'" fill="none" stroke="var(--acc)" stroke-width="1.3" opacity=".92"/>'
-    + '<polyline points="'+maPath(m200)+'" fill="none" stroke="var(--hi)" stroke-width="1.4" opacity=".95"/>';
-  var labelsHtml="";
-  [["20d",m20,"var(--ink3)"],["50d",m50,"var(--acc)"],["200d",m200,"var(--hi)"]].forEach(function(t){
-    var v=lastDefined(t[1]);
-    if(v!=null) labelsHtml += '<text x="'+(plotW+6)+'" y="'+(Y(v)+3).toFixed(1)+'" font-size="9.5" font-weight="700" fill="'+t[2]+'">'+t[0]+' '+fmtpx(v)+'</text>';
+  stageMsg(null);
+  STAGE.rows=d.rows; STAGE.dates=d.dates; STAGE.intraday=d.intraday;
+  STAGE.hasVolume=d.hasVolume; STAGE.synthetic=d.synthetic;
+  STAGE.times = d.rows.map(function(r,i){
+    return d.intraday ? Math.floor(d.dates[i].getTime()/1000) : d.dates[i].toISOString().slice(0,10);
   });
-
-  // ---- volume sub-pane (Finviz-style), v3-only (bars.json quints); lives
-  // BETWEEN the (now shorter) price plot and the untouched chartBottom, so it
-  // can never collide with the earnings badges/month axis below or the
-  // catalyst gutter beside it (that gutter is scaled to plotH, which already
-  // shrank to make room). ----
-  var volHtml = "";
-  if(hasVolume){
-    var vols = slice.map(function(r){ return (r && r.length>=5) ? num(r[4]) : null; });
-    if(vols.some(function(v){ return v!=null; })){
-      var volBaseY = chartBottom;
-      var maxVol = safeMax(vols.filter(function(v){ return v!=null; }));
-      var VY = function(v){ return volBaseY - (maxVol>0 ? (v/maxVol)*volH : 0); };
-      var volBars = slice.map(function(r,i){
-        var vv = vols[i]; if(vv==null) return "";
-        var o=num(r[0]), c=num(r[3]);
-        var col = (c>=o) ? "var(--up)" : "var(--dn)";
-        var x=X(i), yTop=VY(vv), bh=Math.max(1, volBaseY-yTop);
-        var vop = (intraIv && isExtendedHours(dates[i])) ? ".2" : ".45";
-        return '<rect x="'+(x-bodyW/2).toFixed(1)+'" y="'+yTop.toFixed(1)+'" width="'+bodyW.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="'+col+'" opacity="'+vop+'"/>';
-      }).join("");
-      var volAxisHtml = "";
-      volAxisLines(maxVol).forEach(function(lv){
-        var y=VY(lv);
-        volAxisHtml += '<line x1="0" x2="'+plotW+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="var(--edge)" stroke-width="1" opacity=".4"/>'
-          + '<text x="'+(plotW+6)+'" y="'+(y+3).toFixed(1)+'" font-size="8.5" fill="var(--ink3)">'+fmtVolShort(lv)+'</text>';
-      });
-      volHtml = '<line x1="0" x2="'+plotW+'" y1="'+(plotBottom+volGap/2).toFixed(1)+'" y2="'+(plotBottom+volGap/2).toFixed(1)+'" stroke="var(--edge2)" stroke-width="1"/>'
-        + volAxisHtml + volBars;
+  // Guard against a duplicate/regressing last timestamp (e.g. bars.json's last
+  // session equals today's synthetic date on an off-schedule cycle) — the
+  // library requires strictly ascending times where the SVG engine didn't care.
+  var rows=[], dates=[], times=[];
+  for(var i=0;i<d.rows.length;i++){
+    if(times.length && !(STAGE.times[i] > times[times.length-1])){
+      rows[rows.length-1]=d.rows[i]; dates[dates.length-1]=d.dates[i]; times[times.length-1]=STAGE.times[i];
+      continue;
     }
+    rows.push(d.rows[i]); dates.push(d.dates[i]); times.push(STAGE.times[i]);
   }
+  STAGE.rows=rows; STAGE.dates=dates; STAGE.times=times;
 
-  var earnRows = (isD && fund && Array.isArray(fund.earnings)) ? fund.earnings : [];
-  var startDate=dates[0], endDate=dates[n-1], earnHtml="";
-  earnRows.forEach(function(er, ei){
+  var up=cssVar("--up"), dn=cssVar("--dn");
+  var candles=[], vols=[];
+  for(var k=0;k<rows.length;k++){
+    var r=rows[k], o=num(r[0]), h=num(r[1]), l=num(r[2]), c=num(r[3]);
+    if(o==null||h==null||l==null||c==null) continue;
+    var ext = STAGE.intraday && isExtendedHours(dates[k]);
+    var col = c>=o ? up : dn;
+    var bar = {time:times[k], open:o, high:h, low:l, close:c};
+    if(ext){ bar.color=hexA(col,0.5); bar.wickColor=hexA(col,0.5); }
+    candles.push(bar);
+    var v = (r.length>=5) ? num(r[4]) : null;
+    if(v!=null) vols.push({time:times[k], value:v, color:hexA(col, ext?0.2:0.45)});
+  }
+  STAGE.s.candle.setData(candles);
+  STAGE.s.volume.setData(STAGE.hasVolume ? vols : []);
+  function maData(arr){
+    var out=[];
+    for(var j=0;j<arr.length;j++){ if(arr[j]!=null) out.push({time:times[j], value:arr[j]}); }
+    return out;
+  }
+  STAGE.s.ma20.setData(maData(d.m20));
+  STAGE.s.ma50.setData(maData(d.m50));
+  STAGE.s.ma200.setData(maData(d.m200));
+  STAGE.chart.applyOptions({ timeScale:{ timeVisible: STAGE.intraday } });
+
+  STAGE.log = (STAGE.logManual!=null) ? STAGE.logManual : stageLogAuto(rows);
+  STAGE.chart.priceScale("right").applyOptions({
+    mode: STAGE.log ? window.LightweightCharts.PriceScaleMode.Logarithmic
+                    : window.LightweightCharts.PriceScaleMode.Normal });
+
+  stageApplyWindow(candles.length);
+  stageMarkers();
+  stageBar(); stageLegend(); stageSetOhlc(null);
+}
+function stageSetEmpty(msg){
+  stageMsg(msg);
+  if(STAGE.chart){
+    STAGE.s.candle.setData([]); STAGE.s.volume.setData([]);
+    STAGE.s.ma20.setData([]); STAGE.s.ma50.setData([]); STAGE.s.ma200.setData([]);
+    if(STAGE.markersApi) STAGE.markersApi.setMarkers([]);
+  }
+  STAGE.rows=[]; STAGE.dates=[]; STAGE.times=[];
+  stageBar(); stageLegend(); stageSetOhlc(null);
+}
+function stageApplyWindow(total){
+  var ts = STAGE.chart.timeScale();
+  if(STAGE.iv==="1D"){
+    var N = TFN2[STAGE.tf]||63;
+    if(total <= N+2){ ts.fitContent(); return; }
+    ts.setVisibleLogicalRange({from: total-N-0.5, to: total+2.5});
+  } else {
+    ts.fitContent();
+  }
+}
+/* ---- earnings markers (daily view only, same anchoring as the SVG badges:
+   the ANNOUNCEMENT date, snapped to the nearest bar) ---- */
+function stageMarkers(){
+  if(!STAGE.markersApi) return;
+  STAGE.markerByTime = {};
+  var fund = STAGE.fund;
+  if(STAGE.iv!=="1D" || !fund || !STAGE.dates.length){ STAGE.markersApi.setMarkers([]); return; }
+  var markers=[], hi=cssVar("--hi");
+  var startDate=STAGE.dates[0], endDate=STAGE.dates[STAGE.dates.length-1];
+  (Array.isArray(fund.earnings)?fund.earnings:[]).forEach(function(er, ei){
     if(!er || !(er.report_date || er.date)) return;
-    // anchor the badge on the announcement date (where the gap is), not the
-    // fiscal quarter-end — see DATA_CONTRACT.md's report_date note
     var ed = new Date((er.report_date || er.date)+"T12:00:00Z");
     if(ed < startDate || ed > endDate) return;
     var bestI=0, bestDiff=Infinity;
-    for(var k=0;k<n;k++){ var diff=Math.abs(dates[k]-ed); if(diff<bestDiff){ bestDiff=diff; bestI=k; } }
-    var x=X(bestI);
-    earnHtml += '<g class="ebadge" data-etype="past" data-eidx="'+ei+'" transform="translate('+x.toFixed(1)+','+(chartBottom+8)+')">'
-      + '<circle r="7" fill="var(--hi)"/><text y="3" text-anchor="middle" font-size="8" font-weight="700" fill="var(--bg)">E</text></g>';
+    for(var k=0;k<STAGE.dates.length;k++){ var diff=Math.abs(STAGE.dates[k]-ed); if(diff<bestDiff){ bestDiff=diff; bestI=k; } }
+    var t = STAGE.times[bestI];
+    markers.push({ time:t, position:"belowBar", color:hi, shape:"circle", text:"E", id:"e:"+ei });
+    STAGE.markerByTime[String(t)] = {type:"past", idx:ei};
   });
-  if(isD && fund && fund.next_earnings && fund.next_earnings.date){
-    var x2 = plotW-2;
-    earnHtml += '<g class="ebadge" data-etype="next" transform="translate('+x2.toFixed(1)+','+(chartBottom+8)+')">'
-      + '<circle r="7" fill="none" stroke="var(--hi)" stroke-width="1.4"/><text y="3" text-anchor="middle" font-size="8" font-weight="700" fill="var(--hi)">E</text></g>';
+  if(fund.next_earnings && fund.next_earnings.date){
+    var t2 = STAGE.times[STAGE.times.length-1];
+    if(!STAGE.markerByTime[String(t2)]){
+      markers.push({ time:t2, position:"aboveBar", color:hi, shape:"arrowDown", text:"E", id:"e:next" });
+      STAGE.markerByTime[String(t2)] = {type:"next"};
+    }
   }
-
-  var catsForSym = (isD && STATE.data && Array.isArray(STATE.data.catalysts)) ? STATE.data.catalysts.filter(function(c){ return c.ticker===sym; }) : [];
-  var shown = catsForSym.slice(0,8);
-  var gutterX = W-8; // clear of the MA end-labels' own lane (see rightPad note above)
-  var catHtml = shown.map(function(c,ci){
-    var y = plotTop + (ci+0.5)*(plotH/Math.max(1,shown.length));
-    return '<polygon class="catdmd" data-catid="'+c._id+'" points="'+gutterX+','+(y-4)+' '+(gutterX+4)+','+y+' '+gutterX+','+(y+4)+' '+(gutterX-4)+','+y+'" fill="var(--acc)"/>';
-  }).join("");
-
-  var svg = '<svg viewBox="0 0 '+W+' '+H+'" id="dchart">'
-    + axisHtml + monthHtml + maHtml + candleHtml + labelsHtml + volHtml + earnHtml + catHtml + '</svg>';
-  return {svg:svg, pct:pct, slice:slice, dates:dates, n:n, W:W, plotW:plotW, iv:(iv||"1D"), log:useLog};
+  STAGE.markersApi.setMarkers(markers);
+}
+/* ---- crosshair readout + marker clicks ---- */
+function stageSetOhlc(param){
+  var el = document.getElementById("stageohlc");
+  if(!el) return;
+  var i = null;
+  if(param && param.time!=null){
+    var key = (typeof param.time==="object") ? [param.time.year,
+      ("0"+param.time.month).slice(-2), ("0"+param.time.day).slice(-2)].join("-") : param.time;
+    i = STAGE.times.indexOf(typeof key==="number" ? key : String(key));
+    STAGE.hovering = true;
+  } else {
+    STAGE.hovering = false;
+    i = STAGE.rows.length ? STAGE.rows.length-1 : null;
+  }
+  if(i==null || i<0 || !STAGE.rows[i]){ el.innerHTML=""; return; }
+  var r = STAGE.rows[i];
+  var volPart = (r.length>=5 && r[4]!=null) ? (' V <b>'+fmtVolShort(r[4])+'</b>') : '';
+  el.innerHTML = esc(stageTimeLabel(STAGE.times[i]))
+    + ' · O <b>'+fmtpx(r[0])+'</b> H <b>'+fmtpx(r[1])+'</b> L <b>'+fmtpx(r[2])+'</b> C <b>'+fmtpx(r[3])+'</b>'+volPart;
+}
+function stageOnCrosshair(param){
+  stageSetOhlc(param && param.time!=null ? param : null);
+}
+function stageOnClick(param){
+  if(!param) return;
+  var hit = null;
+  if(param.hoveredObjectId && String(param.hoveredObjectId).slice(0,2)==="e:"){
+    var id = String(param.hoveredObjectId).slice(2);
+    hit = (id==="next") ? {type:"next"} : {type:"past", idx:+id};
+  } else if(param.time!=null){
+    var key = (typeof param.time==="object") ? [param.time.year,
+      ("0"+param.time.month).slice(-2), ("0"+param.time.day).slice(-2)].join("-") : String(param.time);
+    hit = STAGE.markerByTime[key] || null;
+  }
+  if(!hit) return;
+  var fund = STAGE.fund;
+  var html = (hit.type==="next")
+    ? earnPopoverHTML(null, fund && fund.next_earnings, true)
+    : earnPopoverHTML(fund && Array.isArray(fund.earnings) ? fund.earnings[hit.idx] : null, null, false);
+  var x = (param.point && param.point.x!=null) ? param.point.x : 40;
+  var y = (param.point && param.point.y!=null) ? param.point.y : 40;
+  showEarnPopover(x, y, html);
+}
+/* ---- visible-range % chip: reads the ZOOMED window, whatever it is ---- */
+var stageVisRaf = null;
+function stageOnVisRange(range){
+  if(!range || !STAGE.rows.length) return;
+  if(stageVisRaf) return;
+  stageVisRaf = requestAnimationFrame(function(){
+    stageVisRaf = null;
+    var n = STAGE.rows.length;
+    var a = Math.max(0, Math.min(n-1, Math.round(range.from)));
+    var b = Math.max(0, Math.min(n-1, Math.round(range.to)));
+    if(b<=a){ return; }
+    var c0 = num(STAGE.rows[a][3]), c1 = num(STAGE.rows[b][3]);
+    var el = document.getElementById("stagepct");
+    if(el && c0!=null && c1!=null && c0!==0){
+      var pct = (c1/c0-1)*100;
+      el.className = "pchip tn "+(pct>=0?"u":"d");
+      el.textContent = fm1(pct)+"% shown";
+      el.hidden = false;
+    }
+  });
 }
 
 /* ---- earnings popover ---- */
@@ -3137,53 +3284,74 @@ function rangeSecHTML(sym){
     + '<div class="kvrow"><span>Position in range</span><b>'+(st.pos!=null?Math.round(st.pos*100):"—")+'%'
     + (st.pos!=null && st.pos>0.85?" · hot runner":st.pos!=null && st.pos<0.25?" · near lows":"")+'</b></div></div>';
 }
-// Same freshness problem as the range bar: price/change/hot-chip are known at
-// open time only if the live poll or bars have already resolved. Both the
-// initial header and every later live-poll refresh call this.
-function drawerHeaderHTML(sym){
-  // dispQuote, not the raw quote: the modal must show the same number the
-  // tile or rail row the user just clicked was showing. Reading q.px directly
-  // put a regular-session price under a PRE-tagged tile.
+/* =================== stage controller: header / toolbar / tabs =================== */
+function stageHeaderHTML(sym){
   var d = dispQuote(liveBySym(sym));
   var h = hotOf(sym);
-  return '<div class="dh" id="dh"><span class="sy">'+esc(sym)+'</span>'
-    + '<span class="m" style="font-size:12px">'+esc(nameFor(sym))+sessTagHTML(d.tag)+'</span>'
-    + '<span class="px tn" style="font-size:21px;font-weight:700">'+(d.px!=null?fmtpx(d.px):"—")+'</span>'
-    + '<span class="ch tn '+sign(d.ch)+'" style="font-size:14px">'+(d.ch!=null?fm1(d.ch)+"%":"—")+'</span>'
+  var f = factsOf(sym) || {};
+  var clsf = [f.sector, f.industry].filter(function(x){ return typeof x==="string" && x; }).join(" · ");
+  return '<span class="sy">'+esc(sym)+'</span>'
+    + '<span class="nm2">'+esc(nameFor(sym))+sessTagHTML(d.tag)+'</span>'
+    + (clsf ? '<span class="clsf">'+esc(clsf)+'</span>' : '')
+    + '<span class="px tn">'+(d.px!=null?fmtpx(d.px):"—")+'</span>'
+    + '<span class="ch tn '+sign(d.ch)+'">'+(d.ch!=null?fm1(d.ch)+"%":"—")+'</span>'
     + (h!=null && h>=HOT_AT ? ('<span class="hotb" data-tip="'+esc(TIPS.hot)+'">'+h.toFixed(1)+'× usual move</span>') : "")
-    + '<button class="x" id="dclose" aria-label="Close">×</button></div>';
+    + '<span class="ohlc tn" id="stageohlc"></span>';
 }
-function refreshDrawerLive(sym){
-  var drawer = document.getElementById("drawer");
-  if(!drawer || !drawer.classList.contains("open") || DRAWER_SYM !== sym) return;
-  var dh = document.getElementById("dh");
-  if(dh){
-    dh.outerHTML = drawerHeaderHTML(sym);
-    var cl = document.getElementById("dclose"); if(cl) cl.addEventListener("click", function(){ setFocus(null); });
-  }
-  var rs = document.getElementById("rangesec"); if(rs) rs.innerHTML = rangeSecHTML(sym);
+function stageHeader(){
+  var el = document.getElementById("stagehead");
+  if(!el || !STAGE.sym) return;
+  el.innerHTML = stageHeaderHTML(STAGE.sym);
+  stageSetOhlc(null);
 }
-function openDrawer(sym){
+function stageBar(){
+  var el = document.getElementById("stagebar");
+  if(!el) return;
+  // Both rows ALWAYS render (Zach, 2026-08-18): window buttons never
+  // disappear; on an intraday/weekly view none is pressed and clicking one
+  // means "show me that much history", switching back to daily candles.
+  var ivBtns = IVS.map(function(t){ return '<button data-iv="'+t+'" aria-pressed="'+(t===STAGE.iv)+'">'+t+'</button>'; }).join("");
+  var tfBtns = GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(STAGE.iv==="1D" && t===STAGE.tf)+'">'+t+'</button>'; }).join("");
+  var chips = '<span class="pchip tn" id="stagepct" hidden></span>'
+    + '<button class="fbtn" id="stagelog" aria-pressed="'+STAGE.log+'" data-tip="'+esc(TIPS["tip-logscale"])+' The desk picks automatically; this button overrides it until the next symbol change.">log</button>';
+  var fixedBy = STAGE.sym ? splitFixedFor(STAGE.sym) : null;
+  if(fixedBy) chips += '<span class="pchip tn m" data-tip="'+esc(TIPS["tip-splitfix"])+'">split-rescaled '+fixedBy.toFixed(fixedBy>=10?0:1)+'×</span>';
+  el.innerHTML = '<div class="seg" role="group">'+ivBtns+'</div><div class="seg" role="group">'+tfBtns+'</div>'+chips;
+  $$(".seg button", el).forEach(function(b){
+    b.addEventListener("click", function(){
+      if(b.dataset.iv){ STAGE.iv = b.dataset.iv; }
+      else if(b.dataset.tf){ STAGE.tf = b.dataset.tf; STAGE.iv = "1D"; }
+      stageRender();
+    });
+  });
+  var lg = document.getElementById("stagelog");
+  if(lg) lg.addEventListener("click", function(e){ e.stopPropagation(); STAGE.logManual = !STAGE.log; stageRender(); });
+}
+function stageLegend(){
+  var el = document.getElementById("stageleg");
+  if(!el) return;
+  if(STAGE.iv!=="1D" || !STAGE.sym || !STAGE.rows.length){ el.innerHTML=""; return; }
+  var st = statsOf(STAGE.sym);
+  el.innerHTML = '<span><i class="d20"></i>20-day</span>'
+    + '<span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span>'
+    + '<span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span>';
+}
+/* ---- tabs under the chart: the old modal's panels, now always on screen ---- */
+var STAGE_TABS = [["ov","Overview"],["fin","Financials"],["flow","Options flow"]];
+function stageTabsRender(){
+  var el = document.getElementById("stagetabs");
+  if(!el) return;
+  el.innerHTML = STAGE_TABS.map(function(t){
+    return '<button data-tab="'+t[0]+'" aria-pressed="'+(STAGE.tab===t[0])+'">'+t[1]+'</button>';
+  }).join("");
+  $$("button", el).forEach(function(b){
+    b.addEventListener("click", function(){ STAGE.tab = b.dataset.tab; stageTabsRender(); renderStageTab(); });
+  });
+}
+function stageFlowSecHTML(sym){
   var data = STATE.data;
   var conv = (data && Array.isArray(data.conviction)) ? data.conviction.filter(function(c){return c.ticker===sym;})[0] : null;
   var sw = (data && Array.isArray(data.swing)) ? data.swing.filter(function(c){return c.ticker===sym;})[0] : null;
-  var newsItems = (data && data.news && Array.isArray(data.news.items)) ? data.news.items.filter(function(n){return n.ticker===sym;}) : [];
-
-  DRAWER_SYM = sym; DRAWER_FUND = null;
-
-  // Header: symbol, company name, live price + day change (big), hot chip —
-  // the 52-week range bar follows immediately below as its own dsec, so it
-  // reads as part of the header block (Finviz puts it right under the price).
-  var header = drawerHeaderHTML(sym);
-
-  var rangeSec = '<div id="rangesec">'+rangeSecHTML(sym)+'</div>';
-
-  var chartCard = '<div class="dsec"><h3>Price</h3><div class="segrow">'+chartSegHTML()
-    + '</div><div class="chart chartbig" id="dchartwrap"><div class="note" style="padding:30px 0;text-align:center">loading chart…</div></div>'
-    + '<div id="catlist"></div></div>';
-
-  // Tilt and C/P moved here from the board table (2026-08-18): they explain a
-  // score, they don't need an always-on column.
   var tiltN = conv ? num(conv.tilt) : null;
   var tiltStr = conv ? (tiltN===null ? "sampling" : (fm1SignedInt(tiltN*100)+"%"+(num(conv.tilt_prem)? (" on "+fmDollarsSigned(Math.abs(num(conv.tilt_prem))).replace("+","")+" classified") : ""))) : "—";
   var convSec = conv ? ('<div class="dsec"><h3>Conviction board</h3>'
@@ -3193,155 +3361,86 @@ function openDrawer(sym){
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-cpratio"])+'">C/P by contract count</span></span><b>'+(num(conv.cp_ratio)!=null?conv.cp_ratio.toFixed(2)+"×":"—")+'</b></div>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-tilt"])+'">Aggressor tilt</span></span><b>'+esc(tiltStr)+'</b></div>'
     + '<div class="kvrow"><span>Loudest contract</span><b style="font-size:10.5px">'+contractLine(conv.popular_contract)+'</b></div></div>') : "";
-
   var swSec = sw ? ('<div class="dsec"><h3>Swing board</h3>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-persist"])+'">Persistence</span></span><b>'+(num(sw.persist)!=null?Math.round(sw.persist):"—")+'/'+(num(sw.persist_max)!=null?Math.round(sw.persist_max):"5")+'</b></div>'
     + '<div class="kvrow"><span>5-day flow</span><b class="'+sign(sw.flow_5d)+'">'+fmM(sw.flow_5d)+'</b></div>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-oiconfirm"])+'">OI-confirm</span></span><b>'+(sw.oi_confirm||"—")+'</b></div>'
     + '<div class="kvrow"><span>Suggested</span><b style="font-size:10.5px">'+suggestedContractLine(sw.suggested_contract, num(sw.spot))+'</b></div></div>') : "";
-
-  var newsSec = newsItems.length ? ('<div class="dsec"><h3>Headlines</h3>'+newsItems.map(function(n){
-      return '<div class="kvrow"><span style="max-width:82%">'+esc(n.title||"")+'</span><b class="m tn">'+ctTimeShort(n.ts)+'</b></div>';
-    }).join("")+'</div>') : "";
-
-  document.getElementById("drawer").innerHTML = header + rangeSec + chartCard + drawerPositionBlock(sym)
-    + '<div id="fundgrid"></div>' + '<div id="growthbox"></div>'
-    + convSec + swSec + newsSec
-    + '<div class="dsec note" id="dfoot">Data is live: prices from the 30s TradingView poll, history from bars.json, fundamentals from the fund sidecar (fund/'+esc(sym)+'.json). Nothing here is investment advice.</div>';
-  document.getElementById("drawer").classList.add("open");
-  document.getElementById("modalback").classList.add("open");
-  document.getElementById("dclose").addEventListener("click", function(){ setFocus(null); });
-  wireChartSeg(document.getElementById("drawer"), sym);
-
-  renderCatList(sym);
-
+  if(!convSec && !swSec){
+    return '<div class="dsec note">'+esc(sym)+' is not on either flow board this cycle — no unusual options activity to report. '
+      + 'Boards refresh ~7 min during market hours; the full boards are below the chart.</div>';
+  }
+  return convSec + swSec;
+}
+function renderStageTab(){
+  var body = document.getElementById("stagetabbody");
+  if(!body || !STAGE.sym) return;
+  var sym = STAGE.sym, fund = STAGE.fund;
+  if(STAGE.tab==="fin"){
+    var g = renderGrowth(sym, fund);
+    body.innerHTML = (g && g.indexOf("dsec")!==-1) ? g
+      : '<div class="dsec note">No quarterly financials for '+esc(sym)+' — the daily sidecar covers desk-pinned company names (indexes and funds have none).</div>';
+  } else if(STAGE.tab==="flow"){
+    body.innerHTML = stageFlowSecHTML(sym);
+  } else {
+    body.innerHTML = '<div id="rangesec">'+rangeSecHTML(sym)+'</div>'
+      + drawerPositionBlock(sym)
+      + renderFundamentals(sym, fund)
+      + '<div id="catlist"></div>'
+      + '<div class="dsec note" id="dfoot">'
+      + (hasFundamentals(sym, fund)
+          ? 'Data is live: prices from the 30s TradingView poll, history from bars.json, fundamentals from the fund sidecar (fund/'+esc(sym)+'.json). Nothing here is investment advice.'
+          : 'Prices from the 30-second TradingView poll; history from bars.json. Nothing here is investment advice.')
+      + '</div>';
+    renderCatList(sym);
+  }
+}
+/* ---- stage entry point: what [data-sym] clicks now drive ---- */
+function stageShow(sym, opts){
+  if(!sym) return;
+  STAGE.sym = sym;
+  STAGE.fund = null; DRAWER_FUND = null;
+  STAGE.logManual = null;
+  store("desk.stage.sym", sym);
+  stageHeader(); stageBar(); stageTabsRender(); renderStageTab();
+  stageMsg("loading chart…");
   Promise.all([ensureBars(), ensureFund(sym)]).then(function(vals){
-    if(DRAWER_SYM !== sym) return; // a different ticker was opened while this was in flight
-    var fund = vals[1];
-    DRAWER_FUND = fund;
-    var fg = document.getElementById("fundgrid"); if(fg) fg.outerHTML = renderFundamentals(sym, fund);
-    var gb = document.getElementById("growthbox"); if(gb) gb.outerHTML = renderGrowth(sym, fund);
-    // Don't promise a fundamentals sidecar for a symbol that has none.
-    var ft = document.getElementById("dfoot");
-    if(ft && !hasFundamentals(sym, fund)){
-      ft.textContent = "Prices from the 30-second TradingView poll; history from bars.json. Nothing here is investment advice.";
-    }
-    var rs = document.getElementById("rangesec"); if(rs) rs.innerHTML = rangeSecHTML(sym);
-    redrawChart(sym, fund);
+    if(STAGE.sym !== sym) return;   // another symbol was selected while in flight
+    STAGE.fund = vals[1]; DRAWER_FUND = vals[1];
+    stageRender();
+    renderStageTab();
   });
-}
-function chartSegHTML(){
-  // Both rows ALWAYS render (Zach, 2026-08-18: "1M, 3M etc. only appear if I
-  // click 1D"). dIV is a global that survives closing the drawer, so one click
-  // on 15m used to strip the window buttons off every chart he opened after
-  // it, with nothing on screen saying why. The window row now stays put and
-  // simply carries no pressed state on an intraday/weekly view; clicking one
-  // of its buttons means "show me that much history", so it switches the chart
-  // back to daily candles rather than sitting inert.
-  var ivBtns = IVS.map(function(t){ return '<button data-iv="'+t+'" aria-pressed="'+(t===dIV)+'">'+t+'</button>'; }).join("");
-  var tfBtns = GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(dIV==="1D" && t===dTF)+'">'+t+'</button>'; }).join("");
-  return '<div class="seg" role="group">'+ivBtns+'</div><div class="seg" role="group">'+tfBtns+'</div>';
-}
-function wireChartSeg(scope, sym){
-  $$(".seg button", scope).forEach(function(b){ b.addEventListener("click", function(){
-    if(b.dataset.iv){ dIV=b.dataset.iv; } else if(b.dataset.tf){ dTF=b.dataset.tf; dIV="1D"; }
-    redrawChart(sym);
-  }); });
-}
-function redrawChart(sym, fund){
-  var wrap = document.getElementById("dchartwrap");
-  if(!wrap || !document.getElementById("drawer").classList.contains("open")) return;
-  if(fund===undefined) fund = DRAWER_FUND;
-  var intraView = (dIV==="15m"||dIV==="1H"||dIV==="4H");
-  // Intraday views need bars_intraday.json — lazy-fetch on first use, repaint
-  // when it lands (same pattern openDrawer uses for bars.json itself).
-  if(intraView && INTRA_CACHE===null){
-    wrap.innerHTML = '<div class="note" style="padding:30px 0;text-align:center">loading intraday bars…</div>';
-    var segrow0 = wrap.parentElement.querySelector(".segrow");
-    if(segrow0){ segrow0.innerHTML = chartSegHTML(); wireChartSeg(wrap.parentElement, sym); }
-    ensureIntra().then(function(){ redrawChart(sym, fund); });
-    return;
+  if(opts && opts.scroll && matchMedia("(max-width:900px)").matches){
+    var sec = document.getElementById("s-stage");
+    if(sec) sec.scrollIntoView({behavior:"smooth", block:"start"});
   }
-  var quads = quadsRaw(sym);
-  // Daily bars not loaded yet (or absent for this symbol): keep whatever the
-  // wrap currently shows — openDrawer paints a "loading chart…" note, and
-  // this is re-run once ensureBars resolves. Intraday/weekly views still need
-  // the daily file (the 1W resample and the live-quote overlay come from it).
-  if(!quads && !intraView) return;
-  var res = candleChartSVG(sym, dTF, fund, dIV);
-
-  var viewLbl = dIV==="1D" ? dTF : dIV+" view";
-  var pctChip = res.pct!=null ? ('<span class="pchip tn '+(res.pct>=0?"u":"d")+'">'+fm1(res.pct)+'% this '+viewLbl+'</span>') : '';
-  if(res.log) pctChip += '<span class="pchip tn m" data-tip="'+esc(TIPS["tip-logscale"])+'">log scale</span>';
-  var fixedBy = splitFixedFor(sym);
-  if(fixedBy) pctChip += '<span class="pchip tn m" data-tip="'+esc(TIPS["tip-splitfix"])+'">split-rescaled '+fixedBy.toFixed(fixedBy>=10?0:1)+'×</span>';
-  var segrow = wrap.parentElement.querySelector(".segrow");
-  if(segrow) segrow.innerHTML = chartSegHTML()+pctChip;
-  wireChartSeg(wrap.parentElement, sym);
-
-  wrap.innerHTML = res.svg + '<div class="xh" id="xh"></div><div class="pop" id="earnpop"></div>';
-  var existingLeg = wrap.parentElement.querySelector(".leg");
-  if(existingLeg) existingLeg.remove();
-  var st = statsOf(sym);
-
-  if(res.n){
-    if(res.iv==="1D"){
-      var legHtml = '<div class="leg"><span><i class="d20"></i>20-day</span>'
-        + '<span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span>'
-        + '<span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span></div>';
-      wrap.insertAdjacentHTML("afterend", legHtml);
+}
+/* ---- 30s live refresh: header quote + the synthetic today candle ---- */
+function stageLivePoke(){
+  if(!STAGE.sym) return;
+  stageHeader();
+  var rs = document.getElementById("rangesec");
+  if(rs) rs.innerHTML = rangeSecHTML(STAGE.sym);
+  if(STAGE.iv==="1D" && STAGE.synthetic && STAGE.rows.length>=2 && STAGE.chart){
+    var live = liveBySym(STAGE.sym);
+    if(live && live.px!=null){
+      var n = STAGE.rows.length;
+      var prevClose = num(STAGE.rows[n-2][3]);
+      var cur = STAGE.rows[n-1];
+      if(prevClose!=null){
+        // Ratchet the synthetic candle's range: the SVG engine re-bracketed
+        // prevClose..live on every rebuild and forgot the day's real extremes.
+        var hi = Math.max(num(cur[1])!=null?num(cur[1]):prevClose, live.px);
+        var lo = Math.min(num(cur[2])!=null?num(cur[2]):prevClose, live.px);
+        STAGE.rows[n-1] = [prevClose, hi, lo, live.px];
+        try{
+          STAGE.s.candle.update({time:STAGE.times[n-1], open:prevClose, high:hi, low:lo, close:live.px});
+        }catch(e){}
+        if(!STAGE.hovering) stageSetOhlc(null);
+        stageLegend();
+      }
     }
-    var svg = document.getElementById("dchart");
-    var xh = document.getElementById("xh");
-    // Shared by mouse AND touch — the crosshair used to be mouse-only, so the
-    // candle chart had no readout at all on a phone.
-    var showXH = function(clientX){
-      var r = svg.getBoundingClientRect();
-      var fx = Math.max(0, Math.min(0.999999, (clientX-r.left)/Math.max(1,r.width)));
-      var px = fx*res.W;
-      var i = Math.max(0, Math.min(res.n-1, Math.floor(px/(res.plotW/res.n))));
-      var row = res.slice[i]; if(!row) return;
-      var d = res.dates[i];
-      var isIvIntra = (res.iv==="15m"||res.iv==="1H"||res.iv==="4H");
-      var dateLbl = isIvIntra
-        ? (CT_DAY_FMT.format(d)+" "+CT_TIME_FMT.format(d)+" CT"+(isExtendedHours(d)?" · ext hrs":""))
-        : (MONTHS[d.getUTCMonth()]+" "+d.getUTCDate());
-      xh.style.display = "block";
-      xh.style.left = Math.min(r.width-150, Math.max(0, clientX-r.left+8))+"px";
-      xh.style.top = "8px";
-      var volPart = (row.length>=5 && row[4]!=null) ? (' · V '+fmtVolShort(row[4])) : '';
-      xh.innerHTML = '<b>'+dateLbl+'</b><br>O '+fmtpx(row[0])+' H '+fmtpx(row[1])+' L '+fmtpx(row[2])+' C '+fmtpx(row[3])+volPart;
-    };
-    wrap.onmousemove = function(e){ showXH(e.clientX); };
-    wrap.onmouseleave = function(){ xh.style.display = "none"; };
-    wrap.ontouchstart = wrap.ontouchmove = function(e){
-      if(e.touches && e.touches[0]) showXH(e.touches[0].clientX);
-    };
-    $$(".ebadge", wrap).forEach(function(g){
-      g.addEventListener("click", function(ev){
-        ev.stopPropagation();
-        var isNext = g.getAttribute("data-etype")==="next";
-        var html;
-        if(isNext){ html = earnPopoverHTML(null, fund && fund.next_earnings, true); }
-        else{
-          var idx = +g.getAttribute("data-eidx");
-          var row2 = (fund && Array.isArray(fund.earnings)) ? fund.earnings[idx] : null;
-          html = earnPopoverHTML(row2, null, false);
-        }
-        var wr = wrap.getBoundingClientRect(), gr = g.getBoundingClientRect();
-        showEarnPopover(gr.left-wr.left, gr.top-wr.top+16, html);
-      });
-    });
-    $$(".catdmd", wrap).forEach(function(p){
-      p.addEventListener("click", function(ev){ ev.stopPropagation(); jumpToCatalyst(+p.getAttribute("data-catid")); });
-    });
   }
-}
-function closeDrawer(){
-  document.getElementById("drawer").classList.remove("open");
-  document.getElementById("modalback").classList.remove("open");
-  var pop = document.getElementById("earnpop");
-  if(pop) pop.style.display = "none";
 }
 
 /* =================== master render + live-poll refresh =================== */
@@ -3359,6 +3458,8 @@ function renderAll(data){
   renderNews();
   renderWL();
   renderPositions();
+  stageHeader();
+  renderStageTab();
   applyFocus();
   updatePricesTimestamp();
 }
@@ -3379,13 +3480,7 @@ function refreshLiveUI(){
   renderConv(data);
   renderSwing(data);
   $$(".xwrap").forEach(function(x){ if(x.id && scrolls[x.id]) x.scrollLeft = scrolls[x.id]; });
-  if(FOCUS){
-    // Skip the chart rebuild while an earnings popover is open — the rebuild
-    // wiped it mid-read every 30 seconds.
-    var pop = document.getElementById("earnpop");
-    if(!(pop && pop.style.display==="block")) redrawChart(FOCUS);
-    refreshDrawerLive(FOCUS);
-  }
+  stageLivePoke();
   applyFocus();
   updatePricesTimestamp();
 }
@@ -3491,6 +3586,8 @@ document.getElementById("theme").addEventListener("click", function(){
   r.dataset.theme = next;
   document.getElementById("theme").setAttribute("aria-pressed", next==="light");
   store("desk.theme", next);
+  stageTheme();
+  if(STAGE.sym) stageRender();
 });
 (function(){ var t=read("desk.theme"); if(t){ document.documentElement.dataset.theme=t; document.getElementById("theme").setAttribute("aria-pressed", t==="light"); } })();
 
@@ -3560,9 +3657,6 @@ document.getElementById("palopen").addEventListener("click", palOpen);
 (function(){ var k=document.getElementById("palkbd"); if(k && !/Mac|iPhone|iPad/.test(navigator.platform||"")) k.textContent="Ctrl K"; })();
 document.getElementById("pal").addEventListener("click", function(e){ if(e.target.id==="pal") palClose(); });
 document.getElementById("focclear").addEventListener("click", function(){ setFocus(null); });
-// Modal: clicking the dimmed backdrop closes it (Esc + the × already do, via
-// the existing keydown handler and #dclose above).
-document.getElementById("modalback").addEventListener("click", function(){ setFocus(null); });
 // Earnings popover: click anywhere outside it (or its own × ) hides it.
 document.addEventListener("click", function(e){
   var pop = document.getElementById("earnpop");
@@ -3598,6 +3692,9 @@ function start(){
   renderMarketState(null);
   lastDataFetchTs = Date.now();
   fetchData().then(function(){
+    // Stage first, poll in parallel: the chart must not wait on the scanner
+    // round-trip (header prices fill in when the poll lands ~a second later).
+    stageShow(read("desk.stage.sym") || "SPY");
     pollTvPrices();
     attemptMacroTiles();
     tryAutoUnlock();
@@ -3608,7 +3705,7 @@ if(document.readyState === "loading"){ document.addEventListener("DOMContentLoad
 else { start(); }
 
 // exposed for the verification harness only (no sensitive data)
-window.__theDeskDebug = { fetchData:fetchData, pollTvPrices:pollTvPrices, attemptMacroTiles:attemptMacroTiles, STATE:STATE, PG:PG };
+window.__theDeskDebug = { fetchData:fetchData, pollTvPrices:pollTvPrices, attemptMacroTiles:attemptMacroTiles, STATE:STATE, PG:PG, STAGE:STAGE, stageShow:stageShow };
 </script>
 </body>
 </html>

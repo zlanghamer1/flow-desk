@@ -1,10 +1,13 @@
 name: Deploy Pages
 
-# Publishes the static site (just index.html) to GitHub Pages at
+# Publishes the static site (index.html + vendor/) to GitHub Pages at
 # https://zlanghamer1.github.io/flow-desk/. The page itself fetches
 # data.json live from the `data` branch's raw content at runtime, so this
-# workflow only ever needs to ship index.html — nothing from fetcher/ or
-# .github/ should end up in the deployed site.
+# workflow only ever ships index.html and the vendored chart library —
+# nothing from fetcher/ or .github/ should end up in the deployed site.
+# vendor/ added 2026-08-19 (trading-platform redesign): it carries the
+# pinned TradingView Lightweight Charts build the page loads with a
+# relative <script src>, so the two must always publish together.
 #
 # HOW IT DEPLOYS (changed 2026-07-16 during first deploy): Pages runs in
 # branch mode from `gh-pages` — this job just copies index.html from main
@@ -21,6 +24,7 @@ on:
     branches: [main]
     paths:
       - index.html
+      - vendor/**
       - .github/workflows/pages.yml
   workflow_dispatch: {}
 
@@ -38,16 +42,16 @@ jobs:
       - name: Checkout main
         uses: actions/checkout@v5
 
-      - name: Sync index.html to gh-pages
+      - name: Sync index.html + vendor to gh-pages
         run: |
           set -euo pipefail
           git config user.name "flow-desk-bot"
           git config user.email "actions@users.noreply.github.com"
           git fetch origin gh-pages
           git checkout gh-pages
-          git checkout main -- index.html
+          git checkout main -- index.html vendor
           touch .nojekyll
-          git add index.html .nojekyll
+          git add index.html vendor .nojekyll
           if git diff --cached --quiet; then
             echo "Site unchanged — nothing to publish."
           else
