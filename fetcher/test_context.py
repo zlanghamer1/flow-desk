@@ -717,6 +717,7 @@ def test_hourly_gate_fresh_timestamp_skips_network_and_carries_cache_forward(tmp
         "context_fetched_at": "2026-08-15T13:30:00Z",   # 30 min ago -> fresh (<55min)
         "bars_built_date": "2026-08-15",                  # today -> bars also fresh
         "bars_sig": context.BARS_BUILD_SIG,               # AND matches -> no rebuild
+        "fund_sig": context.FUND_BUILD_SIG,               # fund shape current too
         "avg_move": {"MU": 4.2},
         "brief": {"date": "2026-08-15", "stale": False},
         "catalysts": [_econ_row("2026-08-16", "cached row", "LOW")],
@@ -863,6 +864,7 @@ def test_bars_gate_same_day_same_sig_is_cached_no_rebuild(tmp_path, monkeypatch)
         "context_fetched_at": "2026-08-15T13:50:00Z",   # fresh -> no context refetch either
         "bars_built_date": "2026-08-15",                  # today...
         "bars_sig": context.BARS_BUILD_SIG,               # ...AND matching signature -> cached
+        "fund_sig": context.FUND_BUILD_SIG,               # fund shape current too
         "avg_move": {"MU": 4.2},
         "brief": None, "catalysts": [], "news": None, "desk_private": None,
     }
@@ -1232,6 +1234,169 @@ def test_build_annual_series_caps_at_max_years():
     assert annual["periods"][-1] == "FY27"   # most recent complete year kept
 
 
+# ── quarterly net income + free cash flow (added 2026-08-19) ────────────────
+
+def test_fetch_sa_quarterly_carries_net_income_when_present():
+    financial_data = {
+        "datekey": ["TTM", "2026-05-28", "2026-02-26"],
+        "fiscalYear": ["2026", "2026", "2026"],
+        "fiscalQuarter": ["Q4", "Q3", "Q2"],
+        "revenue": [90274000000.0, 37378000000.0, 28100000000.0],
+        "epsdil": [44.17, 16.05, 12.01],
+        "netinccmn": [50469000000.0, 18574000000.0, 13900000000.0],
+    }
+    rows = context.fetch_sa_quarterly("MU", _get=lambda u, h: _sa_data_json({"financialData": financial_data}))
+    assert rows[0]["ni"] == pytest.approx(18574000000.0)   # TTM dropped, newest first
+    assert rows[1]["ni"] == pytest.approx(13900000000.0)
+
+
+def test_fetch_sa_quarterly_missing_net_income_array_degrades_to_none():
+    """`netinccmn` is optional — a payload without it (or with a shorter
+    array) yields per-row ni=None while revenue/eps parse normally, never a
+    failed page and never a 0."""
+    financial_data = {
+        "datekey": ["2026-05-28", "2026-02-26"],
+        "fiscalYear": ["2026", "2026"],
+        "fiscalQuarter": ["Q3", "Q2"],
+        "revenue": [37378000000.0, 28100000000.0],
+        "epsdil": [16.05, 12.01],
+    }
+    rows = context.fetch_sa_quarterly("MU", _get=lambda u, h: _sa_data_json({"financialData": financial_data}))
+    assert rows[0]["revenue"] == pytest.approx(37378000000.0)
+    assert rows[0]["ni"] is None and rows[1]["ni"] is None
+
+
+def test_fetch_sa_cashflow_q_maps_datekey_to_fcf_and_drops_ttm():
+    financial_data = {
+        "datekey": ["TTM", "2026-05-28", "2026-02-26"],
+        "fiscalYear": ["2026", "2026", "2026"],
+        "fiscalQuarter": ["Q4", "Q3", "Q2"],
+        "fcf": [26172000000.0, 17562000000.0, 5516000000.0],
+    }
+    def fake_get(url, headers):
+        assert url == "https://stockanalysis.com/stocks/mu/financials/cash-flow-statement/__data.json?p=quarterly"
+        return _sa_data_json({"financialData": financial_data})
+    out = context.fetch_sa_cashflow_q("MU", _get=fake_get)
+    assert out == {"2026-05-28": pytest.approx(17562000000.0),
+                   "2026-02-26": pytest.approx(5516000000.0)}   # TTM never a key
+
+
+def test_fetch_sa_cashflow_q_bad_shape_or_failure_is_none():
+    assert context.fetch_sa_cashflow_q("ZZZ", _get=lambda u, h: _sa_data_json({"financialData": None})) is None
+    assert context.fetch_sa_cashflow_q("ZZZ", _get=lambda u, h: _sa_data_json({})) is None
+    def fake_fail(u, h):
+        raise urllib.error.URLError("boom")
+    assert context.fetch_sa_cashflow_q("ZZZ", _get=fake_fail) is None
+
+
+def test_merge_fcf_joins_by_date_never_by_position():
+    """The two stockanalysis pages can cover different spans — the join is
+    by datekey. A quarter the cash-flow page doesn't carry reads None, and a
+    None/failed map leaves every row None."""
+    rows = [{"date": "2026-05-28"}, {"date": "2026-02-26"}, {"date": None}]
+    context._merge_fcf_into_rows(rows, {"2026-02-26": 5516000000.0, "2019-01-01": 1.0})
+    assert rows[0]["fcf"] is None                          # income row absent from CF page
+    assert rows[1]["fcf"] == pytest.approx(5516000000.0)   # joined by date, not position
+    assert rows[2]["fcf"] is None                          # unlabeled row can't join
+
+    rows2 = [{"date": "2026-05-28"}]
+    context._merge_fcf_into_rows(rows2, None)              # whole CF leg failed
+    assert rows2[0]["fcf"] is None
+
+
+def test_quarterly_and_annual_series_carry_ni_and_fcf():
+    rows = []
+    for q, rev, eps, ni, fcf in (("Q4", 4.0, 0.4, 2.0, 1.0), ("Q3", 3.0, 0.3, 1.5, None),
+                                 ("Q2", 2.0, 0.2, 1.0, 0.5), ("Q1", 1.0, 0.1, 0.5, 0.25)):
+        rows.append({"fiscal_year": "2026", "fiscal_quarter": q, "date": f"2026-{q}",
+                     "revenue": rev, "eps": eps, "ni": ni, "fcf": fcf})
+    series = context._build_quarterly_series(rows)
+    assert series["ni"] == [0.5, 1.0, 1.5, 2.0]            # oldest first, like revenue
+    assert series["fcf"] == [0.25, 0.5, None, 1.0]         # a missing quarter stays None
+
+    annual = context._build_annual_series(rows)
+    assert annual["ni"] == [pytest.approx(5.0)]            # all 4 quarters present -> summed
+    assert annual["fcf"] == [None]                         # one missing quarter -> no partial sum
+    assert annual["revenue"] == [pytest.approx(10.0)]      # unaffected by the fcf gap
+
+
+def test_build_fund_sidecar_fcf_leg_joins_and_fails_soft():
+    """End-to-end: income + cash-flow pages both live -> quarterly.fcf joined
+    by datekey; the fcf leg failing alone leaves revenue/eps/ni intact."""
+    income = {"financialData": {
+        "datekey": ["2026-05-28", "2026-02-26"],
+        "fiscalYear": ["2026", "2026"], "fiscalQuarter": ["Q3", "Q2"],
+        "revenue": [37378000000.0, 28100000000.0], "epsdil": [16.05, 12.01],
+        "netinccmn": [18574000000.0, 13900000000.0],
+    }}
+    cashflow = {"financialData": {
+        "datekey": ["2026-05-28"],   # shorter span than the income page
+        "fiscalYear": ["2026"], "fiscalQuarter": ["Q3"],
+        "fcf": [17562000000.0],
+    }}
+    def fake_get(url, headers):
+        if "statistics" in url:
+            return _sa_skip_data_json()
+        if "financials/income-statement" in url:
+            return _sa_data_json(income)
+        if "financials/cash-flow-statement" in url:
+            return _sa_data_json(cashflow)
+        raise AssertionError(url)
+    payload = context.build_fund_sidecar("MU", date(2026, 8, 19), None, None, _get=fake_get)
+    assert payload["quarterly"]["ni"] == [pytest.approx(13900000000.0), pytest.approx(18574000000.0)]
+    assert payload["quarterly"]["fcf"] == [None, pytest.approx(17562000000.0)]   # Q2 not on the CF page
+
+    def fake_get_cf_down(url, headers):
+        if "financials/cash-flow-statement" in url:
+            raise urllib.error.URLError("boom")
+        return fake_get(url, headers)
+    payload2 = context.build_fund_sidecar("MU", date(2026, 8, 19), None, None, _get=fake_get_cf_down)
+    assert payload2["quarterly"]["revenue"][-1] == pytest.approx(37378000000.0)   # income leg survives
+    assert payload2["quarterly"]["fcf"] == [None, None]                            # never 0, never guessed
+
+
+def test_fund_sig_mismatch_forces_same_day_rebuild(tmp_path, monkeypatch):
+    """The exact bug FUND_BUILD_SIG exists to prevent: bars are current for
+    today under the current BARS_BUILD_SIG, but the fund sidecar shape
+    changed in a same-day deploy — the stale fund signature alone must force
+    the shared rebuild (this same gate rebuilds bars too; that is idempotent)."""
+    monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / ".context_cache.json")
+    monkeypatch.setattr(context, "INTRA_SLEEP_SEC", 0)
+    monkeypatch.setattr(context, "FUND_SLEEP_SEC", 0)
+    now = datetime(2026, 8, 19, 14, 0, 0, tzinfo=timezone.utc)
+    cache = {
+        "context_fetched_at": "2026-08-19T13:50:00Z",   # context fresh -> no refetch
+        "bars_built_date": "2026-08-19",                  # bars current for today...
+        "bars_sig": context.BARS_BUILD_SIG,               # ...under the current sig
+        "fund_sig": "v1-pre-ni-fcf",                      # ...but the fund shape is stale
+        "avg_move": {}, "brief": None, "catalysts": [], "news": None, "desk_private": None,
+    }
+    context.save_context_cache(cache)
+
+    def fake_get(url, headers):
+        raise urllib.error.URLError("offline")   # every leg fails soft; the gate is what's under test
+    quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
+                     "market_cap": None, "beta": None, "avol": None, "rsi": None}}
+    fields, bars_payload, fund_payload, _intra = context.build_context(
+        quotes, ["MU"], date(2026, 8, 19), now, _get=fake_get)
+    assert fund_payload is not None                       # rebuild ran
+    assert "MU" in fund_payload
+    saved = json.loads((tmp_path / ".context_cache.json").read_text())
+    assert saved["fund_sig"] == context.FUND_BUILD_SIG    # sig recorded -> next cycle skips
+
+
+def test_facts_carry_sector_and_industry_strings():
+    quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
+                     "market_cap": None, "beta": None, "avol": None, "rsi": None,
+                     "sector": "Electronic Technology", "industry": "Semiconductors"},
+              "ZZZ": {"tv_symbol": "NYSE:ZZZ", "earnings_ts": None, "hi52": None, "lo52": None,
+                      "market_cap": None, "beta": None, "avol": None, "rsi": None}}
+    facts = context.fetch_earnings_days(quotes, date(2026, 8, 19))
+    assert facts["MU"]["sector"] == "Electronic Technology"
+    assert facts["MU"]["industry"] == "Semiconductors"
+    assert facts["ZZZ"]["sector"] is None and facts["ZZZ"]["industry"] is None
+
+
 def test_fetch_yahoo_crumb_tolerates_fc_yahoo_404_and_extracts_crumb():
     def fake_get(url, headers):
         if "fc.yahoo.com" in url:
@@ -1439,7 +1604,7 @@ def test_build_fund_sidecar_revenue_stays_null_when_no_quarterly_series_to_backf
         raise AssertionError(url)
     payload = context.build_fund_sidecar("AXTI", date(2026, 8, 15), "crumbtoken", None, _get=fake_get)
     assert payload["earnings"][0]["rev"] is None
-    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": []}
+    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []}
 
 
 def test_build_fund_sidecar_yahoo_next_earnings_session_falls_back_to_stockanalysis_text():
@@ -1475,7 +1640,7 @@ def test_build_fund_sidecar_yahoo_next_earnings_session_falls_back_to_stockanaly
     assert payload["sym"] == "MRVL" and payload["built"] == "2026-08-15"
     assert payload["short_pct_float"] == pytest.approx(4.103)
     assert payload["pe_forward"] == pytest.approx(48.83)
-    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": []}   # that leg failed, stays scaffolded
+    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []}   # that leg failed, stays scaffolded
     assert payload["next_earnings"] == {
         "date": "2026-08-27", "session": "AMC",   # from stockanalysis.com's text, not TV
         "eps_est": pytest.approx(2.01), "rev_est": pytest.approx(92100000000.0),
@@ -1505,7 +1670,7 @@ def test_build_fund_sidecar_yahoo_leg_skipped_entirely_when_crumb_is_none():
     assert payload["pe_forward"] == pytest.approx(10.0)
     assert payload["earnings"] == []
     assert payload["next_earnings"] == {"date": "2026-09-01", "session": "BMO", "eps_est": None, "rev_est": None}
-    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": []}
+    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []}
 
 
 def test_build_fund_universe_fetches_crumb_exactly_once_across_symbols():

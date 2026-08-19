@@ -445,6 +445,11 @@ TV_COLUMNS = [
     "debt_to_equity", "return_on_equity", "price_sales_ratio",
     "price_book_ratio", "enterprise_value_ebitda_ttm",
     "dividends_yield_current", "price_target_average", "recommendation_mark",
+    # Classification (added 2026-08-19, trading-platform redesign) — the only
+    # STRING columns on this quote. TradingView's own taxonomy, not GICS
+    # (MU: "Electronic Technology"/"Semiconductors"), verified live the same
+    # day. The page builds peer groups from these; facts passes them through.
+    "sector", "industry",
 ]
 # index positions into the "d" row, named for readability
 _COL = {name: i for i, name in enumerate(TV_COLUMNS)}
@@ -494,6 +499,10 @@ def _row_to_quote(sym_field: str, d: list) -> dict | None:
         v = d[i]
         return float(v) if isinstance(v, (int, float)) else None
 
+    def _txt(i):
+        v = d[i]
+        return v if isinstance(v, str) and v else None
+
     close = _num(_COL["close"])
     change = _num(_COL["change"])
     rvol = _num(_COL["relative_volume_10d_calc"])
@@ -542,6 +551,8 @@ def _row_to_quote(sym_field: str, d: list) -> dict | None:
         "yld": _num(_COL["dividends_yield_current"]),
         "target": _num(_COL["price_target_average"]),
         "rec_mark": _num(_COL["recommendation_mark"]),
+        "sector": _txt(_COL["sector"]),
+        "industry": _txt(_COL["industry"]),
     }
 
 

@@ -952,6 +952,11 @@ def fetch_earnings_days(tv_rows: dict[str, dict], session_date: date) -> dict[st
             "yld": q.get("yld"),
             "target": q.get("target"),
             "rec_mark": q.get("rec_mark"),
+            # Classification (added 2026-08-19) — TV's own taxonomy, strings
+            # or None, straight off the same scanner row. The page derives
+            # peer groups from `industry`; see DATA_CONTRACT.md.
+            "sector": q.get("sector"),
+            "industry": q.get("industry"),
         }
     return facts
 
@@ -1209,6 +1214,13 @@ BARS_BUILD_SIG = "v3-2y-vol-tape-splitfix"  # bumped whenever build_bars's OUTPU
                                 # below rewrites values, so it rides this gate
                                 # too and lands on the next cycle instead of
                                 # waiting for tomorrow's build.
+FUND_BUILD_SIG = "v2-ni-fcf"    # same idea for fund/{SYM}.json's OUTPUT SHAPE
+                                # (added 2026-08-19: quarterly/annual ni+fcf).
+                                # The sidecars share the bars rebuild gate, so
+                                # without their own signature a shape change
+                                # deployed mid-day would wait for midnight;
+                                # a mismatch forces the shared rebuild the
+                                # same way a BARS_BUILD_SIG bump does.
                                 # build_context's once-a-day gate keys off
                                 # BOTH bars_built_date AND this signature, so
                                 # a code deploy that changes the shape forces
@@ -1733,6 +1745,12 @@ def build_bars(universe: list[str], session_date: date,
 SA_BASE = "https://stockanalysis.com/stocks/{sym}"
 SA_STATISTICS_PATH = "/statistics/__data.json"
 SA_FINANCIALS_Q_PATH = "/financials/income-statement/__data.json?p=quarterly"
+# Cash-flow statement (added 2026-08-19, trading-platform redesign): the
+# fourth stockanalysis.com route, fetched once per symbol per day for
+# quarterly free cash flow (`financialData.fcf`). Verified live on MU the
+# same day; rows join to the income-statement rows by `datekey`, never by
+# array position — the two pages can cover different spans.
+SA_CASHFLOW_Q_PATH = "/financials/cash-flow-statement/__data.json?p=quarterly"
 
 YAHOO_FC_URL = "https://fc.yahoo.com"
 YAHOO_CRUMB_URL = "https://query1.finance.yahoo.com/v1/test/getcrumb"
@@ -1915,6 +1933,16 @@ def fetch_sa_quarterly(sym: str, _get: Optional[Callable] = None) -> Optional[li
     revs, epss = fd.get("revenue"), fd.get("epsdil")
     if not all(isinstance(x, list) for x in (datekeys, fys, fqs, revs, epss)):
         return None
+    # Net income to common (`netinccmn`) rides the SAME payload — optional
+    # (an index/fund page may omit it), so it degrades to per-row None
+    # rather than failing the whole parse like the required arrays above.
+    nis = fd.get("netinccmn")
+    if not isinstance(nis, list):
+        nis = []
+
+    def _fnum(v):
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
     n = min(len(datekeys), len(fys), len(fqs), len(revs), len(epss))
     rows = []
     for i in range(n):
@@ -1924,10 +1952,47 @@ def fetch_sa_quarterly(sym: str, _get: Optional[Callable] = None) -> Optional[li
             "date": datekeys[i] if isinstance(datekeys[i], str) else None,
             "fiscal_year": fys[i] if isinstance(fys[i], str) else None,
             "fiscal_quarter": fqs[i] if isinstance(fqs[i], str) else None,
-            "revenue": revs[i] if isinstance(revs[i], (int, float)) and not isinstance(revs[i], bool) else None,
-            "eps": epss[i] if isinstance(epss[i], (int, float)) and not isinstance(epss[i], bool) else None,
+            "revenue": _fnum(revs[i]),
+            "eps": _fnum(epss[i]),
+            "ni": _fnum(nis[i]) if i < len(nis) else None,
         })
     return rows or None
+
+
+def fetch_sa_cashflow_q(sym: str, _get: Optional[Callable] = None) -> Optional[dict]:
+    """stockanalysis.com's quarterly cash-flow-statement page -> {datekey:
+    free cash flow} for every completed quarter (any leading "TTM" column
+    dropped, same as the income statement). None if the page fetch failed
+    or the shape was unusable — the caller treats that as all-null fcf,
+    never as zeros.
+    """
+    root = _fetch_sa_page(sym, SA_CASHFLOW_Q_PATH, _get=_get)
+    if not isinstance(root, dict):
+        return None
+    fd = root.get("financialData")
+    if not isinstance(fd, dict):
+        return None
+    datekeys, fcfs = fd.get("datekey"), fd.get("fcf")
+    if not isinstance(datekeys, list) or not isinstance(fcfs, list):
+        return None
+    out: dict[str, float] = {}
+    for i in range(min(len(datekeys), len(fcfs))):
+        dk, v = datekeys[i], fcfs[i]
+        if dk == "TTM" or not isinstance(dk, str):
+            continue
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            out[dk] = v
+    return out or None
+
+
+def _merge_fcf_into_rows(rows: list[dict], fcf_by_date: Optional[dict]) -> None:
+    """Attach `fcf` to each quarterly row by its `date` (datekey) — in
+    place. A row whose date is missing from the cash-flow page (or a
+    None/failed page) reads fcf=None, never 0.
+    """
+    for r in rows:
+        dk = r.get("date")
+        r["fcf"] = fcf_by_date.get(dk) if isinstance(fcf_by_date, dict) and isinstance(dk, str) else None
 
 
 def _build_quarterly_series(rows: list[dict]) -> dict:
@@ -1936,14 +2001,16 @@ def _build_quarterly_series(rows: list[dict]) -> dict:
     convention as bars.json), capped at FUND_MAX_QUARTERLY quarters.
     """
     capped = list(reversed(rows[:FUND_MAX_QUARTERLY]))
-    periods, revenue, eps = [], [], []
+    periods, revenue, eps, ni, fcf = [], [], [], [], []
     for r in capped:
         fy, fq = r.get("fiscal_year"), r.get("fiscal_quarter")
         yy = fy[-2:] if isinstance(fy, str) and len(fy) >= 2 else None
         periods.append(f"{fq} {yy}" if fq and yy else None)
         revenue.append(r.get("revenue"))
         eps.append(r.get("eps"))
-    return {"periods": periods, "revenue": revenue, "eps": eps}
+        ni.append(r.get("ni"))
+        fcf.append(r.get("fcf"))
+    return {"periods": periods, "revenue": revenue, "eps": eps, "ni": ni, "fcf": fcf}
 
 
 def _build_annual_series(rows: list[dict]) -> dict:
@@ -1963,15 +2030,21 @@ def _build_annual_series(rows: list[dict]) -> dict:
             by_year.setdefault(fy, []).append(r)
     complete_years = sorted(y for y, qs in by_year.items() if len(qs) == 4)
     complete_years = complete_years[-FUND_MAX_ANNUAL:]
-    periods, revenue, eps = [], [], []
+    periods, revenue, eps, ni, fcf = [], [], [], [], []
+
+    def _sum4(qs, key, dp):
+        vals = [q[key] for q in qs
+                if isinstance(q.get(key), (int, float)) and not isinstance(q.get(key), bool)]
+        return round(sum(vals), dp) if len(vals) == 4 else None
+
     for y in complete_years:
         qs = by_year[y]
-        revs = [q["revenue"] for q in qs if isinstance(q.get("revenue"), (int, float))]
-        epss = [q["eps"] for q in qs if isinstance(q.get("eps"), (int, float))]
         periods.append(f"FY{y[-2:]}")
-        revenue.append(round(sum(revs), 2) if len(revs) == 4 else None)
-        eps.append(round(sum(epss), 5) if len(epss) == 4 else None)
-    return {"periods": periods, "revenue": revenue, "eps": eps}
+        revenue.append(_sum4(qs, "revenue", 2))
+        eps.append(_sum4(qs, "eps", 5))
+        ni.append(_sum4(qs, "ni", 2))
+        fcf.append(_sum4(qs, "fcf", 2))
+    return {"periods": periods, "revenue": revenue, "eps": eps, "ni": ni, "fcf": fcf}
 
 
 def _default_yahoo_get(url: str, headers: dict) -> bytes:
@@ -2201,8 +2274,8 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
         "built": session_date.isoformat(), "sym": sym,
         "short_pct_float": None, "pe_forward": None,
         "earnings": [], "next_earnings": None,
-        "quarterly": {"periods": [], "revenue": [], "eps": []},
-        "annual": {"periods": [], "revenue": [], "eps": []},
+        "quarterly": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []},
+        "annual": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []},
     }
 
     sa_stats = fetch_sa_statistics(sym, _get=_get)
@@ -2219,6 +2292,12 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
     time.sleep(FUND_SLEEP_SEC)
     quarterly_rows = fetch_sa_quarterly(sym, _get=_get)
     if quarterly_rows:
+        # Free cash flow (added 2026-08-19): its own page, its own fail-soft
+        # leg — a cash-flow failure leaves fcf all-None while revenue/eps/ni
+        # survive. Joined by datekey inside _merge_fcf_into_rows.
+        time.sleep(FUND_SLEEP_SEC)
+        fcf_by_date = fetch_sa_cashflow_q(sym, _get=_get)
+        _merge_fcf_into_rows(quarterly_rows, fcf_by_date)
         payload["quarterly"] = _build_quarterly_series(quarterly_rows)
         payload["annual"] = _build_annual_series(quarterly_rows)
 
@@ -2294,6 +2373,7 @@ def load_context_cache() -> dict:
         "context_fetched_at": raw.get("context_fetched_at") if isinstance(raw.get("context_fetched_at"), str) else None,
         "bars_built_date": raw.get("bars_built_date") if isinstance(raw.get("bars_built_date"), str) else None,
         "bars_sig": raw.get("bars_sig") if isinstance(raw.get("bars_sig"), str) else None,
+        "fund_sig": raw.get("fund_sig") if isinstance(raw.get("fund_sig"), str) else None,
         "avg_move": raw.get("avg_move") if isinstance(raw.get("avg_move"), dict) else {},
         "brief": raw.get("brief") if isinstance(raw.get("brief"), dict) else None,
         "catalysts": raw.get("catalysts") if isinstance(raw.get("catalysts"), list) else [],
@@ -2419,7 +2499,8 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
     bars_payload = None
     fund_payload = None
     if (cache.get("bars_built_date") != session_date.isoformat()
-            or cache.get("bars_sig") != BARS_BUILD_SIG):
+            or cache.get("bars_sig") != BARS_BUILD_SIG
+            or cache.get("fund_sig") != FUND_BUILD_SIG):
         # Tape symbols ride along on the same build (see TAPE_BARS). They are
         # appended, not merged into `pinned`, so nothing downstream of `pinned`
         # (facts, fund sidecars, the boards, the flow universe) sees them — an
@@ -2442,6 +2523,7 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         earn_ts_map = {t: (q.get("earnings_ts") if isinstance(q, dict) else None)
                        for t, q in quotes.items()}
         fund_payload = build_fund_universe(pinned, session_date, earn_ts_map=earn_ts_map, _get=_get)
+        cache["fund_sig"] = FUND_BUILD_SIG
 
     # ── intraday bars rebuild (own gate — see build_intraday_bars) ────────
     intraday_payload = None

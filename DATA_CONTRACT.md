@@ -321,7 +321,14 @@ values are `null` (never a string sentinel). All strings are already plain
 >   "ev_ebitda": 32.51,      // TV enterprise_value_ebitda_ttm
 >   "yld": 0.124,            // TV dividends_yield_current, percent (0.124 == 0.124%)
 >   "target": 314.29,        // TV price_target_average (analyst 12-mo price target, $)
->   "rec_mark": 1.115        // TV recommendation_mark, 1.0 (strong buy) .. 5.0 (sell)
+>   "rec_mark": 1.115,       // TV recommendation_mark, 1.0 (strong buy) .. 5.0 (sell)
+>   // ── Classification (added 2026-08-19, trading-platform redesign) — rides
+>   // the same scanner call. TradingView's OWN taxonomy, not GICS: MU reads
+>   // "Electronic Technology" / "Semiconductors", NKE reads "Consumer
+>   // Non-Durables" / "Apparel/Footwear". The page uses these to build peer
+>   // groups (same-industry names within the universe); null if TV omits it.
+>   "sector": "Electronic Technology",   // TV `sector` (string), null if absent
+>   "industry": "Semiconductors"         // TV `industry` (string), null if absent
 > }
 > ```
 >
@@ -545,12 +552,16 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
   "quarterly": {                     // up to 12 quarters, OLDEST FIRST
     "periods": ["Q2 24", "...", "Q1 27"],   // "Q{n} {2-digit fiscal year}"
     "revenue": [26044000000.0, "...", 81615000000.0],   // reported, not estimated
-    "eps": [0.2895, "...", 2.39]             // reported diluted EPS
+    "eps": [0.2895, "...", 2.39],            // reported diluted EPS
+    "ni": [14881000000.0, "...", 26422000000.0],   // reported net income ($, common) — added 2026-08-19
+    "fcf": [15052000000.0, "...", 17562000000.0]   // reported free cash flow ($) — added 2026-08-19
   },
   "annual": {                        // up to 6 years, OLDEST FIRST — DERIVED, see note
     "periods": ["FY23", "...", "FY26"],
     "revenue": [26974000000.0, "...", 215938000000.0],
-    "eps": [0.83, "...", 5.84]
+    "eps": [0.83, "...", 5.84],
+    "ni": [4368000000.0, "...", 97255000000.0],    // summed like revenue/eps — added 2026-08-19
+    "fcf": [3808000000.0, "...", 60853000000.0]    // summed like revenue/eps — added 2026-08-19
   }
 }
 ```
@@ -585,6 +596,20 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
   income-statement/?p=quarterly` page (`financialData.revenue` /
   `financialData.epsdil`), oldest first. The leading `"TTM"` column
   (trailing-twelve-months, not a completed quarter) is dropped.
+- `quarterly.ni` — reported net income to common (`financialData.netinccmn`),
+  from the SAME income-statement payload as revenue/eps — no extra request.
+  Added 2026-08-19 for the trading-platform redesign's financials panel.
+- `quarterly.fcf` — reported free cash flow (`financialData.fcf`) from a
+  FOURTH stockanalysis.com request per symbol:
+  `/stocks/{sym}/financials/cash-flow-statement/__data.json?p=quarterly`.
+  Rows are joined to the income-statement rows by `datekey` (exact date
+  string) — never by array position, the two pages can cover different
+  spans. A quarter present on the income page but missing from the
+  cash-flow page reads null, never 0. A total cash-flow-page failure
+  yields all-null `fcf` while revenue/eps/ni survive — per-leg fail-soft,
+  same as everything else here.
+- `annual.ni` / `annual.fcf` — summed like revenue/eps, only for fiscal
+  years where all 4 quarters carry the field; else null.
 - `annual` — **a DERIVED aggregate, not a separately-fetched or separately-
   reported figure.** Summed from the SAME quarterly rows above, only for
   fiscal years where all 4 quarters are present (a partial year yields no
@@ -604,14 +629,17 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
   `rev_est`/`rev_surprise_pct` null throughout — per-field fail-soft, same
   as every other part of this build. NEVER fabricated: a field either came
   from a live source or it is null.
-- **Runtime budget:** 3 stockanalysis.com requests/symbol (statistics +
-  quarterly financials) + 1 Yahoo quoteSummary request/symbol, at a 0.3s
-  sleep between every request. The Yahoo cookie+crumb handshake
-  (`fc.yahoo.com` then `query1.finance.yahoo.com/v1/test/getcrumb`) is a
-  ONE-TIME cost for the whole run, not per symbol. Measured live 2026-08-15
-  for 3 symbols: ~7s total including the crumb dance, extrapolating to
-  roughly 2-2.5 minutes for the full ~62-name tracked universe — inside the
-  daily gate's budget.
+- **Runtime budget:** 4 stockanalysis.com requests/symbol (statistics +
+  quarterly income statement + quarterly cash-flow statement — the third
+  SA request was added 2026-08-19 for `quarterly.fcf`) + 1 Yahoo
+  quoteSummary request/symbol, at a 0.3s sleep between every request. The
+  Yahoo cookie+crumb handshake (`fc.yahoo.com` then
+  `query1.finance.yahoo.com/v1/test/getcrumb`) is a ONE-TIME cost for the
+  whole run, not per symbol. Measured live 2026-08-15 for 3 symbols: ~7s
+  total including the crumb dance; the extra cash-flow request adds
+  roughly 0.7s/symbol (~45s over the full universe), keeping the whole
+  build around 3 minutes for the ~62-name tracked universe — still inside
+  the daily gate's budget.
 
 > **Note on `etf_flows`:** this is a once-per-session CONTEXT signal, not a
 > scoring input — it never touches the conviction/swing scores. Daily flow is
