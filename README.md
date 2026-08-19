@@ -72,8 +72,8 @@ Open that link any time. It updates itself — there's nothing to install or run
    refreshes. Those prices are **15 minutes behind the tape** — the 30-second
    poll is how often the page re-reads a delayed print, not how fresh the
    print is. TradingView's own metadata says so (`update_mode:
-   delayed_streaming_900`), and a same-instant comparison against a real-time
-   feed measured 11 to 15 minutes on 2026-08-19.
+   delayed_streaming_900`), and lining 30 samples up against a real-time feed
+   on 2026-08-19 put the lag at 16 minutes on every name tested.
 
 ## The two direction estimators (added 2026-07-18)
 

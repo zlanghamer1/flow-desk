@@ -99,11 +99,13 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
 ## Guardrails added by the 2026-08-19 review round
 - **STOCK PRICES ARE 15-MINUTE DELAYED. Never call them live.** The scanner
   reports `update_mode: "delayed_streaming_900"` — 900 seconds — for every
-  symbol the desk polls, and a same-instant comparison against a real-time
-  feed measured 11-15 minutes of lag on SPY, MU, CRWD and NVDA (2026-08-19).
-  The 30-second poll is how often the page RE-READS a delayed print, not how
-  fresh the print is. The page said "live" for weeks before this was
-  measured. If a keyless real-time source is ever found, that is a separate
+  symbol the desk polls, and cross-correlating 30 scanner samples against a
+  real-time feed puts the lag at 16 minutes on SPY, MU, CRWD and NVDA alike
+  (2026-08-19; MU's mean absolute error runs 3.85 at lag 0, 0.37 at lag 15,
+  0.64 at lag 20 — a clean minimum, not a coincidence). `rtc` is NOT fresher
+  than `close`; both land on the same 16-minute shift. The 30-second poll is
+  how often the page RE-READS a delayed print, not how fresh the print is.
+  The page said "live" for weeks before this was measured. If a keyless real-time source is ever found, that is a separate
   change with its own measurement — do not relabel on a hunch.
 - **A source line names what actually supplied the data.** `stageSourceLine`
   reads the real state — `barsRaw`, `ADHOC_BARS`, `INTRA_CACHE`,

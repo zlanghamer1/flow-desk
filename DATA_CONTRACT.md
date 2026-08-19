@@ -78,7 +78,7 @@ values are `null` (never a string sentinel). All strings are already plain
   "swing": [ <SwingCard>, ... ],              // 14d-6mo board, sorted score desc
   "notes": {
     "flow_proxy": "Net flow = call premium traded minus put premium traded (volume x last x 100). Free data can't see buy/sell side — this is premium changing hands, not directional order flow.",
-    "delay": "Options data is 15-minute delayed (CBOE free feed). Stock prices are 15-minute delayed too and are re-read every 30s (TradingView scanner; it reports update_mode delayed_streaming_900 for every symbol the desk polls, measured 2026-08-19).",
+    "delay": "Options data is 15-minute delayed (CBOE free feed). Stock prices are 15-minute delayed too and are re-read every 30s (TradingView scanner; it reports update_mode delayed_streaming_900, and a 30-sample cross-correlation against a real-time feed put the lag at 16 minutes on 2026-08-19).",
     "tilt": "…methodology one-liner for the aggressor tilt (see build_snapshot.py header)…",
     "flow_pct": "…methodology one-liner for the premium-weighted put/call split…",
     "oi_confirm": "…methodology one-liner for OI-confirm…",

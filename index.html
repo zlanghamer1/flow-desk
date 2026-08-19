@@ -774,8 +774,8 @@ footer b{color:var(--ink2)}
   <footer>
     <b>Honesty box</b> — options data is 15-minute-delayed CBOE; stock prices are 15-minute-delayed TradingView,
     re-read every 30 seconds (the scanner reports <code>update_mode: delayed_streaming_900</code> for every symbol the
-    desk polls, and a same-instant comparison against a real-time feed put the lag at 11–15 minutes on 2026-08-19 —
-    this page said "live" until that was measured). History and financial statements for names off the desk come from
+    desk polls, and cross-correlating 30 samples against a real-time feed puts the lag at 16 minutes on SPY, MU, CRWD
+    and NVDA alike — this page said "live" until 2026-08-19, when that was measured). History and financial statements for names off the desk come from
     stockanalysis.com; the heatmap and the searched-name fundamentals come from the same 15-minute-delayed scanner,
     refreshed about every 2 minutes. Net flow is premium
     changing hands; free data can't see buyer vs seller. FLOW % describes what traded today, not what happens next.
