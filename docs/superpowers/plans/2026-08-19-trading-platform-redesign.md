@@ -134,3 +134,77 @@ not.
   loop's first cycle of the day, daily bars reconstruct dates ending at the
   prior session, so the synthetic candle can label itself with yesterday's
   date until ~8:00 CT. Correct during market hours.
+
+
+---
+
+## Round 2 (same day) — Zach's punch list, two follow-ups, and the first review pass
+
+His list, verbatim, and what each became:
+
+- *"What is the purpose of the second search ticker up top? doesn't search all
+  stocks."* Both boxes now run the same live scanner search. The palette keeps
+  actions and shows desk names first, then anything else that matched.
+- *"scrolling over the price to the far right should expand/contract the
+  candles vertically."* Wheel over the price axis stretches the candles
+  (`STAGE.vZoom`, applied through the candle series'
+  `autoscaleInfoProvider`), a chip shows the factor, double-clicking the axis
+  resets it, and the wheel over the plot still zooms time.
+- *"If you click a trend, S/R button etc. it will reset the view."* Toggles
+  are wrapped in `stageKeepView`, which captures and restores the visible
+  logical range around the series rebuild.
+- *"financials vs peers should have better color coding … Color code
+  different companies that are being compared to."* Each company holds one
+  colour across every peer chart, from a palette validated with the dataviz
+  six-checks in both themes; a colour key sits above the charts; every bar is
+  also labeled with its ticker, so identity never rests on colour.
+- *"I see a button to add a stock … but not seeing a button to remove."* One
+  control in the chart header reads the rail's current state and both adds and
+  removes, including hiding a pinned name and restoring it.
+- *"Searching for TSLA has error 'no chart history available'."* Root cause:
+  `data.tradingview.com` enforces an exact-host `Origin` allowlist. Replaced
+  by stockanalysis.com's history API. See the guardrail in CLAUDE.md.
+- *"Many financials missing Q# dates and number references … Revenue text
+  overlapping."* New `axisChartSVG` kit: value gridlines on round numbers,
+  period labels thinned to a 34px minimum gap, latest values moved into the
+  legend (that is what was overlapping), tooltips on every mark.
+- *"CRWD PEG blank."* PEG falls back to P/E over TTM EPS growth; where trailing
+  earnings are negative it cannot exist and the cell says so. Multiples carry
+  peer-relative colouring plus the market rule of thumb in the tooltip.
+- *"analyst rating updates should be included in charts."* Yahoo's
+  `upgradeDowngradeHistory`, riding the sidecar's existing quoteSummary call.
+- *"No quarterly financials for TSLA."* Searched names now get financials from
+  the scanner's own quarterly history arrays, labeled by period-end month.
+- *"TSLA is not on either flow board."* The message now explains that the free
+  chain feed sends no CORS header, names what does work, and points at the
+  one-line universe change that would fix it.
+- *"if I click the E for upcoming pre-market, I can't have that box close."*
+  The × was painted under the chart canvas. It sits above it now; clicking
+  anywhere outside the card dismisses it; Escape closes it without clearing
+  the ticker focus.
+
+### The auto-TA rebuild
+
+A nine-section review scored auto-TA 52 with eleven verified defects. The
+biggest: the port enforced containment all the way to the last bar, so a line
+was deleted at the exact moment price broke it — NVDA's 6-month ceiling
+through four swing highs drew nothing. The fitter now matches
+`trendline_break_scan.py`: containment between the anchors, 3% slack after,
+the check stopping at the confirmed break, non-anchor touches only, spans
+scaled to the window, distance bounded by six average daily moves AND the
+window's own range, volatility-scaled S/R clustering, a pinned 0-100 RSI pane,
+EMA on whatever bars are showing, and a caption built from the toggles that
+are actually on. Measured after: 23 lines across 24 ticker/window cases, none
+more than 12% from price.
+
+### Rulings this round adds
+
+- **Never re-attempt the TradingView chart websocket from the browser.** It is
+  an Origin allowlist, not a bug, and a python probe cannot disprove it —
+  check which Origin the client actually sent.
+- **Chart overlays never join the price scale's autoscale.** Moving averages,
+  trend lines and projections all pass `autoscaleInfoProvider: () => null`,
+  and horizontal levels are bounded to near price, because a $563 average line
+  and a $220 level squashed a $937 stock's year into a third of the pane.
+- **Auto-TA draws only lines a trader would accept**, and says so when nothing
+  qualifies rather than drawing a confident diagonal.
