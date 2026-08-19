@@ -215,3 +215,73 @@ more than 12% from price.
   and a $220 level squashed a $937 stock's year into a third of the pane.
 - **Auto-TA draws only lines a trader would accept**, and says so when nothing
   qualifies rather than drawing a confident diagonal.
+
+---
+
+## Round 3 (same day) — the nine-section review, and what it found
+
+Zach's instruction was to run a scrutinizing reviewer over the whole site and
+keep working until every section scored 90. Nine independent Opus reviewers
+drove the real page in Chromium against live data. Round 1 scores:
+
+| Section | Score |
+|---|---|
+| Data honesty and failure modes | 40 |
+| vs Peers | 44 |
+| Inherited panels | 46 |
+| Auto-TA | 52 |
+| Financials | 52 |
+| Left rail and search | 54 |
+| Heatmap | 57 |
+| Cross-cutting quality | 62 |
+| Chart stage | (died mid-run) |
+
+Every finding across the eight scored sections is fixed, each verified by
+measurement in the same harness. The commits are one per section.
+
+### The one that mattered most
+
+**The page called its prices live, and they are 15 minutes old.** The honesty
+box, the stage footnote and DATA_CONTRACT.md all said "live TradingView". The
+scanner's own metadata says `update_mode: delayed_streaming_900`, and a
+same-instant comparison against a real-time feed put the lag at 11 to 15
+minutes on SPY, MU, CRWD and NVDA. Measured twice, once by the reviewer and
+once independently before changing anything.
+
+This is the second time in one day a claim on this page survived because
+nobody measured the thing itself — the first was the TradingView websocket
+Origin allowlist, where a python probe "proved" a handshake that the browser
+could never make. Both failures have the same shape: a plausible statement,
+a test that did not test it, and a document repeating the statement until it
+read as established. The lesson stands as a ruling in CLAUDE.md.
+
+### Themes across the other findings
+
+- **Physical breakage from the move into rails.** The sector table wanted
+  580px in a 372px column, so three columns were off-screen and the dollar
+  figures were cut mid-number. Sorting deleted the Safe havens table. Between
+  901 and 1240px the sticky watchlist painted over the entire right rail.
+- **Charts authored for the wrong width.** SVG text scales with the viewBox,
+  so a fixed font-size landed at 6px on the financials tab and 7px on the
+  peers tab. Every chart now picks its geometry from the width it will render
+  at, and the axis measures its own gutter.
+- **Comparisons that were not comparisons.** The peer sets carried the same
+  company twice (an ADR and its ordinary line), measured a $212B security
+  vendor against a $6B bitcoin miner, and drew a "peer median" that included
+  the focused company.
+- **Empty states that blamed the wrong thing.** A missing sidecar read as
+  "outside the desk universe". A failed intraday fetch read as a coverage
+  limit. A typo read as "a market reading, not a company". A vendor gap read
+  as "the vendor reports nothing" when the real answer was "this company is
+  loss-making".
+- **Accessibility the redesign never had.** The news ticker owned the first
+  40 tab stops, none of the nine section headers were keyboard operable, and
+  eleven light-theme text styles failed WCAG AA.
+
+### Rulings this round adds
+
+See CLAUDE.md, "Guardrails added by the 2026-08-19 review round" — the delay
+label, source lines built from real state, the price layer surviving a
+data.json outage, chart geometry following render width, one company per bar,
+the cap band on peers, medians excluding the subject, missing readings never
+rendering as zero, and unconditional age stamps.

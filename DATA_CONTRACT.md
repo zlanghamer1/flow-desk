@@ -570,7 +570,8 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
      "firm": "B of A Securities",
      "from": "Neutral", "to": "Buy", // grade strings as the source writes them; "from" is "" on some rows
      "pt": 300.0, "pt_prior": 250.0} // price targets, null when absent (the source writes 0.0 for absent)
-  ]
+  ],
+  "currency": "USD"                  // the currency the STATEMENTS are filed in — added 2026-08-19
 }
 ```
 
@@ -653,6 +654,14 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
   - Dated in **America/New_York**, because a row stamped after 8pm ET would
     land on the wrong trading day under UTC — the same off-by-one class as the
     snapshot session-date guard.
+- `currency` — the ISO code the company FILES in, from Yahoo quoteSummary's
+  `financialData.financialCurrency`, which also rides the existing
+  quoteSummary request. **Never assume USD.** A US-listed foreign company
+  reports in its home currency while its shares price in dollars: SK hynix
+  (SKHY) files in KRW and Taiwan Semi (TSM) in TWD. Before this field existed
+  the desk labeled 79 trillion won "reported dollars". `null` when the vendor
+  does not say, and the page then says it does not know rather than guessing.
+  Anything that is not a three-letter alphabetic code is dropped.
   - Capped at `RATINGS_MAX` (40) rows inside `RATINGS_MAX_AGE_DAYS` (~3 years,
     the deepest window any chart shows), deduped on (date, firm, direction).
     Full histories run to 878 rows / 168 KB for a name like MU; the cap is what

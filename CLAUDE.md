@@ -96,5 +96,42 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   Do not resurrect the panel without his explicit ask; the vault's
   trade-stops engine and the Morning Brief guard section are unaffected.
 
+## Guardrails added by the 2026-08-19 review round
+- **STOCK PRICES ARE 15-MINUTE DELAYED. Never call them live.** The scanner
+  reports `update_mode: "delayed_streaming_900"` — 900 seconds — for every
+  symbol the desk polls, and a same-instant comparison against a real-time
+  feed measured 11-15 minutes of lag on SPY, MU, CRWD and NVDA (2026-08-19).
+  The 30-second poll is how often the page RE-READS a delayed print, not how
+  fresh the print is. The page said "live" for weeks before this was
+  measured. If a keyless real-time source is ever found, that is a separate
+  change with its own measurement — do not relabel on a hunch.
+- **A source line names what actually supplied the data.** `stageSourceLine`
+  reads the real state — `barsRaw`, `ADHOC_BARS`, `INTRA_CACHE`,
+  `fund.source` — never "does an object exist". Branching on truthiness told
+  43 of 50 tracked names they were "outside the desk universe".
+- **The price layer must survive a data.json outage.** `refreshLiveUI` is two
+  halves: prices always render, boards need the snapshot. A frozen price next
+  to a ticking clock is the failure the "prices as of" stamp exists to catch.
+- **Chart geometry is authored for the width it renders at.** SVG text scales
+  with the viewBox, so a fixed font-size lands anywhere from 5px to 16px.
+  `renderGrowth` picks its viewBox from `window.innerWidth`, `axisChartSVG`
+  measures its own left gutter from the widest formatted tick, and a
+  width-class change re-renders the open tab.
+- **One company, one bar.** TradingView lists a foreign issuer's ordinary
+  line and its ADR as separate tickers with the same fundamentals. Peer sets
+  dedupe by `issuerKey(description)` and take primary US listings only.
+- **A peer must be comparable in size.** Peers rank by closeness in market
+  cap, preferring inside `PEER_CAP_BAND` (5x either way). When nothing is in
+  band the set still fills and the note names what sits outside it.
+- **The "peer median" excludes the focused company**, in the dashed line and
+  in the caption. Including it put the reference through the subject's own
+  bar.
+- **A missing reading is never an inflow, a zero, or a green pill.** Sector
+  rows with nothing published render a neutral dot, a dimmed row, and sort to
+  the bottom in either direction.
+- **Every board prints its own "as of" unconditionally.** The stale badge is
+  gated to 08:15-15:00 CT, so gating the stamp on it left the data undated
+  exactly when it was oldest.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
