@@ -337,6 +337,7 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
    $1w figure it reads from is two cells away. */
 .iodot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:0}
 .iodot.b{background:var(--up)} .iodot.s{background:var(--dn)}
+.iodot.n{background:transparent;border:1px solid var(--ink3);opacity:.5}
 /* The sector and havens tables live in a 372px rail. Fixed layout with an
    ellipsized first column keeps every column on screen: before this the table
    wanted 580px, so the flows and the IN/OUT column were simply off the right
@@ -649,7 +650,7 @@ footer b{color:var(--ink2)}
       <section id="s-stage">
         <div class="viewseg"><div class="seg" role="group" aria-label="Stage view">
           <button id="view-chart" aria-pressed="true">CHART</button>
-          <button id="view-heat" aria-pressed="false" data-tiphold="0" data-tip="Finviz-style sector map: tile size = market cap, color = the move over the selected period. Same live TradingView scanner request the watchlist prices come from, refreshed every ~2 minutes while the map is open. Click a tile to chart it.">HEATMAP</button>
+          <button id="view-heat" aria-pressed="false" data-tiphold="0" data-tip="Finviz-style sector map: tile size = market cap, color = the move over the selected period. The same TradingView scanner request the watchlist prices come from — 15-minute delayed, refreshed every ~2 minutes while the map is open. Click a tile to chart it.">HEATMAP</button>
         </div></div>
         <div class="stagehead" id="stagehead"></div>
         <div class="stagebar" id="stagebar"></div>
@@ -723,11 +724,17 @@ footer b{color:var(--ink2)}
        it rendered mid-page on phones — after the ETF card and BEFORE
        catalysts/news — and read as the end of the page. -->
   <footer>
-    <b>Honesty box</b> — options data is 15-minute-delayed CBOE; prices are live TradingView. Net flow is premium
+    <b>Honesty box</b> — options data is 15-minute-delayed CBOE; stock prices are 15-minute-delayed TradingView,
+    re-read every 30 seconds (the scanner reports <code>update_mode: delayed_streaming_900</code> for every symbol the
+    desk polls, and a same-instant comparison against a real-time feed put the lag at 11–15 minutes on 2026-08-19 —
+    this page said "live" until that was measured). History and financial statements for names off the desk come from
+    stockanalysis.com; the heatmap and the searched-name fundamentals come from the same 15-minute-delayed scanner,
+    refreshed about every 2 minutes. Net flow is premium
     changing hands; free data can't see buyer vs seller. FLOW % describes what traded today, not what happens next.
     Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
     Nothing here is financial advice.<br>
-    Freshness: prices 30s · flow boards ~7 min (8:00–15:20 CT) · brief daily · catalysts hourly · news ticker hourly with the loop.<br>
+    Freshness: prices re-read every 30s (each read is 15 minutes behind the tape) · heatmap ~2 min, same delay · flow boards ~7 min (8:00–15:20 CT) ·
+    brief daily · catalysts hourly · news ticker hourly with the loop.<br>
     Charts render with <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a>,
     © TradingView, Inc., Apache-2.0. Auto trend lines and levels are drawn from this page's own pivot math — display only, never a signal.
   </footer>
@@ -868,8 +875,8 @@ var MACRO_TAPE = [
 /* =================== ad-hoc symbols: custom watchlist + hidden pinned names ===================
    The universe stays server-curated (boards, bars.json, facts, sidecars all
    follow build_snapshot.PINNED). What this layer adds is PAGE-LOCAL: names
-   Zach searches and adds get live quotes, a full chart (fetched straight from
-   TradingView's chart websocket in the browser), and a scanner-snapshot
+   Zach searches and adds get 15-minute-delayed quotes, a full daily chart
+   (fetched from stockanalysis.com in the browser), and a scanner-snapshot
    fundamentals card — but never options boards (CBOE has no CORS; the loop
    owns chains) and never the daily financial sidecar. Stored in
    localStorage, so the list is PER BROWSER — the phone and the PC each keep
@@ -1017,7 +1024,7 @@ var TIPS = {
   stale:"This section is older than expected for its usual refresh cadence — showing the last good read.",
   ta_trend:"Auto trend lines, fit on the selected window: swing highs and lows (4 bars each side), then the best line through two or more pivots that the price respected — touches within 2% count, pokes beyond 1.2% kill the fit. Same tuned geometry as the vault's trendline scanner. Red = resistance through highs, green = support through lows; the dashed part is the line projected forward. Display only — never a signal, never in any score.",
   ta_sr:"Horizontal support/resistance: swing-point prices clustered within 2%; a level needs 2+ touches, strongest three drawn. A level that held as a floor often matters again as a ceiling, so highs and lows cluster together. Display only.",
-  ta_rsi:"RSI(14), Wilder smoothing, in its own pane, on a fixed 0-100 scale. 70+ = hot, 30 or under = washed out (dotted guides). It is computed from the bars on screen INCLUDING today's live price, so it can differ by a point or two from the RSI in the fundamentals grid, which is the vendor's 15-minute-delayed figure.",
+  ta_rsi:"RSI(14), Wilder smoothing, in its own pane, on a fixed 0-100 scale. 70+ = hot, 30 or under = washed out (dotted guides). It is computed from the bars on screen including today's partial candle, so it can differ by a point or two from the RSI in the fundamentals grid — both readings come off the same 15-minute-delayed feed, they just cover different bars.",
   ta_ema:"200-session exponential moving average (dashed amber) — weights recent bars more than the simple 200-day the chart already draws. Daily view only.",
 };
 
@@ -1361,6 +1368,16 @@ function prettyStamp(label){
 function staleBadgeHTML(dateLabel){
   return ' <span class="bc stale" data-tip="'+esc(TIPS.stale)+'">as of '+esc(prettyStamp(dateLabel)||"—")+'</span>';
 }
+/* Every board carries its own age, always. The stale badge is gated to
+   08:15-15:00 CT, so outside the session — evenings and weekends, when the
+   data is oldest — the swing board, the big-orders board, catalysts and
+   headlines showed no date anywhere, and a news row's "8:24 AM" read as this
+   morning. Amber styling still means stale; the stamp itself is unconditional. */
+function ageStampHTML(dateLabel, stale){
+  if(stale) return staleBadgeHTML(dateLabel);
+  var p = prettyStamp(dateLabel);
+  return p ? (' <span class="bc" data-tip="When this panel\u2019s data was published. It refreshes with the loop; outside 8:00-15:20 CT the last publish stands.">as of '+esc(p)+'</span>') : '';
+}
 
 /* =================== data fetch =================== */
 function cacheBust(url){ return url + (url.indexOf("?")===-1?"?":"&") + "t=" + Date.now(); }
@@ -1378,7 +1395,7 @@ function renderDataBanner(){
     ? ("Can’t reach data.json — showing the last good read"
        + (FETCH_STATE.lastOkTs ? (" from "+ctTimeShort(new Date(FETCH_STATE.lastOkTs).toISOString())+" CT") : "")
        + ". Retrying with backoff; live prices keep updating separately.")
-    : "Can’t load data.json — nothing to show yet. Retrying with backoff (GitHub or the network may be down; the live price strip still works).";
+    : "Can’t load data.json — the flow boards, the brief and the catalysts have nothing to show yet. Retrying with backoff (GitHub or the network may be down). The price strip, the watchlist and the chart keep updating from the 30-second TradingView poll.";
 }
 function fetchData(){
   return fetch(cacheBust(DATA_URL), {cache:"no-store"})
@@ -1407,7 +1424,10 @@ function fetchData(){
       FETCH_STATE.backoffUntil = Date.now() + Math.min(5*60e3, 30e3 * Math.pow(2, FETCH_STATE.failures-1));
       renderDataBanner();
       if(!STATE.data){
-        ["conv","swing","orders","sector","cats","news"].forEach(function(id){
+        // briefbody and etf were missing from this list, so those two cards
+        // rendered a header and nothing else while every neighbour explained
+        // itself.
+        ["conv","swing","orders","sector","cats","news","briefbody","etf"].forEach(function(id){
           var el = document.getElementById(id);
           if(el) el.innerHTML = '<div class="boardmsg">data.json unreachable — retrying automatically.</div>';
         });
@@ -1432,12 +1452,17 @@ function barsRaw(sym){ return (BARS_CACHE && BARS_CACHE.bars && BARS_CACHE.bars[
    i60:{...}} — t epoch seconds. Lazy-fetched on the first intraday tab click;
    HTTP-cache validated the same way bars.json is. */
 var INTRA_CACHE = null;
+// A failed fetch cached {} and became indistinguishable from "this symbol is
+// not covered", so a network error was reported to the reader as a coverage
+// limit — naming the tracked watchlist as the reason a tracked name had no
+// intraday bars.
+var INTRA_FAILED = false;
 function ensureIntra(){
   if(INTRA_CACHE) return Promise.resolve(INTRA_CACHE);
   return fetch(INTRA_URL)
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
-    .then(function(json){ INTRA_CACHE = (json && typeof json==="object") ? json : {}; return INTRA_CACHE; })
-    .catch(function(){ INTRA_CACHE = {}; return INTRA_CACHE; });
+    .then(function(json){ INTRA_CACHE = (json && typeof json==="object") ? json : {}; INTRA_FAILED = false; return INTRA_CACHE; })
+    .catch(function(){ INTRA_CACHE = {}; INTRA_FAILED = true; return INTRA_CACHE; });
 }
 // bars.json's split_fixed map (2026-08-18): {sym: factor} for any ticker whose
 // pre-split history the fetcher had to rescale because Yahoo served it on the
@@ -1540,13 +1565,24 @@ function ensureFund(sym){
   // Same reasoning as ensureBars: a once-a-day sidecar gets normal HTTP caching.
   return fetch(fundUrl(sym))
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
-    .then(function(json){ FUND_CACHE[sym] = normalizeFund(json); return FUND_CACHE[sym]; })
+    .then(function(json){
+      // A 200 carrying something that is not a sidecar object is a miss, not
+      // a sidecar. (A stale local checkout once held the literal text
+      // "404: Not Found" in fund/SPY.json.)
+      if(!json || typeof json!=="object" || Array.isArray(json)) throw new Error("not a sidecar");
+      FUND_CACHE[sym] = normalizeFund(json); return FUND_CACHE[sym];
+    })
     .catch(function(){
       // No sidecar for this name (searched, off the desk universe). Build the
       // financials from the scanner's own quarterly history instead of
-      // telling the user there are none.
-      return adhocEnsureFundamentals(sym).then(function(f){
-        FUND_CACHE[sym] = f; return f;
+      // telling the user there are none. Resolve the exchange prefix FIRST:
+      // without it the scanner call could not run, null was cached forever,
+      // and the tab reported "no fundamentals" for a name that has them.
+      return adhocEnsureFacts(sym).then(function(){
+        return adhocEnsureFundamentals(sym).then(function(f){
+          if(f || symbolForTicker(sym)) FUND_CACHE[sym] = f;   // a resolvable name with no statements is a real answer
+          return f;
+        });
       });
     });
 }
@@ -2309,7 +2345,17 @@ function table(el, cls, cols, rows, rowHTML, defaultKey, foot){
   // A remembered key may no longer exist after a column change — fall back.
   if(!cols.some(function(c){ return c.key===st.key; })){ st.key = defaultKey; st.dir = -1; }
   function draw(){
-    var sorted = rows.slice().sort(function(a,b){ var va=a[st.key], vb=b[st.key]; return (va>vb?1:va<vb?-1:0)*st.dir; });
+    // Unknown values sort to the BOTTOM in either direction. A null used to
+    // compare as less-than-everything, so sectors with no readings published
+    // took the top three rows of the "1w vs SPY" board.
+    var sorted = rows.slice().sort(function(a,b){
+      var va=a[st.key], vb=b[st.key];
+      var na = (va===null || va===undefined || va===""), nb = (vb===null || vb===undefined || vb==="");
+      if(na && nb) return 0;
+      if(na) return 1;
+      if(nb) return -1;
+      return (va>vb?1:va<vb?-1:0)*st.dir;
+    });
     el.innerHTML = '<table class="tn '+cls+'"><thead><tr>'+cols.map(function(c){
       var lab = (c.tip?('<span data-tip="'+esc(c.tip)+'">'+c.l+'</span>'):c.l) + (c.key===st.key?('<span class="ar">'+(st.dir<0?"▼":"▲")+'</span>'):"");
       return '<th '+(c.key?('class="sort" data-k="'+c.key+'"'):"")+'>'+lab+'</th>';
@@ -2362,7 +2408,7 @@ function renderBrief(data){
 
   var stale = isStaleBrief(data);
   var bdate = brief.date || data.session_date;
-  document.getElementById("briefstat").innerHTML = (bdate?esc(bdate):"") + (stale?staleBadgeHTML(bdate):"");
+  document.getElementById("briefstat").innerHTML = ageStampHTML(bdate, stale) || (bdate?esc(bdate):"");
 
   // The date lives in the section header, which is also where the stale badge
   // goes. Repeating it 200px lower read as two different stamps.
@@ -2442,13 +2488,17 @@ function fedOddsHTML(f){
   h.push('<div class="fedhead"><b>'+hike.toFixed(0)+'%</b>'
     +'<span class="lbl" data-tip="The market-priced chance the Fed RAISES rates at this meeting. Any increase counts, 25bp or more. A betting market, not a forecast, and it never moves the verdict score.">chance of a Fed RATE INCREASE</span>'
     +(when?'<span class="when">'+esc(when)+'</span>':"")+'</div>');
-  // Stacked outcome bar — the three legs sum to 100%.
-  var wh=Math.max(0,hike), wo=Math.max(0,hold==null?0:hold), wc=Math.max(0,cut==null?0:cut);
-  var tot=wh+wo+wc; if(tot<=0) tot=100;
-  h.push('<div class="fedbar">'
-    +'<i class="hike" style="width:'+(wh/tot*100).toFixed(1)+'%"></i>'
-    +'<i class="hold" style="width:'+(wo/tot*100).toFixed(1)+'%"></i>'
-    +'<i class="cut" style="width:'+(wc/tot*100).toFixed(1)+'%"></i></div>');
+  // Stacked outcome bar — only when all three legs are present. With hold and
+  // cut missing, normalizing by the sum of what IS present painted the bar
+  // solid red, i.e. a 100% hike, next to the 27% printed above it.
+  if(hold!=null && cut!=null){
+    var wh=Math.max(0,hike), wo=Math.max(0,hold), wc=Math.max(0,cut);
+    var tot=wh+wo+wc; if(tot<=0) tot=100;
+    h.push('<div class="fedbar">'
+      +'<i class="hike" style="width:'+(wh/tot*100).toFixed(1)+'%"></i>'
+      +'<i class="hold" style="width:'+(wo/tot*100).toFixed(1)+'%"></i>'
+      +'<i class="cut" style="width:'+(wc/tot*100).toFixed(1)+'%"></i></div>');
+  }
   var leg=['<span><i class="hike" style="background:var(--dn)"></i>hike <em>'+hike.toFixed(0)+'%</em></span>'];
   if(hold!=null) leg.push('<span><i style="background:var(--edge)"></i>no change <em>'+hold.toFixed(0)+'%</em></span>');
   if(cut!=null) leg.push('<span><i style="background:var(--up)"></i>cut <em>'+cut.toFixed(0)+'%</em></span>');
@@ -2511,16 +2561,23 @@ function renderSectorSection(data){
          sector took in dollars while lagging SPY — Materials +$190M tagged OUT
          the same morning the semis banner named it the biggest taker. Price
          rel is the fallback only when the flow reading is missing. */
+      // A row with nothing reported used to be coerced to rel 0 and painted a
+      // green IN dot, then sorted to the TOP of the board. No reading is not
+      // an inflow.
       var f1w = num(r.flow_1w);
-      var mtag = f1w!=null ? (f1w>=0?"IN":"OUT") : (r.tag||((rel>=0)?"IN":"OUT"));
-      var wpx = Math.round(Math.abs(rel)/mx*22);   // half of .rr .dvg's 44px
+      var known = (f1w!=null) || (num(r.rel)!=null) || !!r.tag;
+      var mtag = f1w!=null ? (f1w>=0?"IN":"OUT") : (r.tag || (num(r.rel)!=null ? (num(r.rel)>=0?"IN":"OUT") : null));
+      var wpx = num(r.rel)!=null ? Math.round(Math.abs(rel)/mx*22) : 0;   // half of .rr .dvg's 44px
       var dim = Math.abs(rel)/mx<0.55 ? "opacity:.4" : "";
       var side = rel>=0 ? ("left:50%;width:"+wpx+"px;background:var(--up)") : ("left:calc(50% - "+wpx+"px);width:"+wpx+"px;background:var(--dn)");
-      var mtip = (mtag==="IN"?"Money went IN":"Money went OUT")+" this week — the sign of the $1w flow beside it."
+      var mtip = (mtag ? ((mtag==="IN"?"Money went IN":"Money went OUT")+" this week — the sign of the $1w flow beside it.") : "")
         + (r.flow_1m!=null ? (" One month: "+fmB(r.flow_1m)+".") : "");
-      return '<tr class="rw" data-sym="'+esc(r.ticker||"")+'"><td><span class="iodot '+(mtag==="IN"?"b":"s")+'" data-tip="'+esc(mtip)+'"></span>'
+      return '<tr class="rw'+(known?'':' dim')+'" data-sym="'+esc(r.ticker||"")+'"><td>'
+        +(mtag ? ('<span class="iodot '+(mtag==="IN"?"b":"s")+'" data-tip="'+esc(mtip)+'"></span>')
+               : '<span class="iodot n" data-tip="No flow or relative-strength reading published for this sector this cycle."></span>')
         +'<span class="sy2">'+esc(r.ticker||"?")+'</span><span class="nm">'+esc(r.name||"")+'</span></td>'
-        +'<td><span class="dvg"><em></em><i style="'+side+';'+dim+'"></i></span> <span class="'+sign(r.rel)+'">'+fm1(r.rel)+'</span></td>'
+        +'<td>'+(num(r.rel)!=null ? ('<span class="dvg"><em></em><i style="'+side+';'+dim+'"></i></span> ') : '')
+        +'<span class="'+sign(r.rel)+'">'+fm1(r.rel)+'</span></td>'
         +'<td class="'+sign(r.m)+'">'+fm1(r.m)+'</td>'
         +'<td class="'+sign(r.flow_1w)+'">'+fmB(r.flow_1w)+'</td></tr>';
     }, "rel");
@@ -2637,11 +2694,9 @@ function renderConv(data){
   var stale = isStaleFlow(data);
   document.getElementById("convstat").innerHTML = '<span class="u">'+bulls+' bull</span> · <span class="d">'+bears+' bear</span>'
     + (firing? (' · <span style="color:var(--hi)">'+firing+' firing</span>') : '')
-    + ' · CBOE 15-min delayed'
-    // The stale badge carries the same stamp, so printing both read as two
-    // different times.
-    + (stale ? staleBadgeHTML(data.generated_at_ct)
-             : (data && data.generated_at_ct ? (' '+esc(data.generated_at_ct)) : ''));
+    // One stamp, always present. Printing generated_at_ct AND the badge read
+    // as two different times.
+    + ' · CBOE 15-min delayed' + ageStampHTML(data && data.generated_at_ct, stale);
   var el = document.getElementById("conv");
   if(arr.length===0){ el.innerHTML = '<div class="boardmsg">No conviction setups on the board right now.</div>'; return; }
   var cut = boardCutApply(arr, "conv");
@@ -2710,7 +2765,7 @@ function renderConv(data){
 function renderSwing(data){
   var arr = (data && Array.isArray(data.swing)) ? data.swing : [];
   var stale = isStaleFlow(data);
-  document.getElementById("swingstat").innerHTML = "persistence-weighted" + (stale? staleBadgeHTML(data.generated_at_ct) : '');
+  document.getElementById("swingstat").innerHTML = "persistence-weighted" + ageStampHTML(data.generated_at_ct, stale);
   var el = document.getElementById("swing");
   if(arr.length===0){ el.innerHTML = '<div class="boardmsg">No swing setups on the board right now.</div>'; return; }
   var cut = boardCutApply(arr, "swing");
@@ -2765,7 +2820,7 @@ function renderOrders(data){
   var hasKey = data && Array.isArray(data.big_orders);
   var rows = hasKey ? data.big_orders : [];
   var stale = isStaleFlow(data);
-  document.getElementById("ordersstat").innerHTML = "day totals per contract — not single orders" + (stale? staleBadgeHTML(data.generated_at_ct) : '');
+  document.getElementById("ordersstat").innerHTML = "day totals per contract — not single orders" + ageStampHTML(data.generated_at_ct, stale);
   var el = document.getElementById("orders");
   if(rows.length===0){
     el.innerHTML = '<div class="boardmsg">'+(hasKey
@@ -3021,7 +3076,7 @@ function renderCats(){
   var data = STATE.data;
   var arr = (data && Array.isArray(data.catalysts)) ? data.catalysts : [];
   var stale = isStaleContext(data);
-  document.getElementById("catstat").innerHTML = "countdowns live" + (stale? staleBadgeHTML(data.context_updated_at) : '');
+  document.getElementById("catstat").innerHTML = "countdowns live" + ageStampHTML(data.context_updated_at, stale);
   if(arr.length===0){ document.getElementById("s-cat").hidden = true; return; }
   document.getElementById("s-cat").hidden = false;
   var now = new Date();
@@ -3114,7 +3169,7 @@ function renderNews(){
   var newsObj = data && data.news;
   var items = dedupeNews((newsObj && Array.isArray(newsObj.items)) ? newsObj.items : []);
   var stale = isStaleContext(data);
-  document.getElementById("newsstat").innerHTML = "TradingView news · hourly" + (stale? staleBadgeHTML(data.context_updated_at) : '');
+  document.getElementById("newsstat").innerHTML = "TradingView news · hourly" + ageStampHTML(data.context_updated_at, stale);
   if(!newsObj || items.length===0){ document.getElementById("s-news").hidden = true; return; }
   document.getElementById("s-news").hidden = false;
   var list = items;
@@ -3476,6 +3531,17 @@ function stageTheme(){
   STAGE.s.ma50.applyOptions({ color:cssVar("--acc") });
   STAGE.s.ma200.applyOptions({ color:cssVar("--hi") });
 }
+/* Today's CT calendar date as a midnight Date, so a synthetic candle lands on
+   the right trading day west or east of Chicago. */
+function ctTodayDate(){
+  try{
+    var parts = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Chicago",
+      year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+    var p = parts.split("-");
+    if(p.length!==3) return null;
+    return new Date(+p[0], +p[1]-1, +p[2]);
+  }catch(e){ return null; }
+}
 /* ---- stage data builders ---- */
 // Daily rows for the stage: the FULL bars.json history (no window slicing —
 // the window buttons set the visible range instead, so zooming out reveals
@@ -3498,11 +3564,28 @@ function stageDailyData(sym){
     var endDateStr = (STATE.data && STATE.data.session_date) || (BARS_CACHE && BARS_CACHE.built) || null;
     dates = weekdayDatesEndingAt(rows.length, endDateStr);
   } else if(adhoc && adhoc.rows.length >= 2){
-    // Searched/custom name: bars came off the TV websocket with REAL per-bar
-    // timestamps — no weekday reconstruction, and the current session is
-    // already the last bar (15-min delayed), so no synthetic candle either.
+    // Searched/custom name: stockanalysis.com returns REAL per-bar dates, so
+    // no weekday reconstruction. It also omits the partial session, so the
+    // chart used to stop at the prior close while the header showed today's
+    // move — with the footnote calling the data live. Append the same
+    // synthetic candle the pinned path builds.
+    // (The old comment here credited TradingView's chart websocket, which
+    // this path has not used since it was replaced the same day.)
     rows = adhoc.rows.slice();
     dates = adhoc.dates.slice();
+    var aliv = liveBySym(sym);
+    if(aliv && aliv.px!=null && dates.length){
+      var lastD = dates[dates.length-1];
+      var todayCT = ctTodayDate();
+      if(todayCT && lastD && todayCT.getTime() > lastD.getTime()){
+        var pc = num(rows[rows.length-1][3]);
+        if(pc!=null){
+          rows = rows.concat([[pc, Math.max(pc, aliv.px), Math.min(pc, aliv.px), aliv.px]]);
+          dates = dates.concat([todayCT]);
+          synthetic = true;
+        }
+      }
+    }
   } else {
     return null;
   }
@@ -3572,9 +3655,12 @@ function stageRender(){
     // Not in bars.json — a searched/custom name. Fetch history straight from
     // TradingView's chart websocket (one shot, fail-soft).
     if(intraView){
-      stageSetEmpty("15-minute, hourly and 4-hour bars come from the desk's own intraday file, which covers the tracked "
-        + "watchlist only — no free source publishes intraday history a browser is allowed to read. "
-        + sym + " charts fine on the daily and weekly views; click 1D or 1W.");
+      stageSetEmpty(INTRA_FAILED
+        ? ("The intraday file didn't load this session, so 15-minute, hourly and 4-hour views are empty for every name. "
+           + "It retries on the next refresh. " + sym + " charts fine on the daily and weekly views; click 1D or 1W.")
+        : ("15-minute, hourly and 4-hour bars come from the desk's own intraday file, which covers the tracked "
+           + "watchlist only — no free source publishes intraday history a browser is allowed to read. "
+           + sym + " charts fine on the daily and weekly views; click 1D or 1W."));
       return;
     }
     var already = ADHOC_BARS[sym] && ADHOC_BARS[sym].D;
@@ -3651,6 +3737,10 @@ function stageSetEmpty(msg){
     if(STAGE.markersApi) STAGE.markersApi.setMarkers([]);
   }
   STAGE.rows=[]; STAGE.dates=[]; STAGE.times=[];
+  // The auto-TA caption was left standing, so an empty NKE chart carried
+  // SPY's resistance and support levels under a header showing NKE's price.
+  var st = document.getElementById("staget");
+  if(st) st.innerHTML = "";
   stageBar(); stageLegend(); stageSetOhlc(null);
 }
 function stageApplyWindow(total){
@@ -4062,7 +4152,7 @@ function renderFundamentals(sym, fund){
     fcell("Beta", numStr(f.beta)),
     fcell("Avg volume", f.avol!=null?fmtShareCount(f.avol):"—"),
     fcell("RVOL today", q.rvol!=null?q.rvol.toFixed(1)+"×":"—"),
-    fcell("RSI (14)", f.rsi!=null?('<span data-tip="'+esc("TradingView's RSI(14) for this name, on 15-minute-delayed data. The RSI pane under the chart recomputes it from the bars on screen including today's live price, so the two can differ by a point or two.")+'">'+Math.round(f.rsi)+'</span>'):"—", fundCls("rsi",f), "delayed"),
+    fcell("RSI (14)", f.rsi!=null?('<span data-tip="'+esc("TradingView's RSI(14) for this name, on 15-minute-delayed data. The RSI pane under the chart recomputes it from the bars on screen including today's partial candle, so the two can differ by a point or two.")+'">'+Math.round(f.rsi)+'</span>'):"—", fundCls("rsi",f), "delayed"),
     fcell("Avg daily move", f.avg_move!=null?f.avg_move+"%":"—"),
     fcell("52w position", posPct!=null?posPct+"%":"—"),
     fcell("Analyst target", targetTxt, targetCls),
@@ -5408,7 +5498,7 @@ function heatRender(refetch){
             ? (' · not on the map: '+esc(data.dropped.join(", "))+' (no market cap and no traded volume to size '
                + (data.dropped.length===1?'it':'them')+' by)') : '')
         + '</span>'
-        + '<span>TradingView scanner, live \u00b7 as of '+esc(ctTimeShort(new Date(data.fetchedAt).toISOString()))+' CT · click a tile to chart it</span>';
+        + '<span>TradingView scanner, 15-minute delayed \u00b7 read at '+esc(ctTimeShort(new Date(data.fetchedAt).toISOString()))+' CT · click a tile to chart it</span>';
     }
   });
 }
@@ -5471,7 +5561,7 @@ function stageStarHTML(sym){
     ? (pinned ? "On the watchlist. Click to hide it from the rail — display only, the boards and the daily sidecar keep tracking it."
               : "On this browser\u2019s custom list. Click to remove it.")
     : (pinned ? "Hidden from the rail right now. Click to put it back."
-              : "Add to this browser\u2019s watchlist: live quotes and charts here. Options boards and the daily financials sidecar stay server-curated.");
+              : "Add to this browser\u2019s watchlist: 15-minute-delayed quotes and charts here. Options boards and the daily financials sidecar stay server-curated.");
   return '<button class="fbtn" id="stagestar" aria-pressed="'+on+'" data-tip="'+esc(tip)+'">'
     + (on ? "★ on watchlist · remove" : "☆ add to watchlist") + '</button>';
 }
@@ -5827,17 +5917,42 @@ function renderStageTab(){
       + renderFundamentals(sym, fund)
       + '<div id="catlist"></div>'
       + '<div class="dsec note" id="dfoot">'
-      // Branch on WHERE the fundamentals came from, not on whether an object
-      // exists: a searched name gets a scanner snapshot assigned to STAGE.fund
-      // and this line used to credit a fund/SYM.json that returns 404.
-      + ((fund && fund.source!=="scanner")
-          ? 'Data is live: prices from the 30s TradingView poll, history from bars.json, fundamentals from the fund sidecar (fund/'+esc(sym)+'.json). Nothing here is investment advice.'
-          : ((fund || ADHOC_FACTS[sym])
-              ? 'Data is live: prices from the 30s TradingView poll, daily history from stockanalysis.com, fundamentals from a live TradingView scanner snapshot. This name is outside the desk universe, so there is no daily sidecar and no intraday history for it. Nothing here is investment advice.'
-              : 'Prices from the 30-second TradingView poll; history from bars.json. Nothing here is investment advice.'))
+      // Every clause here names what ACTUALLY supplied the data on screen.
+      // It used to branch on whether a sidecar object parsed, so a tracked
+      // name whose sidecar had not published yet — 43 of the 50 rail names,
+      // the boot symbol among them — was told it was "outside the desk
+      // universe" and credited to a source it never touched.
+      + stageSourceLine(sym, fund)
       + '</div>';
     renderCatList(sym);
   }
+}
+/* Provenance for the OVERVIEW tab, assembled from what is actually loaded.
+   Three separate questions — where the price came from, where the bars came
+   from, where the fundamentals came from — and a tracked name with no sidecar
+   yet is a different sentence from a name that is genuinely off the desk. */
+function stageSourceLine(sym, fund){
+  var pinned = railHasSym(sym);
+  var bits = ["Prices come from the TradingView scanner, 15 minutes behind the tape, re-read every 30 seconds"];
+  var adhocDaily = !!(ADHOC_BARS[sym] && ADHOC_BARS[sym].D && ADHOC_BARS[sym].D.rows && ADHOC_BARS[sym].D.rows.length);
+  var deskDaily = barsRaw(sym).length > 0;
+  if(deskDaily) bits.push("daily and weekly bars from the desk's own bars.json");
+  else if(adhocDaily) bits.push("daily bars from stockanalysis.com");
+  // Only say something about intraday once the file has actually been asked
+  // for — it loads lazily on the first 15m/1H/4H click, and claiming "no
+  // intraday bars" before then was wrong for every covered name.
+  if(INTRA_FAILED) bits.push("the intraday file did not load this session, so the short timeframes are empty");
+  else if(INTRA_CACHE!==null){
+    bits.push(intraRaw(sym, "i15").length > 0
+      ? "15-minute, hourly and 4-hour bars from the desk's intraday file"
+      : "no intraday bars for this name — the desk's intraday file covers part of the tracked watchlist");
+  }
+  if(fund && fund.source==="scanner") bits.push("fundamentals from a TradingView scanner snapshot"
+    + (pinned ? ", because no daily sidecar has published for this name yet" : ", because this name is not on the desk's tracked list"));
+  else if(fund) bits.push("fundamentals from the daily sidecar (fund/"+esc(sym)+".json)"
+    + (fund.built ? (", built "+esc(fund.built)) : ""));
+  else bits.push("no fundamentals loaded for this name");
+  return bits.join(" · ") + ". Nothing here is investment advice.";
 }
 /* ---- stage entry point: what [data-sym] clicks now drive ---- */
 function stageShow(sym, opts){
@@ -5850,6 +5965,8 @@ function stageShow(sym, opts){
   // session-only resolver entry, and restoring the bare symbol on the next
   // load would boot into a dead stage.
   try{ store("desk.stage.sym", JSON.stringify({sym:sym, tv:symbolForTicker(sym)||null, name:ADHOC_NAMES[sym]||null})); }catch(e){}
+  var _st = document.getElementById("staget");
+  if(_st) _st.innerHTML = "";      // never carry the last symbol's TA reading
   stageHeader(); stageBar(); stageTabsRender(); renderStageTab();
   stageMsg("loading chart…");
   Promise.all([ensureBars(), ensureFund(sym)]).then(function(vals){
@@ -5935,23 +6052,25 @@ function renderAll(data){
   updatePricesTimestamp();
 }
 function refreshLiveUI(){
-  // Re-render only the pieces whose display depends on the live TV poll —
-  // board tables are keyed on data.json fields plus a live price lookup, so
-  // the cheapest correct thing is to re-run the same render calls.
+  // Two halves. The PRICE half runs on every poll whether or not data.json
+  // ever loaded: with `if(!data) return;` at the top, a data.json outage froze
+  // the watchlist, the stage header and the stage candle at "—" while the poll
+  // kept succeeding and the tape one inch above kept moving — the exact
+  // failure the "prices as of" stamp exists to prevent.
   var data = STATE.data;
-  if(!data) return;
   bumpStatsMemo();
-  // The re-render rewrites each board's innerHTML, which zeroed .xwrap's
-  // horizontal scroll every 30s — and on a phone that scroll is the only way
-  // to read the right-hand columns. Capture and restore around the rebuild.
   var scrolls = {};
   $$(".xwrap").forEach(function(x){ if(x.id && x.scrollLeft) scrolls[x.id] = x.scrollLeft; });
   renderTape();
   renderWL();
-  renderConv(data);
-  renderSwing(data);
+  // The BOARD half needs the snapshot the boards are built from.
+  if(data){
+    renderConv(data);
+    renderSwing(data);
+  }
   $$(".xwrap").forEach(function(x){ if(x.id && scrolls[x.id]) x.scrollLeft = scrolls[x.id]; });
   stageLivePoke();
+  stageHeader();
   applyFocus();
   updatePricesTimestamp();
 }
