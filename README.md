@@ -68,8 +68,12 @@ Open that link any time. It updates itself — there's nothing to install or run
 4. The results are saved to a file called `data.json` and published to a
    separate branch of this repository (the `data` branch).
 5. The website reads that file to draw the boards, and separately checks
-   TradingView every 30 seconds so the prices on screen stay live even
-   between refreshes.
+   TradingView every 30 seconds so the prices on screen keep moving between
+   refreshes. Those prices are **15 minutes behind the tape** — the 30-second
+   poll is how often the page re-reads a delayed print, not how fresh the
+   print is. TradingView's own metadata says so (`update_mode:
+   delayed_streaming_900`), and a same-instant comparison against a real-time
+   feed measured 11 to 15 minutes on 2026-08-19.
 
 ## The two direction estimators (added 2026-07-18)
 
