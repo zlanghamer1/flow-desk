@@ -2,11 +2,48 @@
 
 ## What this is
 
-Flow Desk is a personal, live options-flow dashboard. It watches the stock
-market during trading hours, looks for unusual options activity, and shows
-it on two scored boards plus a plain leaderboard of the day's biggest option
-trades. It uses only free data sources — there are no logins, no API keys to
-manage, and nothing to pay for.
+Flow Desk is a personal trading platform. A full-size chart sits front and
+center, with the Morning Brief and the sector-rotation board to the side,
+the scored options-flow boards below, and a rolling news ticker across the
+very top. It uses only free data sources. There are no logins, no API keys
+to manage, and nothing to pay for.
+
+## The 2026-08-19 redesign, in plain terms
+
+The page used to open charts in a popup. Now the chart is the page:
+
+- **The chart is front and center.** Candles, volume, moving averages, and
+  earnings badges, drawn by TradingView's own open-source chart engine
+  (vendored in `vendor/`, credited in the footer). You can zoom with the
+  mouse wheel, drag to pan, and the crosshair's price and date labels follow
+  your cursor. Interval buttons (15m to weekly), window buttons (1M to 1Y),
+  and a log-scale override sit above it.
+- **Search any US ticker.** The box in the left rail searches by symbol or
+  company name. Picking a result charts it, pulls its history straight from
+  TradingView in your browser, and fills a fundamentals card from the live
+  scanner, even for names far outside the desk universe.
+- **Add and remove watchlist names.** The star in the chart header or the
+  rail's **edit** mode adds custom names and hides pinned ones. Custom adds
+  live in this browser only, and the rail says so. The server-curated
+  universe (boards, daily bars, financial sidecars) never changes from the
+  page.
+- **Auto technical analysis.** Selecting a stock fits trend lines through
+  its swing highs and lows, draws horizontal support/resistance levels, and
+  opens an RSI pane. Toggles above the chart turn each overlay off. All of
+  it is display-only. Nothing here scores or signals.
+- **Financials and peers.** Tabs under the chart chart quarterly revenue,
+  net income, free cash flow, margins, and growth, and compare the focused
+  name against its peers (curated sets where the vendor taxonomy lies, for
+  example MU against the memory complex; same-industry-by-size otherwise).
+- **A sector heatmap.** The CHART/HEATMAP toggle swaps in a Finviz-style
+  map of the S&P 500, the Nasdaq 100, or the desk universe. Tile size is
+  market cap, color is the move over 1D/1W/1M/YTD, sector headers isolate a
+  sector, and clicking any tile charts it.
+- **A rolling news ticker** of tagged headlines leads the page. Hover
+  pauses it; click opens the story.
+- **Position Guard is gone** (removed 2026-08-19 at Zach's direction). The
+  trade-stops math and the Morning Brief's own guard section live on
+  outside this page.
 
 ## The URL
 
@@ -206,7 +243,9 @@ The chart, the moving averages and the catalyst calendar all work normally.
 
 ## Chart windows, log scale, and one bad price history (added 2026-08-18)
 
-Three fixes to the chart in the drawer, all from opening SOXS.
+Three fixes to the chart, all from opening SOXS. (These predate the
+2026-08-19 redesign; the drawer they mention became the center-stage chart,
+and every behavior below carried over.)
 
 **The window buttons stay put.** 1M / 3M / 6M / 1Y used to vanish the moment
 you picked an intraday view (15m, 1H, 4H) and come back only when you clicked

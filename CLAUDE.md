@@ -52,5 +52,33 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   weekend/closed history sessions. `build_snapshot.run_cycle` guards this
   (`write_history = market_state != "closed"`) — do not remove that guard.
 
+## Guardrails added with the 2026-08-19 trading-platform redesign
+- **The chart engine is vendored TradingView Lightweight Charts, pinned at
+  v5.2.1** (`vendor/lightweight-charts.standalone.production.js`,
+  Apache-2.0). The in-chart attribution logo (`layout.attributionLogo`) and
+  the footer credit are license conditions — never remove either. `pages.yml`
+  ships `vendor/` together with `index.html`; never publish one without the
+  other.
+- **Auto-TA is display-only.** The trend-line geometry is a port of the
+  vault's `scripts/trendline_break_scan.py` constants (`TA_PIVOT_K`,
+  `TA_MIN_SPAN`, `TA_TOUCH_TOL`, `TA_CONTAIN_TOL`). It draws lines; it never
+  scores, signals, or feeds an engine. Keep it that way.
+- **The page never widens the server universe.** Custom watchlist adds and
+  hidden pinned names live in `localStorage` (`desk.wl.custom`,
+  `desk.wl.hidden`), per browser, disclosed in the UI. Boards, `bars.json`,
+  `facts`, and `fund/` sidecars follow `build_snapshot.PINNED` only.
+- **Ad-hoc bar history rides TradingView's chart websocket from the browser**
+  (`tvwsFetchBars`, same protocol as the vault's `scripts/fetch_tv.py`). It
+  is an unofficial endpoint: every use must fail soft to "quotes and
+  fundamentals still work", and nothing scheduled may depend on it.
+- **The heatmap's S&P 500 and Nasdaq 100 universes come from the scanner's
+  `symbolset` filter live** (`SYML:SP;SPX`, `SYML:NASDAQ;NDX`) — no baked
+  constituent list to go stale. It refreshes only while visible and states
+  the 15-minute delay in its footer.
+- **Position Guard was removed 2026-08-19 at Zach's direction.** The
+  `desk_private` blob still arrives in `data.json` and the page ignores it.
+  Do not resurrect the panel without his explicit ask; the vault's
+  trade-stops engine and the Morning Brief guard section are unaffected.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
