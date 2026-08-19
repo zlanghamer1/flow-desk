@@ -1485,11 +1485,13 @@ def test_fetch_yahoo_fundamentals_fetch_failure_is_all_empty():
     def fake_fail(u, h):
         raise urllib.error.URLError("boom")
     out = context.fetch_yahoo_fundamentals("NVDA", "abc", _get=fake_fail)
-    assert out == {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None}
+    assert out == {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None,
+                   "ratings": []}
 
     # A 200 with a shape quoteSummary doesn't recognize is equally fail-soft.
     out2 = context.fetch_yahoo_fundamentals("NVDA", "abc", _get=lambda u, h: json.dumps({"quoteSummary": {"result": []}}).encode())
-    assert out2 == {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None}
+    assert out2 == {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None,
+                    "ratings": []}
 
 
 # ── earnings-row revenue backfill (added 2026-08-15, wave 3, Task C) ────────
@@ -2159,3 +2161,90 @@ def test_extract_yahoo_ohlcv_ts_drops_rows_without_timestamps():
     assert [r[0] for r in rows] == [100, 300]          # ts-less row dropped
     assert rows[0][1:] == [1.0, 1.5, 0.5, 1.2, 10]
     assert rows[1][5] is None                          # missing volume kept as None
+
+
+# ── analyst rating changes (added 2026-08-19) ───────────────────────────────
+
+def _rating_row(ts, action, firm="Firm A", frm="Neutral", to="Buy", pt=0.0, prior=0.0):
+    return {"epochGradeDate": ts, "firm": firm, "toGrade": to, "fromGrade": frm,
+            "action": action, "priceTargetAction": "Raises",
+            "currentPriceTarget": pt, "priorPriceTarget": prior}
+
+
+def test_parse_ratings_keeps_only_real_upgrades_and_downgrades():
+    """init / reit / main are 60-78% of a real history and are NOT rating
+    changes — classifying on the price target instead would paint the chart
+    with false markers."""
+    today = date(2026, 8, 19)
+    base = int(datetime(2026, 6, 1, 14, 30, tzinfo=timezone.utc).timestamp())
+    hist = [
+        _rating_row(base, "up", firm="B of A", frm="Neutral", to="Buy", pt=300.0, prior=250.0),
+        _rating_row(base - 86400, "down", firm="New Street", frm="Buy", to="Neutral"),
+        _rating_row(base - 2 * 86400, "main", firm="Citi"),      # price target moved, rating held
+        _rating_row(base - 3 * 86400, "init", firm="Wolfe", frm=""),
+        _rating_row(base - 4 * 86400, "reit", firm="UBS"),
+    ]
+    rows = context._parse_ratings({"history": hist}, today=today)
+    assert [r["dir"] for r in rows] == ["up", "down"]
+    assert rows[0]["firm"] == "B of A" and rows[0]["to"] == "Buy" and rows[0]["from"] == "Neutral"
+    assert rows[0]["pt"] == pytest.approx(300.0) and rows[0]["pt_prior"] == pytest.approx(250.0)
+    assert rows[1]["pt"] is None and rows[1]["pt_prior"] is None   # Yahoo writes 0.0 for absent, never a $0 target
+
+
+def test_parse_ratings_uses_eastern_calendar_date():
+    """A row stamped after 8pm ET belongs on THAT trading day, not the next
+    one — the same class of off-by-one the snapshot session-date guard fixed."""
+    ts = int(datetime(2026, 6, 2, 1, 30, tzinfo=timezone.utc).timestamp())   # 9:30pm ET on 06-01
+    rows = context._parse_ratings({"history": [_rating_row(ts, "up")]}, today=date(2026, 8, 19))
+    assert rows[0]["date"] == "2026-06-01"
+    assert rows[0]["ts"] == ts        # raw epoch kept so same-day rows still order
+
+
+def test_parse_ratings_drops_stale_rows_caps_and_dedupes():
+    today = date(2026, 8, 19)
+    old_ts = int(datetime(2020, 1, 2, 15, 0, tzinfo=timezone.utc).timestamp())
+    fresh = int(datetime(2026, 7, 1, 15, 0, tzinfo=timezone.utc).timestamp())
+    hist = [_rating_row(old_ts, "up")]                                  # older than RATINGS_MAX_AGE_DAYS
+    hist += [_rating_row(fresh, "up", firm="Dup"), _rating_row(fresh + 60, "up", firm="Dup")]  # same day+firm+dir
+    hist += [_rating_row(fresh - i * 86400, "down", firm="F%d" % i) for i in range(1, 60)]
+    rows = context._parse_ratings({"history": hist}, today=today)
+    assert len(rows) == context.RATINGS_MAX
+    assert all(r["date"] >= "2023" for r in rows)
+    dups = [r for r in rows if r["firm"] == "Dup"]
+    assert len(dups) == 1
+
+
+def test_parse_ratings_missing_or_broken_module_is_empty_never_raises():
+    """ETFs omit the module entirely; a garbage payload must not kill the
+    sidecar build."""
+    for bad in (None, {}, {"history": None}, {"history": [None, 5, "x"]},
+                {"history": [{"action": "up"}]},                     # no timestamp
+                {"history": [_rating_row("nope", "up")]}):
+        assert context._parse_ratings(bad, today=date(2026, 8, 19)) == []
+
+
+def test_fund_sidecar_carries_ratings_and_survives_their_absence():
+    period_end = int(datetime(2026, 4, 30, tzinfo=timezone.utc).timestamp())
+    ts = int(datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc).timestamp())
+    yahoo_result = {
+        "defaultKeyStatistics": {}, "calendarEvents": {},
+        "earnings": {"earningsChart": {"quarterly": []}, "financialsChart": {"quarterly": []}},
+        "upgradeDowngradeHistory": {"history": [
+            _rating_row(ts, "down", firm="Barclays", frm="Overweight", to="Equal Weight"),
+            _rating_row(ts - 86400, "main", firm="Citi"),
+        ]},
+    }
+    def fake_get(url, headers):
+        if "statistics" in url or "financials" in url:
+            return _sa_skip_data_json()
+        if "quoteSummary" in url:
+            assert "upgradeDowngradeHistory" in url    # rides the SAME request, no extra call
+            return _yahoo_qs(yahoo_result)
+        raise AssertionError(url)
+    payload = context.build_fund_sidecar("MU", date(2026, 8, 19), "crumbtoken", period_end, _get=fake_get)
+    assert [r["dir"] for r in payload["ratings"]] == ["down"]
+    assert payload["ratings"][0]["firm"] == "Barclays"
+
+    yahoo_result.pop("upgradeDowngradeHistory")        # ETF-shaped response
+    payload2 = context.build_fund_sidecar("SPY", date(2026, 8, 19), "crumbtoken", None, _get=fake_get)
+    assert payload2["ratings"] == []

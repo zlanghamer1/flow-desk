@@ -1214,7 +1214,7 @@ BARS_BUILD_SIG = "v3-2y-vol-tape-splitfix"  # bumped whenever build_bars's OUTPU
                                 # below rewrites values, so it rides this gate
                                 # too and lands on the next cycle instead of
                                 # waiting for tomorrow's build.
-FUND_BUILD_SIG = "v2-ni-fcf"    # same idea for fund/{SYM}.json's OUTPUT SHAPE
+FUND_BUILD_SIG = "v3-ni-fcf-ratings"    # same idea for fund/{SYM}.json's OUTPUT SHAPE
                                 # (added 2026-08-19: quarterly/annual ni+fcf).
                                 # The sidecars share the bars rebuild gate, so
                                 # without their own signature a shape change
@@ -1755,9 +1755,20 @@ SA_CASHFLOW_Q_PATH = "/financials/cash-flow-statement/__data.json?p=quarterly"
 YAHOO_FC_URL = "https://fc.yahoo.com"
 YAHOO_CRUMB_URL = "https://query1.finance.yahoo.com/v1/test/getcrumb"
 YAHOO_QUOTESUMMARY_URL = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{sym}"
-YAHOO_QS_MODULES = "defaultKeyStatistics,earningsHistory,earnings,calendarEvents"
+YAHOO_QS_MODULES = "defaultKeyStatistics,earningsHistory,earnings,calendarEvents,upgradeDowngradeHistory"
 
 FUND_SLEEP_SEC = 0.3
+# Analyst rating CHANGES (added 2026-08-19, Zach's ask: "analyst rating updates
+# should be included in charts, red for downgrade, green for upgrade"). Yahoo's
+# upgradeDowngradeHistory module rides the SAME quoteSummary request the sidecar
+# already makes — no extra HTTP call. Only rows Yahoo itself labels "up" or
+# "down" are kept: "init" (initiation), "reit" (reiteration) and "main"
+# (rating maintained, price target moved) are 60-78% of a typical history and
+# are NOT rating changes; classifying on the price target instead would paint
+# the chart with false markers. Verified live across 14 symbols: `action` is
+# present on 100% of 3,641 rows, so no grade-rank fallback is needed.
+RATINGS_MAX = 40            # newest rows kept per ticker
+RATINGS_MAX_AGE_DAYS = 1100 # ~3 years: the deepest window any chart shows
 FUND_MAX_QUARTERLY = 12
 FUND_MAX_ANNUAL = 6
 FUND_MAX_EARNINGS = 12
@@ -2122,6 +2133,56 @@ def _fmt_fiscal_period(fq) -> Optional[str]:
     return f"Q{m.group(1)} {m.group(2)}" if m else None
 
 
+def _parse_ratings(module, today: Optional[date] = None) -> list[dict]:
+    """Yahoo upgradeDowngradeHistory -> the sidecar's `ratings` rows, newest
+    first. Keeps only genuine upgrades and downgrades, inside
+    RATINGS_MAX_AGE_DAYS, capped at RATINGS_MAX, deduped on (date, firm, dir).
+
+    The stamp is converted to an America/New_York calendar date because that
+    is the trading day the marker belongs on — a row stamped after 8pm ET
+    would land on the next day under UTC. Yahoo writes 0.0 for an absent
+    price target, which becomes None here rather than a fake $0 target.
+    """
+    hist = (module or {}).get("history") if isinstance(module, dict) else None
+    if not isinstance(hist, list):
+        return []
+    today = today or datetime.now(timezone.utc).date()
+    out, seen = [], set()
+    for row in hist:
+        if not isinstance(row, dict):
+            continue
+        direction = row.get("action")
+        if direction not in ("up", "down"):
+            continue
+        ts = row.get("epochGradeDate")
+        if not isinstance(ts, (int, float)) or isinstance(ts, bool):
+            continue
+        try:
+            et = datetime.fromtimestamp(ts, tz=ZoneInfo("America/New_York")).date()
+        except Exception:
+            continue
+        if (today - et).days > RATINGS_MAX_AGE_DAYS or et > today:
+            continue
+        firm = row.get("firm") if isinstance(row.get("firm"), str) else ""
+        key = (et.isoformat(), firm, direction)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        def _pt(v):
+            return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else None
+
+        out.append({
+            "date": et.isoformat(), "ts": int(ts), "dir": direction, "firm": firm,
+            "from": row.get("fromGrade") if isinstance(row.get("fromGrade"), str) else "",
+            "to": row.get("toGrade") if isinstance(row.get("toGrade"), str) else "",
+            "pt": _pt(row.get("currentPriceTarget")), "pt_prior": _pt(row.get("priorPriceTarget")),
+        })
+        if len(out) >= RATINGS_MAX:
+            break
+    return out
+
+
 def fetch_yahoo_fundamentals(sym: str, crumb: str, _get: Optional[Callable] = None) -> dict:
     """One Yahoo quoteSummary call (defaultKeyStatistics + earningsHistory +
     earnings + calendarEvents) -> {"short_pct_float", "pe_forward",
@@ -2144,7 +2205,8 @@ def fetch_yahoo_fundamentals(sym: str, crumb: str, _get: Optional[Callable] = No
     Whole-dict-empty on a fetch/parse failure; every field independently
     None/[]/absent on a narrower miss (per-field fail-soft throughout).
     """
-    empty = {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None}
+    empty = {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None,
+             "ratings": []}
     url = (YAHOO_QUOTESUMMARY_URL.format(sym=sym)
            + f"?modules={YAHOO_QS_MODULES}&crumb={urllib.parse.quote(crumb)}")
     try:
@@ -2158,6 +2220,8 @@ def fetch_yahoo_fundamentals(sym: str, crumb: str, _get: Optional[Callable] = No
         return empty
 
     out = dict(empty)
+    # Rating changes ride this same response (ETFs simply omit the module).
+    out["ratings"] = _parse_ratings(result.get("upgradeDowngradeHistory"))
     dks = result.get("defaultKeyStatistics") or {}
     short_frac = _yahoo_num(dks.get("shortPercentOfFloat"))
     out["short_pct_float"] = round(short_frac * 100, 3) if short_frac is not None else None
@@ -2276,6 +2340,7 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
         "earnings": [], "next_earnings": None,
         "quarterly": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []},
         "annual": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []},
+        "ratings": [],
     }
 
     sa_stats = fetch_sa_statistics(sym, _get=_get)
@@ -2312,6 +2377,8 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
             payload["pe_forward"] = yq["pe_forward"]
         if yq["earnings"]:
             payload["earnings"] = yq["earnings"]
+        if yq.get("ratings"):
+            payload["ratings"] = yq["ratings"]
         if yq["next_earnings"] is not None:
             ne = dict(yq["next_earnings"])
             if ne.get("session") is None:
