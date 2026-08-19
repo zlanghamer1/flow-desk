@@ -160,6 +160,32 @@ section.closed .sb{display:none}
 .rb .hi{right:0}
 .wlnote{padding:4px 14px 8px;font-size:9.5px;color:var(--ink3)}
 .wlsort{display:flex;gap:4px;padding:9px 14px 2px;flex-wrap:wrap}
+/* ============ ticker search (2026-08-19) ============ */
+.searchbox{position:relative;margin:8px 14px 4px}
+.searchbox input{width:100%;background:var(--srf2);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font:11.5px inherit;padding:6px 9px}
+.searchbox input:focus{outline:none;border-color:var(--acc)}
+.tsdrop{position:absolute;top:100%;left:0;right:0;z-index:50;background:var(--srf);border:1px solid var(--edge);border-radius:6px;box-shadow:0 12px 32px rgba(0,0,0,.35);display:none;max-height:320px;overflow-y:auto}
+.tsdrop.open{display:block}
+.tsr{display:flex;gap:7px;align-items:baseline;padding:7px 9px;cursor:pointer;font-size:11.5px;border-bottom:1px solid var(--edge2)}
+.tsr:last-child{border-bottom:none}
+.tsr:hover,.tsr.on{background:var(--sel)}
+.tsr .sy{font-weight:700;flex:0 0 auto}
+.tsr .nm{color:var(--ink3);font-size:10.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tsr .ex{color:var(--ink3);font-size:9px}
+.tsr .px{font-size:10.5px}
+.tsr .add{color:var(--acc);font-size:10px;border:1px solid var(--edge);border-radius:4px;padding:1px 6px;flex:none}
+.tsr .add:hover{border-color:var(--acc)}
+.tsnote{padding:6px 9px;font-size:10px;color:var(--ink3)}
+/* watchlist manage mode */
+.wlmanage{padding:2px 14px 6px;font-size:9.5px;color:var(--ink3)}
+.wlmanage button{color:var(--acc);font-size:9.5px;text-decoration:underline;padding:0}
+.wlx{color:var(--ink3);font-size:11px;padding:0 4px;flex:none}
+.wlx:hover{color:var(--dn)}
+.wr.ghost{opacity:.45}
+.wlio{margin:4px 14px 8px;display:flex;gap:6px}
+.wlio input{flex:1;min-width:0;background:var(--srf2);border:1px solid var(--edge);border-radius:5px;color:var(--ink);font:10.5px inherit;padding:4px 7px}
+.wlio button{border:1px solid var(--edge);border-radius:5px;padding:3px 8px;font-size:10px;color:var(--ink2)}
+.wlio button:hover{color:var(--ink);border-color:var(--ink3)}
 .alertbox{margin:8px 14px 12px;border:1px solid var(--edge);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--ink2);background:var(--srf2)}
 .alertbox b{display:block;font-size:9.5px;letter-spacing:.12em;color:var(--ink3);margin-bottom:3px}
 .alertbox .hm2{color:var(--hi);font-weight:600}
@@ -492,6 +518,10 @@ footer b{color:var(--ink2)}
     <aside class="wl" id="wlrail">
       <div class="alertbox" id="positions"></div>
       <div class="alertbox" id="alerts"></div>
+      <div class="searchbox">
+        <input id="tksearch" placeholder="Search any US ticker…" autocomplete="off" spellcheck="false" aria-label="Search tickers">
+        <div class="tsdrop" id="tsdrop"></div>
+      </div>
       <button class="wltoggle" id="wltoggle">watchlist ▸</button>
       <div class="wrs" id="wl"></div>
       <div class="wlnote">leveraged wrappers included by rule (2026-08-15) · WTI here is W&amp;T Offshore, the oil producer — crude itself is the WTI tile in the tape</div>
@@ -713,6 +743,61 @@ var MACRO_TAPE = [
   {s:"DXY", n:"DOLLAR", tv:"TVC:DXY", bk:"DXY"},
 ];
 
+/* =================== ad-hoc symbols: custom watchlist + hidden pinned names ===================
+   The universe stays server-curated (boards, bars.json, facts, sidecars all
+   follow build_snapshot.PINNED). What this layer adds is PAGE-LOCAL: names
+   Zach searches and adds get live quotes, a full chart (fetched straight from
+   TradingView's chart websocket in the browser), and a scanner-snapshot
+   fundamentals card — but never options boards (CBOE has no CORS; the loop
+   owns chains) and never the daily financial sidecar. Stored in
+   localStorage, so the list is PER BROWSER — the phone and the PC each keep
+   their own; "manage" shows an export/import string to carry it across. */
+var ADHOC_TV = {};      // sym -> "EXCH:SYM" for searched/custom names (session + rebuilt from stored list)
+var ADHOC_NAMES = {};   // sym -> display name from search results
+var ADHOC_FACTS = {};   // sym -> facts-shaped snapshot fetched from the scanner on demand
+var ADHOC_BARS = {};    // sym -> {D:{rows:[[o,h,l,c,v],..], dates:[Date,..]}, i15:[[t,o,h,l,c,v],..], i60:[..]}
+function wlCustom(){
+  try{ var v = JSON.parse(read("desk.wl.custom")||"[]"); return Array.isArray(v)?v.filter(function(r){return r&&r.sym;}):[]; }
+  catch(e){ return []; }
+}
+function wlHidden(){
+  try{ var v = JSON.parse(read("desk.wl.hidden")||"[]"); return Array.isArray(v)?v.filter(function(x){return typeof x==="string";}):[]; }
+  catch(e){ return []; }
+}
+function wlSaveCustom(list){ store("desk.wl.custom", JSON.stringify(list)); }
+function wlSaveHidden(list){ store("desk.wl.hidden", JSON.stringify(list)); }
+function adhocRegister(sym, tv, name){
+  if(tv) ADHOC_TV[sym] = tv;
+  if(name) ADHOC_NAMES[sym] = name;
+}
+function railHasSym(sym){
+  return RAIL_GROUPS.some(function(g){ return g.syms.indexOf(sym)!==-1; });
+}
+function wlIsCustom(sym){ return wlCustom().some(function(r){ return r.sym===sym; }); }
+function wlAdd(sym, tv, name){
+  if(railHasSym(sym)){
+    var hid = wlHidden().filter(function(x){ return x!==sym; });
+    wlSaveHidden(hid);            // adding a hidden pinned name = unhide it
+  } else if(!wlIsCustom(sym)){
+    var list = wlCustom(); list.push({sym:sym, tv:tv||ADHOC_TV[sym]||null, name:name||ADHOC_NAMES[sym]||null});
+    wlSaveCustom(list);
+  }
+  adhocRegister(sym, tv, name);
+  renderWL(); applyFocus(); stageHeader();
+}
+function wlRemove(sym){
+  if(railHasSym(sym)){
+    var hid = wlHidden();
+    if(hid.indexOf(sym)===-1){ hid.push(sym); wlSaveHidden(hid); }
+  } else {
+    wlSaveCustom(wlCustom().filter(function(r){ return r.sym!==sym; }));
+  }
+  renderWL(); applyFocus(); stageHeader();
+}
+// Rebuild the resolver map from storage at boot so custom names poll live
+// prices from the first cycle.
+wlCustom().forEach(function(r){ adhocRegister(r.sym, r.tv, r.name); });
+
 /* =================== utils =================== */
 var $=function(q){return document.querySelector(q)}, $$=function(q){return [].slice.call(document.querySelectorAll(q))};
 function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
@@ -842,7 +927,7 @@ function rebuildDynamicTv(data){
 // board's server-resolved tv_symbol stays authoritative.
 var TAPE_TV_SYMBOL = {};
 MAIN_TAPE.concat(MACRO_TAPE).forEach(function(t){ TAPE_TV_SYMBOL[t.bk||t.s] = t.tv; });
-function symbolForTicker(t){ return DYNAMIC_TV[t] || RAIL_TV_SYMBOL[t] || TAPE_TV_SYMBOL[t] || null; }
+function symbolForTicker(t){ return DYNAMIC_TV[t] || RAIL_TV_SYMBOL[t] || TAPE_TV_SYMBOL[t] || ADHOC_TV[t] || null; }
 // Macro symbols resolve out of MACRO_LIVE (the global scanner) rather than LIVE
 // (the america scanner) — a modal opened on VIX or crude needs a live price
 // from whichever of the two carries it.
@@ -851,7 +936,7 @@ function liveBySym(ticker){
   if(!tv) return null;
   return LIVE[tv] || MACRO_LIVE[tv] || null;
 }
-function nameFor(ticker){ return STATIC_NAMES[ticker] || ticker; }
+function nameFor(ticker){ return STATIC_NAMES[ticker] || ADHOC_NAMES[ticker] || ticker; }
 
 /* =================== CT time helpers (DST-safe via Intl, no hardcoded offset) =================== */
 var WD_ABBR = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -1322,6 +1407,133 @@ function ensureFund(sym){
     .catch(function(){ FUND_CACHE[sym] = null; return null; });
 }
 
+/* =================== ad-hoc bar history: TradingView chart websocket ===================
+   The same protocol scripts/fetch_tv.py has used since 2026-07-16, ported to
+   the browser (verified 2026-08-19: the endpoint accepts any Origin, so a
+   github.io page can pull ~5,000 no-auth bars). Used ONLY for symbols
+   bars.json doesn't carry — searched/custom names. One-shot connection per
+   fetch, closed as soon as the series completes; 15s timeout; fail-soft to
+   a plain "no history" note. Completed bars are identical to the desk's
+   baked ones (delay only affects the forming bar).  */
+var TVWS_URL = "wss://data.tradingview.com/socket.io/websocket?from=chart";
+function tvwsFetchBars(tvSymbol, interval, nBars){
+  return new Promise(function(resolve, reject){
+    var ws;
+    try{ ws = new WebSocket(TVWS_URL); }
+    catch(e){ reject(e); return; }
+    var out = [], done = false;
+    function pack(m,p){ var j=JSON.stringify({m:m,p:p}); return "~m~"+j.length+"~m~"+j; }
+    function finish(err){
+      if(done) return; done = true; clearTimeout(timer);
+      try{ ws.close(); }catch(e){}
+      if(out.length){ out.sort(function(a,b){ return a[0]-b[0]; }); resolve(out); }
+      else reject(err || new Error("no bars"));
+    }
+    var timer = setTimeout(function(){ finish(new Error("timeout")); }, 15000);
+    ws.onopen = function(){
+      var cs = "cs_" + Math.random().toString(36).slice(2,14);
+      ws.send(pack("set_auth_token", ["unauthorized_user_token"]));
+      ws.send(pack("chart_create_session", [cs, ""]));
+      ws.send(pack("resolve_symbol", [cs, "sym1", '={"symbol":"'+tvSymbol+'","adjustment":"splits"}']));
+      ws.send(pack("create_series", [cs, "s1", "s1", "sym1", interval, nBars, ""]));
+    };
+    ws.onmessage = function(ev){
+      var raw = String(ev.data||"");
+      var hb = /~m~\d+~m~(~h~\d+)/.exec(raw);           // keepalive ping -> echo
+      if(hb){ try{ ws.send("~m~"+hb[1].length+"~m~"+hb[1]); }catch(e){} }
+      if(raw.indexOf("timescale_update")!==-1){
+        var re = /\{"i":\d+,"v":\[([-\d.,eE]+)\]\}/g, m;
+        while((m = re.exec(raw))){
+          var v = m[1].split(",").map(Number);
+          if(v.length>=5 && isFinite(v[0])) out.push([v[0], v[1], v[2], v[3], v[4], (v.length>5 && isFinite(v[5]))?v[5]:null]);
+        }
+      }
+      if(raw.indexOf("series_completed")!==-1) finish();
+      if(raw.indexOf("critical_error")!==-1 || raw.indexOf("symbol_error")!==-1) finish(new Error("symbol error"));
+    };
+    ws.onerror = function(){ finish(new Error("websocket error")); };
+    ws.onclose = function(){ finish(new Error("closed")); };
+  });
+}
+// Daily WS rows -> the stage's shape: [o,h,l,c,v] quints + real per-bar dates
+// (no weekday reconstruction needed — the socket carries true timestamps).
+var ADHOC_INFLIGHT = {};
+function adhocEnsureDaily(sym){
+  if(ADHOC_BARS[sym] && ADHOC_BARS[sym].D) return Promise.resolve(ADHOC_BARS[sym].D);
+  var tv = symbolForTicker(sym);
+  if(!tv) return Promise.reject(new Error("no tv symbol"));
+  var key = sym+":D";
+  if(ADHOC_INFLIGHT[key]) return ADHOC_INFLIGHT[key];
+  ADHOC_INFLIGHT[key] = tvwsFetchBars(tv, "D", 520).then(function(rows){
+    delete ADHOC_INFLIGHT[key];
+    var d = { rows: rows.map(function(r){ return [r[1],r[2],r[3],r[4],r[5]]; }),
+              dates: rows.map(function(r){ return new Date(r[0]*1000); }) };
+    ADHOC_BARS[sym] = ADHOC_BARS[sym] || {};
+    ADHOC_BARS[sym].D = d;
+    // avg_move for the hot-mover math: same definition the fetcher uses —
+    // mean |daily %| over the last 20 closes, 2dp.
+    var closes = d.rows.map(function(r){ return num(r[3]); }).filter(function(x){ return x!=null; });
+    if(closes.length>=21 && ADHOC_FACTS[sym] && ADHOC_FACTS[sym].avg_move==null){
+      var moves=[]; for(var i=closes.length-20;i<closes.length;i++){ if(closes[i-1]) moves.push(Math.abs(closes[i]/closes[i-1]-1)*100); }
+      if(moves.length) ADHOC_FACTS[sym].avg_move = Math.round(moves.reduce(function(a,b){return a+b;},0)/moves.length*100)/100;
+    }
+    return d;
+  }, function(err){ delete ADHOC_INFLIGHT[key]; throw err; });
+  return ADHOC_INFLIGHT[key];
+}
+function adhocEnsureIntra(sym, iv){
+  var key = iv==="15m" ? "i15" : "i60";
+  if(ADHOC_BARS[sym] && ADHOC_BARS[sym][key]) return Promise.resolve(ADHOC_BARS[sym][key]);
+  var tv = symbolForTicker(sym);
+  if(!tv) return Promise.reject(new Error("no tv symbol"));
+  var fkey = sym+":"+key;
+  if(ADHOC_INFLIGHT[fkey]) return ADHOC_INFLIGHT[fkey];
+  ADHOC_INFLIGHT[fkey] = tvwsFetchBars(tv, key==="i15"?"15":"60", key==="i15"?600:420).then(function(rows){
+    delete ADHOC_INFLIGHT[fkey];
+    ADHOC_BARS[sym] = ADHOC_BARS[sym] || {};
+    ADHOC_BARS[sym][key] = rows;
+    return rows;
+  }, function(err){ delete ADHOC_INFLIGHT[fkey]; throw err; });
+  return ADHOC_INFLIGHT[fkey];
+}
+// Scanner-snapshot fundamentals for any symbol — the same fields facts
+// carries for pinned names (same taxonomy, same units), fetched client-side
+// once per session per symbol. Fail-soft: a dead scanner just leaves the
+// fundamentals grid dashed.
+var ADHOC_FACTS_COLS = ["price_52_week_high","price_52_week_low","market_cap_basic","beta_1_year",
+  "average_volume_10d_calc","RSI","price_earnings_ttm","price_earnings_growth_ttm","net_margin_ttm",
+  "gross_margin_ttm","operating_margin_ttm","free_cash_flow_margin_ttm","debt_to_equity",
+  "return_on_equity","price_sales_ratio","price_book_ratio","enterprise_value_ebitda_ttm",
+  "dividends_yield_current","price_target_average","recommendation_mark","sector","industry",
+  "earnings_release_next_date"];
+function adhocEnsureFacts(sym){
+  if(ADHOC_FACTS[sym]) return Promise.resolve(ADHOC_FACTS[sym]);
+  var tv = symbolForTicker(sym);
+  if(!tv) return Promise.resolve(null);
+  var body = JSON.stringify({ symbols:{tickers:[tv]}, columns:ADHOC_FACTS_COLS });
+  return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(function(json){
+      var row = json && Array.isArray(json.data) && json.data[0];
+      if(!row || !Array.isArray(row.d)) return null;
+      var d = row.d;
+      function n(i){ return (typeof d[i]==="number" && isFinite(d[i])) ? d[i] : null; }
+      function t(i){ return (typeof d[i]==="string" && d[i]) ? d[i] : null; }
+      var earnTs = n(22), earnDays = null;
+      if(earnTs!=null){
+        var delta = Math.round((earnTs*1000 - Date.now())/86400e3);
+        if(delta>=0) earnDays = delta;
+      }
+      ADHOC_FACTS[sym] = { hi52:n(0), lo52:n(1), cap:n(2), beta:n(3), avol:n(4), short_pct:null,
+        earn_days:earnDays, rsi:n(5), avg_move:null, pe:n(6), peg:n(7), net_margin:n(8),
+        gross_margin:n(9), op_margin:n(10), fcf_margin:n(11), debt_eq:n(12), roe:n(13),
+        ps:n(14), pb:n(15), ev_ebitda:n(16), yld:n(17), target:n(18), rec_mark:n(19),
+        sector:t(20), industry:t(21) };
+      return ADHOC_FACTS[sym];
+    })
+    .catch(function(){ return null; });
+}
+
 /* =================== TV live price poll (ported/extended from live index.html) =================== */
 function collectPollSymbols(){
   var set = {};
@@ -1332,6 +1544,7 @@ function collectPollSymbols(){
     if(Array.isArray(arr)) arr.forEach(function(r){ if(r && r.tv_symbol) set[r.tv_symbol]=true; });
   });
   if(STAGE.sym){ var stv = symbolForTicker(STAGE.sym); if(stv) set[stv]=true; }
+  wlCustom().forEach(function(r){ var tv=symbolForTicker(r.sym); if(tv) set[tv]=true; });
   return Object.keys(set);
 }
 function pollTvPrices(){
@@ -1437,9 +1650,14 @@ function renderTape(){
 }
 
 /* =================== 52w range + hot-move stats (facts + bars, no fabricated series) =================== */
-function factsOf(sym){ var f = STATE.data && STATE.data.facts; return (f && f[sym]) || null; }
+function factsOf(sym){ var f = STATE.data && STATE.data.facts; return (f && f[sym]) || ADHOC_FACTS[sym] || null; }
 function seriesFull(sym){
   var hist = barsOf(sym);
+  if(!hist.length && ADHOC_BARS[sym] && ADHOC_BARS[sym].D){
+    // Searched/custom name: closes come off the websocket-fetched dailies so
+    // the 50/200-day legend and range math work for any ticker.
+    hist = ADHOC_BARS[sym].D.rows.map(function(r){ return num(r[3]); });
+  }
   var q = liveBySym(sym);
   var live = q && q.px!=null ? q.px : null;
   return live!=null ? hist.concat([live]) : hist.slice();
@@ -1502,7 +1720,8 @@ function rangeBarHTML(sym, big){
 
 /* =================== watchlist rail =================== */
 var wlSort = "groups";
-function railRowHTML(s){
+var wlEdit = false;
+function railRowHTML(s, opts){
   var q = liveBySym(s) || {};
   var d = dispQuote(q);
   var f = factsOf(s);
@@ -1514,9 +1733,15 @@ function railRowHTML(s){
   if(d.tag) metaHtml = sessTagHTML(d.tag) + " " + metaHtml;
   var pxStr = d.px!=null ? fmtpx(d.px) : "—";
   var chStr = d.ch!=null ? (fm1(d.ch)+"%") : "—";
-  return '<div class="wr '+(isHot?"hot":"")+'" data-sym="'+esc(s)+'" role="button" tabindex="0">'
+  var manageBtn = "";
+  if(wlEdit){
+    if(opts && opts.ghost) manageBtn = '<button class="wlx" data-wlback="'+esc(s)+'" data-tip="Bring this pinned name back onto the rail.">+ back</button>';
+    else manageBtn = '<button class="wlx" data-wlx="'+esc(s)+'" data-tip="'+(railHasSym(s)?"Hide this pinned name from the rail (boards still track it — the universe is server-curated).":"Remove this custom name from this browser\u2019s list.")+'">×</button>';
+  }
+  return '<div class="wr '+(isHot?"hot":"")+(opts && opts.ghost?" ghost":"")+'" data-sym="'+esc(s)+'" role="button" tabindex="0">'
     +'<div class="l1"><span class="sy">'+esc(s)+'</span><span class="meta">'+metaHtml+'</span>'
     +(isHot? '<span class="hotb" data-tip="'+esc(TIPS.hot)+' Today: '+h.toFixed(1)+'× its usual '+(f.avg_move!=null?f.avg_move:"?")+'% day.">'+h.toFixed(1)+'×</span>' : "")
+    +manageBtn
     +'<span class="px tn">'+pxStr+'</span><span class="ch tn '+cls+'">'+chStr+'</span></div>'
     // The 52-week range bar draws only in the "52w ↑" sort view (2026-08-18):
     // fifty always-on mini-charts ate ~40% of the rail's height for a datum
@@ -1524,18 +1749,43 @@ function railRowHTML(s){
     +(wlSort==="range" ? rangeBarHTML(s) : "")+'</div>';
 }
 function renderWL(){
+  var hidden = wlHidden(), custom = wlCustom();
+  var customSyms = custom.map(function(r){ return r.sym; });
   var railSyms = [];
-  RAIL_GROUPS.forEach(function(g){ g.syms.forEach(function(s){ railSyms.push(s); }); });
+  RAIL_GROUPS.forEach(function(g){ g.syms.forEach(function(s){ if(hidden.indexOf(s)===-1) railSyms.push(s); }); });
+  customSyms.forEach(function(s){ if(railSyms.indexOf(s)===-1) railSyms.push(s); });
   var sorts = [["groups","groups"],["range","52w ↑"],["chg","Δ%"],["hot","hot"]];
   var html = '<div class="wlsort">'+sorts.map(function(k){
     var tip = k[0]==="range" ? "Sort lowest-in-range first — the value-shopping view. Hot runners sink to the bottom."
       : k[0]==="hot" ? "Sort by move vs each name's own average day."
       : k[0]==="chg" ? "Sort by today's % move." : "Grouped view.";
     return '<button class="fbtn" data-ws="'+k[0]+'" aria-pressed="'+(wlSort===k[0])+'" data-tip="'+esc(tip)+'">'+k[1]+'</button>';
-  }).join("")+'</div>';
+  }).join("")
+  +'<button class="fbtn" id="wledit" aria-pressed="'+wlEdit+'" data-tip="Add or remove names. Custom adds live in this browser only; hiding a pinned name is display-only — the boards still track the full server universe.">'+(wlEdit?"done":"edit")+'</button>'
+  +'</div>';
+  // No silent caps: the rail says when it differs from the server universe.
+  if(customSyms.length || hidden.length){
+    html += '<div class="wlmanage">'
+      + (customSyms.length ? ('+'+customSyms.length+' custom (this browser)') : '')
+      + (customSyms.length && hidden.length ? ' · ' : '')
+      + (hidden.length ? (hidden.length+' pinned hidden') : '')
+      + '</div>';
+  }
+  if(wlEdit){
+    var ioVal = customSyms.join(",");
+    html += '<div class="wlio"><input id="wlio-in" value="'+esc(ioVal)+'" placeholder="MU,NKE,…" aria-label="Custom list as text">'
+      + '<button id="wlio-apply" data-tip="Replace this browser\u2019s custom adds with the comma-separated tickers in the box (they must be searchable first — unknown symbols are dropped on next search). Copy the text to carry your list to another device.">apply</button></div>';
+  }
   if(wlSort==="groups"){
+    if(custom.length){
+      html += '<div class="wg">MY ADDS — THIS BROWSER</div>'+custom.map(function(r){ return railRowHTML(r.sym); }).join("");
+    }
     html += RAIL_GROUPS.map(function(g){
-      return '<div class="wg">'+esc(g.g)+'</div>'+g.syms.map(railRowHTML).join("");
+      var syms = g.syms.filter(function(x){ return hidden.indexOf(x)===-1; });
+      var ghosts = wlEdit ? g.syms.filter(function(x){ return hidden.indexOf(x)!==-1; }) : [];
+      if(!syms.length && !ghosts.length) return "";
+      return '<div class="wg">'+esc(g.g)+'</div>'+syms.map(function(x){ return railRowHTML(x); }).join("")
+        + ghosts.map(function(x){ return railRowHTML(x, {ghost:true}); }).join("");
     }).join("");
   } else {
     var sorted = railSyms.slice().sort(function(a,b){
@@ -1553,10 +1803,29 @@ function renderWL(){
       return (hb==null?-Infinity:hb)-(ha==null?-Infinity:ha);
     });
     var lab = wlSort==="range" ? "52W RANGE — LOWEST FIRST" : wlSort==="chg" ? "TODAY'S MOVE — BIGGEST FIRST" : "VS OWN AVERAGE — HOTTEST FIRST";
-    html += '<div class="wg">'+lab+'</div>'+sorted.map(railRowHTML).join("");
+    html += '<div class="wg">'+lab+'</div>'+sorted.map(function(x){ return railRowHTML(x); }).join("");
   }
   $("#wl").innerHTML = html;
   $$("#wl [data-ws]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlSort=b.dataset.ws; renderWL(); applyFocus(); }); });
+  var we = document.getElementById("wledit");
+  if(we) we.addEventListener("click", function(e){ e.stopPropagation(); wlEdit=!wlEdit; renderWL(); applyFocus(); });
+  $$("#wl [data-wlx]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlRemove(b.dataset.wlx); }); });
+  $$("#wl [data-wlback]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlAdd(b.dataset.wlback); }); });
+  var io = document.getElementById("wlio-apply");
+  if(io) io.addEventListener("click", function(e){
+    e.stopPropagation();
+    var raw = (document.getElementById("wlio-in").value||"").toUpperCase().split(/[\s,]+/).filter(Boolean);
+    var seen = {}, list = [];
+    raw.forEach(function(sym){
+      if(seen[sym] || railHasSym(sym)) return;
+      seen[sym]=true;
+      var prev = wlCustom().filter(function(r){ return r.sym===sym; })[0];
+      list.push(prev || {sym:sym, tv:ADHOC_TV[sym]||null, name:ADHOC_NAMES[sym]||null});
+    });
+    wlSaveCustom(list);
+    list.forEach(function(r){ adhocRegister(r.sym, r.tv, r.name); });
+    renderWL(); applyFocus();
+  });
 
   var hot = railSyms.filter(function(s){ var h=hotOf(s); return h!=null && h>=HOT_AT; }).sort(function(a,b){ return hotOf(b)-hotOf(a); });
   var withPos = railSyms.filter(function(s){ return statsOf(s).pos!=null; });
@@ -1574,6 +1843,110 @@ function renderWL(){
   $("#alerts").innerHTML = alertsHtml;
   document.title = hot.length ? ("("+hot.length+") The Desk") : "The Desk";
 }
+
+/* =================== ticker search (TV scanner name-match, CORS-open) =================== */
+var tsTimer=null, tsIdx=0, tsItems=[], tsSeq=0;
+function tsSearch(q){
+  var body = JSON.stringify({
+    columns:["name","description","close","change","market_cap_basic","exchange","sector","industry"],
+    filter:[{left:"name,description",operation:"match",right:q}],
+    options:{lang:"en"}, range:[0,8],
+    sort:{sortBy:"market_cap_basic",sortOrder:"desc"},
+    symbols:{query:{types:["stock","fund","dr"]}}, markets:["america"]});
+  return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(function(json){
+      var rows = (json && Array.isArray(json.data)) ? json.data : [];
+      var items = rows.map(function(row){
+        if(!row || !row.s || !Array.isArray(row.d)) return null;
+        if(typeof row.d[0]!=="string" || !row.d[0]) return null;
+        return { sym:row.d[0], name:(typeof row.d[1]==="string")?row.d[1]:"",
+                 px:num(row.d[2]), ch:num(row.d[3]), cap:num(row.d[4]),
+                 exch:(typeof row.d[5]==="string" && row.d[5])?row.d[5]:row.s.split(":")[0],
+                 tv:row.s };
+      }).filter(Boolean);
+      var Q = q.trim().toUpperCase();
+      items.sort(function(a,b){ return ((b.sym===Q)?1:0)-((a.sym===Q)?1:0) || (b.cap||0)-(a.cap||0); });
+      return items;
+    });
+}
+function tsOnList(sym){
+  return railHasSym(sym) ? wlHidden().indexOf(sym)===-1 : wlIsCustom(sym);
+}
+function tsRender(){
+  var dd = document.getElementById("tsdrop");
+  if(!dd) return;
+  if(!tsItems.length){
+    dd.innerHTML = '<div class="tsnote">nothing matched — the scanner covers US-listed stocks, ETFs and ADRs</div>';
+    return;
+  }
+  dd.innerHTML = tsItems.map(function(it, i){
+    return '<div class="tsr '+(i===tsIdx?"on":"")+'" data-i="'+i+'">'
+      + '<span class="sy">'+esc(it.sym)+'</span><span class="nm">'+esc(it.name)+'</span>'
+      + '<span class="ex">'+esc(it.exch)+'</span>'
+      + '<span class="px tn '+sign(it.ch)+'">'+(it.px!=null?fmtpx(it.px):"—")+'</span>'
+      + '<button class="add" data-add="'+i+'">'+(tsOnList(it.sym)?"on list":"+ add")+'</button></div>';
+  }).join("");
+  $$("#tsdrop .tsr").forEach(function(el){
+    el.addEventListener("click", function(e){
+      if(e.target.closest("[data-add]")) return;
+      tsPick(+el.dataset.i, false);
+    });
+  });
+  $$("#tsdrop [data-add]").forEach(function(b){
+    b.addEventListener("click", function(e){
+      e.stopPropagation();
+      var it = tsItems[+b.dataset.add]; if(!it) return;
+      adhocRegister(it.sym, it.tv, it.name);
+      if(tsOnList(it.sym)) wlRemove(it.sym); else wlAdd(it.sym, it.tv, it.name);
+      tsRender(); pollTvPrices();
+    });
+  });
+}
+function tsPick(i, addToo){
+  var it = tsItems[i]; if(!it) return;
+  adhocRegister(it.sym, it.tv, it.name);
+  if(addToo) wlAdd(it.sym, it.tv, it.name);
+  tsClose();
+  var inEl = document.getElementById("tksearch");
+  if(inEl) inEl.value = "";
+  setFocus(it.sym);
+  pollTvPrices();
+}
+function tsOpen(){ var dd=document.getElementById("tsdrop"); if(dd) dd.classList.add("open"); }
+function tsClose(){ var dd=document.getElementById("tsdrop"); if(dd) dd.classList.remove("open"); }
+(function(){
+  var inEl = document.getElementById("tksearch");
+  if(!inEl) return;
+  inEl.addEventListener("input", function(){
+    var q = inEl.value.trim();
+    if(tsTimer) clearTimeout(tsTimer);
+    if(q.length < 1){ tsClose(); return; }
+    tsTimer = setTimeout(function(){
+      var seq = ++tsSeq;
+      tsSearch(q).then(function(items){
+        if(seq !== tsSeq) return;          // a newer keystroke superseded this query
+        tsItems = items; tsIdx = 0; tsOpen(); tsRender();
+      }, function(){
+        if(seq !== tsSeq) return;
+        tsItems = []; tsOpen();
+        var dd = document.getElementById("tsdrop");
+        if(dd) dd.innerHTML = '<div class="tsnote">search unreachable — TradingView\u2019s scanner didn\u2019t answer; try again</div>';
+      });
+    }, 260);
+  });
+  inEl.addEventListener("keydown", function(e){
+    var open = document.getElementById("tsdrop").classList.contains("open");
+    if(!open) return;
+    if(e.key==="ArrowDown"){ e.preventDefault(); tsIdx = Math.min(tsItems.length-1, tsIdx+1); tsRender(); }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); tsIdx = Math.max(0, tsIdx-1); tsRender(); }
+    else if(e.key==="Enter"){ e.preventDefault(); tsPick(tsIdx, e.shiftKey); }
+    else if(e.key==="Escape"){ tsClose(); inEl.blur(); e.stopPropagation(); }
+  });
+  document.addEventListener("click", function(e){
+    if(!e.target.closest(".searchbox")) tsClose();
+  });
+})();
 
 /* =================== Position Guard: WebCrypto PBKDF2-SHA256 + AES-GCM =================== */
 function b64ToBytes(b64){ var bin=atob(b64); var arr=new Uint8Array(bin.length); for(var i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i); return arr; }
@@ -2755,30 +3128,67 @@ function stageTheme(){
 // appended exactly the way seriesQuads always did it (o=prevClose, h/l
 // bracket prevClose..live, c=live).
 function stageDailyData(sym){
-  var q = quadsRaw(sym);
-  if(!q || q.length < 2) return null;
-  var rows = q.slice(), synthetic = false;
-  var live = liveBySym(sym);
-  if(live && live.px!=null){
-    var prevClose = num(rows[rows.length-1][3]);
-    if(prevClose!=null){
-      rows = rows.concat([[prevClose, Math.max(prevClose, live.px), Math.min(prevClose, live.px), live.px]]);
-      synthetic = true;
+  var q = quadsRaw(sym), rows, dates, synthetic = false;
+  var adhoc = (!q || q.length<2) && ADHOC_BARS[sym] && ADHOC_BARS[sym].D;
+  if(q && q.length >= 2){
+    rows = q.slice();
+    var live = liveBySym(sym);
+    if(live && live.px!=null){
+      var prevClose = num(rows[rows.length-1][3]);
+      if(prevClose!=null){
+        rows = rows.concat([[prevClose, Math.max(prevClose, live.px), Math.min(prevClose, live.px), live.px]]);
+        synthetic = true;
+      }
     }
+    var endDateStr = (STATE.data && STATE.data.session_date) || (BARS_CACHE && BARS_CACHE.built) || null;
+    dates = weekdayDatesEndingAt(rows.length, endDateStr);
+  } else if(adhoc && adhoc.rows.length >= 2){
+    // Searched/custom name: bars came off the TV websocket with REAL per-bar
+    // timestamps — no weekday reconstruction, and the current session is
+    // already the last bar (15-min delayed), so no synthetic candle either.
+    rows = adhoc.rows.slice();
+    dates = adhoc.dates.slice();
+  } else {
+    return null;
   }
-  var endDateStr = (STATE.data && STATE.data.session_date) || (BARS_CACHE && BARS_CACHE.built) || null;
-  var dates = weekdayDatesEndingAt(rows.length, endDateStr);
   var closes = rows.map(function(r){ return num(r[3]); });
   return { rows:rows, dates:dates, m20:rollMA(closes,20), m50:rollMA(closes,50), m200:rollMA(closes,200),
            hasVolume: rows.some(function(r){ return r && r.length>=5 && num(r[4])!=null && num(r[4])>0; }),
            intraday:false, synthetic:synthetic };
 }
+function stageAdhocIntraData(sym, iv){
+  var key = iv==="15m" ? "i15" : "i60";
+  var raw = ADHOC_BARS[sym] && ADHOC_BARS[sym][key];
+  if(!raw || raw.length<2) return null;
+  var use = raw;
+  if(iv==="4H") use = resample4H(raw);
+  if(iv==="1H") use = raw.slice(-160);
+  return { rows: use.map(function(r){ return [r[1],r[2],r[3],r[4],r[5]]; }),
+           dates: use.map(function(r){ return new Date(r[0]*1000); }),
+           m20:[], m50:[], m200:[],
+           hasVolume: use.some(function(r){ return r[5]!=null && r[5]>0; }),
+           intraday:true, synthetic:false };
+}
 function stageViewData(sym, iv){
   if(iv==="1D") return stageDailyData(sym);
+  if(iv==="1W"){
+    // Weekly resample prefers the pinned daily file, falls back to ad-hoc daily.
+    var cd0 = intervalDataFor(sym, iv);
+    if(cd0) return { rows:cd0.slice, dates:cd0.dates, m20:[], m50:[], m200:[],
+                     hasVolume:!!cd0.hasVolume, intraday:false, synthetic:false };
+    var ad = ADHOC_BARS[sym] && ADHOC_BARS[sym].D;
+    if(ad && ad.rows.length>=6){
+      var w = resampleWeekly(ad.rows, ad.dates);
+      return { rows:w.rows.slice(-104), dates:w.dates.slice(-104), m20:[], m50:[], m200:[],
+               hasVolume: w.rows.some(function(r){ return r.length>=5 && r[4]!=null && r[4]>0; }),
+               intraday:false, synthetic:false };
+    }
+    return null;
+  }
   var cd = intervalDataFor(sym, iv);
-  if(!cd) return null;
-  return { rows:cd.slice, dates:cd.dates, m20:[], m50:[], m200:[],
-           hasVolume:!!cd.hasVolume, intraday:(iv==="15m"||iv==="1H"||iv==="4H"), synthetic:false };
+  if(cd) return { rows:cd.slice, dates:cd.dates, m20:[], m50:[], m200:[],
+                  hasVolume:!!cd.hasVolume, intraday:true, synthetic:false };
+  return stageAdhocIntraData(sym, iv);
 }
 // The auto log-axis rule, unchanged from the SVG engine (see LOG_SCALE_RATIO /
 // LOG_TAIL_SHARE above): evaluated over the PRESET window the user selected,
@@ -2817,6 +3227,20 @@ function stageRender(){
   var d = stageViewData(sym, STAGE.iv);
   if(!d){
     if(BARS_CACHE===null){ stageMsg("loading chart…"); return; }
+    // Not in bars.json — a searched/custom name. Fetch history straight from
+    // TradingView's chart websocket (one shot, fail-soft).
+    var tv = symbolForTicker(sym);
+    if(tv){
+      var wantIntra = intraView;
+      var already = ADHOC_BARS[sym] && (wantIntra ? ADHOC_BARS[sym][STAGE.iv==="15m"?"i15":"i60"] : ADHOC_BARS[sym].D);
+      if(!already){
+        stageMsg("fetching "+sym+" history from TradingView…");
+        var pr = wantIntra ? adhocEnsureIntra(sym, STAGE.iv==="4H"?"1H":STAGE.iv) : adhocEnsureDaily(sym);
+        pr.then(function(){ if(STAGE.sym===sym) stageRender(); },
+                function(){ if(STAGE.sym===sym) stageSetEmpty("no chart history available for "+sym+" — TradingView's chart socket didn't answer. Quotes and fundamentals still work."); });
+        return;
+      }
+    }
     stageSetEmpty("no chart history available"+(STAGE.iv==="1D"?"":" for this view"));
     return;
   }
@@ -3296,12 +3720,30 @@ function stageHeaderHTML(sym){
     + '<span class="px tn">'+(d.px!=null?fmtpx(d.px):"—")+'</span>'
     + '<span class="ch tn '+sign(d.ch)+'">'+(d.ch!=null?fm1(d.ch)+"%":"—")+'</span>'
     + (h!=null && h>=HOT_AT ? ('<span class="hotb" data-tip="'+esc(TIPS.hot)+'">'+h.toFixed(1)+'× usual move</span>') : "")
+    + stageStarHTML(sym)
     + '<span class="ohlc tn" id="stageohlc"></span>';
+}
+function stageStarHTML(sym){
+  if(TAPE_TV_SYMBOL[sym] && !railHasSym(sym) && !wlIsCustom(sym)) return "";   // tape tiles aren't list material
+  var pinnedVisible = railHasSym(sym) && wlHidden().indexOf(sym)===-1;
+  if(pinnedVisible) return '<span class="clsf" data-tip="On the server-curated watchlist — boards, bars and the daily fundamentals sidecar all track it.">pinned</span>';
+  var on = wlIsCustom(sym) || railHasSym(sym);   // hidden pinned counts as off
+  var isOn = wlIsCustom(sym);
+  return '<button class="fbtn" id="stagestar" aria-pressed="'+isOn+'" data-tip="'
+    + (isOn ? "On this browser\u2019s custom list — click to remove."
+            : "Add to this browser\u2019s watchlist: live quotes and charts here; options boards and the daily financials sidecar stay server-curated.")
+    + '">'+(isOn ? "★ on list" : "☆ add")+'</button>';
 }
 function stageHeader(){
   var el = document.getElementById("stagehead");
   if(!el || !STAGE.sym) return;
   el.innerHTML = stageHeaderHTML(STAGE.sym);
+  var star = document.getElementById("stagestar");
+  if(star) star.addEventListener("click", function(e){
+    e.stopPropagation();
+    var sym = STAGE.sym;
+    if(wlIsCustom(sym)) wlRemove(sym); else wlAdd(sym, ADHOC_TV[sym]||symbolForTicker(sym), ADHOC_NAMES[sym]||null);
+  });
   stageSetOhlc(null);
 }
 function stageBar(){
@@ -3410,6 +3852,13 @@ function stageShow(sym, opts){
     stageRender();
     renderStageTab();
   });
+  // Names outside the pinned universe get a scanner-snapshot facts card
+  // (same fields, same taxonomy) fetched client-side.
+  if(!factsOf(sym)){
+    adhocEnsureFacts(sym).then(function(f){
+      if(f && STAGE.sym===sym){ stageHeader(); renderStageTab(); pollTvPrices(); }
+    });
+  }
   if(opts && opts.scroll && matchMedia("(max-width:900px)").matches){
     var sec = document.getElementById("s-stage");
     if(sec) sec.scrollIntoView({behavior:"smooth", block:"start"});
