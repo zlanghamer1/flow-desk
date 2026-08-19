@@ -228,6 +228,7 @@ section.closed .sb{display:none}
 .tsr .nm{color:var(--ink3);font-size:10.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tsr .ex{color:var(--ink3);font-size:9px;flex:none}
 .tsr .px{font-size:10.5px;margin-left:auto;flex:none}
+.tsr .ch{font-size:10px;font-weight:600;flex:none;min-width:38px;text-align:right}
 .tsr .add{color:var(--acc);font-size:10px;border:1px solid var(--edge);border-radius:4px;padding:1px 6px;flex:none}
 .tsr .add.off{color:var(--ink3)}
 .tsr .add:hover{border-color:var(--acc)}
@@ -531,6 +532,11 @@ body.heatwide #s-stage>*:not(.viewseg):not(#heatbar):not(#stageheat){display:non
 .gchart h4{font-size:9.5px;letter-spacing:.09em;color:var(--ink3);text-transform:uppercase;margin-bottom:3px;font-weight:600}
 .gchart svg{width:100%;height:auto;display:block}
 .gcap{font-size:10px;color:var(--ink3);margin-top:2px}
+/* The legend carries every chart's headline number since the fix pass moved
+   the latest values out of the plot, so it cannot be the smallest text on the
+   tab — it was 9.5px against 10-12.5px axis ticks. */
+#stagetabbody .leg{font-size:11px}
+.gchart h4{font-size:10.5px}
 .gcap b{color:var(--ink2);font-weight:600}
 .peerkey{display:flex;gap:10px;flex-wrap:wrap;font-size:10.5px;margin:2px 0 8px}
 .peerkey span{display:inline-flex;align-items:center;gap:4px;color:var(--ink2)}
@@ -558,7 +564,10 @@ body.heatwide #s-stage>*:not(.viewseg):not(#heatbar):not(#stageheat){display:non
 .pi{display:flex;gap:10px;align-items:baseline;padding:8px 16px;font-size:12.5px;cursor:pointer}
 .pi .k{font-size:9.5px;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;flex:0 0 62px}
 .pi.on{background:var(--accbg)}
-.pi .hint{margin-left:auto;font-size:10px;color:var(--ink3)}
+.pi .hint{margin-left:auto;font-size:10px;color:var(--ink3);white-space:nowrap;flex:none}
+/* A long company name used to push "NYSE · chart it" onto a second line and
+   break it mid-phrase ("NYSE · chart / it"). The name ellipsizes instead. */
+.pi>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 
 /* ============ tooltip ============ */
 .tipb{position:fixed;z-index:90;max-width:280px;background:var(--srf2);border:1px solid var(--edge);border-radius:6px;padding:7px 10px;font-size:11px;color:var(--ink2);display:none;box-shadow:0 8px 24px rgba(0,0,0,.35)}
@@ -972,6 +981,10 @@ function wlAdd(sym, tv, name){
   }
   adhocRegister(sym, tv, name);
   renderWL(); applyFocus(); stageHeader();
+  // Without this the new row carried price and name only — no earnings
+  // countdown, no 52-week bar — until the reader happened to open its chart,
+  // at which point it silently gained both.
+  if(!factsOf(sym)) adhocEnsureFacts(sym).then(function(f){ if(f) renderWL(); });
 }
 function wlRemove(sym){
   if(railHasSym(sym)){
@@ -994,7 +1007,16 @@ var $$=function(q, scope){ return [].slice.call((scope||document).querySelectorA
 function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
 function num(v){ if(v===null||v===undefined||v==="") return null; var n=Number(v); return isFinite(n)?n:null; }
 function sign(v){ var n=num(v); if(n===null) return "m"; return n>0?"u":n<0?"d":"m"; }
-function fm1(v){ var n=num(v); if(n===null) return "—"; return (n>0?"+":n<0?"−":"")+Math.abs(n).toFixed(1); }
+// Colour that agrees with fm1's rounding: a −0.04% move prints "0.0" and must
+// not print it in red.
+function sign1(v){ var n=num(v); if(n===null) return "m"; return Math.abs(n)<0.05 ? "m" : (n>0?"u":"d"); }
+function fm1(v){
+  var n=num(v); if(n===null) return "—";
+  // A move that rounds away is not a signed zero: "−0.0%" in red reads as a
+  // typo. Print it flat and unsigned.
+  if(Math.abs(n) < 0.05) return "0.0";
+  return (n>0?"+":n<0?"−":"")+Math.abs(n).toFixed(1);
+}
 // fmM/fmB: ONE unit-aware signed formatter over RAW dollars (both names kept
 // so every existing call site stays valid -- net_flow, flow_5d, tilt_prem,
 // etf flow_1d/flow_1m, sector/haven flow_1w/flow_1m, havens_totals are all
@@ -1637,6 +1659,11 @@ function normalizeFund(f){
   var out = {};
   out.short_pct = (f.short_pct!=null) ? f.short_pct : (f.short_pct_float!=null ? f.short_pct_float : null);
   out.pe_forward = (f.pe_forward!=null) ? f.pe_forward : null;
+  // built and currency were dropped here, so the Financials tab's ", built
+  // 2026-08-19" clause was dead code and the currency hedge fired on every
+  // name — including US filers, where the reporting currency is not in doubt.
+  out.built = (typeof f.built === "string" && f.built) ? f.built : null;
+  out.currency = (typeof f.currency === "string" && f.currency) ? f.currency : null;
   out.earnings = Array.isArray(f.earnings) ? f.earnings.map(function(r){
     if(!r || typeof r!=="object") return null;
     return {
@@ -2070,10 +2097,24 @@ var HOT_AT = 1.8;
 function rangeBarHTML(sym, big){
   var st = statsOf(sym);
   if(st.hi==null || st.lo==null || st.pos==null) return ""; // skip the bar when either 52w bound is null
-  var p = (st.pos*100).toFixed(0);
-  return '<div class="rb '+(big?"big":"")+'" data-tip="'+esc(TIPS.range)+' Now at '+p+'% of the range.">'
+  // The bounds come from the daily snapshot and the price from the 30-second
+  // poll, so a name that breaks out prints a price ABOVE its own labelled high
+  // and the diamond silently clamps to 100%. That is exactly the name a trader
+  // wants this bar for. Extend the bound to the price and say what happened.
+  var d = dispQuote(liveBySym(sym));
+  var px = d.px;
+  var lo = st.lo, hi = st.hi, newHi = false, newLo = false;
+  if(px!=null && px > hi){ hi = px; newHi = true; }
+  if(px!=null && px < lo){ lo = px; newLo = true; }
+  var pos = (hi>lo && px!=null) ? Math.min(1, Math.max(0, (px-lo)/(hi-lo))) : st.pos;
+  var p = (pos*100).toFixed(0);
+  var tag = newHi ? ' <b class="u">new 52-week high today</b>' : newLo ? ' <b class="d">new 52-week low today</b>' : '';
+  return '<div class="rb '+(big?"big":"")+'" data-tip="'+esc(TIPS.range)+' Now at '+p+'% of the range.'
+    + (newHi ? ' Today\u2019s price is above the highest close in the snapshot, so this is a new 52-week high — the upper bound shown is today.' : '')
+    + (newLo ? ' Today\u2019s price is below the lowest close in the snapshot, so this is a new 52-week low — the lower bound shown is today.' : '')
+    + '">'
     +'<i style="width:'+p+'%"></i><b style="left:'+p+'%"></b>'
-    +'<span class="lo tn">'+fmtpx(st.lo)+'</span><span class="hi tn">'+fmtpx(st.hi)+'</span></div>';
+    +'<span class="lo tn">'+fmtpx(lo)+'</span><span class="hi tn">'+fmtpx(hi)+tag+'</span></div>';
 }
 
 /* =================== watchlist rail =================== */
@@ -2132,7 +2173,7 @@ function railRowHTML(s, opts){
   var q = liveBySym(s) || {};
   var d = dispQuote(q);
   var f = factsOf(s);
-  var cls = sign(d.ch);
+  var cls = sign1(d.ch);
   var h = hotOf(s);
   var isHot = h!=null && h>=HOT_AT;
   var earnDays = f && f.earn_days!=null ? num(f.earn_days) : null;
@@ -2171,7 +2212,12 @@ function renderWL(){
   // Capture the io box's caret before $("#wl").innerHTML wipes it.
   var _io = document.getElementById("wlio-in");
   WLIO_FOCUS = !!(_io && document.activeElement === _io);
-  if(_io){ WLIO_DRAFT = _io.value; WLIO_SEL = [_io.selectionStart||0, _io.selectionEnd||0]; }
+  // Only keep a draft while the box is FOCUSED. Capturing on every rebuild
+  // meant an abandoned draft outlived edit mode — and since apply REPLACES the
+  // custom list, copying that stale string to another device would overwrite
+  // the real list with the typing you walked away from.
+  if(_io && WLIO_FOCUS){ WLIO_DRAFT = _io.value; WLIO_SEL = [_io.selectionStart||0, _io.selectionEnd||0]; }
+  else WLIO_DRAFT = null;
   var hidden = wlHidden(), custom = wlCustom();
   var customSyms = custom.map(function(r){ return r.sym; });
   var railSyms = [];
@@ -2214,6 +2260,12 @@ function renderWL(){
   } else {
     var sorted = railSyms.slice().sort(function(a,b){
       if(wlSort==="range"){
+        // Same rule the shopping-list box applies three inches above: a
+        // leveraged wrapper's "1% of range" is a reverse-split artifact, not a
+        // discount. Two controls asking the same question must not answer it
+        // with different universes.
+        var la = !!LEV_SYMS[a], lb = !!LEV_SYMS[b];
+        if(la !== lb) return la ? 1 : -1;
         var pa=statsOf(a).pos, pb=statsOf(b).pos;
         if(pa==null && pb==null) return 0; if(pa==null) return 1; if(pb==null) return -1;
         return pa-pb;
@@ -2232,7 +2284,11 @@ function renderWL(){
   $("#wl").innerHTML = html;
   $$("#wl [data-ws]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlSort=b.dataset.ws; renderWL(); applyFocus(); }); });
   var we = document.getElementById("wledit");
-  if(we) we.addEventListener("click", function(e){ e.stopPropagation(); wlEdit=!wlEdit; renderWL(); applyFocus(); });
+  if(we) we.addEventListener("click", function(e){
+    e.stopPropagation(); wlEdit=!wlEdit;
+    WLIO_DRAFT = null; WLIO_MSG = "";        // leaving edit mode discards the draft
+    renderWL(); applyFocus();
+  });
   $$("#wl [data-wlx]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlRemove(b.dataset.wlx); }); });
   $$("#wl [data-wlback]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlAdd(b.dataset.wlback); }); });
   var ioIn = document.getElementById("wlio-in");
@@ -2259,14 +2315,20 @@ function renderWL(){
   // it has no business sitting next to a stock under the word "shopping".
   var withPos = railSyms.filter(function(s){ return statsOf(s).pos!=null && !LEV_SYMS[s]; });
   var lows = withPos.slice().sort(function(a,b){ return statsOf(a).pos-statsOf(b).pos; }).slice(0,3);
+  // With the price feed down every row reads "—", so "none yet" and "not
+  // enough range data yet" were statements about the market the page could
+  // not make. Say what is actually wrong.
+  var feedDead = (typeof tvPollFailed !== "undefined") && tvPollFailed;
   var alertsHtml = '<b>MOVERS · RELATIVE TO THEIR OWN AVERAGE DAY</b>'
-    + (hot.length ? hot.map(function(s){
+    + (feedDead ? '<span class="m">price feed not answering — no readings</span>' : "")
+    + (feedDead ? "" : (hot.length ? hot.map(function(s){
         var d=dispQuote(liveBySym(s)); var f=factsOf(s)||{};
         return '<span class="hm2">'+esc(s)+' '+hotOf(s).toFixed(1)+'×</span> <span class="m">('
           +(d.tag?esc(d.tag)+" ":"")+fm1(d.ch)+'% vs '+(f.avg_move!=null?f.avg_move:"—")+'% usual)</span>';
-      }).join(" · ") : "none yet")
+      }).join(" · ") : "none yet"))
     + '<div style="margin-top:6px"><b data-tip="Stocks and unlevered funds only — leveraged and inverse wrappers are excluded, because a reverse split can park one at 1% of its adjusted range while its price is unchanged.">NEAR 52-WEEK LOWS · SHOPPING LIST</b>'
-    + (lows.length ? lows.map(function(s){ return esc(s)+' <span class="m">'+Math.round(statsOf(s).pos*100)+'%</span>'; }).join(" · ") : "not enough range data yet")
+    + (feedDead ? '<span class="m">price feed not answering — no readings</span>'
+                : (lows.length ? lows.map(function(s){ return esc(s)+' <span class="m">'+Math.round(statsOf(s).pos*100)+'%</span>'; }).join(" · ") : "not enough range data yet"))
     + '</div>'
     + '<div class="note" style="margin-top:6px">the (n) in the tab title = names moving ≥1.8× their own average day</div>';
   $("#alerts").innerHTML = alertsHtml;
@@ -2390,10 +2452,14 @@ function tsRender(){
                  : "Add this name to the rail in this browser.";
     return '<div class="tsr '+(i===tsIdx?"on":"")+'" data-i="'+i+'">'
       + '<div class="r1"><span class="sy">'+esc(it.sym)+'</span>'
-      + '<span class="px tn '+sign(it.ch)+'">'+(it.px!=null?fmtpx(it.px):"—")+'</span>'
+      + '<span class="px tn">'+(it.px!=null?fmtpx(it.px):"—")+'</span>'
+      // The price used to be coloured by today's change without ever printing
+      // it — an unlabelled colour.
+      + '<span class="ch tn '+sign1(it.ch)+'">'+(it.ch!=null?(fm1(it.ch)+"%"):"")+'</span>'
       + '<button class="add'+(on?" off":"")+'" data-add="'+i+'" data-tip="'+esc(tip)+'">'+lab+'</button></div>'
       + '<div class="r2"><span class="nm">'+esc(it.name)+'</span><span class="ex">'+esc(it.exch)+'</span></div></div>';
-  }).join("");
+  }).join("")
+  + '<div class="tsnote">\u2191\u2193 move \u00b7 Enter charts it \u00b7 Shift+Enter charts and adds it</div>';
   $$("#tsdrop .tsr").forEach(function(el){
     el.addEventListener("click", function(e){
       if(e.target.closest("[data-add]")) return;
@@ -2407,6 +2473,8 @@ function tsRender(){
       adhocRegister(it.sym, it.tv, it.name);
       if(tsOnList(it.sym)) wlRemove(it.sym); else wlAdd(it.sym, it.tv, it.name);
       tsRender(); pollTvPrices();
+      var back = document.getElementById("tksearch");
+      if(back) back.focus();      // so Escape reaches the dropdown's own handler
     });
   });
 }
@@ -4366,6 +4434,23 @@ function fmtCompact(v){
 /* One unit and one decimal count for the WHOLE tick set, chosen from the
    axis's own magnitude. Per-tick formatting produced "0.00 / 20.0B / 40.0B"
    on one axis — three conventions and a zero that looked like a price. */
+/* Tooltips get their OWN formatter. Reusing the axis one rounded every hover
+   to the axis's unit, so MU's Q1 25 free cash flow of $38,000,000 read
+   "0.0B" — under a note promising "hover any point or bar for its exact
+   value". */
+function hoverFormatter(kind){
+  if(kind==="pct") return function(v){ var n2=num(v); return n2==null?"—":(Math.round(n2*100)/100)+"%"; };
+  if(kind==="num") return function(v){ var n2=num(v); return n2==null?"—":String(Math.round(n2*10000)/10000); };
+  return function(v){
+    var n2=num(v); if(n2==null) return "—";
+    var a=Math.abs(n2), sgn=n2<0?"\u2212":"";
+    if(a>=1e12) return sgn+(a/1e12).toFixed(2)+"T";
+    if(a>=1e9)  return sgn+(a/1e9).toFixed(2)+"B";
+    if(a>=1e6)  return sgn+(a/1e6).toFixed(1)+"M";
+    if(a>=1e3)  return sgn+(a/1e3).toFixed(1)+"K";
+    return sgn+a.toFixed(2);
+  };
+}
 function tickFormatter(ticks, kind){
   var mx = 0;
   ticks.forEach(function(t){ mx = Math.max(mx, Math.abs(num(t)||0)); });
@@ -4457,8 +4542,20 @@ function niceTicks(mn, mx, want){
   var span = mx - mn, raw = span/want;
   var mag = Math.pow(10, Math.floor(Math.log(raw)/Math.LN10));
   var norm = raw/mag, step = mag * (norm>5?10 : norm>2.5?5 : norm>2?2.5 : norm>1?2 : 1);
-  var out = [], t = Math.ceil(mn/step)*step;
-  for(var i=0; i<12 && t<=mx+step*0.001; i++, t+=step){ out.push(Math.abs(t)<step*1e-9?0:t); }
+  function build(st){
+    var o = [], t = Math.ceil(mn/st)*st;
+    for(var i=0; i<14 && t<=mx+st*0.001; i++, t+=st){ o.push(Math.abs(t)<st*1e-9?0:t); }
+    return o;
+  }
+  var out = build(step);
+  // The step ladder jumps, so a range often produced only two gridlines and
+  // most bars sat with no numeric reference near them (CRWD's margins spanned
+  // -8.9% to +35.6% under just "0%" and "20%"). Halve the step when that
+  // happens and keep it if it lands in a readable band.
+  if(out.length < 3){
+    var half = build(step/2);
+    if(half.length >= 3 && half.length <= 7) out = half;
+  }
   return out;
 }
 function fmtAxisMoney(v){ return fmtCompact(v); }
@@ -4498,6 +4595,7 @@ function axisChartSVG(labels, defs, opts){
   // "0000.0B" and printed the same wrong label on two different gridlines.
   var ticks = niceTicks(mn, mx, 4);
   var fmt = opts.fmt || tickFormatter(ticks, opts.kind || "money");
+  var hfmt = hoverFormatter(opts.kind || "money");
   var widest = 0;
   ticks.forEach(function(t){ widest = Math.max(widest, String(fmt(t)).length); });
   var padL = Math.max(opts.padL || 40, Math.ceil(widest*AX_TICK_FS*0.62) + 12);
@@ -4525,21 +4623,38 @@ function axisChartSVG(labels, defs, opts){
   // that drew collided at the right edge). ~34px of clearance per label, and
   // the last period always wins its slot.
   var every = opts.xEvery || Math.max(1, Math.ceil(n/6));
-  var minGap = 40, drawn = [];
+  // Period labels along the bottom. Two rules, both learned the hard way:
+  //   1. The clearance has to come from the LABELS, not a constant. A fixed 40
+  //      units fit "Q3 26" and not "Mar '26", so the scanner path's month
+  //      labels printed as one run-on word ("Mar '26Jun '26") on every
+  //      searched name — Zach's original complaint, still live off-desk.
+  //   2. The last period always wins its slot, and the edge clamp that keeps
+  //      it inside the viewBox has to happen BEFORE the overlap test, or the
+  //      shifted label lands on a neighbour that was cleared against its
+  //      unshifted position.
+  // So: work out every label's real box first, right to left, and only then
+  // emit the ones that survive.
+  var halfW = function(txt){ return String(txt).length*AX_LABEL_FS*0.29; };
   var order = [];
   for(var i=n-1;i>=0;i--){ if(i===n-1 || i%every===0) order.push(i); }
+  var placed = [];
   order.forEach(function(i){
+    var txt = String(labels[i]||"");
+    if(!txt) return;
     var lx = hasBar ? XB(i) : X(i);
-    if(drawn.some(function(x){ return Math.abs(x-lx) < minGap; })) return;
-    drawn.push(lx);
-    // Keep the first and last period label inside the viewBox: centered on the
-    // final x position, "Q3 26" hung half its width past the right edge and
-    // rendered as "Q3 2(".
-    var txt = String(labels[i]||""), half = txt.length*AX_LABEL_FS*0.29;
+    var half = halfW(txt);
     var anchor = "middle", tx = lx;
     if(lx + half > W-2){ anchor = "end"; tx = W-2; }
     else if(lx - half < 2){ anchor = "start"; tx = 2; }
-    out += '<text x="'+tx.toFixed(1)+'" y="'+(H-9)+'" font-size="'+AX_LABEL_FS+'" text-anchor="'+anchor+'" fill="var(--ink3)">'+esc(txt)+'</text>';
+    var lo2 = (anchor==="end") ? (tx - half*2) : (anchor==="start") ? tx : (tx - half);
+    var box = {lo: lo2 - 4, hi: lo2 + half*2 + 4};
+    var clash = placed.some(function(p2){ return p2.lo < box.hi && p2.hi > box.lo; });
+    if(clash) return;                      // order runs newest-first, so the last period is placed first
+    placed.push({lo:box.lo, hi:box.hi, tx:tx, anchor:anchor, txt:txt});
+  });
+  placed.forEach(function(p2){
+    out += '<text x="'+p2.tx.toFixed(1)+'" y="'+(H-9)+'" font-size="'+AX_LABEL_FS
+      + '" text-anchor="'+p2.anchor+'" fill="var(--ink3)">'+esc(p2.txt)+'</text>';
   });
   var barDefs = live.filter(function(d){ return d.type==="bar"; });
   var slot = plotW/n, groupW = Math.max(3, slot*0.7), bw = barDefs.length ? Math.max(2, groupW/barDefs.length) : 0;
@@ -4553,7 +4668,7 @@ function axisChartSVG(labels, defs, opts){
         var top = Math.min(y0,y1), hgt = Math.max(1, Math.abs(y1-y0));
         out += '<rect x="'+x.toFixed(1)+'" y="'+top.toFixed(1)+'" width="'+Math.max(1.5,bw-1).toFixed(1)
           + '" height="'+hgt.toFixed(1)+'" rx="1.5" fill="'+d.color+'" opacity="'+(v<0?".85":"1")+'">'
-          + '<title>'+esc((labels[k]||"")+" · "+d.name+": "+fmt(v))+'</title></rect>';
+          + '<title>'+esc((labels[k]||"")+" · "+d.name+": "+hfmt(v))+'</title></rect>';
       }
       return;
     }
@@ -4567,7 +4682,7 @@ function axisChartSVG(labels, defs, opts){
       // quarters back, but each company's own quarter belongs in its tooltip.
       var per = own ? (own[j]||"") : (labels[j]||"");
       dots += '<circle cx="'+px.toFixed(1)+'" cy="'+py.toFixed(1)+'" r="2.6" fill="'+d.color+'">'
-        + '<title>'+esc(d.name+(per?(" · "+per):"")+": "+fmt(vv))+'</title></circle>';
+        + '<title>'+esc(d.name+(per?(" · "+per):"")+": "+hfmt(vv))+'</title></circle>';
       lastX = px; lastY = py; lastV = vv;
     }
     if(pts.length>1) out += '<polyline points="'+pts.join(" ")+'" fill="none" stroke="'+d.color+'" stroke-width="1.8"/>';
@@ -4584,7 +4699,10 @@ function axisChartSVG(labels, defs, opts){
 /* Legend carries each series' latest value — that is where the end-of-line
    labels went, and why they no longer collide. */
 function chartLegendHTML(defs, fmt, labels){
-  fmt = fmt || fmtAxisMoney;
+  // Default to the hover formatter, not the axis one: the legend carries each
+  // series' own latest value, so it should print at that value's magnitude
+  // (27.8M under a billions axis) and use the same U+2212 minus the ticks do.
+  fmt = fmt || hoverFormatter("money");
   return '<div class="leg" style="margin-top:3px">'+defs.map(function(d, i){
     var vals = (d.values||[]).map(num), last = null, lastIdx = -1;
     for(var k=vals.length-1;k>=0;k--){ if(vals[k]!=null){ last = vals[k]; lastIdx = k; break; } }
@@ -4795,8 +4913,11 @@ function renderGrowth(sym, fund){
     + (yearsDropped.length ? ('Annual charts show only the unbroken run of years ending at the newest one; '
         + esc(yearsDropped.join(", "))+' sat behind a gap in the vendor data and would have plotted as if adjacent. ') : '')
     + 'The year-over-year chart starts at the fifth quarter, because the first four have no prior-year quarter to compare against. '
-    + 'Margins are derived per quarter only where both legs reported. A missing quarter stays blank, never a zero. '
-    + 'Hover any point or bar for its exact value.</div>';
+    + 'Annual EPS is the four quarters added up, so it can differ by a couple of percent from the diluted EPS the company files, '
+    + 'which uses a share count weighted across the year. '
+    + 'Margins are derived per quarter only where both legs reported. A missing quarter stays blank, never a zero — and an annual '
+    + 'slot is blank when any quarter in that year is missing the figure, which is why a year can draw on one chart and not the one '
+    + 'beside it. Hover any point or bar for its exact value.</div>';
   return '<div class="dsec" id="growthbox"><h3>Financials</h3>'+out+'</div>';
 }
 
@@ -6241,9 +6362,16 @@ function renderStageTab(){
   var sym = STAGE.sym, fund = STAGE.fund;
   if(STAGE.tab==="fin"){
     var g = renderGrowth(sym, fund);
-    body.innerHTML = (g && g.indexOf("dsec")!==-1) ? g
-      : '<div class="dsec note">No quarterly financials for '+esc(sym)+'. Indexes, ETFs and other funds have no income statement '
+    if(g && g.indexOf("dsec")!==-1){ body.innerHTML = g; }
+    else if(!fund && !Object.prototype.hasOwnProperty.call(FUND_CACHE, sym)){
+      // The sidecar (or the scanner fallback) is still in flight. Saying "no
+      // quarterly financials for AAPL" for three and a half seconds and then
+      // drawing them is a lie the reader has time to read.
+      body.innerHTML = '<div class="dsec note">loading financials for '+esc(sym)+'…</div>';
+    } else {
+      body.innerHTML = '<div class="dsec note">No quarterly financials for '+esc(sym)+'. Indexes, ETFs and other funds have no income statement '
         + 'to report — they hold companies rather than being one. For a company this means no vendor published statements for it.</div>';
+    }
   } else if(STAGE.tab==="peers"){
     renderPeersTab(sym);
   } else if(STAGE.tab==="flow"){
@@ -6463,7 +6591,7 @@ var palIdx = 0;
 // asked what the second one was even for. Both now run the same live scanner
 // search: desk names first (they carry flow and fundamentals), then anything
 // else that matched, then actions.
-var PAL_REMOTE = [], PAL_SEQ = 0, palTimer = null;
+var PAL_REMOTE = [], PAL_SEQ = 0, palTimer = null, PAL_ERR = false;
 function palItems(q){
   q = (q||"").trim().toUpperCase();
   var local = {};
@@ -6471,7 +6599,8 @@ function palItems(q){
     .slice(0,6).map(function(s){ local[s]=true; return {k:"ticker", l:s+" — "+nameFor(s), hint:"on the desk", run:function(){ setFocus(s); }}; });
   var remote = (q ? PAL_REMOTE : []).filter(function(it){ return !local[it.sym]; }).slice(0,6)
     .map(function(it){
-      return {k:"search", l:it.sym+" — "+(it.name||it.sym), hint:esc(it.exch||"")+" · chart it",
+      return {k:"search", l:it.sym+" — "+(it.name||it.sym),
+        hint:esc(it.exch||"")+(it.px!=null?(" · "+fmtpx(it.px)):"")+" · chart it",
         run:function(){ adhocRegister(it.sym, it.tv, it.name); setFocus(it.sym); pollTvPrices(); }};
     });
   var acts = ACTIONS.filter(function(a){ return !q || a.l.toUpperCase().indexOf(q)!==-1; });
@@ -6485,9 +6614,15 @@ function palSearchRemote(q){
     var seq = ++PAL_SEQ;
     tsSearch(q).then(function(items){
       if(seq !== PAL_SEQ) return;
-      PAL_REMOTE = items;
+      PAL_REMOTE = items; PAL_ERR = false;
       if(document.getElementById("pal").classList.contains("open")) palDraw();
-    }, function(){ if(seq === PAL_SEQ){ PAL_REMOTE = []; } });
+    }, function(){
+      if(seq !== PAL_SEQ) return;
+      // "nothing matched nike" is a claim about the market. NKE is listed; the
+      // scanner is down. The rail box already said so.
+      PAL_REMOTE = []; PAL_ERR = true;
+      if(document.getElementById("pal").classList.contains("open")) palDraw();
+    });
   }, 260);
 }
 // What the palette actually shows for a query, including the no-match
@@ -6504,9 +6639,10 @@ function palDraw(){
   var v = palVisible(q), items = v.items;
   // An unmatched query used to leave an empty white panel — no message, no
   // actions — which reads as a broken page. The rail box got this right.
-  var head = v.empty
-    ? '<div class="tsnote">nothing matched '+esc(String(q||"").trim())+' — the scanner covers US-listed stocks, ETFs and ADRs. Actions are still below.</div>'
-    : "";
+  var head = !v.empty ? ""
+    : (PAL_ERR
+        ? '<div class="tsnote">search unreachable — TradingView\u2019s scanner didn\u2019t answer; try again. Actions are still below.</div>'
+        : '<div class="tsnote">nothing matched '+esc(String(q||"").trim())+' — the scanner covers US-listed stocks, ETFs and ADRs. Actions are still below.</div>');
   document.getElementById("pallist").innerHTML = head + items.map(function(it,i){
     return '<div class="pi '+(i===palIdx?"on":"")+'" data-i="'+i+'"><span class="k">'+it.k+'</span><span>'+esc(it.l)+'</span>'+(it.hint?('<span class="hint">'+it.hint+'</span>'):'')+'</div>';
   }).join("");
@@ -6519,7 +6655,7 @@ var PAL_RETURN = null;
 function palOpen(){
   PAL_RETURN = (document.activeElement && document.activeElement !== document.body) ? document.activeElement : null;
   document.getElementById("pal").classList.add("open");
-  document.getElementById("palin").value=""; palIdx=0; PAL_REMOTE=[]; palDraw();
+  document.getElementById("palin").value=""; palIdx=0; PAL_REMOTE=[]; PAL_ERR=false; palDraw();
   document.getElementById("palin").focus();
 }
 function palClose(){
@@ -6674,7 +6810,15 @@ document.addEventListener("keydown", function(e){
     else if(e.key==="Enter"){ if(items[palIdx]){ items[palIdx].run(); palClose(); } }
     return;
   }
-  if(e.key==="Escape"){ setFocus(null); }
+  if(e.key==="Escape"){
+    // The rail dropdown's Escape is bound to the INPUT, but clicking its
+    // "+ add" chip leaves focus on BODY — so only this handler ran and it
+    // cleared the charted ticker while the dropdown stayed open over the sort
+    // buttons. Close the dropdown first and stop there.
+    var dd = document.getElementById("tsdrop");
+    if(dd && dd.classList.contains("open")){ tsClose(true); return; }
+    setFocus(null);
+  }
 });
 var palinEl = document.getElementById("palin");
 if(palinEl) palinEl.addEventListener("input", function(){ palIdx=0; palSearchRemote(palinEl.value); palDraw(); });
