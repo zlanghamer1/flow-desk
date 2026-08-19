@@ -40,10 +40,14 @@ not.
    and hidden pinned names live in localStorage per browser, disclosed with
    the house no-silent-caps line, with an edit mode and a comma-list
    export/import. Ad-hoc names get live quotes on the 30s poll, a
-   scanner-snapshot fundamentals card, and real daily/weekly/intraday bars
-   pulled in the browser over TradingView's chart websocket (the
-   `fetch_tv.py` protocol; the endpoint accepts any Origin, verified
-   2026-08-19). They never get options boards or the daily sidecar, and the
+   scanner-snapshot fundamentals card, and bar history.
+   **The bar-history source in this commit was wrong and was replaced the
+   same day** — it opened TradingView's chart websocket from the browser, and
+   that host allowlists exact `Origin` values, so every searched ticker
+   failed with a 403 (Zach hit it on TSLA). The claim in this bullet that
+   "the endpoint accepts any Origin" came from a probe whose client sent its
+   own TradingView Origin. See Round 2 below for the measurement and the
+   replacement. They never get options boards or the daily sidecar, and the
    page says so.
 4. `6ccbaa3`: auto technical analysis, display-only. Pivot/trendline
    geometry ported verbatim from `scripts/trendline_break_scan.py`
@@ -113,9 +117,11 @@ not.
   headline links; Position Guard absent.
 - The websocket transport could not be exercised end-to-end from the build
   sandbox (its proxy resets browser TLS), so the page's client was tested
-  against captured real frames and the protocol was verified live
-  server-side with the desk's own Origin. First fully-live browser test is
-  Zach opening the page.
+  against captured real frames. **That gap is exactly where the Origin bug
+  hid**: replaying frames proves the parser, not the handshake. Round 2
+  closed it by driving a real Chromium at the real origin through a
+  purpose-built TLS relay. Lesson: a transport tested only against a replay
+  has not been tested.
 
 ## Open items
 
@@ -124,9 +130,10 @@ not.
   everywhere, that needs a write path the static page deliberately does not
   have; pinning names into the server universe via a config edit remains
   the covered route.
-- The TradingView chart websocket is unofficial. If it ever blocks browser
-  origins, searched names degrade to quotes + fundamentals with an honest
-  note; pinned names are unaffected (bars.json).
+- ~~The TradingView chart websocket is unofficial…~~ **Resolved in Round 2:
+  it blocks browser origins outright.** Searched names now use
+  stockanalysis.com for daily bars; intraday for those names has no
+  browser-readable source and the stage says so.
 - `desk_private` and the vault's `build_desk_private.py` still run for a
   panel that no longer exists. Retiring that pipeline is a vault-side
   decision for Zach.
