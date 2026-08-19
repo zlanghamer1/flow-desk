@@ -15,6 +15,10 @@
   --hi:#D9A845; --hibg:rgba(217,168,69,.16);
   --sel:rgba(94,159,216,.07);
   --spark-up:#3ECF8E; --spark-dn:#F06A5D; --spark-n:#5C6B7A;
+  /* Chart gridlines. --edge2 is a table hairline at 1.05:1 against --srf,
+     invisible under a plot — a tick number labeling a line you cannot see
+     is not a reference. These sit near 2:1 in both themes. */
+  --grid:#2A323C; --gridzero:#3C4653;
 }
 @media (prefers-color-scheme: light){
   :root:not([data-theme="dark"]){
@@ -25,6 +29,7 @@
     --hi:#9A6B10; --hibg:rgba(154,107,16,.13);
     --sel:rgba(47,111,174,.06);
     --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
+  --grid:#D3DBE4; --gridzero:#B4C0CD;
   }
 }
 :root[data-theme="light"]{
@@ -35,6 +40,7 @@
   --hi:#9A6B10; --hibg:rgba(154,107,16,.13);
   --sel:rgba(47,111,174,.06);
   --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
+  --grid:#D3DBE4; --gridzero:#B4C0CD;
 }
 :root[data-theme="dark"]{
   --bg:#0C0E11; --srf:#101318; --srf2:#14181E; --edge:#1D232B; --edge2:#161B21;
@@ -44,6 +50,10 @@
   --hi:#D9A845; --hibg:rgba(217,168,69,.16);
   --sel:rgba(94,159,216,.07);
   --spark-up:#3ECF8E; --spark-dn:#F06A5D; --spark-n:#5C6B7A;
+  /* Chart gridlines. --edge2 is a table hairline at 1.05:1 against --srf,
+     invisible under a plot — a tick number labeling a line you cannot see
+     is not a reference. These sit near 2:1 in both themes. */
+  --grid:#2A323C; --gridzero:#3C4653;
 }
 /* ============ base ============ */
 *{box-sizing:border-box;margin:0;padding:0}
@@ -448,9 +458,14 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .fcell span{color:var(--ink3)}
 .fcell b{font-weight:600;font-variant-numeric:tabular-nums}
 .kvrow b{font-variant-numeric:tabular-nums}
-.gwrap{display:flex;gap:16px;flex-wrap:wrap;margin-top:4px}
-.gwrap .glabel{flex:1 1 100%;font-size:9.5px;letter-spacing:.12em;color:var(--ink3);font-weight:700;text-transform:uppercase;margin-top:8px}
-.gchart{flex:1 1 240px;min-width:200px}
+/* Grid, not flex (2026-08-19): flex:1 1 240px let the last item in a wrapped
+   row grow without bound, so a 3+1 annual row rendered "EPS — annual" at
+   786x393 next to three 251x126 siblings — the least important chart became
+   the loudest thing on the tab. A grid track cannot widow. */
+.gwrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:6px 16px;margin-top:4px;align-items:start}
+.gwrap .glabel{grid-column:1/-1;font-size:9.5px;letter-spacing:.12em;color:var(--ink3);font-weight:700;text-transform:uppercase;margin-top:8px}
+.gwrap .gfull{grid-column:1/-1}
+.gchart{min-width:0;max-width:420px}
 .gchart h4{font-size:9.5px;letter-spacing:.09em;color:var(--ink3);text-transform:uppercase;margin-bottom:3px;font-weight:600}
 .gchart svg{width:100%;height:auto;display:block}
 .gcap{font-size:10px;color:var(--ink3);margin-top:2px}
@@ -3932,10 +3947,41 @@ function renderFundamentals(sym, fund){
 function fmtCompact(v){
   var n=num(v); if(n===null) return "—";
   var a=Math.abs(n);
+  // Trillions step added 2026-08-19: SK hynix reports in won, so its revenue
+  // printed as "79319.0B" — a nine-character label that ran off the left of
+  // the axis and rendered as "0000.0B".
+  if(a>=1e12) return (n/1e12).toFixed(1)+"T";
   if(a>=1e9) return (n/1e9).toFixed(1)+"B";
   if(a>=1e6) return (n/1e6).toFixed(1)+"M";
   if(a>=1e3) return (n/1e3).toFixed(1)+"K";
   return n.toFixed(2);
+}
+/* One unit and one decimal count for the WHOLE tick set, chosen from the
+   axis's own magnitude. Per-tick formatting produced "0.00 / 20.0B / 40.0B"
+   on one axis — three conventions and a zero that looked like a price. */
+function tickFormatter(ticks, kind){
+  var mx = 0;
+  ticks.forEach(function(t){ mx = Math.max(mx, Math.abs(num(t)||0)); });
+  // U+2212, the same minus the rest of the page prints. A hyphen next to a
+  // tabular number reads as a dash.
+  function m(str){ return String(str).replace(/^-/, "\u2212"); }
+  function dpOf(scaled){ return scaled>=100 ? 0 : scaled>=1 ? 1 : 2; }
+  if(kind==="pct"){
+    var dp = mx>=20 ? 0 : 1;
+    return function(v){ return (Math.abs(v)<1e-9 ? "0" : m((num(v)||0).toFixed(dp))) + "%"; };
+  }
+  if(kind==="num"){
+    var dpn = dpOf(mx);
+    return function(v){ return Math.abs(v)<1e-9 ? "0" : m((num(v)||0).toFixed(dpn)); };
+  }
+  var div = 1, suf = "";
+  if(mx>=1e12){ div=1e12; suf="T"; } else if(mx>=1e9){ div=1e9; suf="B"; }
+  else if(mx>=1e6){ div=1e6; suf="M"; } else if(mx>=1e3){ div=1e3; suf="K"; }
+  var dpm = dpOf(mx/div);
+  return function(v){
+    if(Math.abs(v)<1e-9) return "0";
+    return m(((num(v)||0)/div).toFixed(dpm))+suf;
+  };
 }
 function yoyPct(arr, i, back){
   var a=num(arr[i]), b=num(arr[i-back]);
@@ -4008,11 +4054,14 @@ function fmtAxisPct(v){ return (Math.round(v*10)/10)+"%"; }
 function fmtAxisNum(v){ var a=Math.abs(v); return (a>=100? v.toFixed(0) : a>=10? v.toFixed(1) : v.toFixed(2)); }
 /* One renderer for every financials chart. defs: [{name,color,values,type}]
    type is "line" (default) or "bar". opts: {fmt, W, H, zeroLine, xEvery}. */
+// Axis text is authored in viewBox units and then scaled by however wide the
+// chart renders, so a fixed font-size lands anywhere from 5px to 16px on
+// screen. These are sized for the ~0.95-1.1 scale the grid now produces.
+var AX_TICK_FS = 11, AX_LABEL_FS = 10.5;
 function axisChartSVG(labels, defs, opts){
   opts = opts || {};
-  var fmt = opts.fmt || fmtAxisMoney;
   var W = opts.W || 560, H = opts.H || 190;
-  var padL = opts.padL || 56, padR = 12, padT = 12, padB = 30;
+  var padR = 12, padT = 12, padB = 30;
   var live = defs.map(function(d, i){
     return {name:d.name, color:d.color||seriesColor(i), type:d.type||"line",
             vals:(d.values||[]).map(num)};
@@ -4028,32 +4077,50 @@ function axisChartSVG(labels, defs, opts){
   if(hasBar || opts.zeroLine){ mn = Math.min(0, mn); mx = Math.max(0, mx); }
   if(mn === mx){ mn = mn - Math.abs(mn||1)*0.1; mx = mx + Math.abs(mx||1)*0.1; }
   var pad = (mx-mn)*0.08; mn -= pad; mx += pad;
+  // Tick labels are formatted from the whole set, then the left gutter is
+  // measured from the widest one. A hard-coded 44 clipped "100000.0B" to
+  // "0000.0B" and printed the same wrong label on two different gridlines.
+  var ticks = niceTicks(mn, mx, 4);
+  var fmt = opts.fmt || tickFormatter(ticks, opts.kind || "money");
+  var widest = 0;
+  ticks.forEach(function(t){ widest = Math.max(widest, String(fmt(t)).length); });
+  var padL = Math.max(opts.padL || 40, Math.ceil(widest*AX_TICK_FS*0.62) + 12);
   var plotW = W-padL-padR, plotH = H-padT-padB;
   var X = function(i){ return padL + (n<=1 ? plotW/2 : i*plotW/(n-1)); };
   var XB = function(i){ return padL + (i+0.5)*plotW/n; };            // bar-centre variant
   var Y = function(v){ return padT + (1-(v-mn)/(mx-mn))*plotH; };
   var out = "";
-  niceTicks(mn, mx, 4).forEach(function(t){
+  ticks.forEach(function(t){
     var y = Y(t);
     if(y < padT-1 || y > padT+plotH+1) return;
     var zero = Math.abs(t) < 1e-9;
+    // --grid is its own token: --edge2 is a table hairline at 1.05:1 against
+    // the surface, which made these gridlines invisible in dark theme, so the
+    // tick numbers labeled nothing you could follow across the plot.
     out += '<line x1="'+padL+'" x2="'+(padL+plotW)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)
-      + '" stroke="'+(zero?"var(--edge)":"var(--edge2)")+'" stroke-width="1"/>'
-      + '<text x="'+(padL-6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" text-anchor="end" fill="var(--ink3)">'+esc(fmt(t))+'</text>';
+      + '" stroke="'+(zero?"var(--gridzero)":"var(--grid)")+'" stroke-width="1"/>'
+      + '<text x="'+(padL-6)+'" y="'+(y+3.5).toFixed(1)+'" font-size="'+AX_TICK_FS+'" text-anchor="end" fill="var(--ink3)">'+esc(fmt(t))+'</text>';
   });
   // Period labels along the bottom, thinned so two can never overprint each
   // other (Zach 2026-08-19: "Many financials missing Q# dates", and the ones
   // that drew collided at the right edge). ~34px of clearance per label, and
   // the last period always wins its slot.
   var every = opts.xEvery || Math.max(1, Math.ceil(n/6));
-  var minGap = 34, drawn = [];
+  var minGap = 40, drawn = [];
   var order = [];
   for(var i=n-1;i>=0;i--){ if(i===n-1 || i%every===0) order.push(i); }
   order.forEach(function(i){
     var lx = hasBar ? XB(i) : X(i);
     if(drawn.some(function(x){ return Math.abs(x-lx) < minGap; })) return;
     drawn.push(lx);
-    out += '<text x="'+lx.toFixed(1)+'" y="'+(H-10)+'" font-size="8.5" text-anchor="middle" fill="var(--ink3)">'+esc(labels[i]||"")+'</text>';
+    // Keep the first and last period label inside the viewBox: centered on the
+    // final x position, "Q3 26" hung half its width past the right edge and
+    // rendered as "Q3 2(".
+    var txt = String(labels[i]||""), half = txt.length*AX_LABEL_FS*0.29;
+    var anchor = "middle", tx = lx;
+    if(lx + half > W-2){ anchor = "end"; tx = W-2; }
+    else if(lx - half < 2){ anchor = "start"; tx = 2; }
+    out += '<text x="'+tx.toFixed(1)+'" y="'+(H-9)+'" font-size="'+AX_LABEL_FS+'" text-anchor="'+anchor+'" fill="var(--ink3)">'+esc(txt)+'</text>';
   });
   var barDefs = live.filter(function(d){ return d.type==="bar"; });
   var slot = plotW/n, groupW = Math.max(3, slot*0.7), bw = barDefs.length ? Math.max(2, groupW/barDefs.length) : 0;
@@ -4086,13 +4153,16 @@ function axisChartSVG(labels, defs, opts){
 }
 /* Legend carries each series' latest value — that is where the end-of-line
    labels went, and why they no longer collide. */
-function chartLegendHTML(defs, fmt){
+function chartLegendHTML(defs, fmt, labels){
   fmt = fmt || fmtAxisMoney;
   return '<div class="leg" style="margin-top:3px">'+defs.map(function(d, i){
-    var vals = (d.values||[]).map(num), last = null;
-    for(var k=vals.length-1;k>=0;k--){ if(vals[k]!=null){ last = vals[k]; break; } }
+    var vals = (d.values||[]).map(num), last = null, lastIdx = -1;
+    for(var k=vals.length-1;k>=0;k--){ if(vals[k]!=null){ last = vals[k]; lastIdx = k; break; } }
+    // Name the period the value belongs to. Every company's latest quarter is
+    // a different quarter — MU's Q3 26 and NVDA's Q1 27 are the same week.
+    var per = (labels && lastIdx>=0 && labels[lastIdx]) ? (' <span class="m">· '+esc(labels[lastIdx])+'</span>') : "";
     return '<span><i style="border-top:2px solid '+(d.color||seriesColor(i))+'"></i>'+esc(d.name)
-      + (last!=null ? (' <b>'+esc(fmt(last))+'</b>') : ' <span class="m">n/a</span>')+'</span>';
+      + (last!=null ? (' <b>'+esc(fmt(last))+'</b>'+per) : ' <span class="m">n/a</span>')+'</span>';
   }).join("")+'</div>';
 }
 /* Peer comparison: one bar per company, each in its own fixed color, ticker
@@ -4151,6 +4221,16 @@ function renderGrowth(sym, fund){
   var g = fund && fund.growth;
   if(!g) return '<div id="growthbox"></div>';
   var out = "";
+  // Chart geometry follows the width the charts will actually render at, so
+  // the authored viewBox stays close to 1:1 and the axis text lands near
+  // 10-11px instead of 5-7px. Re-rendered on a width-class change.
+  var narrow = (window.innerWidth || 1440) <= 760;
+  var SM = narrow ? {W:340, H:200} : {W:340, H:180};
+  var BIG = narrow ? {W:380, H:230} : {W:560, H:200};
+  // What the statements are reported in. NEVER assume dollars: SK hynix files
+  // in won and Taiwan Semi in New Taiwan dollars, both with US listings.
+  var cur = (fund && typeof fund.currency === "string" && fund.currency) ? fund.currency : null;
+  var curWord = cur ? ("reported " + cur) : "as reported";
   var q = g.quarterly;
   if(q && Array.isArray(q.labels) && q.labels.length){
     var money = [
@@ -4158,11 +4238,11 @@ function renderGrowth(sym, fund){
       {name:"Net income", color:seriesColor(1), values:q.ni||[]},
       {name:"Free cash flow", color:seriesColor(2), values:q.fcf||[]}
     ].filter(function(d){ return (d.values||[]).some(function(v){ return num(v)!=null; }); });
-    var moneySvg = axisChartSVG(q.labels, money, {fmt:fmtAxisMoney, zeroLine:true});
+    var moneySvg = axisChartSVG(q.labels, money, {kind:"money", zeroLine:true, W:BIG.W, H:BIG.H});
     if(moneySvg){
-      out += '<div class="gwrap"><div class="glabel">Quarterly — reported dollars</div>'
-        + '<div class="gchart" style="flex:1 1 100%;max-width:640px"><h4>Revenue · net income · free cash flow</h4>'
-        + moneySvg + chartLegendHTML(money, fmtAxisMoney) + '</div></div>';
+      out += '<div class="gwrap"><div class="glabel">Quarterly — '+esc(curWord)+'</div>'
+        + '<div class="gchart gfull" style="max-width:640px"><h4>Revenue · net income · free cash flow</h4>'
+        + moneySvg + chartLegendHTML(money, fmtAxisMoney, q.labels) + '</div></div>';
     }
     function marginSeries(arr){
       if(!Array.isArray(arr) || !arr.length) return [];
@@ -4175,49 +4255,80 @@ function renderGrowth(sym, fund){
       {name:"Net margin", color:seriesColor(1), values:marginSeries(q.ni||[])},
       {name:"FCF margin", color:seriesColor(2), values:marginSeries(q.fcf||[])}
     ].filter(function(d){ return d.values.some(function(v){ return v!=null; }); });
-    var yoy = q.labels.map(function(_, i){ return yoyPct(q.revenue.map(num), i, 4); });
     var row2 = "";
     if(margins.length){
       row2 += '<div class="gchart"><h4>Margins</h4>'
-        + axisChartSVG(q.labels, margins, {fmt:fmtAxisPct, W:340, H:170, padL:44, zeroLine:true})
-        + chartLegendHTML(margins, fmtAxisPct) + '</div>';
+        + axisChartSVG(q.labels, margins, {kind:"pct", W:SM.W, H:SM.H, zeroLine:true})
+        + chartLegendHTML(margins, fmtAxisPct, q.labels) + '</div>';
     }
+    // Year-over-year needs a prior-year quarter, so the first four slots can
+    // never have a bar. Drawing them empty under their own labels made them
+    // look like four quarters of zero growth; start the chart where the
+    // comparison starts.
+    var yoyAll = q.labels.map(function(_, i){ return yoyPct(q.revenue.map(num), i, 4); });
+    var yoy = yoyAll.slice(4), yoyLabels = q.labels.slice(4);
     if(yoy.some(function(v){ return v!=null; })){
       var yoyDef = [{name:"Revenue YoY", color:seriesColor(0), values:yoy, type:"bar"}];
       row2 += '<div class="gchart"><h4>Revenue growth, year over year</h4>'
-        + axisChartSVG(q.labels, yoyDef, {fmt:fmtAxisPct, W:340, H:170, padL:44})
-        + chartLegendHTML(yoyDef, fmtAxisPct) + '</div>';
+        + axisChartSVG(yoyLabels, yoyDef, {kind:"pct", W:SM.W, H:SM.H})
+        + chartLegendHTML(yoyDef, fmtAxisPct, yoyLabels) + '</div>';
     }
     if(Array.isArray(q.eps) && q.eps.some(function(v){ return num(v)!=null; })){
       var epsDef = [{name:"Diluted EPS", color:seriesColor(3), values:q.eps, type:"bar"}];
-      row2 += '<div class="gchart"><h4>Earnings per share</h4>'
-        + axisChartSVG(q.labels, epsDef, {fmt:fmtAxisNum, W:340, H:170, padL:44})
-        + chartLegendHTML(epsDef, fmtAxisNum) + '</div>';
+      row2 += '<div class="gchart"><h4>Earnings per share'+(cur?(' · '+esc(cur)):'')+'</h4>'
+        + axisChartSVG(q.labels, epsDef, {kind:"num", W:SM.W, H:SM.H})
+        + chartLegendHTML(epsDef, fmtAxisNum, q.labels) + '</div>';
     }
     if(row2) out += '<div class="gwrap">'+row2+'</div>';
   }
   var a = g.annual;
+  var yearsDropped = [];
+  if(a && Array.isArray(a.labels) && a.labels.length){
+    // Keep only the contiguous run of fiscal years ending at the newest one.
+    // SNDK's sidecar carries FY15, FY24, FY25, FY26 — plotted as four evenly
+    // spaced bars, a nine-year hole reads as four years of growth.
+    var yrs = a.labels.map(function(L){ var m=String(L).match(/(\d{2,4})\s*$/); return m?+m[1]:null; });
+    var keepFrom = 0;
+    for(var k=yrs.length-1;k>0;k--){
+      if(yrs[k]==null || yrs[k-1]==null || (yrs[k]-yrs[k-1])!==1){ keepFrom = k; break; }
+    }
+    if(keepFrom > 0){
+      yearsDropped = a.labels.slice(0, keepFrom);
+      a = {labels: a.labels.slice(keepFrom),
+           revenue:(a.revenue||[]).slice(keepFrom), ni:(a.ni||[]).slice(keepFrom),
+           fcf:(a.fcf||[]).slice(keepFrom), eps:(a.eps||[]).slice(keepFrom)};
+    }
+  }
   if(a && Array.isArray(a.labels) && a.labels.length){
     var arow = "";
-    [["revenue","Revenue",0,fmtAxisMoney],["ni","Net income",1,fmtAxisMoney],
-     ["fcf","Free cash flow",2,fmtAxisMoney],["eps","EPS",3,fmtAxisNum]].forEach(function(t){
+    [["revenue","Revenue",0,"money",fmtAxisMoney],["ni","Net income",1,"money",fmtAxisMoney],
+     ["fcf","Free cash flow",2,"money",fmtAxisMoney],["eps","EPS",3,"num",fmtAxisNum]].forEach(function(t){
       var vals = a[t[0]];
       if(!Array.isArray(vals) || !vals.some(function(v){ return num(v)!=null; })) return;
       var def = [{name:t[1], color:seriesColor(t[2]), values:vals, type:"bar"}];
       arow += '<div class="gchart"><h4>'+esc(t[1])+' — annual</h4>'
-        + axisChartSVG(a.labels, def, {fmt:t[3], W:340, H:170, padL:44, xEvery:1})
-        + chartLegendHTML(def, t[3]) + '</div>';
+        + axisChartSVG(a.labels, def, {kind:t[3], W:SM.W, H:SM.H, xEvery:1})
+        + chartLegendHTML(def, t[4], a.labels) + '</div>';
     });
-    if(arow) out += '<div class="gwrap"><div class="glabel">Annual — summed from complete fiscal years</div>'+arow+'</div>';
+    if(arow) out += '<div class="gwrap"><div class="glabel">Annual — summed from complete fiscal years, '
+      + esc(curWord)+'</div>'+arow+'</div>';
   }
   if(!out) return '<div id="growthbox"></div>';
   out += '<div class="note">'
     + (fund.source==="scanner"
-        ? 'Reported figures from TradingView\u2019s quarterly history for this symbol — the desk\u2019s own daily sidecar covers its tracked '
+        ? 'Reported figures from TradingView’s quarterly history for this symbol — the desk’s own daily sidecar covers its tracked '
           + 'watchlist, and this name is not on it. Periods are labeled by the month the quarter ENDED, because the vendor supplies no fiscal '
           + 'labels and fiscal years are not calendar years. Annual rows and earnings-surprise history need the sidecar and are not shown here. '
-        : 'Reported figures from the daily fundamentals sidecar (stockanalysis.com income and cash-flow statements). '
-          + 'Fiscal quarters are labeled on each axis. Annual rows sum complete 4-quarter years. ')
+        : 'Reported figures from the daily fundamentals sidecar (stockanalysis.com income and cash-flow statements)'
+          + (fund.built ? (', built '+esc(fund.built)) : '')
+          + '. Fiscal quarters are labeled on each axis. Annual rows sum complete 4-quarter years. ')
+    + (cur
+        ? (cur==="USD" ? 'Statements are filed in US dollars. '
+                       : 'Statements are filed in '+esc(cur)+' and are NOT converted — the share price above is in dollars, these figures are not. ')
+        : 'The vendor did not name the reporting currency. A US-listed foreign company files in its home currency, so do not assume dollars. ')
+    + (yearsDropped.length ? ('Annual charts show only the unbroken run of years ending at the newest one; '
+        + esc(yearsDropped.join(", "))+' sat behind a gap in the vendor data and would have plotted as if adjacent. ') : '')
+    + 'The year-over-year chart starts at the fifth quarter, because the first four have no prior-year quarter to compare against. '
     + 'Margins are derived per quarter only where both legs reported. A missing quarter stays blank, never a zero. '
     + 'Hover any point or bar for its exact value.</div>';
   return '<div class="dsec" id="growthbox"><h3>Financials</h3>'+out+'</div>';
@@ -5180,12 +5291,12 @@ function renderPeersInto(body, sym, res, seq){
       lines.push({name:e.sym, color:e.color, values: revs.map(function(v){ return v/revs[0]*100; })});
     });
     if(lines.length>=2){
-      var svg2 = axisChartSVG(labelsRef||[], lines, {fmt:fmtAxisNum, W:600, H:200, padL:44});
+      var svg2 = axisChartSVG(labelsRef||[], lines, {kind:"num", W:600, H:200});
       if(svg2){
         var el2 = document.createElement("div");
         el2.className = "dsec";
         el2.innerHTML = '<h3>Revenue growth, indexed — first shown quarter = 100</h3>'
-          + '<div class="gchart" style="max-width:640px">'+svg2+chartLegendHTML(lines, fmtAxisNum)+'</div>'
+          + '<div class="gchart gfull" style="max-width:640px">'+svg2+chartLegendHTML(lines, fmtAxisNum, labelsRef)+'</div>'
           + '<div class="note">Aligned by report recency, not by calendar: fiscal years differ across companies, so read this as growth shape, '
           + 'not same-quarter timing. Lines exist only for names the daily sidecar covers.</div>';
         body.appendChild(el2);
@@ -5664,7 +5775,18 @@ function measureRailHeight(){
   if(!r) return;
   document.documentElement.style.setProperty("--railh", Math.round(r.getBoundingClientRect().height)+"px");
 }
-window.addEventListener("resize", measureRailHeight);
+var _lastNarrow = (window.innerWidth || 1440) <= 760;
+function onViewportChange(){
+  measureRailHeight();
+  var narrow = (window.innerWidth || 1440) <= 760;
+  if(narrow !== _lastNarrow){
+    _lastNarrow = narrow;
+    // The financials charts author their viewBox from the width they will
+    // render at; a first paint at 1440 leaves 5px axis text at 390.
+    if(STAGE.sym && STAGE.view==="chart") renderStageTab();
+  }
+}
+window.addEventListener("resize", onViewportChange);
 if(window.ResizeObserver){
   try{ new ResizeObserver(measureRailHeight).observe(document.querySelector(".rail")); }catch(e){}
 }
