@@ -67,10 +67,26 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   hidden pinned names live in `localStorage` (`desk.wl.custom`,
   `desk.wl.hidden`), per browser, disclosed in the UI. Boards, `bars.json`,
   `facts`, and `fund/` sidecars follow `build_snapshot.PINNED` only.
-- **Ad-hoc bar history rides TradingView's chart websocket from the browser**
-  (`tvwsFetchBars`, same protocol as the vault's `scripts/fetch_tv.py`). It
-  is an unofficial endpoint: every use must fail soft to "quotes and
-  fundamentals still work", and nothing scheduled may depend on it.
+- **TradingView's chart WEBSOCKET can never be called from this site — do not
+  try it again.** `data.tradingview.com` enforces an exact-host allowlist on
+  the `Origin` header. Measured 2026-08-19 with byte-identical handshakes
+  differing only in Origin: `https://www.tradingview.com`,
+  `https://s.tradingview.com` and `https://data.tradingview.com` get `101
+  Switching Protocols`; `https://zlanghamer1.github.io`, `https://example.com`
+  and no-Origin get `403 Forbidden` from `Server: tv`. `Origin` is a forbidden
+  header name, so page JavaScript cannot set it and the `WebSocket`
+  constructor takes no header options. A python probe "proving" it works is
+  almost certainly sending websocket-client's default
+  `Origin: https://data.tradingview.com` — an allowlisted value. The scanner
+  host is different: it reflects any Origin, which is why quotes, search and
+  fundamentals work from the browser.
+- **Ad-hoc bar history comes from stockanalysis.com** (`adhocEnsureDaily`):
+  `https://stockanalysis.com/api/symbol/s/{sym}/history?range=5Y`, plain GET,
+  `access-control-allow-origin: *`, keyless. Send NO custom headers (any one
+  forces a preflight). Rows arrive NEWEST FIRST — reverse them. `range=2Y`
+  silently returns one year with HTTP 200; only 3M/6M/YTD/1Y/5Y/10Y are
+  honored. No browser-readable intraday source exists for off-desk names, so
+  15m/1H/4H stay a tracked-names feature and the stage says so.
 - **The heatmap's S&P 500 and Nasdaq 100 universes come from the scanner's
   `symbolset` filter live** (`SYML:SP;SPX`, `SYML:NASDAQ;NDX`) — no baked
   constituent list to go stale. It refreshes only while visible and states

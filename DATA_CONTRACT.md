@@ -562,7 +562,15 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
     "eps": [0.83, "...", 5.84],
     "ni": [4368000000.0, "...", 97255000000.0],    // summed like revenue/eps — added 2026-08-19
     "fcf": [3808000000.0, "...", 60853000000.0]    // summed like revenue/eps — added 2026-08-19
-  }
+  },
+  "ratings": [                       // analyst rating CHANGES, newest first — added 2026-08-19
+    {"date": "2025-12-18",           // America/New_York calendar date: the trading day the marker belongs on
+     "ts": 1766058113,               // raw epoch seconds, kept so same-day rows order
+     "dir": "up",                    // "up" | "down" ONLY — see the note below
+     "firm": "B of A Securities",
+     "from": "Neutral", "to": "Buy", // grade strings as the source writes them; "from" is "" on some rows
+     "pt": 300.0, "pt_prior": 250.0} // price targets, null when absent (the source writes 0.0 for absent)
+  ]
 }
 ```
 
@@ -629,6 +637,29 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
   `rev_est`/`rev_surprise_pct` null throughout — per-field fail-soft, same
   as every other part of this build. NEVER fabricated: a field either came
   from a live source or it is null.
+- `ratings` — analyst upgrades and downgrades from Yahoo quoteSummary's
+  `upgradeDowngradeHistory` module, which **rides the existing quoteSummary
+  request** (the module name is appended to `YAHOO_QS_MODULES`; no extra HTTP
+  call). The desk draws these on the price chart: a green up arrow for an
+  upgrade, a red down arrow for a downgrade.
+  - **Only rows the source itself labels `action: "up"` or `"down"` are
+    kept.** `init` (initiation), `reit` (reiteration) and `main` (rating
+    maintained, price target moved) are 60-78% of a typical history and are
+    NOT rating changes; classifying on the price target instead would paint
+    the chart with false markers. Verified across 14 symbols: `action` is
+    present on 100% of 3,641 rows sampled, so no grade-rank fallback exists
+    and none is needed. Where a rank map disagreed with `action` the rank map
+    was wrong all four times (house renames like Buy → Accumulate).
+  - Dated in **America/New_York**, because a row stamped after 8pm ET would
+    land on the wrong trading day under UTC — the same off-by-one class as the
+    snapshot session-date guard.
+  - Capped at `RATINGS_MAX` (40) rows inside `RATINGS_MAX_AGE_DAYS` (~3 years,
+    the deepest window any chart shows), deduped on (date, firm, direction).
+    Full histories run to 878 rows / 168 KB for a name like MU; the cap is what
+    keeps the sidecar small.
+  - **ETFs omit the module entirely** and get `[]` — that path must never
+    raise. A Yahoo-leg failure yields `[]`, never a partial list.
+  - Live-verified 2026-08-19: MU 13 rows, CRWD 34, SPY 0.
 - **Runtime budget:** 4 stockanalysis.com requests/symbol (statistics +
   quarterly income statement + quarterly cash-flow statement — the third
   SA request was added 2026-08-19 for `quarterly.fcf`) + 1 Yahoo
