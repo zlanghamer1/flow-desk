@@ -140,6 +140,15 @@ a.nt-item:hover{color:var(--ink)}
    the Morning Brief and the sector-rotation table, not just catalysts/news. */
 .cols{display:grid;grid-template-columns:248px minmax(0,1fr) 372px}
 .wl{border-right:1px solid var(--edge)}
+/* The rail used to be laid out static in a 7,300px document, so the
+   watchlist scrolled off after the first third of the page and the column
+   sat empty while the boards were read. It now sticks under the top rail and
+   scrolls inside itself. --railh is measured at boot (the rail wraps at
+   narrow widths, so a hard-coded offset would be wrong). */
+@media (min-width:901px){
+  .wl{position:sticky;top:var(--railh,46px);align-self:start;
+      max-height:calc(100vh - var(--railh,46px));overflow-y:auto;overscroll-behavior:contain}
+}
 .rr{border-left:1px solid var(--edge)}
 .mid{min-width:0}
 
@@ -164,10 +173,17 @@ section.closed .sb{display:none}
 .wr.foc{border-left-color:var(--acc);background:var(--sel)}
 .wr.hot{box-shadow:inset 2px 0 0 var(--hi)}
 .wr .l1{display:flex;align-items:baseline;gap:7px}
-.wr .sy{font-weight:700;font-size:12px}
+/* Second line added 2026-08-19: the name, the earnings countdown, the hot
+   multiple and the edit × all shared one row with the price, and the meta
+   column lost the fight — "earn 7d" rendered as "e…" on exactly the hot
+   movers that needed it. Splitting the row gives meta ~180px instead of
+   32px, and it is how a real watchlist reads anyway. */
+.wr .l2{display:flex;align-items:baseline;gap:6px;margin-top:1px}
+.wr .sy{font-weight:700;font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wr .meta{font-size:9px;color:var(--ink3);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wr .px{font-size:11.5px;text-align:right}
-.wr .ch{font-size:11px;font-weight:600;text-align:right;min-width:44px}
+.wr .noq{font-size:9.5px;color:var(--hi);text-align:right;white-space:nowrap}
+.wr .px{font-size:11.5px;text-align:right;flex:none}
+.wr .ch{font-size:11px;font-weight:600;text-align:right;min-width:44px;flex:none}
 .hotb{font-size:8.5px;font-weight:700;color:var(--hi);background:var(--hibg);border-radius:3px;padding:0 4px;letter-spacing:.03em}
 .rb{position:relative;height:4px;border-radius:2px;background:var(--edge);margin:7px 0 13px}
 /* Neutral fill — the old always-green fill encoded nothing (2026-08-18) */
@@ -183,14 +199,20 @@ section.closed .sb{display:none}
 .searchbox input:focus{outline:none;border-color:var(--acc)}
 .tsdrop{position:absolute;top:100%;left:0;right:0;z-index:50;background:var(--srf);border:1px solid var(--edge);border-radius:6px;box-shadow:0 12px 32px rgba(0,0,0,.35);display:none;max-height:320px;overflow-y:auto}
 .tsdrop.open{display:block}
-.tsr{display:flex;gap:7px;align-items:baseline;padding:7px 9px;cursor:pointer;font-size:11.5px;border-bottom:1px solid var(--edge2)}
+/* Two lines per result (2026-08-19): five columns on one 220px line left the
+   company name 47px, so "Linike Medical Group" and "Nike, Inc." looked the
+   same — and telling those apart is the only reason the name is there. */
+.tsr{padding:6px 9px;cursor:pointer;font-size:11.5px;border-bottom:1px solid var(--edge2)}
 .tsr:last-child{border-bottom:none}
 .tsr:hover,.tsr.on{background:var(--sel)}
+.tsr .r1{display:flex;gap:7px;align-items:baseline}
+.tsr .r2{display:flex;gap:6px;align-items:baseline;margin-top:1px}
 .tsr .sy{font-weight:700;flex:0 0 auto}
 .tsr .nm{color:var(--ink3);font-size:10.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tsr .ex{color:var(--ink3);font-size:9px}
-.tsr .px{font-size:10.5px}
+.tsr .ex{color:var(--ink3);font-size:9px;flex:none}
+.tsr .px{font-size:10.5px;margin-left:auto;flex:none}
 .tsr .add{color:var(--acc);font-size:10px;border:1px solid var(--edge);border-radius:4px;padding:1px 6px;flex:none}
+.tsr .add.off{color:var(--ink3)}
 .tsr .add:hover{border-color:var(--acc)}
 .tsnote{padding:6px 9px;font-size:10px;color:var(--ink3)}
 /* watchlist manage mode */
@@ -751,7 +773,7 @@ var RAIL_TV_SYMBOL = {
   // architect-verified live except SKHX/NRGU (best guesses); an unresolved
   // symbol just polls empty and renders "—" harmlessly (existing behavior).
   SOXL:"AMEX:SOXL", SOXS:"AMEX:SOXS", MUU:"NASDAQ:MUU", RAM:"CBOE:RAM", OILU:"AMEX:OILU",
-  STLL:"CBOE:STLL", AAOG:"CBOE:AAOG", WTI:"NYSE:WTI", SKHX:"CBOE:SKHX", NRGU:"NYSE:NRGU"
+  STLL:"CBOE:STLL", AAOG:"CBOE:AAOG", WTI:"NYSE:WTI", SKHX:"CBOE:SKHX", NRGU:"AMEX:NRGU"
 };
 var STATIC_NAMES = {
   MU:"Micron", CRWD:"CrowdStrike", COHR:"Coherent", LLY:"Eli Lilly", V:"Visa", XOM:"Exxon",
@@ -1816,6 +1838,55 @@ function rangeBarHTML(sym, big){
 /* =================== watchlist rail =================== */
 var wlSort = "groups";
 var wlEdit = false;
+// Leveraged / inverse wrappers, by rail group. The rail deliberately carries
+// them (2026-08-15 rule) but the shopping-list pick must not treat a
+// reverse-split artifact as a discount.
+var LEV_SYMS = (function(){
+  var m = {};
+  RAIL_GROUPS.forEach(function(g){ if(g.g==="LEVERAGED") g.syms.forEach(function(x){ m[x]=true; }); });
+  return m;
+})();
+// Draft state for the comma-list box, so the 30-second poll's full rebuild of
+// #wl cannot swallow what is being typed.
+var WLIO_DRAFT = null, WLIO_MSG = "", WLIO_FOCUS = false, WLIO_SEL = [0,0];
+// Replace this browser's custom adds from the text box. Every symbol is
+// resolved on the scanner FIRST — the old version stored {tv:null,name:null},
+// which rendered a permanently dead "NKE | NKE | — | —" row on the very
+// device the export string was supposed to serve.
+function wlIoApply(text){
+  var raw = String(text||"").toUpperCase().split(/[\s,]+/).filter(Boolean);
+  var seen = {}, want = [], pinned = [];
+  raw.forEach(function(sym){
+    if(seen[sym]) return;
+    seen[sym] = true;
+    if(railHasSym(sym)){ pinned.push(sym); return; }   // already on the rail
+    want.push(sym);
+  });
+  WLIO_MSG = want.length ? "looking up "+want.length+" symbol"+(want.length===1?"":"s")+"…" : "";
+  renderWL();
+  var jobs = want.map(function(sym){
+    var prev = wlCustom().filter(function(r){ return r.sym===sym; })[0];
+    if(prev && prev.tv && prev.name) return Promise.resolve(prev);
+    if(ADHOC_TV[sym] && ADHOC_NAMES[sym]) return Promise.resolve({sym:sym, tv:ADHOC_TV[sym], name:ADHOC_NAMES[sym]});
+    return tsSearch(sym).then(function(items){
+      var hit = items.filter(function(it){ return it.sym===sym; })[0];
+      return hit ? {sym:sym, tv:hit.tv, name:hit.name||sym} : null;
+    }, function(){ return null; });
+  });
+  return Promise.all(jobs).then(function(res){
+    var list = [], dropped = [];
+    res.forEach(function(r, i){ if(r) list.push(r); else dropped.push(want[i]); });
+    wlSaveCustom(list);
+    list.forEach(function(r){ adhocRegister(r.sym, r.tv, r.name); });
+    var parts = [];
+    if(list.length) parts.push(list.length+" added");
+    if(dropped.length) parts.push("dropped (nothing listed): "+dropped.join(", "));
+    if(pinned.length) parts.push("already pinned, left alone: "+pinned.join(", "));
+    WLIO_MSG = parts.join(" · ");
+    WLIO_DRAFT = null;
+    renderWL(); applyFocus(); pollTvPrices();
+  });
+}
 function railRowHTML(s, opts){
   var q = liveBySym(s) || {};
   var d = dispQuote(q);
@@ -1824,8 +1895,15 @@ function railRowHTML(s, opts){
   var h = hotOf(s);
   var isHot = h!=null && h>=HOT_AT;
   var earnDays = f && f.earn_days!=null ? num(f.earn_days) : null;
-  var metaHtml = earnDays!=null ? ("earn "+Math.round(earnDays)+"d") : esc(nameFor(s));
+  // The name and the earnings countdown both fit now that meta owns its own
+  // line — before, the countdown replaced the name and then got clipped to
+  // "e…" by the hot badge and the edit ×.
+  var metaHtml = esc(nameFor(s));
+  if(earnDays!=null) metaHtml += ' <span class="tn">· earn '+Math.round(earnDays)+'d</span>';
   if(d.tag) metaHtml = sessTagHTML(d.tag) + " " + metaHtml;
+  // A symbol the resolver cannot map will NEVER get a price, which is a
+  // different fact from "the 30s poll has not answered yet". Say which.
+  var unresolved = !symbolForTicker(s);
   var pxStr = d.px!=null ? fmtpx(d.px) : "—";
   var chStr = d.ch!=null ? (fm1(d.ch)+"%") : "—";
   var manageBtn = "";
@@ -1834,16 +1912,25 @@ function railRowHTML(s, opts){
     else manageBtn = '<button class="wlx" data-wlx="'+esc(s)+'" data-tip="'+(railHasSym(s)?"Hide this pinned name from the rail (boards still track it — the universe is server-curated).":"Remove this custom name from this browser\u2019s list.")+'">×</button>';
   }
   return '<div class="wr '+(isHot?"hot":"")+(opts && opts.ghost?" ghost":"")+'" data-sym="'+esc(s)+'" role="button" tabindex="0">'
-    +'<div class="l1"><span class="sy">'+esc(s)+'</span><span class="meta">'+metaHtml+'</span>'
+    +'<div class="l1"><span class="sy">'+esc(s)+'</span>'
+    +(unresolved
+        ? '<span class="noq" data-tip="No exchange listing resolves for this symbol, so the 30-second poll has nothing to ask for. It is not a slow quote — it will stay blank until the symbol is corrected.">no quote</span>'
+        : '<span class="px tn">'+pxStr+'</span><span class="ch tn '+cls+'">'+chStr+'</span>')
+    +'</div>'
+    +'<div class="l2"><span class="meta">'+metaHtml+'</span>'
     +(isHot? '<span class="hotb" data-tip="'+esc(TIPS.hot)+' Today: '+h.toFixed(1)+'× its usual '+(f.avg_move!=null?f.avg_move:"?")+'% day.">'+h.toFixed(1)+'×</span>' : "")
     +manageBtn
-    +'<span class="px tn">'+pxStr+'</span><span class="ch tn '+cls+'">'+chStr+'</span></div>'
+    +'</div>'
     // The 52-week range bar draws only in the "52w ↑" sort view (2026-08-18):
     // fifty always-on mini-charts ate ~40% of the rail's height for a datum
     // the shopping-list box and the drawer's big bar already carry.
     +(wlSort==="range" ? rangeBarHTML(s) : "")+'</div>';
 }
 function renderWL(){
+  // Capture the io box's caret before $("#wl").innerHTML wipes it.
+  var _io = document.getElementById("wlio-in");
+  WLIO_FOCUS = !!(_io && document.activeElement === _io);
+  if(_io){ WLIO_DRAFT = _io.value; WLIO_SEL = [_io.selectionStart||0, _io.selectionEnd||0]; }
   var hidden = wlHidden(), custom = wlCustom();
   var customSyms = custom.map(function(r){ return r.sym; });
   var railSyms = [];
@@ -1868,8 +1955,9 @@ function renderWL(){
   }
   if(wlEdit){
     var ioVal = customSyms.join(",");
-    html += '<div class="wlio"><input id="wlio-in" value="'+esc(ioVal)+'" placeholder="MU,NKE,…" aria-label="Custom list as text">'
-      + '<button id="wlio-apply" data-tip="Replace this browser\u2019s custom adds with the comma-separated tickers in the box (they must be searchable first — unknown symbols are dropped on next search). Copy the text to carry your list to another device.">apply</button></div>';
+    html += '<div class="wlio"><input id="wlio-in" value="'+esc(WLIO_DRAFT!=null?WLIO_DRAFT:ioVal)+'" placeholder="MU,NKE,…" aria-label="Custom list as text">'
+      + '<button id="wlio-apply" data-tip="Replace this browser\u2019s custom adds with the comma-separated tickers in the box. Each one is looked up on the scanner first, so it arrives with its exchange and company name — paste this string on another device and the list rebuilds live there. Anything that does not resolve is dropped and named.">apply</button></div>'
+      + (WLIO_MSG ? ('<div class="wlnote" id="wlio-msg">'+esc(WLIO_MSG)+'</div>') : '');
   }
   if(wlSort==="groups"){
     if(custom.length){
@@ -1906,24 +1994,29 @@ function renderWL(){
   if(we) we.addEventListener("click", function(e){ e.stopPropagation(); wlEdit=!wlEdit; renderWL(); applyFocus(); });
   $$("#wl [data-wlx]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlRemove(b.dataset.wlx); }); });
   $$("#wl [data-wlback]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlAdd(b.dataset.wlback); }); });
+  var ioIn = document.getElementById("wlio-in");
+  if(ioIn){
+    // The 30s price poll rebuilds this whole container, which used to erase
+    // whatever was half-typed here and drop focus with it. Keep the draft.
+    ioIn.addEventListener("input", function(){ WLIO_DRAFT = ioIn.value; });
+    if(WLIO_FOCUS){ ioIn.focus(); try{ ioIn.setSelectionRange(WLIO_SEL[0], WLIO_SEL[1]); }catch(e){} }
+  }
   var io = document.getElementById("wlio-apply");
   if(io) io.addEventListener("click", function(e){
     e.stopPropagation();
-    var raw = (document.getElementById("wlio-in").value||"").toUpperCase().split(/[\s,]+/).filter(Boolean);
-    var seen = {}, list = [];
-    raw.forEach(function(sym){
-      if(seen[sym] || railHasSym(sym)) return;
-      seen[sym]=true;
-      var prev = wlCustom().filter(function(r){ return r.sym===sym; })[0];
-      list.push(prev || {sym:sym, tv:ADHOC_TV[sym]||null, name:ADHOC_NAMES[sym]||null});
-    });
-    wlSaveCustom(list);
-    list.forEach(function(r){ adhocRegister(r.sym, r.tv, r.name); });
-    renderWL(); applyFocus();
+    wlIoApply((document.getElementById("wlio-in").value||""));
   });
 
+  // The phone toggle used to count RAIL_GROUPS once at boot and say "50
+  // names" forever, whatever was added or hidden. It counts what renders.
+  if(typeof wlToggleLabel === "function") wlToggleLabel(railSyms.length);
+
   var hot = railSyms.filter(function(s){ var h=hotOf(s); return h!=null && h>=HOT_AT; }).sort(function(a,b){ return hotOf(b)-hotOf(a); });
-  var withPos = railSyms.filter(function(s){ return statsOf(s).pos!=null; });
+  // Shopping list excludes the leveraged wrappers. SOXS reads 1% of its
+  // 52-week range only because a 200x reverse split puts its adjusted high at
+  // $1,556 against a $46 price — that is a split artifact, not a discount, and
+  // it has no business sitting next to a stock under the word "shopping".
+  var withPos = railSyms.filter(function(s){ return statsOf(s).pos!=null && !LEV_SYMS[s]; });
   var lows = withPos.slice().sort(function(a,b){ return statsOf(a).pos-statsOf(b).pos; }).slice(0,3);
   var alertsHtml = '<b>MOVERS · RELATIVE TO THEIR OWN AVERAGE DAY</b>'
     + (hot.length ? hot.map(function(s){
@@ -1931,7 +2024,7 @@ function renderWL(){
         return '<span class="hm2">'+esc(s)+' '+hotOf(s).toFixed(1)+'×</span> <span class="m">('
           +(d.tag?esc(d.tag)+" ":"")+fm1(d.ch)+'% vs '+(f.avg_move!=null?f.avg_move:"—")+'% usual)</span>';
       }).join(" · ") : "none yet")
-    + '<div style="margin-top:6px"><b>NEAR 52-WEEK LOWS · SHOPPING LIST</b>'
+    + '<div style="margin-top:6px"><b data-tip="Stocks and unlevered funds only — leveraged and inverse wrappers are excluded, because a reverse split can park one at 1% of its adjusted range while its price is unchanged.">NEAR 52-WEEK LOWS · SHOPPING LIST</b>'
     + (lows.length ? lows.map(function(s){ return esc(s)+' <span class="m">'+Math.round(statsOf(s).pos*100)+'%</span>'; }).join(" · ") : "not enough range data yet")
     + '</div>'
     + '<div class="note" style="margin-top:6px">the (n) in the tab title = names moving ≥1.8× their own average day</div>';
@@ -1941,29 +2034,100 @@ function renderWL(){
 
 /* =================== ticker search (TV scanner name-match, CORS-open) =================== */
 var tsTimer=null, tsIdx=0, tsItems=[], tsSeq=0;
-function tsSearch(q){
+// The scanner's "match" runs as a substring test across name AND description,
+// which produces two problems Zach hit directly:
+//   "coca cola"  -> no KO, because the description reads "Coca-Cola Company"
+//                   and the space never matches the hyphen.
+//   "mu"         -> four J.P. Morgan preferred depositary shares, matched on
+//                   the word "Non-Cumulative" inside their descriptions.
+// So: query several spellings, run a name-only pass whose hits rank above the
+// description pass, and cut long descriptions down to their first clause.
+var TS_STOPWORDS = {THE:1,A:1,AN:1,AND:1,OF:1,INC:1,CORP:1,CORPORATION:1,COMPANY:1,
+  CO:1,LTD:1,LIMITED:1,PLC:1,GROUP:1,HOLDING:1,HOLDINGS:1,SA:1,NV:1,AG:1};
+function _tsVariants(q){
+  var out = [], seen = {};
+  function add(x){
+    x = String(x||"").trim().replace(/\s+/g," ");
+    if(x && !seen[x.toUpperCase()]){ seen[x.toUpperCase()]=true; out.push(x); }
+  }
+  add(q);
+  // Drop the words a company name carries and a person never types as the
+  // distinguishing part: "the coca-cola company" is a search for "coca-cola".
+  var core = q.trim().split(/\s+/).filter(function(w){
+    return !TS_STOPWORDS[w.toUpperCase().replace(/[.,]/g,"")];
+  }).join(" ");
+  if(core) add(core);
+  var base = core || q;
+  if(base.indexOf(" ")!==-1) add(base.replace(/\s+/g,"-"));
+  if(base.indexOf("-")!==-1) add(base.replace(/-+/g," "));
+  return out.slice(0,3);
+}
+function _tsShortName(s){
+  s = String(s||"").replace(/\s+/g," ").trim();
+  if(s.length<=58) return s;
+  var cut = s.slice(0,58), sp = cut.lastIndexOf(" ");
+  return (sp>24 ? cut.slice(0,sp) : cut) + "…";
+}
+function _tsQuery(q, nameOnly){
   var body = JSON.stringify({
-    columns:["name","description","close","change","market_cap_basic","exchange","sector","industry"],
-    filter:[{left:"name,description",operation:"match",right:q}],
-    options:{lang:"en"}, range:[0,8],
+    columns:["name","description","rtc","close","change","market_cap_basic","exchange","sector","industry"],
+    filter:[{left: nameOnly ? "name" : "name,description", operation:"match", right:q}],
+    options:{lang:"en"}, range:[0, nameOnly?6:8],
     sort:{sortBy:"market_cap_basic",sortOrder:"desc"},
     symbols:{query:{types:["stock","fund","dr"]}}, markets:["america"]});
   return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
     .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
     .then(function(json){
       var rows = (json && Array.isArray(json.data)) ? json.data : [];
-      var items = rows.map(function(row){
+      return rows.map(function(row){
         if(!row || !row.s || !Array.isArray(row.d)) return null;
         if(typeof row.d[0]!=="string" || !row.d[0]) return null;
-        return { sym:row.d[0], name:(typeof row.d[1]==="string")?row.d[1]:"",
-                 px:num(row.d[2]), ch:num(row.d[3]), cap:num(row.d[4]),
-                 exch:(typeof row.d[5]==="string" && row.d[5])?row.d[5]:row.s.split(":")[0],
-                 tv:row.s };
+        // rtc is the same real-time column the 30s rail poll reads; close is
+        // the delayed print. Taking rtc first stops the dropdown and the rail
+        // disagreeing by a few cents with nothing to explain it.
+        var px = num(row.d[2]); if(px===null) px = num(row.d[3]);
+        return { sym:row.d[0], name:_tsShortName((typeof row.d[1]==="string")?row.d[1]:""),
+                 px:px, ch:num(row.d[4]), cap:num(row.d[5]),
+                 exch:(typeof row.d[6]==="string" && row.d[6])?row.d[6]:row.s.split(":")[0],
+                 tv:row.s, nameHit:!!nameOnly };
       }).filter(Boolean);
-      var Q = q.trim().toUpperCase();
-      items.sort(function(a,b){ return ((b.sym===Q)?1:0)-((a.sym===Q)?1:0) || (b.cap||0)-(a.cap||0); });
-      return items;
+    }, function(){ return null; });   // null = this call failed; [] = it answered with nothing
+}
+// Rank on relevance, not on which spelling happened to find the row. Ordering
+// by "which query matched" put CCHBF and KOF above Coca-Cola itself, because
+// the hyphenated spelling that finds KO is the second variant tried.
+function _tsNorm(x){ return String(x||"").toUpperCase().replace(/[^A-Z0-9]/g,""); }
+function tsSearch(q){
+  var variants = _tsVariants(q).slice(0,2);
+  var calls = [ _tsQuery(variants[0], true), _tsQuery(variants[0], false) ];
+  variants.slice(1).forEach(function(v){ calls.push(_tsQuery(v, false)); });
+  return Promise.all(calls).then(function(sets){
+    // Every call failing means the scanner is unreachable, which reads
+    // differently to the user than "nothing matched". Keep them apart.
+    if(sets.every(function(x){ return x===null; })) throw new Error("scanner unreachable");
+    var Q = String(q||"").trim().toUpperCase();
+    var by = {}, order = [];
+    sets.forEach(function(set, si){
+      (set||[]).forEach(function(it){
+        var prev = by[it.sym];
+        if(prev){ if(it.nameHit) prev.nameHit = true; return; }
+        it.rank = si;                       // 0 = name pass, 1+ = description passes
+        by[it.sym] = it; order.push(it);
+      });
     });
+    var NQ = _tsNorm(q);
+    function score(it){
+      if(it.sym===Q) return 5;                                  // exact ticker
+      if(Q.length>=2 && it.sym.indexOf(Q)===0) return 4;        // ticker prefix
+      var nd = _tsNorm(it.name);
+      if(NQ && nd.indexOf(NQ)===0) return 3;                    // company name starts with the query
+      if(it.nameHit) return 2;                                  // matched the ticker column
+      if(NQ && nd.indexOf(NQ)!==-1) return 1;                   // name contains it
+      return 0;                                                 // matched somewhere in the description
+    }
+    order.sort(function(a,b){ return score(b)-score(a) || (b.cap||0)-(a.cap||0); });
+    return order.slice(0,8);
+  });
 }
 function tsOnList(sym){
   return railHasSym(sym) ? wlHidden().indexOf(sym)===-1 : wlIsCustom(sym);
@@ -1976,11 +2140,18 @@ function tsRender(){
     return;
   }
   dd.innerHTML = tsItems.map(function(it, i){
+    // The chip used to read "on list" — a status word on a button that
+    // silently deleted the row. It now says what the click will DO.
+    var on = tsOnList(it.sym);
+    var pinned = railHasSym(it.sym);
+    var lab = on ? (pinned ? "× hide" : "× remove") : "+ add";
+    var tip = on ? (pinned ? "Hide this pinned name from the rail. The boards still track it." : "Remove this name from this browser\u2019s list.")
+                 : "Add this name to the rail in this browser.";
     return '<div class="tsr '+(i===tsIdx?"on":"")+'" data-i="'+i+'">'
-      + '<span class="sy">'+esc(it.sym)+'</span><span class="nm">'+esc(it.name)+'</span>'
-      + '<span class="ex">'+esc(it.exch)+'</span>'
+      + '<div class="r1"><span class="sy">'+esc(it.sym)+'</span>'
       + '<span class="px tn '+sign(it.ch)+'">'+(it.px!=null?fmtpx(it.px):"—")+'</span>'
-      + '<button class="add" data-add="'+i+'">'+(tsOnList(it.sym)?"on list":"+ add")+'</button></div>';
+      + '<button class="add'+(on?" off":"")+'" data-add="'+i+'" data-tip="'+esc(tip)+'">'+lab+'</button></div>'
+      + '<div class="r2"><span class="nm">'+esc(it.name)+'</span><span class="ex">'+esc(it.exch)+'</span></div></div>';
   }).join("");
   $$("#tsdrop .tsr").forEach(function(el){
     el.addEventListener("click", function(e){
@@ -2009,7 +2180,12 @@ function tsPick(i, addToo){
   pollTvPrices();
 }
 function tsOpen(){ var dd=document.getElementById("tsdrop"); if(dd) dd.classList.add("open"); }
-function tsClose(){ var dd=document.getElementById("tsdrop"); if(dd) dd.classList.remove("open"); }
+// clearToo: dismissing the dropdown leaves the query behind otherwise, so the
+// box still reads "gold" long after that search is gone.
+function tsClose(clearToo){
+  var dd=document.getElementById("tsdrop"); if(dd) dd.classList.remove("open");
+  if(clearToo){ var inEl=document.getElementById("tksearch"); if(inEl) inEl.value=""; }
+}
 (function(){
   var inEl = document.getElementById("tksearch");
   if(!inEl) return;
@@ -2036,10 +2212,10 @@ function tsClose(){ var dd=document.getElementById("tsdrop"); if(dd) dd.classLis
     if(e.key==="ArrowDown"){ e.preventDefault(); tsIdx = Math.min(tsItems.length-1, tsIdx+1); tsRender(); }
     else if(e.key==="ArrowUp"){ e.preventDefault(); tsIdx = Math.max(0, tsIdx-1); tsRender(); }
     else if(e.key==="Enter"){ e.preventDefault(); tsPick(tsIdx, e.shiftKey); }
-    else if(e.key==="Escape"){ tsClose(); inEl.blur(); e.stopPropagation(); }
+    else if(e.key==="Escape"){ tsClose(true); inEl.blur(); e.stopPropagation(); }
   });
   document.addEventListener("click", function(e){
-    if(!e.target.closest(".searchbox")) tsClose();
+    if(!e.target.closest(".searchbox")) tsClose(true);
   });
 })();
 
@@ -3668,10 +3844,21 @@ function hasFundamentals(sym, fund){
 }
 function renderFundamentals(sym, fund){
   if(!hasFundamentals(sym, fund)){
+    // This copy was written for VIX and the dollar index. It was landing on
+    // typos too — an imported "ZZZZQ" was told it was a market reading while
+    // the chart below said it had no price history at all.
+    var isMacro = !!WL_NOT_LISTABLE[sym] || !!TAPE_TV_SYMBOL[sym];
+    if(!isMacro && !symbolForTicker(sym)){
+      return '<div class="dsec" id="fundgrid"><div class="note">'
+        + 'The scanner returned nothing for '+esc(sym)+' — no US listing resolves under that symbol, '
+        + 'so there is no price, no history and no fundamentals to show. Check the spelling, or search '
+        + 'the company by name in the box on the left.</div></div>';
+    }
     return '<div class="dsec" id="fundgrid"><div class="note">'
-      + esc(nameFor(sym))+' is a market reading, not a company, so there are no fundamentals '
-      + 'to report — no earnings, no margins, no P/E. The price history, moving averages and '
-      + 'catalyst calendar above all apply normally.</div></div>';
+      + esc(nameFor(sym))+(isMacro
+          ? ' is a market reading, not a company, so there are no fundamentals to report — no earnings, no margins, no P/E. The price history, moving averages and catalyst calendar above all apply normally.'
+          : ' resolves as a listing, but no vendor published fundamentals for it — no market cap, no margins, no P/E. The price history and moving averages above still apply.')
+      + '</div></div>';
   }
   var f = factsOf(sym) || {};
   var q = liveBySym(sym) || {};
@@ -5082,10 +5269,13 @@ function renderStageTab(){
       + renderFundamentals(sym, fund)
       + '<div id="catlist"></div>'
       + '<div class="dsec note" id="dfoot">'
-      + (fund
+      // Branch on WHERE the fundamentals came from, not on whether an object
+      // exists: a searched name gets a scanner snapshot assigned to STAGE.fund
+      // and this line used to credit a fund/SYM.json that returns 404.
+      + ((fund && fund.source!=="scanner")
           ? 'Data is live: prices from the 30s TradingView poll, history from bars.json, fundamentals from the fund sidecar (fund/'+esc(sym)+'.json). Nothing here is investment advice.'
-          : (ADHOC_FACTS[sym]
-              ? 'Data is live: prices from the 30s TradingView poll, history from TradingView\u2019s chart socket, fundamentals from a live scanner snapshot (no daily sidecar for names outside the desk universe). Nothing here is investment advice.'
+          : ((fund || ADHOC_FACTS[sym])
+              ? 'Data is live: prices from the 30s TradingView poll, daily history from stockanalysis.com, fundamentals from a live TradingView scanner snapshot. This name is outside the desk universe, so there is no daily sidecar and no intraday history for it. Nothing here is investment advice.'
               : 'Prices from the 30-second TradingView poll; history from bars.json. Nothing here is investment advice.'))
       + '</div>';
     renderCatList(sym);
@@ -5277,9 +5467,24 @@ function palSearchRemote(q){
     }, function(){ if(seq === PAL_SEQ){ PAL_REMOTE = []; } });
   }, 260);
 }
+// What the palette actually shows for a query, including the no-match
+// fallback. Both palDraw and the keyboard handler read THIS, so Enter always
+// runs the row that is highlighted (they used to disagree when nothing
+// matched: the panel drew actions, the key handler saw an empty list).
+function palVisible(q){
+  var items = palItems(q);
+  if(items.length) return {items:items, empty:false};
+  return {items:ACTIONS.slice(), empty:true};
+}
 function palDraw(){
-  var items = palItems(document.getElementById("palin").value);
-  document.getElementById("pallist").innerHTML = items.map(function(it,i){
+  var q = document.getElementById("palin").value;
+  var v = palVisible(q), items = v.items;
+  // An unmatched query used to leave an empty white panel — no message, no
+  // actions — which reads as a broken page. The rail box got this right.
+  var head = v.empty
+    ? '<div class="tsnote">nothing matched '+esc(String(q||"").trim())+' — the scanner covers US-listed stocks, ETFs and ADRs. Actions are still below.</div>'
+    : "";
+  document.getElementById("pallist").innerHTML = head + items.map(function(it,i){
     return '<div class="pi '+(i===palIdx?"on":"")+'" data-i="'+i+'"><span class="k">'+it.k+'</span><span>'+esc(it.l)+'</span>'+(it.hint?('<span class="hint">'+it.hint+'</span>'):'')+'</div>';
   }).join("");
   $$("#pallist .pi").forEach(function(el){ el.addEventListener("click", function(){ items[+el.dataset.i].run(); palClose(); }); });
@@ -5313,12 +5518,16 @@ $$("section[id^=s-]").forEach(function(s){
 
 // Mobile watchlist toggle: the ~50 rows default to collapsed on phones (the
 // CSS only applies <=900px, so the class is inert on desktop).
+var wlToggleLabel = null;
 (function(){
   var rail = document.getElementById("wlrail");
   var btn = document.getElementById("wltoggle");
   if(!rail || !btn) return;
   var n = 0; RAIL_GROUPS.forEach(function(g){ n += g.syms.length; });
   function label(){ btn.textContent = "watchlist — "+n+" names "+(rail.classList.contains("collapsed")?"▸":"▾"); }
+  // renderWL calls this with the count it actually rendered, so custom adds
+  // and hidden pinned names move the number instead of it reading 50 forever.
+  wlToggleLabel = function(count){ if(typeof count==="number") n = count; label(); };
   if(read("desk.wl")!=="0") rail.classList.add("collapsed");
   label();
   btn.addEventListener("click", function(){
@@ -5391,7 +5600,7 @@ document.addEventListener("keydown", function(e){
   if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==="k"){ e.preventDefault(); palOpen(); return; }
   if(e.key==="/" && !e.target.matches("input")){ e.preventDefault(); palOpen(); return; }
   if(document.getElementById("pal").classList.contains("open")){
-    var items = palItems(document.getElementById("palin").value);
+    var items = palVisible(document.getElementById("palin").value).items;
     if(e.key==="Escape") palClose();
     else if(e.key==="ArrowDown"){ palIdx=Math.min(items.length-1,palIdx+1); palDraw(); }
     else if(e.key==="ArrowUp"){ palIdx=Math.max(0,palIdx-1); palDraw(); }
@@ -5448,7 +5657,19 @@ function tick(){
   if(STAGE.view==="heat" && now - HEAT.lastFetch >= DATA_POLL_MS - 500) heatRender(true);
 }
 document.addEventListener("visibilitychange", function(){ if(!document.hidden){ tick(); updatePricesTimestamp(); } });
+// The sticky left rail parks under the top rail, whose height changes when
+// the rail wraps at narrow widths — so measure it rather than hard-coding it.
+function measureRailHeight(){
+  var r = document.querySelector(".rail");
+  if(!r) return;
+  document.documentElement.style.setProperty("--railh", Math.round(r.getBoundingClientRect().height)+"px");
+}
+window.addEventListener("resize", measureRailHeight);
+if(window.ResizeObserver){
+  try{ new ResizeObserver(measureRailHeight).observe(document.querySelector(".rail")); }catch(e){}
+}
 function start(){
+  measureRailHeight();
   ["conv","swing","orders","sector","cats","news"].forEach(function(id){
     var el = document.getElementById(id);
     if(el) el.innerHTML = '<div class="boardmsg">Loading…</div>';
