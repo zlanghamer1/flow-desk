@@ -335,6 +335,9 @@ tr.foc td{background:var(--sel)}
 tr.foc td:first-child{box-shadow:inset 2px 0 0 var(--acc)}
 /* .55, not .35 — dimmed rows are de-emphasized, not unreadable */
 tr.dim{opacity:.55}
+/* A row with nothing published, dimmed for a different reason than focus —
+   and by a class applyFocus does not own. */
+tr.noread{opacity:.55}
 td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .sy2{font-weight:700}
 .pill{font-size:9px;font-weight:700;letter-spacing:.07em;border-radius:3px;padding:1.5px 5px}
@@ -470,12 +473,19 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 #s-stage.heatmode #stageheat{display:block}
 .heatwrap{position:relative;height:clamp(420px,56vh,660px);margin:0 14px 6px;border:1px solid var(--edge2);border-radius:6px;overflow:hidden;background:var(--bg)}
 /* Expanded map: both rails out, full window width, taller box. Only the stage
-   section stays on screen, so nothing below competes for the height. */
-body.heatwide .cols{grid-template-columns:minmax(0,1fr)}
-body.heatwide .wl,body.heatwide .rr{display:none}
-body.heatwide .heatwrap{height:calc(100vh - 210px);min-height:460px}
-body.heatwide .mid>*:not(#s-stage){display:none}
-body.heatwide #s-stage>*:not(.viewseg):not(#heatbar):not(#stageheat){display:none}
+   section stays on screen, so nothing below competes for the height.
+
+   EVERY rule here is gated on #s-stage.heatmode as well as body.heatwide.
+   Without that gate, expanding the map and then clicking CHART blanked the
+   whole desk — the chart, the header, both rails and every section below —
+   and because the expand state persists, so did the blank page across a
+   reload. */
+body.heatwide:has(#s-stage.heatmode) .cols{grid-template-columns:minmax(0,1fr)}
+body.heatwide:has(#s-stage.heatmode) .wl,
+body.heatwide:has(#s-stage.heatmode) .rr{display:none}
+body.heatwide #s-stage.heatmode .heatwrap{height:calc(100vh - 210px - var(--heatfoot-h, 30px));min-height:420px}
+body.heatwide:has(#s-stage.heatmode) .mid>*:not(#s-stage){display:none}
+body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){display:none}
 .hm-sec{position:absolute;overflow:hidden}
 .hm-sechead{position:absolute;left:0;right:0;top:0;height:14px;line-height:14px;padding:0 4px;font-size:9px;font-weight:700;
   letter-spacing:.06em;color:var(--ink2);background:var(--srf);border-bottom:1px solid var(--edge2);
@@ -2319,15 +2329,24 @@ function renderWL(){
   // enough range data yet" were statements about the market the page could
   // not make. Say what is actually wrong.
   var feedDead = (typeof tvPollFailed !== "undefined") && tvPollFailed;
+  // "none yet" says no name is moving unusually. That test needs each name's
+  // own average day, which lives in data.json's facts — so during a data.json
+  // outage the panel was reporting an unknown as a zero. It can only answer
+  // when the yardstick exists.
+  var canMeasure = railSyms.some(function(s2){ var f2 = factsOf(s2); return f2 && num(f2.avg_move)!=null; });
+  var canRange = railSyms.some(function(s2){ var st2 = statsOf(s2); return st2 && st2.pos!=null; });
+  var noBasis = !feedDead && !canMeasure;
   var alertsHtml = '<b>MOVERS · RELATIVE TO THEIR OWN AVERAGE DAY</b>'
-    + (feedDead ? '<span class="m">price feed not answering — no readings</span>' : "")
-    + (feedDead ? "" : (hot.length ? hot.map(function(s){
+    + (feedDead ? '<span class="m">price feed not answering — no readings</span>'
+       : noBasis ? '<span class="m">no reference data — each name\u2019s average day comes from the daily snapshot, which has not loaded</span>' : "")
+    + (feedDead || noBasis ? "" : (hot.length ? hot.map(function(s){
         var d=dispQuote(liveBySym(s)); var f=factsOf(s)||{};
         return '<span class="hm2">'+esc(s)+' '+hotOf(s).toFixed(1)+'×</span> <span class="m">('
           +(d.tag?esc(d.tag)+" ":"")+fm1(d.ch)+'% vs '+(f.avg_move!=null?f.avg_move:"—")+'% usual)</span>';
       }).join(" · ") : "none yet"))
     + '<div style="margin-top:6px"><b data-tip="Stocks and unlevered funds only — leveraged and inverse wrappers are excluded, because a reverse split can park one at 1% of its adjusted range while its price is unchanged.">NEAR 52-WEEK LOWS · SHOPPING LIST</b>'
     + (feedDead ? '<span class="m">price feed not answering — no readings</span>'
+       : !canRange ? '<span class="m">no 52-week bounds — they come from the daily snapshot, which has not loaded</span>'
                 : (lows.length ? lows.map(function(s){ return esc(s)+' <span class="m">'+Math.round(statsOf(s).pos*100)+'%</span>'; }).join(" · ") : "not enough range data yet"))
     + '</div>'
     + '<div class="note" style="margin-top:6px">the (n) in the tab title = names moving ≥1.8× their own average day</div>';
@@ -2770,7 +2789,10 @@ function renderSectorSection(data){
       var side = rel>=0 ? ("left:50%;width:"+wpx+"px;background:var(--up)") : ("left:calc(50% - "+wpx+"px);width:"+wpx+"px;background:var(--dn)");
       var mtip = (mtag ? ((mtag==="IN"?"Money went IN":"Money went OUT")+" this week — the sign of the $1w flow beside it.") : "")
         + (r.flow_1m!=null ? (" One month: "+fmB(r.flow_1m)+".") : "");
-      return '<tr class="rw'+(known?'':' dim')+'" data-sym="'+esc(r.ticker||"")+'"><td>'
+      // Its own class, not `dim`: applyFocus toggles `dim` for focus
+      // highlighting on every render and on every sort click, so the
+      // no-reading state never reached the screen.
+      return '<tr class="rw'+(known?'':' noread')+'" data-sym="'+esc(r.ticker||"")+'"><td>'
         +(mtag ? ('<span class="iodot '+(mtag==="IN"?"b":"s")+'" data-tip="'+esc(mtip)+'"></span>')
                : '<span class="iodot n" data-tip="No flow or relative-strength reading published for this sector this cycle."></span>')
         +'<span class="sy2">'+esc(r.ticker||"?")+'</span><span class="nm">'+esc(r.name||"")+'</span></td>'
@@ -2898,6 +2920,13 @@ function renderConv(data){
   var el = document.getElementById("conv");
   if(arr.length===0){ el.innerHTML = '<div class="boardmsg">No conviction setups on the board right now.</div>'; return; }
   var cut = boardCutApply(arr, "conv");
+  // The cell prints the LIVE rvol and the header sorted the SNAPSHOT one, so
+  // "RVOL ▼" produced a visibly unsorted column — 24 order breaks in 57 rows.
+  // Give each row the number the cell shows and sort on that.
+  arr.forEach(function(c){
+    var q2 = liveBySym(c.ticker);
+    c.rvol_shown = (q2 && q2.rvol!=null) ? q2.rvol : num(c.rvol);
+  });
   var rerender = function(){ renderConv(STATE.data); };
   if(cut.rows.length===0){
     el.innerHTML = '<div class="boardmsg">No conviction names score '+BOARD_SCORE_FLOOR+'+ right now — a quiet tape is information too.</div>'
@@ -2908,7 +2937,7 @@ function renderConv(data){
   table(el, "t-conv", [
     {l:"Name",key:"ticker"},{l:"Score",key:"score",tip:TIPS["tip-score-conviction"]},{l:"Net flow",key:"net_flow",tip:TIPS["tip-netflow"]},
     {l:"Flow %",tip:TIPS["tip-flowpct"]},
-    {l:"RVOL",key:"rvol",tip:"Today's stock volume vs this name's own 10-day average, LIVE from the 30-second poll. The score beside it used the reading at the last publish, so the two can differ during the session — hover a cell for the number the score actually used."},
+    {l:"RVOL",key:"rvol_shown",tip:"Today's stock volume vs this name's own 10-day average, LIVE from the 30-second poll — and the column sorts on the number you can see. The score beside it used the reading at the last publish, so the two can differ during the session; hover a cell for the number the score actually used."},
     {l:"Loudest contract",tip:TIPS["tip-suggested"]}
   ], cut.rows, rowHTMLConv, "score",
   {html: boardCutNoteHTML(cut, "conv"), wire: function(){ wireBoardCut(el, "conv", rerender); }});
@@ -4944,7 +4973,17 @@ var PEER_GROUPS = {
    Hermes lines disagreed on PEG (47.5 vs 4.45), so one company appeared as
    both the most and the least expensive name on the same chart. */
 function issuerKey(desc){
-  return String(desc||"").toUpperCase()
+  var t = String(desc||"").toUpperCase();
+  // Cut at the em/en/hyphen separator TradingView uses for a sub-line:
+  // "Alphabet Inc. - Depositary Shares representing…" is Alphabet.
+  var cut = t.split(/\s[-\u2013\u2014]\s/)[0];
+  if(cut && cut.length >= 3) t = cut;
+  // Preferred and note boilerplate: "Strategy Inc 8 % Pfd Registered shs
+  // Series A" and "…10 % Perp Strife Pfd Registered Shs Series A" both have
+  // to collapse onto "Strategy Inc", or a company sits on its own chart.
+  t = t.replace(/\b\d+(\.\d+)?\s*%.*$/, "")
+       .replace(/\b(PFD|PREFERRED|PERP|PERPETUAL|CUMULATIVE|NON-CUMULATIVE|REGISTERED|SHS|SERIES\s+[A-Z0-9]+|NOTES?|DEBENTURES?|WARRANTS?|UNITS?|RIGHTS?)\b/g, "");
+  return t
     .replace(/\b(UN)?SPONSORED\b/g, "")
     .replace(/\bADR\b|\bADS\b|\bGDR\b/g, "")
     .replace(/\bCLASS\s+[A-Z]\b/g, "")
@@ -4952,6 +4991,10 @@ function issuerKey(desc){
     .replace(/\b(INC|CORP|CORPORATION|COMPANY|CO|LTD|LIMITED|PLC|SA|SE|NV|AG|SCA|SAB|DE|CV|HOLDINGS?|GROUP|THE)\b/g, "")
     .replace(/[^A-Z0-9]/g, "");
 }
+// A ticker with a suffix (MKC.V, JPM/PD) is the thin non-primary line. When
+// two rows collapse onto one issuer, the plain ticker is the one a trader
+// would quote.
+function _tickerRank(t){ return /[./]/.test(String(t||"")) ? 1 : 0; }
 // A peer must be within this multiple of the focused company's market cap,
 // both ways. A $6B miner and a $5.4T chipmaker are not comparisons; TSEM
 // "ranked 5 of 5" on all six metrics against NVDA, TSM, AVGO and MU.
@@ -5051,32 +5094,61 @@ function _peersByIndustry(sym){
     });
   }
   if(cands.filter(function(c){ return inBand(c.cap); }).length >= 4) return finish(cands, false);
-  // Widen on the live scanner. No cap filter in the query — take the industry
-  // and rank by closeness here, so a mega-cap industry still yields a set when
-  // nothing sits inside the band. Primary US listings only: OTC is where the
-  // duplicate ADR lines live, and one company must not occupy two bars.
-  var body = JSON.stringify({
-    columns:["name","description","market_cap_basic","exchange"],
-    filter:[{left:"industry", operation:"equal", right:ind}],
-    options:{lang:"en"}, range:[0,30],
-    sort:{sortBy:"market_cap_basic",sortOrder:"desc"},
-    symbols:{query:{types:["stock","dr"]}}, markets:["america"]});
-  return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
+  // Widen on the live scanner. Two things the first version got wrong:
+  //   1. It asked for the 30 LARGEST names and dropped OTC rows afterwards, so
+  //      a small cap was ranked "closest in size" against a pool that
+  //      structurally excluded the companies actually nearest it — WTI at
+  //      $587M got peers at $2.6-3.1B while CLB sat at $581M, under a note
+  //      claiming nothing closer was listed.
+  //   2. It had no way to tell a company's own PREFERRED line from a peer, and
+  //      those carry the parent's market cap — so the closeness ranking
+  //      promoted them to the top slots. MSTR was measured against STRK, STRF
+  //      and STRC: four of five bars were Strategy Inc.
+  // So: filter exchange in the QUERY (before the cut), band the window around
+  // the focused company's own size, and read typespecs so preferred and
+  // depositary lines are dropped.
+  var EXCH_OK = ["NASDAQ","NYSE","AMEX"];
+  function scanBody(banded){
+    var filt = [{left:"industry", operation:"equal", right:ind},
+                {left:"exchange", operation:"in_range", right:EXCH_OK}];
+    if(banded && myCap) filt.push({left:"market_cap_basic", operation:"in_range",
+                                   right:[myCap/10, myCap*10]});
+    return JSON.stringify({
+      columns:["name","description","market_cap_basic","exchange","typespecs"],
+      filter:filt,
+      options:{lang:"en"}, range:[0, banded?60:40],
+      sort:{sortBy:"market_cap_basic",sortOrder:"desc"},
+      symbols:{query:{types:["stock","dr"]}}, markets:["america"]});
+  }
+  function ingest(rows){
+    rows.forEach(function(row){
+      if(!row || !row.s || !Array.isArray(row.d)) return;
+      var t = row.d[0], desc = (typeof row.d[1]==="string") ? row.d[1] : "";
+      var cap = num(row.d[2]);
+      var specs = Array.isArray(row.d[4]) ? row.d[4].join(" ").toLowerCase() : String(row.d[4]||"").toLowerCase();
+      if(typeof t!=="string" || !t || seenSym[t]) return;
+      // A preferred or depositary line is not a company; it is paper the
+      // company issued, and it reports the company's own market cap.
+      if(specs.indexOf("preferred")!==-1 || specs.indexOf("depositary")!==-1) return;
+      if(t.indexOf("/")!==-1) return;                       // JPM/PD-style lines
+      var ik = issuerKey(desc);
+      if(!ik || seenIssuer[ik]) return;                     // one company, one bar
+      seenIssuer[ik] = true; seenSym[t] = true;
+      cands.push({sym:t, tv:row.s, desc:desc, cap:cap});
+    });
+  }
+  return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:scanBody(!!myCap)})
     .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
     .then(function(json){
-      var rows = (json && Array.isArray(json.data)) ? json.data : [];
-      rows.forEach(function(row){
-        if(!row || !row.s || !Array.isArray(row.d)) return;
-        var t = row.d[0], desc = (typeof row.d[1]==="string") ? row.d[1] : "";
-        var cap = num(row.d[2]), exch = (typeof row.d[3]==="string") ? row.d[3] : row.s.split(":")[0];
-        if(typeof t!=="string" || !t || seenSym[t]) return;
-        if(t.indexOf("/")!==-1) return;                       // JPM/PD-style depositary lines
-        if(exch && ["NASDAQ","NYSE","AMEX","NYSE ARCA","BATS","CBOE"].indexOf(exch.toUpperCase())===-1) return;
-        var ik = issuerKey(desc);
-        if(!ik || seenIssuer[ik]) return;                     // ordinary line + its ADR = one company
-        seenIssuer[ik] = true; seenSym[t] = true;
-        cands.push({sym:t, tv:row.s, desc:desc, cap:cap});
-      });
+      ingest((json && Array.isArray(json.data)) ? json.data : []);
+      // A thin industry, or one where the band caught almost nothing: retry
+      // once unbanded rather than ship a two-name set.
+      if(cands.length < 4 && myCap){
+        return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:scanBody(false)})
+          .then(function(r2){ if(!r2.ok) throw new Error("HTTP "+r2.status); return r2.json(); })
+          .then(function(j2){ ingest((j2 && Array.isArray(j2.data)) ? j2.data : []); return finish(cands, true); },
+                function(){ return finish(cands, true); });
+      }
       return finish(cands, true);
     })
     .catch(function(){ return finish(cands, false); });
@@ -5597,10 +5669,47 @@ var HEAT_SEC_SHORT = {
   "Retail Trade":"RETAIL", "Communications":"COMMS", "Miscellaneous":"MISC",
   "Funds & wrappers":"FUNDS"
 };
+// Third-tier forms for the narrowest blocks.
+var HEAT_SEC_TINY = {
+  "Consumer Non-Durables":"C.NON-DUR", "Consumer Durables":"C.DURABLE", "Consumer Services":"C.SVCS",
+  "Producer Manufacturing":"PROD MFG", "Electronic Technology":"ELEC TECH", "Process Industries":"PROCESS",
+  "Health Technology":"HEALTH T", "Health Services":"HEALTH S", "Transportation":"TRANSPT",
+  "Non-Energy Minerals":"NON-EN MIN", "Distribution Services":"DISTRIB", "Industrial Services":"IND SVCS",
+  "Commercial Services":"COMM SVCS", "Technology Services":"TECH SVCS", "Retail Trade":"RETAIL",
+  "Communications":"COMMS", "Energy Minerals":"ENERGY", "Miscellaneous":"MISC",
+  "Funds & wrappers":"FUNDS", "Utilities":"UTILS", "Finance":"FINANCE"
+};
+// The 5.4px-per-character guess picked the long name in cases where it did not
+// fit — 9 of 17 headers were clipped at the default width. Measure the real
+// thing against the real font instead.
+var _heatMeasureCtx = null, _heatFontCache = null;
+function heatTextWidth(txt){
+  var t = String(txt).toUpperCase();      // .hm-sechead is text-transform:uppercase
+  if(!_heatMeasureCtx){
+    try{ _heatMeasureCtx = document.createElement("canvas").getContext("2d"); }catch(e){ _heatMeasureCtx = null; }
+  }
+  if(!_heatMeasureCtx) return t.length*6.2;
+  if(_heatFontCache === null){
+    // Read the REAL font off a rendered header rather than assuming one. The
+    // first guess used a monospace stack while .hm-sechead is the body's
+    // sans-serif, so it under-measured and picked the long name for blocks it
+    // did not fit — 9 of 17 headers clipped.
+    var probe = document.querySelector(".hm-sechead");
+    var cs = probe ? getComputedStyle(probe) : null;
+    _heatFontCache = cs ? (cs.fontWeight+" "+cs.fontSize+" "+cs.fontFamily)
+                        : '700 9px "Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif';
+  }
+  _heatMeasureCtx.font = _heatFontCache;
+  return _heatMeasureCtx.measureText(t).width + t.length * 0.54;   // .06em letter-spacing at 9px
+}
 function heatSecLabel(name, wd){
-  var short = HEAT_SEC_SHORT[name] || name;
-  // ~5.4px per character at the header's 9px letter-spaced font.
-  return (wd/5.4 >= String(name).length) ? name : short;
+  var avail = wd - 9;                      // 8px padding plus a hair
+  var forms = [name, HEAT_SEC_SHORT[name] || name, HEAT_SEC_TINY[name] || HEAT_SEC_SHORT[name] || name];
+  for(var i=0;i<forms.length;i++){ if(heatTextWidth(forms[i]) <= avail) return forms[i]; }
+  // Nothing fits: show the shortest form and let CSS ellipsize it. The block
+  // keeps its title tooltip and stays clickable and focusable, so a narrow
+  // sector is still identifiable and still isolable.
+  return forms[forms.length-1];
 }
 function heatDeskTickers(){
   var set = {};
@@ -5636,15 +5745,21 @@ function heatFetch(force){
         // silently — 11 of the 50 desk names, including SOXL, SOXS and SMH,
         // just were not on the map while the footer said "39 names · Desk".
         // Size them by 10-day dollar volume instead and say so.
+        // Dollar volume is computed for EVERY name, because the Desk map sizes
+        // by it: mixing NVDA's $5T market cap with SMH's daily dollar volume
+        // in one area encoding is comparing two different quantities, and it
+        // squeezed the whole "Funds & wrappers" block into a 6px strip with
+        // six tiles rendering 2x2px.
+        var px = num(d[2]), vol = num(d[10]);
+        var dvol = (px!=null && vol!=null && px>0 && vol>0) ? px*vol : null;
         var byVol = false;
         if(cap==null || cap<=0){
-          var px = num(d[2]), vol = num(d[10]);
-          if(px!=null && vol!=null && px>0 && vol>0){ cap = px*vol; byVol = true; }
+          if(dvol!=null){ cap = dvol; byVol = true; }
           else { dropped.push(sym); return; }
         }
         out.push({ sym:sym, tv:row.s, name:(typeof d[1]==="string")?d[1]:"",
           close:num(d[2]), chg:{ "1D":num(d[3]), "1W":num(d[7]), "1M":num(d[8]), "YTD":num(d[9]) },
-          cap:cap, byVol:byVol,
+          cap:cap, dvol:dvol, byVol:byVol,
           sector: byVol ? "Funds & wrappers" : ((typeof d[5]==="string" && d[5])?d[5]:"Other"),
           industry:(typeof d[6]==="string")?d[6]:null });
       });
@@ -5712,7 +5827,7 @@ function heatClampFrom(rows, tf){
   var step = c>=50 ? 10 : c>=20 ? 5 : c>=8 ? 2 : 1;
   return Math.max(floor, Math.round(c/step)*step);
 }
-var _heatRGB = {};
+var _heatRGB = {}, _heatRelayoutOnce = false;
 function heatParseColor(name){
   if(_heatRGB[name]) return _heatRGB[name];
   var v = cssVar(name);
@@ -5764,7 +5879,7 @@ function renderHeatBar(){
   var tfBtns = HEAT_TFS.map(function(t){
     return '<button data-htf="'+t[0]+'" aria-pressed="'+(HEAT.tf===t[0])+'">'+t[1]+'</button>';
   }).join("");
-  var wide = document.body.classList.contains("heatwide");
+  var wide = HEAT_WIDE_WANTED;
   el.innerHTML = '<div class="seg" role="group">'+univBtns+'</div><div class="seg" role="group">'+tfBtns+'</div>'
     + '<button class="fbtn" id="heatwide" aria-pressed="'+wide+'" data-tiphold="0" data-tip="Hide both side rails and give the map the full window, the way Finviz does. The watchlist and the brief come straight back.">'
     + (wide ? "\u21f2 shrink" : "\u21f1 expand")+'</button>'
@@ -5773,8 +5888,9 @@ function renderHeatBar(){
   $$("[data-htf]", el).forEach(function(b){ b.addEventListener("click", function(){ HEAT.tf=b.dataset.htf; renderHeatBar(); heatRender(); }); });
   var hw = document.getElementById("heatwide");
   if(hw) hw.addEventListener("click", function(){
-    document.body.classList.toggle("heatwide");
-    store("desk.heat.wide", document.body.classList.contains("heatwide") ? "1" : "0");
+    HEAT_WIDE_WANTED = !HEAT_WIDE_WANTED;
+    heatSyncWide();
+    store("desk.heat.wide", HEAT_WIDE_WANTED ? "1" : "0");
     renderHeatBar();
     // The container just changed size; the ResizeObserver picks it up, but
     // render immediately so the map never shows one frame of old geometry.
@@ -5786,6 +5902,16 @@ function renderHeatBar(){
 function heatMsg(txt){
   var el = document.getElementById("heatmsg");
   if(el){ if(txt){ el.hidden=false; el.textContent=txt; } else el.hidden=true; }
+}
+// The expanded map's height is calc(100vh - 210px - footer), and the footer's
+// own height depends on how much the legend wraps — so measure it rather than
+// guess. Without this the whole scale, the count and the as-of stamp sat below
+// the fold in the mode built for studying the map.
+function heatMeasureFoot(){
+  var f = document.getElementById("heatfoot");
+  if(!f) return;
+  var h = Math.ceil(f.getBoundingClientRect().height) + 10;
+  document.documentElement.style.setProperty("--heatfoot-h", (h>0?h:30)+"px");
 }
 function heatRender(refetch){
   if(STAGE.view!=="heat") return;
@@ -5811,34 +5937,53 @@ function heatRender(refetch){
     var tf = HEAT.tf;
     var rows = data.rows.filter(function(r){ return !HEAT.isolate || r.sector===HEAT.isolate; });
     var clamp = heatClampFrom(rows, tf);
+    // WEIGHT first, because everything below sizes on it. The index maps size
+    // by market cap, Finviz-style. The DESK map sizes by dollar volume traded,
+    // because it is the one measure every name on the desk has — the funds
+    // have no market cap at all, and one area encoding cannot carry two
+    // different quantities. Before this the whole "Funds & wrappers" block was
+    // a 6px strip with six tiles rendering 2x2px.
+    var byDollarVol = (HEAT.univ === "DESK");
+    rows = rows.map(function(r){
+      var w = byDollarVol ? (r.dvol!=null ? r.dvol : r.cap) : r.cap;
+      var c2 = {}; for(var k2 in r) if(Object.prototype.hasOwnProperty.call(r,k2)) c2[k2]=r[k2];
+      c2.w = (w!=null && w>0) ? w : 0;
+      return c2;
+    }).filter(function(r){ return r.w > 0; });
+
     // At 390px the full 502-name universe packed 378 tiles under 14px wide —
     // unlabeled, untappable, and not a map. Keep the biggest names and say how
-    // many were left out. Must run BEFORE the sector grouping below.
+    // many were left out.
     var heatDropped = 0;
     var wrapW = wrap.clientWidth || 0;
     if(wrapW && wrapW < 700 && rows.length > 130){
-      rows = rows.slice().sort(function(a,b){ return b.cap-a.cap; });
+      rows = rows.slice().sort(function(a,b){ return b.w-a.w; });
       heatDropped = rows.length - 120;
       rows = rows.slice(0,120);
     }
-    // group by sector, keep Finviz's shape: sectors sized by summed cap
+    // group by sector, keep Finviz's shape: sectors sized by summed weight
     var bySec = {};
     rows.forEach(function(r){ (bySec[r.sector] = bySec[r.sector]||[]).push(r); });
     var sectors = Object.keys(bySec).map(function(k){
-      return {name:k, rows:bySec[k].sort(function(a,b){ return b.cap-a.cap; }),
-              w:bySec[k].reduce(function(a,b){ return a+b.cap; },0)};
-    }).sort(function(a,b){ return b.w-a.w; });
+      return {name:k, rows:bySec[k].sort(function(a,b){ return b.w-a.w; }),
+              w:bySec[k].reduce(function(a,b){ return a+b.w; },0)};
+    }).filter(function(x){ return x.rows.length && x.w>0; }).sort(function(a,b){ return b.w-a.w; });
     var W = wrap.clientWidth, H = wrap.clientHeight;
     if(W<50 || H<50) return;
     var secRects = squarify(sectors, 0, 0, W, H);
     var html = "";
     secRects.forEach(function(sr){
       var sec = sr.it;
-      var headH = (sr.ht>34 && sr.wd>52) ? 14 : 0;
+      // The width gate left three sectors with NO header at all, so
+      // Communications (VZ, TMUS, T) read as part of the Health Services block
+      // above it and could not be isolated. Height is the only real
+      // constraint; a narrow header ellipsizes to its short form.
+      var headH = (sr.ht>30) ? 14 : 0;
       html += '<div class="hm-sec" data-hsecname="'+esc(sec.name)+'" title="'+esc(sec.name)+'" style="left:'+sr.x.toFixed(1)+'px;top:'+sr.y.toFixed(1)+'px;width:'+sr.wd.toFixed(1)+'px;height:'+sr.ht.toFixed(1)+'px">';
-      if(headH) html += '<div class="hm-sechead" data-hsec="'+esc(sec.name)+'" title="'+esc(sec.name)+' — click to isolate">'
+      if(headH) html += '<div class="hm-sechead" data-hsec="'+esc(sec.name)+'" role="button" tabindex="0"'
+        + ' title="'+esc(sec.name)+' — click to isolate">'
         + esc(heatSecLabel(sec.name, sr.wd))+'</div>';
-      var tiles = squarify(sec.rows.map(function(r){ return {w:r.cap, r:r}; }), 0, headH, sr.wd, sr.ht-headH);
+      var tiles = squarify(sec.rows.map(function(r){ return {w:r.w, r:r}; }), 0, headH, sr.wd, sr.ht-headH);
       tiles.forEach(function(t){
         var r = t.it.r;
         var v = r.chg[tf];
@@ -5850,10 +5995,13 @@ function heatRender(refetch){
         var showPct = t.wd>=40 && t.ht>=28;
         var fs = Math.max(7, Math.min(15, Math.floor(Math.min(t.wd/3.6, t.ht/2.6))));
         var tip = r.sym+" · "+r.name+(r.industry?(" · "+r.industry):"")
-          + " · "+(r.byVol ? ("~"+fmtCapDollars(r.cap)+" traded per day (a fund: no market cap, sized by dollar volume)")
-                           : fmtCapDollars(r.cap))
+          + " · "+(byDollarVol
+              ? ("~"+fmtCapDollars(r.dvol!=null?r.dvol:r.cap)+" traded per day"
+                 + (r.byVol ? " (a fund: no market cap)" : (" · market cap "+fmtCapDollars(r.cap))))
+              : (r.byVol ? ("~"+fmtCapDollars(r.cap)+" traded per day (a fund: no market cap, sized by dollar volume)")
+                         : fmtCapDollars(r.cap)))
           + " · "+tf+" "+heatPct(v, tf)+(tf!=="1D" && r.chg["1D"]!=null?(" · 1D "+heatPct(r.chg["1D"],"1D")):"");
-        html += '<div class="hm-tile" data-sym="'+esc(r.sym)+'" data-htv="'+esc(r.tv)+'" role="button" tabindex="0" data-tip="'+esc(tip)+'"'
+        html += '<div class="hm-tile" data-sym="'+esc(r.sym)+'" data-htv="'+esc(r.tv)+'" data-hname="'+esc(r.name||"")+'" role="button" tabindex="0" data-tip="'+esc(tip)+'"'
           + ' style="left:'+t.x.toFixed(1)+'px;top:'+t.y.toFixed(1)+'px;width:'+t.wd.toFixed(1)+'px;height:'+t.ht.toFixed(1)+'px;background:'+bg+';color:'+fg+'">'
           + (showSym ? ('<b style="font-size:'+fs+'px">'+esc(r.sym)+'</b>') : "")
           + (showPct && v!=null ? ('<span style="font-size:'+Math.max(7,fs-3)+'px">'+heatPct(v, tf)+'</span>') : "")
@@ -5864,18 +6012,25 @@ function heatRender(refetch){
     wrap.innerHTML = '<div class="heatmsg" id="heatmsg" hidden></div>' + html;
     $$(".hm-sechead", wrap).forEach(function(hd){
       hd.addEventListener("click", function(e){ e.stopPropagation(); HEAT.isolate = hd.dataset.hsec; renderHeatBar(); heatRender(); });
+      hd.addEventListener("keydown", function(e){
+        if(e.key!=="Enter" && e.key!==" ") return;
+        e.preventDefault(); e.stopPropagation(); hd.click();
+      });
     });
     $$(".hm-tile", wrap).forEach(function(tl){
       tl.addEventListener("click", function(e){
         e.stopPropagation();
         var symb = tl.dataset.sym, tv = tl.dataset.htv;
-        adhocRegister(symb, tv, null);
+        // The map already knows the company name; passing null made the chart
+        // header read "GILD GILD" where the name belongs.
+        adhocRegister(symb, tv, tl.dataset.hname || null);
         stageSetView("chart");
         setFocus(symb);
       });
     });
     var foot = document.getElementById("heatfoot");
     if(foot){
+      var prevFootH = Math.ceil(foot.getBoundingClientRect().height);
       var stops = [-1,-0.5,-0.25,0,0.25,0.5,1];
       var scale = '<span class="heatscale">'+stops.map(function(f){
         var v = f*clamp;
@@ -5888,15 +6043,24 @@ function heatRender(refetch){
       var narrowNote = heatDropped ? (' \u00b7 '+heatDropped+' smaller names left off at this width — rotate or widen the window for the full map') : '';
       foot.innerHTML = scale
         + '<span data-tip="Full color is set from this universe today: the 90th percentile of absolute moves, never below the floor for the timeframe. It is printed here so you know what a saturated tile means.">'
-        + 'full color = \u00b1'+clamp+'% · '+rows.length+' names · '+esc(HEAT_UNIVERSES[HEAT.univ].label)
+        + 'full color = \u00b1'+clamp+'% over '+esc(tf)+' · '+rows.length+' names · '+esc(HEAT_UNIVERSES[HEAT.univ].label)
         + (HEAT.isolate?(' · '+esc(HEAT.isolate)+' only'):'')
-        + ' · size = market cap'+(nFund?(', '+nFund+' fund'+(nFund===1?'':'s')+' sized by dollar volume'):'')
+        + (byDollarVol
+            ? ' · size = dollar volume traded today (the one measure every desk name has — the funds have no market cap)'
+            : ' · size = market cap'+(nFund?(', '+nFund+' fund'+(nFund===1?'':'s')+' sized by dollar volume'):''))
         + ((data.dropped && data.dropped.length && !HEAT.isolate)
             ? (' · not on the map: '+esc(data.dropped.join(", "))+' (no market cap and no traded volume to size '
                + (data.dropped.length===1?'it':'them')+' by)') : '')
         + narrowNote
         + '</span>'
         + '<span>TradingView scanner, 15-minute delayed \u00b7 read at '+esc(ctTimeShort(new Date(data.fetchedAt).toISOString()))+' CT · click a tile to chart it</span>';
+      heatMeasureFoot();
+      // If reserving the footer changed the box, lay the tiles out once more
+      // against the size they will actually occupy.
+      if(Math.abs(Math.ceil(foot.getBoundingClientRect().height) - prevFootH) > 2 && !_heatRelayoutOnce){
+        _heatRelayoutOnce = true;
+        requestAnimationFrame(function(){ _heatRelayoutOnce = false; heatRender(); });
+      }
     }
   });
 }
@@ -5916,11 +6080,20 @@ function heatRelayout(){
   window.addEventListener("resize", heatRelayout);
   if(window.ResizeObserver){ try{ new ResizeObserver(heatRelayout).observe(wrap); }catch(e){} }
 })();
+// Remembered separately from the class on <body>, so leaving the map takes the
+// expanded layout off the page entirely (belt and braces for a browser with no
+// :has() support) and returning to the map puts it back.
+var HEAT_WIDE_WANTED = false;
+function heatSyncWide(){
+  var on = HEAT_WIDE_WANTED && STAGE.view === "heat";
+  document.body.classList.toggle("heatwide", on);
+}
 function stageSetView(view){
   STAGE.view = view;
   store("desk.stage.view", view);
   var sec = document.getElementById("s-stage");
   if(sec) sec.classList.toggle("heatmode", view==="heat");
+  heatSyncWide();
   var vc = document.getElementById("view-chart"), vh = document.getElementById("view-heat");
   if(vc) vc.setAttribute("aria-pressed", view==="chart");
   if(vh) vh.setAttribute("aria-pressed", view==="heat");
@@ -5985,6 +6158,12 @@ function stageStarHTML(sym){
 function stageHeader(){
   var el = document.getElementById("stagehead");
   if(!el || !STAGE.sym) return;
+  // The 30-second poll rewrites this header, which threw away whatever button
+  // inside it had keyboard focus — including the watchlist add/remove control
+  // — and dropped focus to BODY, so the next Tab restarted at the top of the
+  // page. Remember which control was focused and give it back.
+  var wasFocused = null;
+  if(el.contains(document.activeElement) && document.activeElement.id) wasFocused = document.activeElement.id;
   el.innerHTML = stageHeaderHTML(STAGE.sym);
   var ne = document.getElementById("stagenextearn");
   if(ne) ne.addEventListener("click", function(e){
@@ -5992,6 +6171,10 @@ function stageHeader(){
     var r = ne.getBoundingClientRect();
     showEarnPopover(r.left, r.bottom, earnPopoverHTML(null, STAGE.nextEarn, true));
   });
+  if(wasFocused){
+    var again = document.getElementById(wasFocused);
+    if(again && el.contains(again)){ try{ again.focus(); }catch(e){} }
+  }
   var star = document.getElementById("stagestar");
   if(star) star.addEventListener("click", function(e){
     e.stopPropagation();
@@ -6542,8 +6725,7 @@ function refreshLiveUI(){
     renderSwing(data);
   }
   $$(".xwrap").forEach(function(x){ if(x.id && scrolls[x.id]) x.scrollLeft = scrolls[x.id]; });
-  stageLivePoke();
-  stageHeader();
+  stageLivePoke();      // its first act is stageHeader(), so no second call here
   applyFocus();
   updatePricesTimestamp();
   if(typeof markScrollables === "function") markScrollables();
@@ -6910,7 +7092,7 @@ function start(){
       }catch(e){ bootSym = saved; }   // legacy plain-string value
     }
     stageShow(bootSym);
-    if(read("desk.heat.wide")==="1") document.body.classList.add("heatwide");
+    if(read("desk.heat.wide")==="1") HEAT_WIDE_WANTED = true;
     if(read("desk.stage.view")==="heat") stageSetView("heat");
     pollTvPrices();
     attemptMacroTiles();
