@@ -60,6 +60,23 @@ a{color:var(--acc);text-decoration:none}
 .u{color:var(--up)} .d{color:var(--dn)} .m{color:var(--ink2)}
 .shell{max-width:1560px;margin:0 auto;border-left:1px solid var(--edge2);border-right:1px solid var(--edge2);background:var(--srf);min-height:100vh}
 
+/* ============ rolling news ticker (2026-08-19, Zach's ask) ============ */
+.newsticker{position:relative;overflow:hidden;border-bottom:1px solid var(--edge);background:var(--srf2);height:26px}
+.newsticker[hidden]{display:none}
+.nt-track{display:inline-flex;align-items:center;white-space:nowrap;height:26px;will-change:transform;
+  animation:nt-roll var(--nt-dur,60s) linear infinite}
+.newsticker:hover .nt-track{animation-play-state:paused}
+@keyframes nt-roll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.nt-item{display:inline-flex;align-items:baseline;gap:6px;padding:0 14px 0 4px;font-size:11px;color:var(--ink2);text-decoration:none}
+a.nt-item:hover{color:var(--ink)}
+.nt-item .tk{font-size:9.5px;font-weight:700;color:var(--acc)}
+.nt-item .tm{font-size:9px;color:var(--ink3)}
+.nt-sep{color:var(--ink3);opacity:.5;font-size:8px;padding-right:14px}
+@media (prefers-reduced-motion: reduce){
+  .nt-track{animation:none}
+  .newsticker{overflow-x:auto}
+}
+
 /* ============ top rail ============ */
 .rail{
   display:flex;align-items:center;gap:14px;padding:9px 16px;
@@ -190,14 +207,6 @@ section.closed .sb{display:none}
 .alertbox b{display:block;font-size:9.5px;letter-spacing:.12em;color:var(--ink3);margin-bottom:3px}
 .alertbox .hm2{color:var(--hi);font-weight:600}
 
-/* ============ position guard unlock form ============ */
-.pgform{margin-top:6px;display:flex;flex-direction:column;gap:6px}
-.pgform input[type=password]{background:var(--srf);border:1px solid var(--edge);border-radius:5px;color:var(--ink);font:11.5px inherit;padding:5px 8px;width:100%}
-.pgform .row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.pgform button{border:1px solid var(--edge);border-radius:5px;padding:3px 9px;font-size:11px;background:var(--srf);color:var(--ink2)}
-.pgform button:hover{color:var(--ink);border-color:var(--acc)}
-.pgerr{color:var(--dn);font-size:10.5px;min-height:1.2em}
-.pglabel{font-size:10.5px;color:var(--ink2);display:flex;align-items:center;gap:5px}
 
 /* ============ brief ============ */
 .verdict{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
@@ -508,6 +517,10 @@ footer b{color:var(--ink2)}
 <body>
 <div class="shell">
 
+  <!-- ======= rolling news ticker — the very top (2026-08-19, Zach's ask) ======= -->
+  <div class="newsticker" id="newsticker" hidden aria-label="Latest tagged headlines"
+       data-tip="TradingView headlines tagged to desk names, refreshed hourly with the loop. Hover to pause; click a headline to open it."></div>
+
   <!-- ======= top rail ======= -->
   <div class="rail">
     <div class="mark">THE<em>DESK</em><small>FLOW · BRIEF · CATALYSTS</small></div>
@@ -535,13 +548,10 @@ footer b{color:var(--ink2)}
 
   <div class="cols">
     <!-- ======= watchlist rail ======= -->
-    <!-- Order (2026-08-18): act-on-this first. Position Guard (the only
-         element that can say "do something today" — RAISE nags) and the
-         movers/shopping-list box sit ABOVE the ~50 ticker rows instead of
-         buried beneath them. On phones the row list also collapses behind a
-         toggle — it was pure scroll tax between Zach and the brief. -->
+    <!-- Position Guard removed entirely 2026-08-19 (Zach's directive). The
+         movers/shopping-list box leads, then search, then the rows; on
+         phones the row list collapses behind a toggle. -->
     <aside class="wl" id="wlrail">
-      <div class="alertbox" id="positions"></div>
       <div class="alertbox" id="alerts"></div>
       <div class="searchbox">
         <input id="tksearch" placeholder="Search any US ticker…" autocomplete="off" spellcheck="false" aria-label="Search tickers">
@@ -639,8 +649,7 @@ footer b{color:var(--ink2)}
     changing hands; free data can't see buyer vs seller. FLOW % describes what traded today, not what happens next.
     Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
     Nothing here is financial advice.<br>
-    Freshness: prices 30s · flow boards ~7 min (8:00–15:20 CT) · brief daily · catalysts hourly.
-    Position Guard data is stored only as passphrase-encrypted ciphertext — public visitors cannot read it without the passphrase.<br>
+    Freshness: prices 30s · flow boards ~7 min (8:00–15:20 CT) · brief daily · catalysts hourly · news ticker hourly with the loop.<br>
     Charts render with <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a>,
     © TradingView, Inc., Apache-2.0. Auto trend lines and levels are drawn from this page's own pivot math — display only, never a signal.
   </footer>
@@ -834,7 +843,10 @@ function wlRemove(sym){
 wlCustom().forEach(function(r){ adhocRegister(r.sym, r.tv, r.name); });
 
 /* =================== utils =================== */
-var $=function(q){return document.querySelector(q)}, $$=function(q){return [].slice.call(document.querySelectorAll(q))};
+var $=function(q){return document.querySelector(q)};
+// $$ takes an optional scope — several callers pass one, and before 2026-08-19
+// it was silently ignored, so "scoped" queries bound handlers document-wide.
+var $$=function(q, scope){ return [].slice.call((scope||document).querySelectorAll(q)); };
 function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
 function num(v){ if(v===null||v===undefined||v==="") return null; var n=Number(v); return isFinite(n)?n:null; }
 function sign(v){ var n=num(v); if(n===null) return "m"; return n>0?"u":n<0?"d":"m"; }
@@ -921,16 +933,6 @@ var TIPS = {
   "tip-etfflows": "Real invested money entering or leaving each semiconductor ETF, estimated as the day-over-day change in the fund's shares outstanding times its NAV (ETFs create and destroy shares as money moves in and out). One reading per session — slower than the options boards, and it mixes retail and institutional money. The 1M figure is the fund's trailing one-month net flow. Shows 'split — n/a' when a fund split that day: a split changes the share count without any money moving, so the day's flow is unknowable rather than zero. Context only; it doesn't affect any score.",
   netflow:"Call premium traded minus put premium traded (volume × last × 100). Free data can't see buy vs sell side — this is premium changing hands, not directional order flow.",
   flows:"Fund flows = change in shares outstanding × NAV (creations/redemptions). Flows chase returns — context, never a signal.",
-  entry:"What you paid and when the trade opened.",
-  stop_resting:"The stop order actually sitting at the broker (good-til-canceled). Touch it and the position sells.",
-  stop_rec:"Where the trail math says the stop belongs today: highest close since entry minus 3× ATR (2× for leveraged funds). It only ratchets up, never down.",
-  raise_nag:"Your broker stop has fallen 2%+ of price behind the recommended level. Move the order up — the desk never touches your broker.",
-  trail:"Chandelier trail: highest close since entry minus a multiple of ATR — this name's average daily range over 22 sessions. Volatile names get more room; calm names ride tighter.",
-  pnl:"Gain or loss versus your entry, before costs.",
-  trim:"Fires when a held name sits in the top 15% of its 52-week range with RSI 70+. The hot-runner profile — a flag to look, never an order.",
-  kill:"Thesis positions don't use stops. They exit only if a named reason breaks — the kill triggers in the thesis record. This line says whether every trigger still holds.",
-  dca:"The leveraged sleeve buys on schedule while price holds above the 200-day band and pauses below it. The taxable sleeve never sells, by rule.",
-  gap:"A stop is an order, not a guarantee — price can gap straight through it overnight. Position size is the only gap defense.",
   fund:"Colored from a buyer's lens against rough thresholds: short % of float green under 2% / red over 5%; RSI green at 35 or under (washed out) / red at 70+ (hot); PEG green at 1 or under / red at 2+; net margin green at 20%+ / red below 0%; Debt/Eq green at 0.5 or under / red at 2+; analyst target green when 15%+ above price. A gauge, not a rating.",
   range:"Position in the 52-week range. Near the low = shopping territory, near the high = hot runner. The diamond is today.",
   hot:"Today's move divided by this name's own average daily move — Micron swinging 2% is normal, Google swinging 2% is not. Highlights at 1.8× and up.",
@@ -949,7 +951,6 @@ var DYNAMIC_TV = {};    // ticker -> tv_symbol (from this cycle's board cards; a
 var BARS_CACHE = null;  // null = not yet fetched; {built,bars:{}} once attempted (lazy, on first drawer open)
 var tvPollFailed = false;
 var lastPriceUpdateTs = null;
-var PG = { unlocked:false, positions:null, expanded:false };  // Position Guard state
 
 function rebuildDynamicTv(data){
   DYNAMIC_TV = {};
@@ -1135,11 +1136,12 @@ function renderMarketState(data){
 /* =================== staleness =================== */
 
 /* ---- vault->reader normalization ----
-   The emitters are ClaudeVault's desk_summary.py (brief_summary.json) and
-   build_desk_private.py (encrypted blob plaintext). They use the contract
-   field names; the renderers below grew up on the prototype's names. This
-   boundary layer converts once, so a differently-sourced payload that already
-   matches the reader shape passes through untouched. */
+   The emitter is ClaudeVault's desk_summary.py (brief_summary.json). It uses
+   the contract field names; the renderers below grew up on the prototype's
+   names. This boundary layer converts once, so a differently-sourced payload
+   that already matches the reader shape passes through untouched. (The
+   desk_private blob still arrives in data.json but nothing here reads it —
+   Position Guard was removed 2026-08-19 by Zach's directive.) */
 var SECTOR_NAMES={XLP:"Staples",XLU:"Utilities",XLV:"Health care",XLK:"Technology",XLC:"Comm svcs",XLI:"Industrials",XLY:"Discretionary",XLF:"Financials",XLB:"Materials",XLRE:"Real estate",XLE:"Energy",GLD:"Gold",TLT:"20y+ Treasuries",IEF:"7–10y Treasuries",TIP:"Inflation-protected",BIL:"Cash (T-bills)"};
 function shortReading(name){
   var n=(name||"").toLowerCase();
@@ -1219,17 +1221,6 @@ function normalizeFedOdds(d){
     asOf:(typeof src.as_of==="string")?src.as_of:null,
     live:src===live
   };
-}
-function normalizePositions(payload){
-  if(!payload||typeof payload!=="object") return payload;
-  if(!Array.isArray(payload.thesis)&&!Array.isArray(payload.dca)&&!Array.isArray(payload.trades)) return payload;
-  var out={};
-  (payload.thesis||[]).forEach(function(p){ if(p&&p.sym) out[p.sym]={kind:"thesis",note:p.note||p.label||""}; });
-  (payload.dca||[]).forEach(function(p){ if(p&&p.sym) out[p.sym]={kind:"dca",note:p.note||""}; });
-  (payload.trades||[]).forEach(function(p){ if(p&&p.sym) out[p.sym]={kind:"trade",sh:p.sh,entry:p.entry,opened:p.opened,
-    stop:(p.stop_resting!=null?p.stop_resting:p.stop),rec:(p.stop_rec!=null?p.stop_rec:p.rec),
-    hc:p.hc,atr:p.atr,mult:(p.mult!=null?p.mult:3)}; });
-  return out;
 }
 
 function isStaleBrief(data){ return !!(data && data.brief && data.brief.stale); }
@@ -1485,7 +1476,7 @@ function tvwsFetchBars(tvSymbol, interval, nBars){
       var hb = /~m~\d+~m~(~h~\d+)/.exec(raw);           // keepalive ping -> echo
       if(hb){ try{ ws.send("~m~"+hb[1].length+"~m~"+hb[1]); }catch(e){} }
       if(raw.indexOf("timescale_update")!==-1){
-        var re = /\{"i":\d+,"v":\[([-\d.,eE]+)\]\}/g, m;
+        var re = /\{"i":\d+,"v":\[([-+\d.,eEnul]+)\]\}/g, m;
         while((m = re.exec(raw))){
           var v = m[1].split(",").map(Number);
           if(v.length>=5 && isFinite(v[0])) out.push([v[0], v[1], v[2], v[3], v[4], (v.length>5 && isFinite(v[5]))?v[5]:null]);
@@ -1990,161 +1981,6 @@ function tsClose(){ var dd=document.getElementById("tsdrop"); if(dd) dd.classLis
     if(!e.target.closest(".searchbox")) tsClose();
   });
 })();
-
-/* =================== Position Guard: WebCrypto PBKDF2-SHA256 + AES-GCM =================== */
-function b64ToBytes(b64){ var bin=atob(b64); var arr=new Uint8Array(bin.length); for(var i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i); return arr; }
-function bytesToB64(bytes){ var bin=""; for(var i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]); return btoa(bin); }
-
-function deriveKeyBits(passphrase, saltB64, iter){
-  var enc = new TextEncoder();
-  var salt = b64ToBytes(saltB64);
-  return crypto.subtle.importKey("raw", enc.encode(passphrase), {name:"PBKDF2"}, false, ["deriveBits"])
-    .then(function(baseKey){
-      return crypto.subtle.deriveBits({name:"PBKDF2", salt:salt, iterations:iter, hash:"SHA-256"}, baseKey, 256);
-    })
-    .then(function(bits){ return new Uint8Array(bits); });
-}
-function decryptWithKeyBytes(keyBytes, blob){
-  var iv = b64ToBytes(blob.iv);
-  var ct = b64ToBytes(blob.ct);
-  return crypto.subtle.importKey("raw", keyBytes, {name:"AES-GCM"}, false, ["decrypt"])
-    .then(function(aesKey){ return crypto.subtle.decrypt({name:"AES-GCM", iv:iv}, aesKey, ct); })
-    .then(function(buf){ return JSON.parse(new TextDecoder().decode(buf)); });
-}
-function tryUnlock(passphrase, remember){
-  var blob = STATE.data && STATE.data.desk_private;
-  if(!blob) return Promise.resolve(false);
-  // Clamp the published iteration count: a corrupted blob carrying 3.1e9
-  // would otherwise hard-lock the main thread inside PBKDF2 on unlock.
-  var iter = Math.min(2000000, Math.max(10000, num(blob.iter) || 310000));
-  return deriveKeyBits(passphrase, blob.salt, iter)
-    .then(function(keyBytes){
-      return decryptWithKeyBytes(keyBytes, blob).then(function(positions){
-        PG.unlocked = true; PG.positions = normalizePositions(positions);
-        if(remember){ try{ sessionStorage.setItem("desk.pgkey", bytesToB64(keyBytes)); }catch(e){} }
-        renderPositions();
-        renderStageTab();
-        return true;
-      });
-    })
-    .catch(function(){ return false; });
-}
-function lockPositions(){
-  PG.unlocked = false; PG.positions = null;
-  try{ sessionStorage.removeItem("desk.pgkey"); }catch(e){}
-  renderPositions();
-  renderStageTab();
-}
-function tryAutoUnlock(){
-  var blob = STATE.data && STATE.data.desk_private;
-  if(!blob) return Promise.resolve(false);
-  var stored;
-  try{ stored = sessionStorage.getItem("desk.pgkey"); }catch(e){ stored = null; }
-  if(!stored) return Promise.resolve(false);
-  var keyBytes;
-  try{ keyBytes = b64ToBytes(stored); }catch(e){ return Promise.resolve(false); }
-  return decryptWithKeyBytes(keyBytes, blob)
-    .then(function(positions){ PG.unlocked = true; PG.positions = normalizePositions(positions); renderPositions(); return true; })
-    .catch(function(){ try{ sessionStorage.removeItem("desk.pgkey"); }catch(e2){} return false; });
-}
-
-// Shared by the rail panel and the drawer's position block.
-function positionTradeView(P, livePx){
-  var pl = (livePx!=null && P.entry!=null) ? (livePx/P.entry-1)*100 : null;
-  var nag = false, dist = null;
-  if(livePx!=null && P.rec!=null && P.stop!=null && livePx!==0){
-    dist = (P.rec-P.stop)/livePx*100;
-    nag = dist >= 2;
-  }
-  return {pl:pl, nag:nag, dist:dist};
-}
-
-function renderPositions(){
-  var box = document.getElementById("positions");
-  var blob = STATE.data && STATE.data.desk_private;
-  if(!blob){
-    box.innerHTML = '<b>POSITION GUARD</b><span class="m">private layer not configured</span>';
-    return;
-  }
-  if(!PG.unlocked){
-    box.innerHTML = '<b>POSITION GUARD · PRIVATE LAYER</b>'
-      + '<div class="note" style="margin:0 0 4px">Passphrase-locked — public visitors never see this box.</div>'
-      + '<div class="pgform">'
-      + '  <input type="password" id="pgpass" placeholder="passphrase" autocomplete="off">'
-      + '  <div class="row"><button id="pgunlockbtn">unlock</button>'
-      + '    <label class="pglabel"><input type="checkbox" id="pgremember"> remember this session</label></div>'
-      + '  <div class="pgerr" id="pgerr"></div>'
-      + '</div>';
-    document.getElementById("pgunlockbtn").addEventListener("click", function(){
-      var pass = document.getElementById("pgpass").value;
-      var remember = document.getElementById("pgremember").checked;
-      var errEl = document.getElementById("pgerr");
-      errEl.textContent = "";
-      if(!pass){ errEl.textContent = "enter a passphrase"; return; }
-      tryUnlock(pass, remember).then(function(ok){
-        if(!ok){ var e2=document.getElementById("pgerr"); if(e2) e2.textContent = "wrong passphrase"; }
-      });
-    });
-    document.getElementById("pgpass").addEventListener("keydown", function(e){
-      if(e.key==="Enter") document.getElementById("pgunlockbtn").click();
-    });
-    return;
-  }
-  var P = PG.positions || {};
-  // Quiet-when-nothing-to-do (2026-08-18): with no RAISE nag pending, the
-  // unlocked panel folds to one line — the full block earns its space only
-  // when something needs doing (or on request).
-  var anyNag = Object.keys(P).some(function(sym){
-    var p = P[sym];
-    if(!p || p.kind!=="trade") return false;
-    var lq = liveBySym(sym);
-    return positionTradeView(p, lq && lq.px!=null ? lq.px : null).nag;
-  });
-  var nPos = Object.keys(P).length;
-  if(!anyNag && !PG.expanded && nPos>0){
-    box.innerHTML = '<b>POSITION GUARD · UNLOCKED</b>'
-      + '<div>'+nPos+' position'+(nPos===1?"":"s")+' · <span class="u">stops OK — nothing needs doing</span>'
-      + ' <button id="pgexpand" style="text-decoration:underline;color:var(--acc);font-size:10.5px">details ▸</button></div>';
-    var ex = document.getElementById("pgexpand");
-    if(ex) ex.addEventListener("click", function(e){ e.stopPropagation(); PG.expanded = true; renderPositions(); });
-    return;
-  }
-  var rows = [];
-  Object.keys(P).forEach(function(sym){
-    var p = P[sym];
-    if(!p || typeof p !== "object") return;
-    if(p.kind === "thesis"){
-      rows.push('<div class="kvrow" data-sym="'+esc(sym)+'" style="cursor:pointer"><span><b style="text-align:left">'+esc(sym)+'</b> <span class="m" data-tip="'+esc(TIPS.kill)+'">core · thesis</span></span><b class="u" style="font-weight:600">'+esc(p.note||"—")+'</b></div>'
-        + '<div class="note" style="margin:0 0 4px">no stop by design — kill triggers govern thesis positions</div>');
-    } else if(p.kind === "dca"){
-      rows.push('<div class="kvrow"><span><b style="text-align:left">'+esc(sym)+'</b> <span class="m" data-tip="'+esc(TIPS.dca)+'">DCA sleeve</span></span><b class="u">'+esc(p.note||"—")+'</b></div>');
-    } else if(p.kind === "trade"){
-      var livePx = liveBySym(sym) && liveBySym(sym).px!=null ? liveBySym(sym).px : null;
-      var v = positionTradeView(p, livePx);
-      // Dollars next to percent — "−1.8%" and "−$740" are different sentences
-      // to a person deciding whether to hold.
-      var plDollars = (livePx!=null && p.entry!=null && num(p.sh)!=null) ? (livePx-p.entry)*num(p.sh) : null;
-      var plStr = (v.pl!=null ? fm1(v.pl)+"%" : "—") + (plDollars!=null ? (" · "+fmDollarsSigned(plDollars)) : "");
-      rows.push('<div class="kvrow" data-sym="'+esc(sym)+'" style="cursor:pointer"><span><b style="text-align:left">'+esc(sym)+'</b> <span class="m">'+(p.sh!=null?p.sh:"—")+' sh @ '+(p.entry!=null?p.entry.toFixed(2):"—")+'</span></span><b class="'+sign(v.pl)+'">'+plStr+'</b></div>');
-      if(v.nag){
-        rows.push('<div class="kvrow"><span data-tip="'+esc(TIPS.stop_resting)+'">resting stop '+(p.stop!=null?p.stop.toFixed(2):"—")+'</span><b class="d" data-tip="'+esc(TIPS.raise_nag)+'">RAISE → '+(p.rec!=null?p.rec.toFixed(2):"—")+'</b></div>');
-      } else {
-        var recTxt = (v.dist==null) ? ('recommended '+(p.rec!=null?p.rec.toFixed(2):"—")) : 'at recommended level';
-        rows.push('<div class="kvrow"><span data-tip="'+esc(TIPS.stop_resting)+'">resting stop '+(p.stop!=null?p.stop.toFixed(2):"—")+'</span><b class="m" data-tip="'+esc(TIPS.stop_rec)+'">'+recTxt+'</b></div>');
-      }
-      var driftStr = (p.hc!=null && p.atr!=null) ? ("trail math: highest close "+p.hc.toFixed(2)+" − "+(p.mult!=null?p.mult:3)+"×ATR "+p.atr.toFixed(2)) : "";
-      rows.push('<div class="note" style="margin:0">'+esc(driftStr)+'</div>');
-    }
-  });
-  box.innerHTML = '<b>POSITION GUARD · PRIVATE LAYER (UNLOCKED)</b>'+rows.join("")
-    + '<div class="note" style="margin-top:6px">Stops are trail math on trades only; levels are levels, not instructions.'
-    + (!anyNag && nPos>0 ? ' <button id="pgfold" style="text-decoration:underline;color:var(--ink3)">fold</button>' : '')
-    + ' <button id="pglockbtn" style="text-decoration:underline;color:var(--ink3)">lock</button></div>';
-  var lockBtn = document.getElementById("pglockbtn");
-  if(lockBtn) lockBtn.addEventListener("click", function(e){ e.stopPropagation(); lockPositions(); });
-  var foldBtn = document.getElementById("pgfold");
-  if(foldBtn) foldBtn.addEventListener("click", function(e){ e.stopPropagation(); PG.expanded = false; renderPositions(); });
-}
 
 /* =================== sortable table helper =================== */
 // foot (optional): {html, wire} — content that must live INSIDE el but survive
@@ -2864,6 +2700,34 @@ function renderCats(){
 }
 
 /* =================== news =================== */
+/* Rolling top ticker (2026-08-19, Zach's ask): the same tagged headlines the
+   news panel shows, as a continuously scrolling strip of links at the very
+   top. The track holds the item list twice and slides -50%, so the loop is
+   seamless; the key guard keeps the 2-minute data refresh from restarting
+   the animation when nothing changed; hover pauses; reduced-motion gets a
+   static scrollable strip instead. */
+var NT_KEY = null;
+function renderNewsTicker(data){
+  var el = document.getElementById("newsticker");
+  if(!el) return;
+  var items = (data && data.news && Array.isArray(data.news.items))
+    ? data.news.items.filter(function(n){ return n && n.title; }) : [];
+  if(!items.length){ el.hidden = true; NT_KEY = null; return; }
+  var key = items.length+"|"+(items[0].ts||"")+"|"+(items[0].title||"");
+  if(key === NT_KEY){ el.hidden = false; return; }
+  NT_KEY = key;
+  function itemHTML(n){
+    var href = safeHref(n.url);
+    var inner = '<span class="tk">'+esc(n.ticker||"MKT")+'</span><span>'+esc(n.title||"")+'</span>'
+      + '<span class="tm tn">'+esc(ctTimeShort(n.ts))+'</span>';
+    return (href ? '<a class="nt-item" href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">' : '<span class="nt-item">')
+      + inner + (href ? '</a>' : '</span>') + '<span class="nt-sep">◆</span>';
+  }
+  var half = items.map(itemHTML).join("");
+  var dur = Math.min(150, Math.max(40, items.length*6));
+  el.hidden = false;
+  el.innerHTML = '<div class="nt-track" style="--nt-dur:'+dur+'s">'+half+half+'</div>';
+}
 function renderNews(){
   var data = STATE.data;
   var newsObj = data && data.news;
@@ -2943,7 +2807,6 @@ var IVS = ["15m","1H","4H","1D","1W"];
 // window and on AAOG at 6M/1Y, and on nothing else.
 var LOG_SCALE_RATIO = 4;
 var LOG_TAIL_SHARE = 0.2;
-var dIV = "1D";
 var CT_DAY_FMT = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",weekday:"short",month:"numeric",day:"numeric"});
 var CT_TIME_FMT = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",hour:"numeric",minute:"2-digit"});
 var CT_DAYKEY_FMT = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit"});
@@ -3023,7 +2886,6 @@ function intervalDataFor(sym, iv){
                                                               // bars, so 1D/1W are dropped (tail-slice note in
                                                               // the wave-2 spec) rather than faked from one point.
 var GTF = ["1M","3M","6M","1Y"];
-var dTF = "3M";
 var DRAWER_FUND = null;   // fund/{SYM}.json sidecar for the stage's current symbol (revYoyForRow reads it)
 
 function fundCls(kind, f){
@@ -3831,36 +3693,6 @@ function renderGrowth(sym, fund){
   return '<div class="dsec" id="growthbox"><h3>Financials</h3>'+out+'</div>';
 }
 
-function drawerPositionBlock(sym){
-  if(!PG.unlocked) return "";
-  var P = PG.positions && PG.positions[sym];
-  if(!P) return "";
-  if(P.kind==="thesis"){
-    return '<div class="dsec"><h3>Position — core (thesis)</h3>'
-      + '<div class="kvrow"><span data-tip="'+esc(TIPS.kill)+'">Kill triggers</span><b class="u">'+esc(P.note||"—")+'</b></div>'
-      + '<div class="note" style="margin-top:2px">Thesis positions never carry stops — triggers govern. Details live in the thesis record.</div></div>';
-  }
-  if(P.kind==="dca"){
-    return '<div class="dsec"><h3>Position — DCA sleeve</h3><div class="kvrow"><span data-tip="'+esc(TIPS.dca)+'">Status</span><b class="u">'+esc(P.note||"—")+'</b></div></div>';
-  }
-  var q = liveBySym(sym); var livePx = q && q.px!=null ? q.px : null;
-  var v = positionTradeView(P, livePx);
-  var plD = (livePx!=null && P.entry!=null && num(P.sh)!=null) ? (livePx-P.entry)*num(P.sh) : null;
-  var plStr = (v.pl!=null ? fm1(v.pl)+"%" : "—") + (plD!=null ? (" · "+fmDollarsSigned(plD)) : "");
-  var stopLine = v.nag
-    ? ('<div class="kvrow"><span data-tip="'+esc(TIPS.stop_rec)+'">Recommended stop</span><b class="d" data-tip="'+esc(TIPS.raise_nag)+'">RAISE → '+(P.rec!=null?P.rec.toFixed(2):"—")+(v.dist!=null?(' ('+v.dist.toFixed(1)+'% below)'):'')+'</b></div>')
-    : ('<div class="kvrow"><span data-tip="'+esc(TIPS.stop_rec)+'">Recommended stop</span><b class="m">'+(P.rec!=null?P.rec.toFixed(2):"—")+'</b></div>');
-  var st = statsOf(sym);
-  var trimZone = (st.pos!=null && st.pos>=0.85 && factsOf(sym) && num(factsOf(sym).rsi)!=null && num(factsOf(sym).rsi)>=70);
-  return '<div class="dsec"><h3>Position — trade</h3>'
-    + '<div class="kvrow"><span data-tip="'+esc(TIPS.entry)+'">Size · entry</span><b>'+(P.sh!=null?P.sh:"—")+' sh @ '+(P.entry!=null?P.entry.toFixed(2):"—")+(P.opened?(' · '+esc(P.opened)):'')+'</b></div>'
-    + '<div class="kvrow"><span data-tip="'+esc(TIPS.pnl)+'">Open P&amp;L</span><b class="'+sign(v.pl)+'">'+plStr+'</b></div>'
-    + '<div class="kvrow"><span data-tip="'+esc(TIPS.stop_resting)+'">Resting stop</span><b>'+(P.stop!=null?P.stop.toFixed(2):"—")+'</b></div>'
-    + stopLine
-    + ((P.hc!=null && P.atr!=null) ? ('<div class="kvrow"><span data-tip="'+esc(TIPS.trail)+'">Trail math</span><b style="font-size:10.5px">high close '+P.hc.toFixed(2)+' − '+(P.mult!=null?P.mult:3)+'×ATR '+P.atr.toFixed(2)+'</b></div>') : '')
-    + '<div class="kvrow"><span data-tip="'+esc(TIPS.trim)+'">Trim watch</span><b class="m">'+(trimZone?"TRIM ZONE — top of range + hot RSI":"none — levels on the chart")+'</b></div>'
-    + '<div class="note" style="margin-top:2px">Drawn on the chart above: entry + recommended stop. 50/200-day are the sell/trim reference levels. <span data-tip="'+esc(TIPS.gap)+'">Stops are not guarantees.</span></div></div>';
-}
 // The 52w range bar/position% needs both facts (sync, always available) and a
 // current price (live poll OR the last bars.json close) -- bars can still be
 // in flight when the modal first paints, so this is re-run once they land
@@ -4107,7 +3939,7 @@ function stageTALegend(prefs){
    per period (Finviz convention). Click a tile to chart it — off-universe
    names ride the ad-hoc path. Delayed 15 minutes like every scanner close;
    the footer says so. */
-var HEAT = { univ:"SPX", tf:"1D", isolate:null, data:{}, lastFetch:0, inflight:false };
+var HEAT = { univ:"SPX", tf:"1D", isolate:null, data:{}, lastFetch:0, inflight:{} };
 var HEAT_UNIVERSES = {
   SPX: {label:"S&P 500", symbolset:"SYML:SP;SPX"},
   NDX: {label:"Nasdaq 100", symbolset:"SYML:NASDAQ;NDX"},
@@ -4126,8 +3958,8 @@ function heatFetch(force){
   var cached = HEAT.data[univ];
   var now = Date.now();
   if(!force && cached && now - cached.fetchedAt < 110000) return Promise.resolve(cached);
-  if(HEAT.inflight) return Promise.resolve(cached||null);
-  HEAT.inflight = true;
+  if(HEAT.inflight[univ]) return Promise.resolve(cached||null);
+  HEAT.inflight[univ] = true;
   var cfg = HEAT_UNIVERSES[univ];
   var body = cfg.symbolset
     ? {columns:HEAT_COLS, options:{lang:"en"}, range:[0,600],
@@ -4136,7 +3968,7 @@ function heatFetch(force){
   return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:JSON.stringify(body)})
     .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
     .then(function(json){
-      HEAT.inflight = false;
+      HEAT.inflight[univ] = false;
       var rows = (json && Array.isArray(json.data)) ? json.data : [];
       var out = [];
       rows.forEach(function(row){
@@ -4154,13 +3986,13 @@ function heatFetch(force){
       HEAT.lastFetch = Date.now();
       return HEAT.data[univ];
     })
-    .catch(function(){ HEAT.inflight = false; return null; });
+    .catch(function(){ HEAT.inflight[univ] = false; return null; });
 }
 /* squarified treemap (Bruls et al.): items [{w:weight,...}] into rect -> adds x/y/wd/ht */
 function squarify(items, x, y, w, h){
   var total = items.reduce(function(a,b){ return a+b.w; }, 0) || 1;
   var scale = (w*h)/total;
-  var rects = [], row = [], rowSum = 0;
+  var rects = [], row = [];
   var cx=x, cy=y, cw=w, ch=h;
   function worst(row, side){
     var sum = row.reduce(function(a,b){ return a+b.w*scale; }, 0);
@@ -4185,7 +4017,7 @@ function squarify(items, x, y, w, h){
       off += len;
     });
     if(horiz){ cy += thick; ch -= thick; } else { cx += thick; cw -= thick; }
-    row = []; rowSum = 0;
+    row = [];
   }
   items.forEach(function(it){
     if(it.w<=0) return;
@@ -4355,7 +4187,6 @@ function stageStarHTML(sym){
   if(TAPE_TV_SYMBOL[sym] && !railHasSym(sym) && !wlIsCustom(sym)) return "";   // tape tiles aren't list material
   var pinnedVisible = railHasSym(sym) && wlHidden().indexOf(sym)===-1;
   if(pinnedVisible) return '<span class="clsf" data-tip="On the server-curated watchlist — boards, bars and the daily fundamentals sidecar all track it.">pinned</span>';
-  var on = wlIsCustom(sym) || railHasSym(sym);   // hidden pinned counts as off
   var isOn = wlIsCustom(sym);
   return '<button class="fbtn" id="stagestar" aria-pressed="'+isOn+'" data-tip="'
     + (isOn ? "On this browser\u2019s custom list — click to remove."
@@ -4522,7 +4353,8 @@ var PEER_METRICS = [
   ["ev_ebitda","EV/EBITDA", function(v){ return v.toFixed(1); }],
   ["ps","P/S", function(v){ return v.toFixed(1); }],
 ];
-function renderPeersInto(body, sym, res){
+var PEERS_SEQ = 0;
+function renderPeersInto(body, sym, res, seq){
   var peers = res.peers;
   if(!peers.length){
     body.innerHTML = '<div class="dsec note">'
@@ -4549,9 +4381,8 @@ function renderPeersInto(body, sym, res){
   if(!drew) html = '<div class="dsec note">No comparable TTM figures for this set.</div>';
   // Quarterly revenue, indexed to each name's own first bar — only names with
   // a daily sidecar (the pinned universe) can draw a line.
-  var withFund = entries.filter(function(t){ return true; });
   Promise.all(entries.map(function(t){ return ensureFund(t); })).then(function(funds){
-    if(STAGE.sym!==sym || STAGE.tab!=="peers") return;
+    if(STAGE.sym!==sym || STAGE.tab!=="peers" || seq!==PEERS_SEQ) return;   // a newer pass owns the tab
     var accC = cssVar("--acc"), inkC = cssVar("--ink3");
     var lines = [], labelsRef = null;
     entries.forEach(function(t, i){
@@ -4580,11 +4411,12 @@ function renderPeersInto(body, sym, res){
 function renderPeersTab(sym){
   var body = document.getElementById("stagetabbody");
   if(!body) return;
+  var seq = ++PEERS_SEQ;
   body.innerHTML = '<div class="dsec note">comparing '+esc(sym)+' to its peers…</div>';
   peersFor(sym).then(function(res){
-    if(STAGE.sym!==sym || STAGE.tab!=="peers") return;
+    if(STAGE.sym!==sym || STAGE.tab!=="peers" || seq!==PEERS_SEQ) return;
     var b = document.getElementById("stagetabbody");
-    if(b) renderPeersInto(b, sym, res);
+    if(b) renderPeersInto(b, sym, res, seq);
   });
 }
 
@@ -4638,13 +4470,14 @@ function renderStageTab(){
     body.innerHTML = stageFlowSecHTML(sym);
   } else {
     body.innerHTML = '<div id="rangesec">'+rangeSecHTML(sym)+'</div>'
-      + drawerPositionBlock(sym)
       + renderFundamentals(sym, fund)
       + '<div id="catlist"></div>'
       + '<div class="dsec note" id="dfoot">'
-      + (hasFundamentals(sym, fund)
+      + (fund
           ? 'Data is live: prices from the 30s TradingView poll, history from bars.json, fundamentals from the fund sidecar (fund/'+esc(sym)+'.json). Nothing here is investment advice.'
-          : 'Prices from the 30-second TradingView poll; history from bars.json. Nothing here is investment advice.')
+          : (ADHOC_FACTS[sym]
+              ? 'Data is live: prices from the 30s TradingView poll, history from TradingView\u2019s chart socket, fundamentals from a live scanner snapshot (no daily sidecar for names outside the desk universe). Nothing here is investment advice.'
+              : 'Prices from the 30-second TradingView poll; history from bars.json. Nothing here is investment advice.'))
       + '</div>';
     renderCatList(sym);
   }
@@ -4655,7 +4488,10 @@ function stageShow(sym, opts){
   STAGE.sym = sym;
   STAGE.fund = null; DRAWER_FUND = null;
   STAGE.logManual = null;
-  store("desk.stage.sym", sym);
+  // Persist the TV mapping too: a heatmap tile or searched name has a
+  // session-only resolver entry, and restoring the bare symbol on the next
+  // load would boot into a dead stage.
+  try{ store("desk.stage.sym", JSON.stringify({sym:sym, tv:symbolForTicker(sym)||null, name:ADHOC_NAMES[sym]||null})); }catch(e){}
   stageHeader(); stageBar(); stageTabsRender(); renderStageTab();
   stageMsg("loading chart…");
   Promise.all([ensureBars(), ensureFund(sym)]).then(function(vals){
@@ -4682,6 +4518,14 @@ function stageLivePoke(){
   stageHeader();
   var rs = document.getElementById("rangesec");
   if(rs) rs.innerHTML = rangeSecHTML(STAGE.sym);
+  // Boot race: when bars.json resolved before the first price poll, the chart
+  // rendered without a synthetic today candle — build it now that a live
+  // price exists (one rebuild; later pokes take the cheap update path).
+  if(STAGE.iv==="1D" && !STAGE.synthetic && STAGE.rows.length>=2 && STAGE.chart
+     && quadsRaw(STAGE.sym) && liveBySym(STAGE.sym) && liveBySym(STAGE.sym).px!=null){
+    stageRender();
+    return;
+  }
   if(STAGE.iv==="1D" && STAGE.synthetic && STAGE.rows.length>=2 && STAGE.chart){
     var live = liveBySym(STAGE.sym);
     if(live && live.px!=null){
@@ -4707,6 +4551,7 @@ function stageLivePoke(){
 /* =================== master render + live-poll refresh =================== */
 function renderAll(data){
   bumpStatsMemo();
+  renderNewsTicker(data);
   renderMarketState(data);
   renderBrief(data);
   renderSectorSection(data);
@@ -4718,7 +4563,6 @@ function renderAll(data){
   renderCats();
   renderNews();
   renderWL();
-  renderPositions();
   stageHeader();
   renderStageTab();
   applyFocus();
@@ -4848,7 +4692,9 @@ document.getElementById("theme").addEventListener("click", function(){
   document.getElementById("theme").setAttribute("aria-pressed", next==="light");
   store("desk.theme", next);
   stageTheme();
+  _heatRGB = {};
   if(STAGE.sym) stageRender();
+  if(STAGE.view==="heat") heatRender();
 });
 (function(){ var t=read("desk.theme"); if(t){ document.documentElement.dataset.theme=t; document.getElementById("theme").setAttribute("aria-pressed", t==="light"); } })();
 
@@ -4923,7 +4769,7 @@ document.getElementById("focclear").addEventListener("click", function(){ setFoc
 // Earnings popover: click anywhere outside it (or its own × ) hides it.
 document.addEventListener("click", function(e){
   var pop = document.getElementById("earnpop");
-  if(pop && pop.style.display==="block" && !e.target.closest("#earnpop") && !e.target.closest(".ebadge")){ pop.style.display = "none"; }
+  if(pop && pop.style.display==="block" && !e.target.closest("#earnpop") && !e.target.closest("#stagechart")){ pop.style.display = "none"; }
 });
 
 /* =================== boot =================== */
@@ -4960,11 +4806,17 @@ function start(){
   fetchData().then(function(){
     // Stage first, poll in parallel: the chart must not wait on the scanner
     // round-trip (header prices fill in when the poll lands ~a second later).
-    stageShow(read("desk.stage.sym") || "SPY");
+    var saved = read("desk.stage.sym"), bootSym = "SPY";
+    if(saved){
+      try{
+        var sv = JSON.parse(saved);
+        if(sv && sv.sym){ bootSym = sv.sym; adhocRegister(sv.sym, sv.tv||null, sv.name||null); }
+      }catch(e){ bootSym = saved; }   // legacy plain-string value
+    }
+    stageShow(bootSym);
     if(read("desk.stage.view")==="heat") stageSetView("heat");
     pollTvPrices();
     attemptMacroTiles();
-    tryAutoUnlock();
   });
   setInterval(tick, POLL_MS);
 }
@@ -4972,7 +4824,7 @@ if(document.readyState === "loading"){ document.addEventListener("DOMContentLoad
 else { start(); }
 
 // exposed for the verification harness only (no sensitive data)
-window.__theDeskDebug = { fetchData:fetchData, pollTvPrices:pollTvPrices, attemptMacroTiles:attemptMacroTiles, STATE:STATE, PG:PG, STAGE:STAGE, stageShow:stageShow };
+window.__theDeskDebug = { fetchData:fetchData, pollTvPrices:pollTvPrices, attemptMacroTiles:attemptMacroTiles, STATE:STATE, STAGE:STAGE, stageShow:stageShow };
 </script>
 </body>
 </html>
