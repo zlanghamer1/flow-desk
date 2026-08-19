@@ -1530,7 +1530,71 @@ function splitFixedFor(sym){
   var m = BARS_CACHE && BARS_CACHE.split_fixed;
   return (m && typeof m[sym]==="number") ? m[sym] : null;
 }
-function intraRaw(sym, key){ return (INTRA_CACHE && INTRA_CACHE[key] && INTRA_CACHE[key][sym]) || []; }
+/* Bad ticks in the intraday feed, repaired before anything charts them.
+
+   The vendor publishes occasional ZERO-VOLUME bars whose high/low are quote
+   artifacts tens of percent away from their own open and close: MU's 15-minute
+   file carried [1010.61, 1293.69, 485.86, 1010.14, vol 0] while every close in
+   the window sat between 919.70 and 1033.35. The price scale obeyed it, so the
+   real action collapsed to a hairline — MU's 15m candles occupied 9.8% of the
+   pane, NVDA's 8.8%, SPY's 14.0%. Measured across the published file: 38 such
+   bars in i15 and 340 in i60.
+
+   The open and close of those bars are fine; only the wick is junk. So the bar
+   is REPAIRED, not dropped — dropping it would leave a hole in the series —
+   by clamping high/low back to the body, and the chart says how many it
+   touched rather than fixing it silently.
+
+   The threshold is per symbol, because a quiet ETF and a 3x fund do not share
+   one: ten times that symbol's own median wick, floored at 4%. Against the
+   live file that repairs 0.52% of i15 bars and 1.23% of i60, catches every bar
+   with a wick past 10%, and leaves alone every bar that reported volume (the
+   largest legitimate wick measured 8.4% on i15 and 14.3% on i60). */
+var INTRA_REPAIRS = {};   // "sym|key" -> number of bars clamped
+function _wickOf(o, h, l, c){
+  var bh = Math.max(o, c), bl = Math.min(o, c);
+  var up = bh > 0 ? (h - bh) / bh : 0;
+  var dn = bl > 0 ? (bl - l) / bl : 0;
+  return Math.max(up, dn, 0);
+}
+function intraRepair(rows, cacheKey){
+  var ws = [];
+  rows.forEach(function(r){
+    if(!r || r.length < 5) return;
+    var o=num(r[1]), h=num(r[2]), l=num(r[3]), c=num(r[4]);
+    if(o==null||h==null||l==null||c==null||Math.min(o,c)<=0) return;
+    ws.push(_wickOf(o,h,l,c));
+  });
+  if(!ws.length) return rows;
+  ws.sort(function(a,b){ return a-b; });
+  var med = ws.length%2 ? ws[(ws.length-1)/2] : (ws[ws.length/2-1]+ws[ws.length/2])/2;
+  var thr = Math.max(0.04, med*10);
+  var fixed = 0;
+  var out = rows.map(function(r){
+    if(!r || r.length < 5) return r;
+    var o=num(r[1]), h=num(r[2]), l=num(r[3]), c=num(r[4]), v=(r.length>=6?num(r[5]):null);
+    if(o==null||h==null||l==null||c==null||Math.min(o,c)<=0) return r;
+    if(v) return r;                                   // it traded: the wick is real
+    if(_wickOf(o,h,l,c) <= thr) return r;
+    fixed++;
+    var cp = r.slice();
+    cp[2] = Math.max(o,c); cp[3] = Math.min(o,c);
+    return cp;
+  });
+  INTRA_REPAIRS[cacheKey] = fixed;
+  return fixed ? out : rows;
+}
+function intraRaw(sym, key){
+  var rows = (INTRA_CACHE && INTRA_CACHE[key] && INTRA_CACHE[key][sym]) || [];
+  if(!rows.length) return rows;
+  var ck = sym+"|"+key;
+  if(!Object.prototype.hasOwnProperty.call(INTRA_REPAIRS, ck)){
+    var rep2 = intraRepair(rows, ck);
+    if(rep2 !== rows) INTRA_CACHE[key][sym] = rep2;
+    return INTRA_CACHE[key][sym];
+  }
+  return rows;
+}
 // bars.json v2 rows are [o,h,l,c] quads; v1 rows are plain close numbers. barsOf()
 // keeps returning a flat CLOSES array either way, so every pre-existing caller
 // (seriesFull/statsOf/hotOf/the v1 line-chart fallback) needs no change.
@@ -1844,9 +1908,15 @@ function pollTvPrices(){
   // session and on symbols that don't quote extended hours, which is why
   // dispQuote falls back to the regular figures rather than rendering "—".
   var body = JSON.stringify({ symbols:{tickers:symbols, query:{types:[]}},
+    // open/high/low/volume added 2026-08-19: today's candle used to be
+    // FABRICATED — open = the previous session's close by construction, high
+    // and low bracketing only the prices seen since the page was opened — and
+    // the crosshair printed those as the session's OHLC. The scanner carries
+    // the real ones on the same request, so it prints the real session now.
     columns:["rtc","change","relative_volume_10d_calc",
              "premarket_close","premarket_change","premarket_volume",
-             "postmarket_close","postmarket_change"] });
+             "postmarket_close","postmarket_change",
+             "open","high","low","volume"] });
   return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
     .then(function(json){
@@ -1855,7 +1925,8 @@ function pollTvPrices(){
         if(!row || !row.s || !Array.isArray(row.d)) return;
         LIVE[row.s] = { px:num(row.d[0]), ch:num(row.d[1]), rvol:num(row.d[2]),
                         prepx:num(row.d[3]), prech:num(row.d[4]), prevol:num(row.d[5]),
-                        postpx:num(row.d[6]), postch:num(row.d[7]) };
+                        postpx:num(row.d[6]), postch:num(row.d[7]),
+                        o:num(row.d[8]), h:num(row.d[9]), l:num(row.d[10]), v:num(row.d[11]) };
       });
       tvPollFailed = false;
       lastPriceUpdateTs = Date.now();
@@ -3473,6 +3544,20 @@ function stageTickFmt(time, type){
     if(type === 1) return MONTHS[time.month-1] || String(time.month);
     return String(time.day);
   }
+  // The library hands daily times back as the "YYYY-MM-DD" STRING we gave it,
+  // not as the business-day object, so this branch is the one that runs on
+  // every daily and weekly chart — and falling through to String(time) printed
+  // raw ISO dates. They are wide, few fit, and the leftmost was clipped in
+  // half ("26-07-24").
+  if(typeof time === "string"){
+    var p2 = time.split("-");
+    if(p2.length === 3){
+      var mo = MONTHS[(+p2[1])-1] || p2[1];
+      if(type === 0) return p2[0];
+      if(type === 1) return mo + " " + p2[0].slice(2);
+      return mo + " " + (+p2[2]);
+    }
+  }
   return String(time);
 }
 function stageTimeLabel(time){
@@ -3514,7 +3599,12 @@ function stageInit(){
   // sits ~40% below the candles, and letting it set the range squashed a
   // month of trading into the top fifth of the pane. Every charting platform
   // scales to price and clips the long average; now so does this one.
-  var maOpts = { priceLineVisible:false, crosshairMarkerVisible:false, autoscaleInfoProvider: function(){ return null; } };
+  // lastValueVisible off (2026-08-19): the three MA badges stacked on the
+  // right edge over the S/R title, the next-earnings marker and an axis tick.
+  // Their values already sit in the legend under the chart, with the % vs
+  // price the badge never carried.
+  var maOpts = { priceLineVisible:false, crosshairMarkerVisible:false, lastValueVisible:false,
+                 autoscaleInfoProvider: function(){ return null; } };
   STAGE.s.ma20 = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({ lineWidth:1, title:"20d" }, maOpts));
   STAGE.s.ma50 = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({ lineWidth:1, title:"50d" }, maOpts));
   STAGE.s.ma200 = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({ lineWidth:2, title:"200d" }, maOpts));
@@ -3615,7 +3705,7 @@ function ctTodayDate(){
 // appended exactly the way seriesQuads always did it (o=prevClose, h/l
 // bracket prevClose..live, c=live).
 function stageDailyData(sym){
-  var q = quadsRaw(sym), rows, dates, synthetic = false;
+  var q = quadsRaw(sym), rows, dates, synthetic = false, syntheticReal = false;
   var adhoc = (!q || q.length<2) && ADHOC_BARS[sym] && ADHOC_BARS[sym].D;
   if(q && q.length >= 2){
     rows = q.slice();
@@ -3623,7 +3713,19 @@ function stageDailyData(sym){
     if(live && live.px!=null){
       var prevClose = num(rows[rows.length-1][3]);
       if(prevClose!=null){
-        rows = rows.concat([[prevClose, Math.max(prevClose, live.px), Math.min(prevClose, live.px), live.px]]);
+        // The REAL session bar when the scanner gave us one; the prevClose
+        // bracket only as a fallback (a symbol whose open/high/low come back
+        // null). `synthetic` still marks the bar as today's partial candle —
+        // it is 15 minutes behind and it is not closed — but its numbers are
+        // no longer invented.
+        var ro=live.o, rh=live.h, rl=live.l;
+        if(ro!=null && rh!=null && rl!=null && rh>=rl && ro>0){
+          var rhi = Math.max(rh, live.px), rlo = Math.min(rl, live.px);
+          rows = rows.concat([[ro, rhi, rlo, live.px, (live.v!=null?live.v:null)]]);
+          syntheticReal = true;
+        } else {
+          rows = rows.concat([[prevClose, Math.max(prevClose, live.px), Math.min(prevClose, live.px), live.px]]);
+        }
         synthetic = true;
       }
     }
@@ -3658,7 +3760,7 @@ function stageDailyData(sym){
   var closes = rows.map(function(r){ return num(r[3]); });
   return { rows:rows, dates:dates, m20:rollMA(closes,20), m50:rollMA(closes,50), m200:rollMA(closes,200),
            hasVolume: rows.some(function(r){ return r && r.length>=5 && num(r[4])!=null && num(r[4])>0; }),
-           intraday:false, synthetic:synthetic };
+           intraday:false, synthetic:synthetic, syntheticReal:syntheticReal };
 }
 function stageViewData(sym, iv){
   if(iv==="1D") return stageDailyData(sym);
@@ -3792,7 +3894,14 @@ function stageRender(){
   stageApplyWindow(candles.length);
   stageMarkers();
   stageTA();
-  stageBar(); stageLegend(); stageSetOhlc(null);
+  // stageBar() rebuilds the chips hidden, so a stretch that survived an
+  // interval switch or an overlay toggle stayed applied with no chip and no
+  // reset hint. Re-assert it after the rebuild.
+  stageBar(); stageApplyVZoom(); stageLegend(); stageSetOhlc(null);
+  // stageBar() rebuilds the chips hidden and the range subscription only fires
+  // when the range CHANGES, so a re-render that landed on the same window left
+  // the "% shown" chip blank. Re-assert it from the range that is on screen.
+  try{ stageOnVisRange(STAGE.chart.timeScale().getVisibleLogicalRange()); }catch(e){}
 }
 function stageSetEmpty(msg){
   stageMsg(msg);
@@ -3826,6 +3935,7 @@ function stageMarkers(){
   STAGE.markerByTime = {};
   STAGE.ratingByTime = {};
   var fund = STAGE.fund;
+  STAGE.nextEarn = null;
   if(STAGE.iv!=="1D" || !fund || !STAGE.dates.length){ STAGE.markersApi.setMarkers([]); return; }
   var markers=[], hi=cssVar("--hi");
   var startDate=STAGE.dates[0], endDate=STAGE.dates[STAGE.dates.length-1];
@@ -3839,13 +3949,13 @@ function stageMarkers(){
     markers.push({ time:t, position:"belowBar", color:hi, shape:"circle", text:"E", id:"e:"+ei });
     STAGE.markerByTime[String(t)] = {type:"past", idx:ei};
   });
-  if(fund.next_earnings && fund.next_earnings.date){
-    var t2 = STAGE.times[STAGE.times.length-1];
-    if(!STAGE.markerByTime[String(t2)]){
-      markers.push({ time:t2, position:"aboveBar", color:hi, shape:"arrowDown", text:"E", id:"e:next" });
-      STAGE.markerByTime[String(t2)] = {type:"next"};
-    }
-  }
+  // The NEXT report is deliberately NOT drawn on the chart. It used to be
+  // pinned to the last candle whatever its real date, so a report five weeks
+  // out sat on today's bar and the chart said earnings were now — only the
+  // popover revealed 2026-09-23. The countdown belongs in the header, where
+  // the Overview tab already shows it, and the header carries the same
+  // clickable card.
+  STAGE.nextEarn = (fund.next_earnings && fund.next_earnings.date) ? fund.next_earnings : null;
   // Analyst rating changes (Zach 2026-08-19: "red for downgrade, green for
   // upgrade"). Snapped to the nearest bar, same as the earnings badges, and
   // stacked ABOVE the bar so they never sit on top of an E. Clicking one
@@ -3901,9 +4011,14 @@ function stageSetOhlc(param){
   }
   if(i==null || i<0 || !STAGE.rows[i]){ el.innerHTML=""; return; }
   var r = STAGE.rows[i];
-  var volPart = (r.length>=5 && r[4]!=null) ? (' V <b>'+fmtVolShort(r[4])+'</b>') : '';
+  // "V 0" read as "no shares traded" on the 86 of MU's 140 intraday bars whose
+  // source simply does not publish extended-hours volume, and on every VIX,
+  // US10Y and DXY bar. No number is better than a wrong one.
+  var volPart = (r.length>=5 && r[4]!=null && num(r[4])>0) ? (' V <b>'+fmtVolShort(r[4])+'</b>') : '';
+  var todayTag = (STAGE.synthetic && i===STAGE.rows.length-1)
+    ? ' <span class="m">· today, still open</span>' : '';
   el.innerHTML = esc(stageTimeLabel(STAGE.times[i]))
-    + ' · O <b>'+fmtpx(r[0])+'</b> H <b>'+fmtpx(r[1])+'</b> L <b>'+fmtpx(r[2])+'</b> C <b>'+fmtpx(r[3])+'</b>'+volPart;
+    + ' · O <b>'+fmtpx(r[0])+'</b> H <b>'+fmtpx(r[1])+'</b> L <b>'+fmtpx(r[2])+'</b> C <b>'+fmtpx(r[3])+'</b>'+volPart+todayTag;
 }
 function stageOnCrosshair(param){
   stageSetOhlc(param && param.time!=null ? param : null);
@@ -3937,12 +4052,19 @@ function stageOnClick(param){
   showEarnPopover(x, y, html);
 }
 /* ---- visible-range % chip: reads the ZOOMED window, whatever it is ---- */
-var stageVisRaf = null;
+var stageVisRaf = null, stageVisLast = null;
 function stageOnVisRange(range){
   if(!range || !STAGE.rows.length) return;
+  // Keep the LATEST range and let the frame read it. Returning early while a
+  // frame was pending threw away the final range and left the chip reporting
+  // an intermediate one — "+161.8% shown" over a window that was actually
+  // +27.1%, after nothing more exotic than clicking 1W then 1D.
+  stageVisLast = range;
   if(stageVisRaf) return;
   stageVisRaf = requestAnimationFrame(function(){
     stageVisRaf = null;
+    var range = stageVisLast;
+    if(!range || !STAGE.rows.length) return;
     var n = STAGE.rows.length;
     var a = Math.max(0, Math.min(n-1, Math.round(range.from)));
     var b = Math.max(0, Math.min(n-1, Math.round(range.to)));
@@ -5696,8 +5818,27 @@ function stageHeaderHTML(sym){
     + '<span class="px tn">'+(d.px!=null?fmtpx(d.px):"—")+'</span>'
     + '<span class="ch tn '+sign(d.ch)+'">'+(d.ch!=null?fm1(d.ch)+"%":"—")+'</span>'
     + (h!=null && h>=HOT_AT ? ('<span class="hotb" data-tip="'+esc(TIPS.hot)+'">'+h.toFixed(1)+'× usual move</span>') : "")
+    + stageNextEarnHTML(sym)
     + stageStarHTML(sym)
     + '<span class="ohlc tn" id="stageohlc"></span>';
+}
+/* The next report as a header chip with its real countdown, instead of a
+   marker pinned to today's candle. It carries the same clickable card the
+   marker did. */
+function stageNextEarnHTML(sym){
+  var ne = STAGE.nextEarn;
+  if(!ne || !ne.date || STAGE.sym !== sym) return "";
+  var f = factsOf(sym) || {};
+  var days = (f.earn_days!=null) ? Math.round(num(f.earn_days)) : null;
+  if(days==null){
+    var dd = new Date(String(ne.date)+"T12:00:00Z"), today = ctTodayDate();
+    if(!isNaN(dd.getTime()) && today) days = Math.round((dd.getTime()-today.getTime())/86400000);
+  }
+  if(days==null || days < 0) return "";
+  var when = (ne.session==="pre") ? " before the open" : (ne.session==="post") ? " after the close" : "";
+  return '<button class="fbtn" id="stagenextearn" data-tip="'+esc("Next earnings report: "+ne.date+when
+      + ". Click for the estimates. It is NOT drawn on the chart — it has not happened, so it has no candle.")
+      + '"><b style="color:var(--hi)">E</b> '+days+'d</button>';
 }
 // One control, both directions (Zach 2026-08-19: "not seeing a button to
 // remove from the watchlist while in the chart view"). It reads the rail's
@@ -5724,6 +5865,12 @@ function stageHeader(){
   var el = document.getElementById("stagehead");
   if(!el || !STAGE.sym) return;
   el.innerHTML = stageHeaderHTML(STAGE.sym);
+  var ne = document.getElementById("stagenextearn");
+  if(ne) ne.addEventListener("click", function(e){
+    e.stopPropagation();
+    var r = ne.getBoundingClientRect();
+    showEarnPopover(r.left, r.bottom, earnPopoverHTML(null, STAGE.nextEarn, true));
+  });
   var star = document.getElementById("stagestar");
   if(star) star.addEventListener("click", function(e){
     e.stopPropagation();
@@ -5745,6 +5892,23 @@ function stageBar(){
     + '<button class="fbtn" id="stagelog" aria-pressed="'+STAGE.log+'" data-tip="'+esc(TIPS["tip-logscale"])+' The desk picks automatically; this button overrides it until the next symbol change.">log</button>';
   var fixedBy = STAGE.sym ? splitFixedFor(STAGE.sym) : null;
   if(fixedBy) chips += '<span class="pchip tn m" data-tip="'+esc(TIPS["tip-splitfix"])+'">split-rescaled '+fixedBy.toFixed(fixedBy>=10?0:1)+'×</span>';
+  // Say when a bad tick was repaired, the same way the split repair says it.
+  if(STAGE.sym && (STAGE.iv==="15m"||STAGE.iv==="1H"||STAGE.iv==="4H")){
+    var rk = STAGE.sym+"|"+(STAGE.iv==="15m"?"i15":"i60");
+    var nrep = INTRA_REPAIRS[rk] || 0;
+    if(nrep) chips += '<span class="pchip tn m" data-tip="'+esc("The intraday feed publishes occasional zero-volume bars whose high and low "
+      + "are quote artifacts tens of percent from their own open and close — one of them flattened this chart to a hairline. Those "
+      + nrep + " bar" + (nrep===1?"":"s") + " had their high and low clamped back to the body. Open, close and volume are untouched, and "
+      + "no bar that reported volume was changed.")+'">'+nrep+' bad tick'+(nrep===1?"":"s")+' repaired</span>';
+  }
+  // A window button that changes nothing should say so.
+  if(STAGE.sym && STAGE.iv==="1D" && STAGE.rows.length){
+    var want = TFN2[STAGE.tf]||63;
+    if(STAGE.rows.length <= want+2){
+      chips += '<span class="pchip tn m" data-tip="'+esc("This name has less history than the window you picked, so 1M, 3M, 6M and 1Y all "
+        + "show the same bars. Every session there is, is on screen.")+'">only '+STAGE.rows.length+' sessions of history</span>';
+    }
+  }
   var prefs = taPrefs();
   // "EMA200" was a lie on every intraday chart, where the span is a third of
   // the visible bars — the button read EMA200 while the caption read EMA53.
@@ -5780,13 +5944,28 @@ function stageLegend(){
   if(STAGE.iv!=="1D" || !STAGE.sym || !STAGE.rows.length){ el.innerHTML=""; return; }
   var st = statsOf(STAGE.sym);
   var nRat = (STAGE.fund && Array.isArray(STAGE.fund.ratings)) ? STAGE.fund.ratings.length : 0;
-  el.innerHTML = '<span><i class="d20"></i>20-day</span>'
-    + '<span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span>'
-    + '<span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span>'
-    + '<span data-tip="Earnings reports (amber E) and analyst rating changes — green arrow up for an upgrade, red arrow down for a downgrade. Click any marker for the detail. Initiations, reiterations and price-target-only moves are deliberately left off.">'
-    + '<b style="color:var(--hi)">E</b> earnings'
-    + (nRat ? (' · <b style="color:var(--up)">▲</b> upgrade <b style="color:var(--dn)">▼</b> downgrade') : '')
-    + '</span>';
+  var nEarn = (STAGE.fund && Array.isArray(STAGE.fund.earnings)) ? STAGE.fund.earnings.length : 0;
+  var hasNext = !!(STAGE.fund && STAGE.fund.next_earnings && STAGE.fund.next_earnings.date);
+  // Only name a series that HAS data. US10Y carries 19 daily bars and no
+  // moving average is drawn, yet the legend read "20-day / 50-day —% vs it /
+  // 200-day —% vs it / E earnings" — and the 10-year Treasury yield does not
+  // report earnings.
+  function maLen(key){
+    var sr = STAGE.s[key];
+    try{ var d = sr && sr.data(); return d ? d.length : 0; }catch(e){ return 0; }
+  }
+  var bits = [];
+  if(maLen("ma20")) bits.push('<span><i class="d20"></i>20-day</span>');
+  if(maLen("ma50")) bits.push('<span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span>');
+  if(maLen("ma200")) bits.push('<span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span>');
+  if(nEarn || hasNext || nRat){
+    bits.push('<span data-tip="Earnings reports (amber E) and analyst rating changes — green arrow up for an upgrade, red arrow down for a downgrade. Click any marker for the detail. Initiations, reiterations and price-target-only moves are deliberately left off.">'
+      + ((nEarn||hasNext) ? '<b style="color:var(--hi)">E</b> earnings' : '')
+      + ((nEarn||hasNext) && nRat ? ' · ' : '')
+      + (nRat ? '<b style="color:var(--up)">▲</b> upgrade <b style="color:var(--dn)">▼</b> downgrade' : '')
+      + '</span>');
+  }
+  el.innerHTML = bits.join("");
 }
 var PEERS_SEQ = 0;
 var METRIC_DIR = { gross_margin:1, op_margin:1, fcf_margin:1, net_margin:1, roe:1,
@@ -6173,13 +6352,21 @@ function stageLivePoke(){
       var prevClose = num(STAGE.rows[n-2][3]);
       var cur = STAGE.rows[n-1];
       if(prevClose!=null){
-        // Ratchet the synthetic candle's range: the SVG engine re-bracketed
-        // prevClose..live on every rebuild and forgot the day's real extremes.
-        var hi = Math.max(num(cur[1])!=null?num(cur[1]):prevClose, live.px);
-        var lo = Math.min(num(cur[2])!=null?num(cur[2]):prevClose, live.px);
-        STAGE.rows[n-1] = [prevClose, hi, lo, live.px];
+        // The scanner's own open/high/low win when it publishes them; the
+        // ratchet is only the fallback path's memory (the SVG engine used to
+        // re-bracket prevClose..live on every rebuild and forget the day's
+        // real extremes).
+        var op = (live.o!=null && live.o>0) ? live.o : prevClose;
+        var hi, lo;
+        if(live.h!=null && live.l!=null && live.h>=live.l){
+          hi = Math.max(live.h, live.px); lo = Math.min(live.l, live.px);
+        } else {
+          hi = Math.max(num(cur[1])!=null?num(cur[1]):op, live.px);
+          lo = Math.min(num(cur[2])!=null?num(cur[2]):op, live.px);
+        }
+        STAGE.rows[n-1] = [op, hi, lo, live.px, (live.v!=null?live.v:(cur.length>=5?cur[4]:null))];
         try{
-          STAGE.s.candle.update({time:STAGE.times[n-1], open:prevClose, high:hi, low:lo, close:live.px});
+          STAGE.s.candle.update({time:STAGE.times[n-1], open:op, high:hi, low:lo, close:live.px});
         }catch(e){}
         if(!STAGE.hovering) stageSetOhlc(null);
         stageLegend();
