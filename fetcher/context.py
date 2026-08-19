@@ -1459,6 +1459,9 @@ def _avg_move(closes: list[float]) -> Optional[float]:
 INTRA_STALE_SEC = 25 * 60
 INTRA_SPECS = [("i15", "15m", "5d"), ("i60", "60m", "3mo")]
 INTRA_MAX = {"i15": 140, "i60": 320}
+# Quote-wick repair (added 2026-08-19) — see _repair_quote_wicks.
+INTRA_WICK_FLOOR = 0.04     # never clamp a wick smaller than 4%
+INTRA_WICK_MULT = 10.0      # ...or smaller than 10x this symbol's own median
 INTRA_SLEEP_SEC = 0.25
 INTRA_VERSION = 1
 
@@ -1503,10 +1506,75 @@ def build_intraday_bars(universe: list[str],
                 log(f"intraday skip {sym} {interval}: no usable series")
                 continue
             _repair_split_breaks(rows, sym, off=1)   # i60 spans 3mo, long enough to hold a split
+            n_wick = _repair_quote_wicks(rows, sym, interval)
+            if n_wick:
+                log(f"intraday {sym} {interval}: clamped {n_wick} zero-volume quote wick(s)")
             bucket[sym] = rows[-INTRA_MAX[key]:]
             any_ok = True
         out[key] = bucket
     return out if any_ok else None
+
+
+def _repair_quote_wicks(rows: list, sym: str, interval: str) -> int:
+    """Clamp bad quote wicks in place; return how many bars were changed.
+
+    Yahoo publishes occasional ZERO-VOLUME intraday bars whose high/low are
+    quote artifacts tens of percent away from their own open and close. MU's
+    15-minute series carried [1010.61, 1293.69, 485.86, 1010.14, vol 0] while
+    every close in the window sat between 919.70 and 1033.35. Charted raw, one
+    such bar owns the price scale and the real action draws as a hairline —
+    measured on the published file, MU's candles occupied 9.8% of the pane,
+    NVDA's 8.8%, SPY's 14.0%. 38 such bars in i15 and 340 in i60.
+
+    The open and close of those bars are sound; only the wick is junk. So the
+    bar is REPAIRED rather than dropped (dropping leaves a hole in the series):
+    high and low clamp back to the body.
+
+    The threshold is per symbol, because a quiet ETF and a 3x fund do not share
+    one: ten times that symbol's own median wick, floored at 4%. Against the
+    live file that touches 0.52% of i15 bars and 1.23% of i60, catches every
+    bar with a wick past 10%, and never touches a bar that reported volume (the
+    largest legitimate wick measured 8.4% on i15 and 14.3% on i60).
+
+    The page carries the same repair for data already published, and shows a
+    chip saying how many bars it touched.
+    """
+    def wick(o, h, l, c):
+        bh, bl = max(o, c), min(o, c)
+        up = (h - bh) / bh if bh > 0 else 0.0
+        dn = (bl - l) / bl if bl > 0 else 0.0
+        return max(up, dn, 0.0)
+
+    usable = []
+    for r in rows:
+        if not isinstance(r, list) or len(r) < 6:
+            continue
+        _, o, h, l, c, _v = r[0], r[1], r[2], r[3], r[4], r[5]
+        if None in (o, h, l, c) or min(o, c) <= 0:
+            continue
+        usable.append(wick(o, h, l, c))
+    if not usable:
+        return 0
+    usable.sort()
+    mid = len(usable) // 2
+    median = usable[mid] if len(usable) % 2 else (usable[mid - 1] + usable[mid]) / 2
+    threshold = max(INTRA_WICK_FLOOR, median * INTRA_WICK_MULT)
+
+    fixed = 0
+    for r in rows:
+        if not isinstance(r, list) or len(r) < 6:
+            continue
+        o, h, l, c, v = r[1], r[2], r[3], r[4], r[5]
+        if None in (o, h, l, c) or min(o, c) <= 0:
+            continue
+        if v:                      # it traded, so the wick is real
+            continue
+        if wick(o, h, l, c) <= threshold:
+            continue
+        r[2] = max(o, c)
+        r[3] = min(o, c)
+        fixed += 1
+    return fixed
 
 
 # ── Tape symbols (added 2026-08-17) ─────────────────────────────────────────

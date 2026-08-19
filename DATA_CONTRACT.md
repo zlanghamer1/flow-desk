@@ -445,6 +445,27 @@ fundamentals table for it.
   months, long enough to hold a split) but publishes no such key — an intraday
   chart is too short a window to be worth annotating.
 
+**Quote-wick repair on the intraday file (added 2026-08-19).** Yahoo publishes
+occasional ZERO-VOLUME intraday bars whose high/low are quote artifacts tens of
+percent from their own open and close — MU's 15-minute series carried
+`[1010.61, 1293.69, 485.86, 1010.14, vol 0]` while every close in that window
+sat between 919.70 and 1033.35. Charted raw, one such bar owns the price scale
+and the real action draws as a hairline (MU's candles occupied 9.8% of the
+pane, NVDA's 8.8%, SPY's 14.0%). There were 38 in `i15` and 340 in `i60`.
+
+The open and close of those bars are sound, so the bar is REPAIRED rather than
+dropped — dropping would leave a hole in the series — by clamping high and low
+back to the body. The threshold is per symbol: ten times that symbol's own
+median wick, floored at 4%, because a quiet ETF and a 3x fund do not share one.
+Against the published file that touches 0.52% of `i15` bars and 1.23% of
+`i60`, catches every bar with a wick past 10%, and never touches a bar that
+reported volume (the largest legitimate wick measured 8.4% on `i15`). A bar
+that reported volume is never modified, whatever its wick.
+
+No key is published for this. The PAGE runs the identical repair on whatever
+it loads — so data published before this landed is safe too — and shows an
+"N bad ticks repaired" chip when it changes anything.
+
 `facts.*.avg_move` (see above) is derived from this same fetch — mean of
 `abs(daily % change)` over each ticker's last 20 CLOSES (the 4th element of
 each row in v2/v3) — but that reading is published in `data.json`'s `facts`,

@@ -2292,3 +2292,66 @@ def test_quotesummary_request_asks_for_financial_data():
 
 def test_fund_build_sig_forces_a_rebuild_for_currency():
     assert context.FUND_BUILD_SIG == "v4-ni-fcf-ratings-currency"
+
+
+# ── quote-wick repair (added 2026-08-19) ────────────────────────────────────
+
+def _wick_rows(extra=None):
+    """Twelve calm bars plus whatever `extra` adds. Calm = 0.1% wicks."""
+    rows = []
+    for i in range(12):
+        base = 100.0 + i
+        rows.append([1700000000 + i * 900, base, base * 1.001, base * 0.999, base + 0.5, 1000])
+    if extra:
+        rows.extend(extra)
+    return rows
+
+
+def test_repair_quote_wicks_clamps_a_zero_volume_artifact():
+    """The MU case: a zero-volume bar whose wick is 28% from its own body."""
+    bad = [1700020000, 110.0, 141.0, 79.0, 110.1, 0]
+    rows = _wick_rows([bad])
+    n = context._repair_quote_wicks(rows, "MU", "15m")
+    assert n == 1
+    assert rows[-1][2] == 110.1      # high clamped to the body top
+    assert rows[-1][3] == 110.0      # low clamped to the body bottom
+    assert rows[-1][1] == 110.0 and rows[-1][4] == 110.1   # open/close untouched
+
+
+def test_repair_quote_wicks_never_touches_a_bar_that_traded():
+    """Volume means the wick is real, however large."""
+    traded = [1700020000, 110.0, 141.0, 79.0, 110.1, 5_000_000]
+    rows = _wick_rows([traded])
+    assert context._repair_quote_wicks(rows, "MU", "15m") == 0
+    assert rows[-1][2] == 141.0 and rows[-1][3] == 79.0
+
+
+def test_repair_quote_wicks_leaves_ordinary_zero_volume_bars_alone():
+    """Most zero-volume bars are extended-hours bars with sane wicks."""
+    calm = [1700020000, 110.0, 110.2, 109.8, 110.1, 0]
+    rows = _wick_rows([calm])
+    assert context._repair_quote_wicks(rows, "MU", "15m") == 0
+    assert rows[-1][2] == 110.2
+
+
+def test_repair_quote_wicks_threshold_scales_with_the_symbol():
+    """A jumpy instrument keeps a wick a calm one would lose."""
+    jumpy = []
+    for i in range(12):
+        base = 10.0 + i * 0.1
+        jumpy.append([1700000000 + i * 900, base, base * 1.05, base * 0.95, base + 0.02, 1000])
+    # median wick 5% -> threshold 50%, so a 30% zero-volume wick survives here
+    jumpy.append([1700020000, 11.0, 14.3, 11.0, 11.02, 0])
+    assert context._repair_quote_wicks(jumpy, "SOXL", "15m") == 0
+    # the same bar against the calm series (median 0.1% -> 4% floor) is clamped
+    calm = _wick_rows([[1700020000, 11.0, 14.3, 11.0, 11.02, 0]])
+    assert context._repair_quote_wicks(calm, "MU", "15m") == 1
+
+
+def test_repair_quote_wicks_survives_malformed_rows():
+    rows = _wick_rows([[1700020000, None, None, None, None, 0], "junk", [1]])
+    assert context._repair_quote_wicks(rows, "X", "15m") == 0
+
+
+def test_repair_quote_wicks_empty_series_is_zero():
+    assert context._repair_quote_wicks([], "X", "15m") == 0
