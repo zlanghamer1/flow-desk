@@ -1641,7 +1641,18 @@ var ADHOC_FACTS_COLS = ["price_52_week_high","price_52_week_low","market_cap_bas
 function adhocEnsureFacts(sym){
   if(ADHOC_FACTS[sym]) return Promise.resolve(ADHOC_FACTS[sym]);
   var tv = symbolForTicker(sym);
-  if(!tv) return Promise.resolve(null);
+  // No exchange mapping yet — a symbol restored from storage, typed into the
+  // URL, or charted by something that never went through search. Resolve it
+  // once instead of giving up and letting every downstream panel report a
+  // vendor gap that is really a missing prefix.
+  if(!tv){
+    return tsSearch(sym).then(function(items){
+      var hit = items.filter(function(it){ return it.sym===sym; })[0];
+      if(!hit) return null;
+      adhocRegister(sym, hit.tv, hit.name);
+      return adhocEnsureFacts(sym);
+    }, function(){ return null; });
+  }
   var body = JSON.stringify({ symbols:{tickers:[tv]}, columns:ADHOC_FACTS_COLS });
   return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
     .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
@@ -4023,11 +4034,16 @@ function miniBarSVG(labels, values, opts){
    labels on top of one another at the right edge.
 
    Company colors come from a fixed categorical order, validated with the
-   dataviz six-checks for both themes (adjacent-pair CVD separation passes in
-   each; every bar is also labeled with its ticker, so identity never rests on
-   color alone). Color follows the entity, never its rank. */
-var SERIES_COLORS_DARK  = ["#4A8FD0","#C97A2E","#2FA36F","#9E74D8","#35A4B8"];
-var SERIES_COLORS_LIGHT = ["#2F6FAE","#A85A16","#177E52","#7346B8","#A63A6B"];
+   dataviz six-checks for both themes. The 2026-08-19 review measured only
+   ADJACENT pairs; under a full all-pairs deuteranope simulation slot 4 landed
+   dE 2.3 from slot 1 in dark and 12.9 in light, and light slots 3 and 5 sat at
+   13.6 — so slot 4 (both themes) and light slot 5 were replaced. Every pair
+   now clears dE 18 simulated, dE 30 normal, and 5:1 contrast against its own
+   surface. Every bar is still labeled with its ticker and every line carries
+   its name at its right end, so identity never rests on color alone. Color
+   follows the entity, never its rank. */
+var SERIES_COLORS_DARK  = ["#4A8FD0","#C97A2E","#2FA36F","#D4A5F5","#35A4B8"];
+var SERIES_COLORS_LIGHT = ["#2F6FAE","#A85A16","#177E52","#4A2A7A","#880E4F"];
 function isLightTheme(){
   var t = document.documentElement.dataset.theme;
   if(t==="light") return true;
@@ -4076,6 +4092,10 @@ function axisChartSVG(labels, defs, opts){
   var hasBar = live.some(function(d){ return d.type==="bar"; });
   if(hasBar || opts.zeroLine){ mn = Math.min(0, mn); mx = Math.max(0, mx); }
   if(mn === mx){ mn = mn - Math.abs(mn||1)*0.1; mx = mx + Math.abs(mx||1)*0.1; }
+  // opts.clamp caps the top of the domain so one runaway series cannot flatten
+  // the rest. Points above it are clipped, never redrawn at a false value, and
+  // the caller states the real number.
+  if(opts.clamp!=null && isFinite(opts.clamp)) mx = Math.min(mx, opts.clamp);
   var pad = (mx-mn)*0.08; mn -= pad; mx += pad;
   // Tick labels are formatted from the whole set, then the left gutter is
   // measured from the widest one. A hard-coded 44 clipped "100000.0B" to
@@ -4085,6 +4105,9 @@ function axisChartSVG(labels, defs, opts){
   var widest = 0;
   ticks.forEach(function(t){ widest = Math.max(widest, String(fmt(t)).length); });
   var padL = Math.max(opts.padL || 40, Math.ceil(widest*AX_TICK_FS*0.62) + 12);
+  // Right gutter widens for end-of-line labels so a line chart never depends
+  // on color alone to say which company is which.
+  if(opts.endLabels) padR = 46;
   var plotW = W-padL-padR, plotH = H-padT-padB;
   var X = function(i){ return padL + (n<=1 ? plotW/2 : i*plotW/(n-1)); };
   var XB = function(i){ return padL + (i+0.5)*plotW/n; };            // bar-centre variant
@@ -4138,16 +4161,27 @@ function axisChartSVG(labels, defs, opts){
       }
       return;
     }
-    var pts = [], dots = "";
+    var pts = [], dots = "", lastX = null, lastY = null, lastV = null;
+    var own = (opts.perLabels && opts.perLabels[d.name]) || null;
     for(var j=0;j<d.vals.length;j++){
       var vv = d.vals[j]; if(vv==null) continue;
-      var px = X(j), py = Y(vv);
+      var px = X(j), py = Y(Math.min(vv, mx));
       pts.push(px.toFixed(1)+","+py.toFixed(1));
+      // A per-series label list wins over the shared axis: the axis counts
+      // quarters back, but each company's own quarter belongs in its tooltip.
+      var per = own ? (own[j]||"") : (labels[j]||"");
       dots += '<circle cx="'+px.toFixed(1)+'" cy="'+py.toFixed(1)+'" r="2.6" fill="'+d.color+'">'
-        + '<title>'+esc((labels[j]||"")+" · "+d.name+": "+fmt(vv))+'</title></circle>';
+        + '<title>'+esc(d.name+(per?(" · "+per):"")+": "+fmt(vv))+'</title></circle>';
+      lastX = px; lastY = py; lastV = vv;
     }
     if(pts.length>1) out += '<polyline points="'+pts.join(" ")+'" fill="none" stroke="'+d.color+'" stroke-width="1.8"/>';
     out += dots;
+    if(opts.endLabels && lastX!=null){
+      var ly = Math.max(padT+4, Math.min(padT+plotH-2, lastY));
+      out += '<text x="'+(padL+plotW+5)+'" y="'+(ly+3.5).toFixed(1)+'" font-size="'+AX_LABEL_FS
+        + '" font-weight="600" text-anchor="start" fill="'+d.color+'">'+esc(d.name)
+        + (lastV>mx ? " ↑" : "")+'</text>';
+    }
   });
   return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img">'+out+'</svg>';
 }
@@ -4168,51 +4202,87 @@ function chartLegendHTML(defs, fmt, labels){
 /* Peer comparison: one bar per company, each in its own fixed color, ticker
    labeled under it, a dashed peer-median reference line, and a caption saying
    where the focused name ranks and which direction is good. */
+function medianOf(arr){
+  var v = arr.filter(function(x){ return x!=null; }).slice().sort(function(a,b){ return a-b; });
+  if(!v.length) return null;
+  return v.length%2 ? v[(v.length-1)/2] : (v[v.length/2-1]+v[v.length/2])/2;
+}
 function peerBarsSVG(entries, focusedSym, fmt, opts){
   opts = opts || {};
   var vals = entries.map(function(e){ return num(e.val); });
   if(!vals.some(function(v){ return v!=null; })) return "";
-  var W = 300, H = 150, padL = 44, padR = 8, padT = 14, padB = 28;
+  var W = 300, H = 158, padR = 8, padT = 16, padB = 34;
   var known = vals.filter(function(v){ return v!=null; });
+  // The dashed reference is the PEER median: it excluded nothing before, so on
+  // a 4-peer chart it often landed exactly on the focused company's own bar
+  // and told the reader nothing (COHR EV/EBITDA "peer median 41.5" was COHR).
+  var peerVals = entries.map(function(e, k){ return e.sym===focusedSym ? null : vals[k]; })
+                        .filter(function(v){ return v!=null; });
+  var med = peerVals.length>=2 ? medianOf(peerVals) : null;
+  // One runaway value flattened everything else into slivers: CORZ at −217.5%
+  // squashed CRWD's 28.1% and MSFT's 20.2% into a 6-pixel band. Clamp the axis
+  // and mark the bars that run past it with their true value.
+  var scaleMed = medianOf(known.map(Math.abs)) || 0;
+  var maxAbs = Math.max.apply(null, known.map(Math.abs));
+  var clampAt = (scaleMed>0 && maxAbs/scaleMed > 8) ? scaleMed*6 : null;
   var mn = Math.min(0, Math.min.apply(null, known)), mx = Math.max(0, Math.max.apply(null, known));
+  if(clampAt!=null){ mn = Math.max(mn, -clampAt); mx = Math.min(mx, clampAt); }
   if(mn===mx){ mx = mn + 1; }
   var pad = (mx-mn)*0.12; mx += pad; if(mn<0) mn -= pad;
+  var ticks = niceTicks(mn, mx, 3);
+  var widest = 0;
+  ticks.forEach(function(t){ widest = Math.max(widest, String(fmt(t)).length); });
+  var padL = Math.max(38, Math.ceil(widest*10*0.62) + 10);
   var plotW = W-padL-padR, plotH = H-padT-padB;
   var Y = function(v){ return padT + (1-(v-mn)/(mx-mn))*plotH; };
   var n = entries.length, slot = plotW/n, bw = Math.min(38, slot*0.62);
   var out = "";
-  niceTicks(mn, mx, 3).forEach(function(t){
+  ticks.forEach(function(t){
     var y = Y(t);
     if(y<padT-1 || y>padT+plotH+1) return;
     out += '<line x1="'+padL+'" x2="'+(padL+plotW)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)
-      + '" stroke="'+(Math.abs(t)<1e-9?"var(--edge)":"var(--edge2)")+'" stroke-width="1"/>'
-      + '<text x="'+(padL-5)+'" y="'+(y+3).toFixed(1)+'" font-size="8.5" text-anchor="end" fill="var(--ink3)">'+esc(fmt(t))+'</text>';
+      + '" stroke="'+(Math.abs(t)<1e-9?"var(--gridzero)":"var(--grid)")+'" stroke-width="1"/>'
+      + '<text x="'+(padL-5)+'" y="'+(y+3.5).toFixed(1)+'" font-size="10" text-anchor="end" fill="var(--ink3)">'+esc(fmt(t))+'</text>';
   });
-  var sorted = known.slice().sort(function(a,b){ return a-b; });
-  var med = sorted.length ? (sorted.length%2 ? sorted[(sorted.length-1)/2]
-            : (sorted[sorted.length/2-1]+sorted[sorted.length/2])/2) : null;
-  if(med!=null && sorted.length>=3){
+  if(med!=null){
     var my = Y(med);
-    out += '<line x1="'+padL+'" x2="'+(padL+plotW)+'" y1="'+my.toFixed(1)+'" y2="'+my.toFixed(1)
-      + '" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="3 3" opacity=".75"><title>'
-      + esc("peer median "+fmt(med))+'</title></line>';
+    if(my>=padT-1 && my<=padT+plotH+1){
+      out += '<line x1="'+padL+'" x2="'+(padL+plotW)+'" y1="'+my.toFixed(1)+'" y2="'+my.toFixed(1)
+        + '" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="3 3" opacity=".75"><title>'
+        + esc("peer median (excludes "+focusedSym+"): "+fmt(med))+'</title></line>';
+    }
   }
   entries.forEach(function(e, i){
     var v = vals[i], cx = padL + (i+0.5)*slot, col = e.color || seriesColor(i);
     var isFoc = e.sym===focusedSym;
     if(v!=null){
-      var y0 = Y(0), y1 = Y(v), top = Math.min(y0,y1), hgt = Math.max(1.5, Math.abs(y1-y0));
+      var shown = v, over = false;
+      if(clampAt!=null && Math.abs(v)>clampAt){ shown = (v>0?1:-1)*clampAt; over = true; }
+      var y0 = Y(0), y1 = Y(shown), top = Math.min(y0,y1), hgt = Math.max(1.5, Math.abs(y1-y0));
       out += '<rect x="'+(cx-bw/2).toFixed(1)+'" y="'+top.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+hgt.toFixed(1)
         + '" rx="2" fill="'+col+'"'+(isFoc?'':' opacity=".8"')+'>'
-        + '<title>'+esc(e.sym+": "+fmt(v)+(med!=null?(" · peer median "+fmt(med)):""))+'</title></rect>'
-        + '<text x="'+cx.toFixed(1)+'" y="'+(v>=0?Math.max(9,top-3):top+hgt+9).toFixed(1)
-        + '" font-size="8.5" font-weight="'+(isFoc?"700":"400")+'" text-anchor="middle" fill="var(--ink2)">'+esc(fmt(v))+'</text>';
+        + '<title>'+esc(e.sym+": "+fmt(v)+(over?" (bar clipped — off this scale)":"")
+        + (med!=null?(" · peer median "+fmt(med)):""))+'</title></rect>';
+      if(over){
+        // A zig-zag break where the bar leaves the plot, so a clipped bar is
+        // never read as a full one.
+        var by = (v>0) ? top : top+hgt;
+        out += '<path d="M'+(cx-bw/2).toFixed(1)+' '+by.toFixed(1)+' l'+(bw/4).toFixed(1)+' -3 l'+(bw/4).toFixed(1)
+          + ' 6 l'+(bw/4).toFixed(1)+' -6 l'+(bw/4).toFixed(1)+' 3" fill="none" stroke="var(--srf)" stroke-width="2"/>';
+      }
+      out += '<text x="'+cx.toFixed(1)+'" y="'+(v>=0?Math.max(11,top-4):top+hgt+11).toFixed(1)
+        + '" font-size="10" font-weight="'+(isFoc?"700":"400")+'" text-anchor="middle" fill="var(--ink2)">'+esc(fmt(v))+'</text>';
     } else {
-      out += '<text x="'+cx.toFixed(1)+'" y="'+(Y(0)-4).toFixed(1)+'" font-size="9" text-anchor="middle" fill="var(--ink3)">—</text>';
+      // A dash used to mean "the vendor reports nothing", which was wrong for
+      // the cases that matter: CRWD's P/E is missing because CRWD is
+      // loss-making, and the page already knows that on the Overview tab.
+      out += '<text x="'+cx.toFixed(1)+'" y="'+(Y(0)-5).toFixed(1)+'" font-size="10" text-anchor="middle" fill="var(--ink3)">—</text>';
+      if(e.reason) out += '<text x="'+cx.toFixed(1)+'" y="'+(Y(0)+7).toFixed(1)
+        + '" font-size="8.5" text-anchor="middle" fill="var(--ink3)">'+esc(e.reason)+'</text>';
     }
-    out += '<text x="'+cx.toFixed(1)+'" y="'+(H-9)+'" font-size="9" font-weight="'+(isFoc?"700":"600")
+    out += '<text x="'+cx.toFixed(1)+'" y="'+(H-10)+'" font-size="10.5" font-weight="'+(isFoc?"700":"600")
       + '" text-anchor="middle" fill="'+col+'">'+esc(e.sym)+'</text>';
-    if(isFoc) out += '<line x1="'+(cx-bw/2-2).toFixed(1)+'" x2="'+(cx+bw/2+2).toFixed(1)+'" y1="'+(H-20)+'" y2="'+(H-20)
+    if(isFoc) out += '<line x1="'+(cx-bw/2-2).toFixed(1)+'" x2="'+(cx+bw/2+2).toFixed(1)+'" y1="'+(H-22)+'" y2="'+(H-22)
       + '" stroke="'+col+'" stroke-width="1.5"/>';
   });
   return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img">'+out+'</svg>';
@@ -4343,7 +4413,32 @@ function renderGrowth(sym, fund){
 var PEER_GROUPS = {
   MU:   [["SKHY","NASDAQ:SKHY"],["SNDK","NASDAQ:SNDK"],["WDC","NASDAQ:WDC"],["STX","NASDAQ:STX"]],
   COHR: [["LITE","NASDAQ:LITE"],["AAOI","NASDAQ:AAOI"],["FN","NYSE:FN"]],
+  // Added 2026-08-19: the vendor taxonomy put CrowdStrike next to a bitcoin
+  // miner, Visa next to United Rentals, and Tower Semi next to NVIDIA. These
+  // are the sets a trader would name.
+  CRWD: [["PANW","NASDAQ:PANW"],["ZS","NASDAQ:ZS"],["FTNT","NASDAQ:FTNT"],["S","NYSE:S"]],
+  V:    [["MA","NYSE:MA"],["AXP","NYSE:AXP"],["PYPL","NASDAQ:PYPL"],["FISV","NASDAQ:FISV"]],
+  TSEM: [["UMC","NYSE:UMC"],["GFS","NASDAQ:GFS"],["ASX","NYSE:ASX"],["ON","NASDAQ:ON"]],
 };
+/* One company, one bar. TradingView lists a foreign issuer's ordinary line and
+   its ADR as separate tickers with the same fundamentals, so an auto set could
+   carry LVMHF + LVMUY (both LVMH) and HESAF + HESAY (both Hermes) and then
+   compute a "median" over four rows that are two companies. Worse, the two
+   Hermes lines disagreed on PEG (47.5 vs 4.45), so one company appeared as
+   both the most and the least expensive name on the same chart. */
+function issuerKey(desc){
+  return String(desc||"").toUpperCase()
+    .replace(/\b(UN)?SPONSORED\b/g, "")
+    .replace(/\bADR\b|\bADS\b|\bGDR\b/g, "")
+    .replace(/\bCLASS\s+[A-Z]\b/g, "")
+    .replace(/\bDEPOSITARY\s+SHARES?\b/g, "")
+    .replace(/\b(INC|CORP|CORPORATION|COMPANY|CO|LTD|LIMITED|PLC|SA|SE|NV|AG|SCA|SAB|DE|CV|HOLDINGS?|GROUP|THE)\b/g, "")
+    .replace(/[^A-Z0-9]/g, "");
+}
+// A peer must be within this multiple of the focused company's market cap,
+// both ways. A $6B miner and a $5.4T chipmaker are not comparisons; TSEM
+// "ranked 5 of 5" on all six metrics against NVDA, TSM, AVGO and MU.
+var PEER_CAP_BAND = 5;
 var PEER_SKIP_INDUSTRY = {"Investment Trusts/Mutual Funds":true};   // ETFs have no peers
 var PEERS_CACHE = {};
 function adhocFactsBatch(tvList){
@@ -4368,66 +4463,106 @@ function adhocFactsBatch(tvList){
     })
     .catch(function(){});
 }
+var PEERS_INFLIGHT = {};
 function peersFor(sym){
   if(PEERS_CACHE[sym]) return Promise.resolve(PEERS_CACHE[sym]);
+  if(PEERS_INFLIGHT[sym]) return PEERS_INFLIGHT[sym];
   var cur = PEER_GROUPS[sym];
   if(cur){
     cur.forEach(function(p){ adhocRegister(p[0], p[1], null); });
     var syms = cur.map(function(p){ return p[0]; });
-    return adhocFactsBatch(cur.map(function(p){ return p[1]; })).then(function(){
+    PEERS_INFLIGHT[sym] = adhocFactsBatch(cur.map(function(p){ return p[1]; })).then(function(){
+      delete PEERS_INFLIGHT[sym];
       PEERS_CACHE[sym] = {peers:syms, source:"curated"};
       return PEERS_CACHE[sym];
     });
+    return PEERS_INFLIGHT[sym];
   }
+  // A searched name's facts arrive from the scanner AFTER stageShow paints, so
+  // asking for peers first saw factsOf()===null and cached {peers:[],
+  // source:"none"} forever — the tab then told the reader that TradingView
+  // carries no industry for a symbol whose industry was on screen two inches
+  // above. Wait for the facts, and only then decide.
+  var pre = factsOf(sym) ? Promise.resolve(null) : adhocEnsureFacts(sym);
+  PEERS_INFLIGHT[sym] = pre.then(function(){ return _peersByIndustry(sym); })
+    .then(function(res){ delete PEERS_INFLIGHT[sym]; return res; },
+          function(e){ delete PEERS_INFLIGHT[sym]; throw e; });
+  return PEERS_INFLIGHT[sym];
+}
+function _peersByIndustry(sym){
   var f = factsOf(sym);
   var ind = f && f.industry;
   if(!ind || PEER_SKIP_INDUSTRY[ind]){
-    PEERS_CACHE[sym] = {peers:[], source:ind ? "fund" : "none"};
+    // Three different empty states, and they used to share one sentence that
+    // blamed the vendor for all of them.
+    PEERS_CACHE[sym] = {peers:[], source: PEER_SKIP_INDUSTRY[ind] ? "fund" : (f ? "no-industry" : "unresolved")};
     return Promise.resolve(PEERS_CACHE[sym]);
   }
-  // local first: pinned facts sharing the industry
-  var local = [];
+  var myCap = f ? num(f.cap) : null;
+  function ratio(c){ return (c!=null && myCap) ? Math.abs(Math.log(c/myCap)) : 99; }
+  function inBand(c){ return (myCap && c!=null) ? (c/myCap <= PEER_CAP_BAND && myCap/c <= PEER_CAP_BAND) : false; }
+  // Local first: pinned facts sharing the industry, ranked by how close they
+  // are in size rather than by who is biggest. TSEM against NVDA, TSM, AVGO
+  // and MU "ranked 5 of 5" on all six metrics; that is not a comparison.
+  var cands = [];
+  var seenIssuer = {}, seenSym = {};
+  seenIssuer[issuerKey(nameFor(sym))] = true; seenSym[sym] = true;
   var allFacts = (STATE.data && STATE.data.facts) || {};
   Object.keys(allFacts).forEach(function(t){
     if(t===sym) return;
     var pf = allFacts[t];
-    if(pf && pf.industry===ind && num(pf.cap)!=null) local.push({sym:t, cap:pf.cap});
+    if(!pf || pf.industry!==ind || num(pf.cap)==null) return;
+    var ik = issuerKey(nameFor(t));
+    if(ik && seenIssuer[ik]) return;
+    if(ik) seenIssuer[ik] = true;
+    seenSym[t] = true;
+    cands.push({sym:t, tv:null, cap:num(pf.cap), local:true});
   });
-  local.sort(function(a,b){ return b.cap-a.cap; });
-  var picks = local.slice(0,4).map(function(x){ return x.sym; });
-  if(picks.length >= 3){
-    PEERS_CACHE[sym] = {peers:picks, source:"industry-local"};
-    return Promise.resolve(PEERS_CACHE[sym]);
+  function finish(list, scanned){
+    list.sort(function(a,b){
+      return (inBand(b.cap)?1:0)-(inBand(a.cap)?1:0) || ratio(a.cap)-ratio(b.cap);
+    });
+    var picks = list.slice(0,4);
+    var tvs = picks.filter(function(c){ return c.tv; }).map(function(c){ return c.tv; });
+    picks.forEach(function(c){ if(c.tv) adhocRegister(c.sym, c.tv, c.desc||null); });
+    var out = picks.map(function(c){ return c.sym; });
+    var wide = picks.filter(function(c){ return !inBand(c.cap); }).map(function(c){ return c.sym; });
+    return adhocFactsBatch(tvs).then(function(){
+      PEERS_CACHE[sym] = {peers:out, source: out.length ? (scanned?"industry-scan":"industry-local") : "thin",
+                          outOfBand: wide};
+      return PEERS_CACHE[sym];
+    });
   }
-  // widen via the live scanner: biggest names in the same industry
+  if(cands.filter(function(c){ return inBand(c.cap); }).length >= 4) return finish(cands, false);
+  // Widen on the live scanner. No cap filter in the query — take the industry
+  // and rank by closeness here, so a mega-cap industry still yields a set when
+  // nothing sits inside the band. Primary US listings only: OTC is where the
+  // duplicate ADR lines live, and one company must not occupy two bars.
   var body = JSON.stringify({
-    columns:["name","description","market_cap_basic"],
-    filter:[{left:"industry",operation:"equal",right:ind}],
-    options:{lang:"en"}, range:[0,7],
+    columns:["name","description","market_cap_basic","exchange"],
+    filter:[{left:"industry", operation:"equal", right:ind}],
+    options:{lang:"en"}, range:[0,30],
     sort:{sortBy:"market_cap_basic",sortOrder:"desc"},
     symbols:{query:{types:["stock","dr"]}}, markets:["america"]});
   return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
     .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
     .then(function(json){
       var rows = (json && Array.isArray(json.data)) ? json.data : [];
-      var out = picks.slice(), tvs = [];
       rows.forEach(function(row){
         if(!row || !row.s || !Array.isArray(row.d)) return;
-        var t = row.d[0];
-        if(typeof t!=="string" || !t || t===sym || out.indexOf(t)!==-1) return;
-        if(out.length>=4) return;
-        out.push(t); tvs.push(row.s);
-        adhocRegister(t, row.s, (typeof row.d[1]==="string")?row.d[1]:null);
+        var t = row.d[0], desc = (typeof row.d[1]==="string") ? row.d[1] : "";
+        var cap = num(row.d[2]), exch = (typeof row.d[3]==="string") ? row.d[3] : row.s.split(":")[0];
+        if(typeof t!=="string" || !t || seenSym[t]) return;
+        if(t.indexOf("/")!==-1) return;                       // JPM/PD-style depositary lines
+        if(exch && ["NASDAQ","NYSE","AMEX","NYSE ARCA","BATS","CBOE"].indexOf(exch.toUpperCase())===-1) return;
+        var ik = issuerKey(desc);
+        if(!ik || seenIssuer[ik]) return;                     // ordinary line + its ADR = one company
+        seenIssuer[ik] = true; seenSym[t] = true;
+        cands.push({sym:t, tv:row.s, desc:desc, cap:cap});
       });
-      return adhocFactsBatch(tvs).then(function(){
-        PEERS_CACHE[sym] = {peers:out, source:"industry-scan"};
-        return PEERS_CACHE[sym];
-      });
+      return finish(cands, true);
     })
-    .catch(function(){
-      PEERS_CACHE[sym] = {peers:picks, source:"industry-local"};
-      return PEERS_CACHE[sym];
-    });
+    .catch(function(){ return finish(cands, false); });
 }
 /* Which direction is good, per metric: +1 higher is better, -1 lower is better.
    Used for the rank caption and for the peer-relative coloring in the
@@ -5216,8 +5351,27 @@ function metricValue(sym, key){
   var f = factsOf(sym);
   if(!f) return null;
   var v = num(f[key]);
-  if(v==null && key==="peg") return derivedPeg(f, FUND_CACHE[sym]);
+  if(v==null && key==="peg") v = derivedPeg(f, FUND_CACHE[sym]);
+  // A negative PEG comes from negative growth or negative earnings. On a chart
+  // captioned "lower is better" it made the most broken name look like the
+  // best one, and it entered the median. It is not a number, it is a gap.
+  if(v!=null && (key==="peg" || key==="pe" || key==="ev_ebitda" || key==="ps" || key==="pb") && v<=0) return null;
   return v;
+}
+/* Why a cell is empty, in the words the Overview tab already uses. "The vendor
+   reports nothing" was flatly wrong for CRWD's P/E and PEG: CrowdStrike has
+   negative trailing earnings, so neither figure can exist. */
+function metricReason(sym, key){
+  var f = factsOf(sym);
+  if(!f) return "no data";
+  var eps = ttmEpsOf(FUND_CACHE[sym]);
+  if(key==="pe" || key==="peg"){
+    if(num(f.pe)==null && eps!=null && eps<=0) return "loss-making";
+    if(key==="peg" && num(f.pe)!=null) return "growth n/a";
+    if(key==="peg") return "no trailing earnings";
+  }
+  if((key==="ev_ebitda"||key==="ps"||key==="pb") && num(f[key])!=null && num(f[key])<=0) return "negative";
+  return "vendor n/a";
 }
 /* Where this name stands against the peers actually on screen. Returns null
    when fewer than three peers reported the metric — two points is not a
@@ -5234,71 +5388,130 @@ function peerStat(sym, key){
   var dir = METRIC_DIR[key] || 1;
   var sorted = pairs.slice().sort(function(a,b){ return dir>0 ? b.v-a.v : a.v-b.v; });
   var rank = 1 + sorted.map(function(x){ return x.sym; }).indexOf(sym);
-  var vals = pairs.map(function(x){ return x.v; }).sort(function(a,b){ return a-b; });
-  var med = vals.length%2 ? vals[(vals.length-1)/2] : (vals[vals.length/2-1]+vals[vals.length/2])/2;
+  // The median is of the PEERS. Including the focused name made the "peer
+  // median" line pass through its own bar, and shifted MU's gross-margin
+  // reference by 11.4 points.
+  var med = medianOf(pairs.filter(function(x){ return x.sym!==sym; }).map(function(x){ return x.v; }));
+  if(med==null) return null;
   var better = dir>0 ? mine.v > med : mine.v < med;
   return {rank:rank, n:pairs.length, median:med, better:better, dir:dir, value:mine.v};
 }
 function renderPeersInto(body, sym, res, seq){
   var peers = res.peers;
   if(!peers.length){
+    var f0 = factsOf(sym);
     body.innerHTML = '<div class="dsec note">'
       + (res.source==="fund"
          ? esc(sym)+' is a fund or wrapper — margins and multiples describe companies, not baskets.'
-         : 'No peer set for '+esc(sym)+' — TradingView carries no industry classification for it this cycle.')
+         : res.source==="thin"
+           ? 'No peer set for '+esc(sym)+'. Its industry is "'+esc((f0&&f0.industry)||"unclassified")
+             + '", and the scanner returned no other US-listed company in that industry within 5× of its size. '
+             + 'A comparison against names five times bigger or smaller is worse than none.'
+           : res.source==="unresolved"
+             ? 'No US listing resolved for '+esc(sym)+', so there are no fundamentals to compare. Search the company by name '
+               + 'in the box on the left and chart it from there.'
+             : 'No peer set for '+esc(sym)+' — TradingView carries no industry classification for it this cycle.')
       + '</div>';
     return;
   }
   var entries = [sym].concat(peers).map(function(t, i){ return {sym:t, color:seriesColor(i)}; });
   var srcLine = res.source==="curated"
     ? "curated set (memory complex / documented comparisons)"
-    : 'largest names in TradingView\u2019s "'+esc((factsOf(sym)||{}).industry||"")+'" industry'
-      + (res.source==="industry-scan" ? ", via the live scanner" : ", from the desk universe");
+    : 'US-listed names in TradingView’s "'+esc((factsOf(sym)||{}).industry||"")+'" industry, closest in market cap'
+      + (res.source==="industry-scan" ? ", via the live scanner" : ", from the desk universe")
+      + ((res.outOfBand && res.outOfBand.length)
+          ? ('. '+esc(res.outOfBand.join(", "))+(res.outOfBand.length>1?' sit':' sits')
+             + ' more than 5× from '+esc(sym)+' in size — nothing closer is listed in that industry')
+          : '');
   var key = '<div class="peerkey">'+entries.map(function(e){
-      return '<span><i style="background:'+e.color+'"></i>'+esc(e.sym)+(e.sym===sym?" (focused)":"")+'</span>';
+      var c = factsOf(e.sym) && num(factsOf(e.sym).cap);
+      return '<span data-tip="'+esc(nameFor(e.sym)+(c!=null?(" · market cap "+fmtCompact(c)):""))+'">'
+        + '<i style="background:'+e.color+'"></i>'+esc(e.sym)+(e.sym===sym?" (focused)":"")+'</span>';
     }).join("")+'</div>';
   var html = '<div class="dsec"><h3>'+esc(sym)+' vs peers — trailing twelve months</h3>'+key+'<div class="gwrap">';
-  var drew = 0;
+  var drew = 0, clipped = false;
   PEER_METRICS.forEach(function(m){
     var mk = m[0], fmt = m[1];
-    var rows = entries.map(function(e){ return {sym:e.sym, color:e.color, val:metricValue(e.sym, mk)}; });
+    var rows = entries.map(function(e){
+      var v = metricValue(e.sym, mk);
+      return {sym:e.sym, color:e.color, val:v, reason: v==null ? metricReason(e.sym, mk) : null};
+    });
     if(!rows.some(function(r){ return r.val!=null; })) return;
+    var mine = rows.filter(function(r){ return r.sym===sym; })[0];
+    var others = rows.filter(function(r){ return r.sym!==sym && r.val!=null; }).length;
+    // A one-bar chart is not a comparison. Say why the focused name has no
+    // figure instead of drawing an axis around a single value.
+    if(mine.val==null && others<2){
+      html += '<div class="gchart"><h4>'+esc(METRIC_LABEL[mk]||mk)+'</h4>'
+        + '<div class="gcap">'+esc(sym)+' has no '+esc(METRIC_LABEL[mk]||mk)+' ('+esc(mine.reason||"vendor n/a")
+        + ') and fewer than two peers reported one, so there is nothing to compare.</div></div>';
+      drew++;
+      return;
+    }
     var svg = peerBarsSVG(rows, sym, fmt);
     if(!svg) return;
+    var known = rows.map(function(r){ return r.val; }).filter(function(v){ return v!=null; });
+    var sm = medianOf(known.map(Math.abs)) || 0, mxa = Math.max.apply(null, known.map(Math.abs));
+    if(sm>0 && mxa/sm > 8) clipped = true;
     var st = peerStat(sym, mk);
     var dir = METRIC_DIR[mk] || 1;
+    var peerMed = medianOf(rows.filter(function(r){ return r.sym!==sym && r.val!=null; }).map(function(r){ return r.val; }));
     var cap = st
       ? ('<b class="'+(st.better?"u":"d")+'">'+esc(sym)+' ranks '+st.rank+' of '+st.n+'</b> · '
          + (dir>0?"higher is better":"lower is better") + ' · peer median '+esc(fmt(st.median)))
-      : ('<span class="m">'+(dir>0?"higher is better":"lower is better")+' · too few peers reported to rank</span>');
+      : ('<span class="m">'+(dir>0?"higher is better":"lower is better")
+         + (mine.val==null ? (' · '+esc(sym)+': '+esc(mine.reason||"no figure")) : ' · too few peers reported to rank')
+         + (peerMed!=null ? (' · peer median '+esc(fmt(peerMed))) : '')+'</span>');
     html += '<div class="gchart"><h4>'+esc(METRIC_LABEL[mk]||mk)+'</h4>'+svg+'<div class="gcap">'+cap+'</div></div>';
     drew++;
   });
-  html += '</div><div class="note">Peers: '+srcLine+'. Each company keeps one color across every chart here. '
-    + 'Bars are scanner trailing-twelve-month figures, the same fields the fundamentals grid shows; the dashed line is the peer median. '
-    + 'A dash means the vendor reports nothing for that name. PEG falls back to P/E divided by TTM EPS growth when the vendor omits it. '
+  html += '</div><div class="note">Peers: '+srcLine+'. One company per bar — a foreign issuer’s ordinary line and its ADR '
+    + 'are the same company, and only one of them appears. Each company keeps one color across every chart here, and every bar is '
+    + 'labeled with its ticker, so color is never the only way to tell them apart. '
+    + 'Bars are scanner trailing-twelve-month figures, the same fields the fundamentals grid shows; the dashed line is the median of the '
+    + 'PEERS, with '+esc(sym)+' left out of it. A dash carries its own reason underneath — "loss-making" is the page’s own reading, '
+    + 'not a vendor gap. PEG falls back to P/E divided by TTM EPS growth when the vendor omits it, and stays blank when growth or '
+    + 'earnings are negative. '
+    + (clipped ? 'Where one name runs far off the scale, its bar is clipped with a break mark and its true value stays printed above it. ' : '')
     + 'Display only — none of this scores anything.</div></div>';
   if(!drew) html = '<div class="dsec note">No comparable trailing-twelve-month figures for this set.</div>';
   Promise.all(entries.map(function(e){ return ensureFund(e.sym); })).then(function(funds){
     if(STAGE.sym!==sym || STAGE.tab!=="peers" || seq!==PEERS_SEQ) return;
-    var lines = [], labelsRef = null;
+    var lines = [], nQ = 0, perLabels = {}, sources = {};
     entries.forEach(function(e, i){
       var g = funds[i] && funds[i].growth && funds[i].growth.quarterly;
       if(!g || !Array.isArray(g.revenue)) return;
       var revs = g.revenue.map(num).filter(function(v){ return v!=null; }).slice(-8);
       if(revs.length<5 || !revs[0]) return;
-      if(!labelsRef) labelsRef = g.labels.slice(-revs.length);
+      nQ = Math.max(nQ, revs.length);
+      perLabels[e.sym] = (g.labels||[]).slice(-revs.length);
+      sources[e.sym] = (funds[i] && funds[i].source==="scanner") ? "scanner" : "sidecar";
       lines.push({name:e.sym, color:e.color, values: revs.map(function(v){ return v/revs[0]*100; })});
     });
     if(lines.length>=2){
-      var svg2 = axisChartSVG(labelsRef||[], lines, {kind:"num", W:600, H:200});
+      // Position labels, not one company's fiscal quarters: the old axis
+      // printed MU's "Q3 26" next to Seagate's June quarter.
+      var axis = [];
+      for(var k=0;k<nQ;k++) axis.push(k===nQ-1 ? "latest" : ((nQ-1-k)+"q ago"));
+      // Clamp a runaway line so the others are still readable; its real
+      // endpoint is in the legend either way.
+      var ends = lines.map(function(L){ var v=L.values.filter(function(x){return x!=null;}); return v[v.length-1]; });
+      var medEnd = medianOf(ends) || 100, maxEnd = Math.max.apply(null, ends);
+      var clampTo = (maxEnd/medEnd > 4) ? medEnd*4 : null;
+      var svg2 = axisChartSVG(axis, lines, {kind:"num", W:600, H:220, endLabels:true,
+                                            clamp:clampTo, perLabels:perLabels});
       if(svg2){
+        var runaway = clampTo!=null ? lines.filter(function(L, li){ return ends[li] > clampTo; }).map(function(L){ return L.name; }) : [];
         var el2 = document.createElement("div");
         el2.className = "dsec";
         el2.innerHTML = '<h3>Revenue growth, indexed — first shown quarter = 100</h3>'
-          + '<div class="gchart gfull" style="max-width:640px">'+svg2+chartLegendHTML(lines, fmtAxisNum, labelsRef)+'</div>'
+          + '<div class="gchart gfull" style="max-width:640px">'+svg2+chartLegendHTML(lines, fmtAxisNum)+'</div>'
           + '<div class="note">Aligned by report recency, not by calendar: fiscal years differ across companies, so read this as growth shape, '
-          + 'not same-quarter timing. Lines exist only for names the daily sidecar covers.</div>';
+          + 'not same-quarter timing. The axis counts quarters back from each company’s own latest report; hover a point for that '
+          + 'company’s own period. Lines come from the daily sidecar where the desk has one and from TradingView’s quarterly history '
+          + 'otherwise. '
+          + (runaway.length ? ('The axis is clipped so the rest stay readable — '+esc(runaway.join(", "))+' runs past the top, and the legend carries its real value. ') : '')
+          + 'Each line is labeled at its right end.</div>';
         body.appendChild(el2);
       }
     }
