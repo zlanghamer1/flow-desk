@@ -77,6 +77,7 @@ a{color:var(--acc);text-decoration:none}
 /* ============ rolling news ticker (2026-08-19, Zach's ask) ============ */
 .newsticker{position:relative;overflow:hidden;border-bottom:1px solid var(--edge);background:var(--srf2);height:26px}
 .newsticker[hidden]{display:none}
+.nt-empty{display:flex;align-items:center;height:100%;padding:0 16px;font-size:11px;color:var(--ink3)}
 .nt-track{display:inline-flex;align-items:center;white-space:nowrap;height:26px;will-change:transform;
   animation:nt-roll var(--nt-dur,60s) linear infinite}
 .newsticker:hover .nt-track{animation-play-state:paused}
@@ -134,8 +135,8 @@ a.nt-item:hover{color:var(--ink)}
    part that got clipped away — the tile showed a pre-market price with nothing
    saying so. The label text now truncates inside its own span while the badge
    holds its width beside it. */
-.tp .s{font-size:10px;letter-spacing:.08em;color:var(--ink3);font-weight:600;
-  display:flex;align-items:center;gap:2px;min-width:0}
+.tp .s{font-size:10px;letter-spacing:.04em;color:var(--ink3);font-weight:600;
+  display:flex;align-items:center;gap:2px;min-width:0;grid-column:1/-1}
 .tp .s .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tp .s .sess{flex:none}
 .tp .p{font-size:14px;font-weight:600;grid-row:2}
@@ -266,6 +267,8 @@ section.closed .sb{display:none}
    movers and imminent catalysts, which taught the eye to ignore all three.
    Muted slate keeps it legible without shouting (2026-08-18). */
 .bc.stale{color:var(--ink2);background:var(--srf2);border-color:var(--edge)}
+.bc.gone{color:var(--ink3);border-style:dashed;background:transparent}
+.peerkey .oob{color:var(--hi);font-weight:700}
 .warn{margin-top:10px;border-left:2px solid var(--hi);padding:5px 10px;font-size:11.5px;color:var(--ink2);background:var(--hibg)}
 .warn.wgood{border-left-color:var(--up);background:color-mix(in srgb,var(--up) 8%,transparent)}
 .warn b{color:var(--hi);letter-spacing:.08em;font-size:10px;margin-right:6px}
@@ -281,10 +284,12 @@ section.closed .sb{display:none}
 .fedcard.quiet .fedhead b{color:var(--ink)}
 .fedhead .lbl{font-size:11px;color:var(--ink2);letter-spacing:.03em}
 .fedhead .when{font-size:10.5px;color:var(--ink3,var(--ink2));margin-left:auto}
-.fedbar{display:flex;height:8px;border-radius:4px;overflow:hidden;margin-top:8px;background:var(--srf)}
+.fedbar{display:flex;height:8px;border-radius:4px;overflow:hidden;margin-top:8px;background:var(--srf2)}
 .fedbar i{display:block;height:100%}
 .fedbar i.hike{background:var(--dn)}
-.fedbar i.hold{background:var(--edge)}
+/* --edge is the track colour: a 70% "no change" segment painted in it read as
+   an empty bar. Muted ink instead, which reads as filled in both themes. */
+.fedbar i.hold{background:var(--ink3)}
 .fedbar i.cut{background:var(--up)}
 .fedlegend{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;font-size:10.5px;color:var(--ink2)}
 .fedlegend span em{font-style:normal;color:var(--ink)}
@@ -449,6 +454,11 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .stagehead .ohlc{flex:1 0 100%;margin-left:0;text-align:right;font-size:10.5px;color:var(--ink3);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:15px;line-height:15px;
   font-variant-numeric:tabular-nums}
+/* Fixed two-line box on a phone: the line does not fit on one, and the height
+   stays constant so the chart below never shifts as the crosshair moves. */
+@media (max-width:640px){
+  .stagehead .ohlc{white-space:normal;text-align:left;min-height:30px;max-height:30px}
+}
 .stagehead .ohlc b{color:var(--ink2);font-weight:600;font-variant-numeric:tabular-nums}
 .stagebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 14px 8px}
 .stagechart{position:relative;height:clamp(380px,52vh,620px);border-top:1px solid var(--edge2)}
@@ -457,6 +467,7 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .stagemsg[hidden]{display:none}
 #stageleg{padding:5px 14px 0}
 .stagetabs{display:flex;gap:2px;padding:6px 14px 0;border-bottom:1px solid var(--edge);overflow-x:auto}
+@media (max-width:640px){ .stagetabs{flex-wrap:wrap;overflow-x:visible} }
 .stagetabs button{font-size:10px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;color:var(--ink3);
   padding:6px 10px;border-bottom:2px solid transparent;white-space:nowrap}
 .stagetabs button[aria-pressed="true"]{color:var(--acc);border-bottom-color:var(--acc)}
@@ -548,6 +559,9 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 #stagetabbody .leg{font-size:11px}
 .gchart h4{font-size:10.5px}
 .gcap b{color:var(--ink2);font-weight:600}
+/* .gcap b outranked .u/.d on specificity, so the good/bad colouring Zach
+   asked for computed to --ink2 on every caption. */
+.gcap b.u{color:var(--up)} .gcap b.d{color:var(--dn)}
 .peerkey{display:flex;gap:10px;flex-wrap:wrap;font-size:10.5px;margin:2px 0 8px}
 .peerkey span{display:inline-flex;align-items:center;gap:4px;color:var(--ink2)}
 .peerkey i{width:9px;height:9px;border-radius:2px;display:inline-block}
@@ -592,11 +606,18 @@ footer b{color:var(--ink2)}
 /* The tape scrolled WTI and the dollar index out of view between 900 and
    1100px with an overlay scrollbar and no edge cue. Wrap into two rows of
    four instead of hiding two of the eight readings. */
-@media (max-width:1160px){
+@media (max-width:1400px){
   .tape{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow-x:visible}
   .tp{min-width:0}
   .tp:nth-child(n+5){border-top:1px solid var(--edge2)}
   .tp:nth-child(4n){border-right:none}
+}
+@media (max-width:1080px){
+  /* The rail is one non-wrapping flex row of chips. Between 901 and 1060 it
+     ran wider than the viewport, so the whole page scrolled sideways and the
+     theme toggle was clipped. Drop the optional chips first, then wrap. */
+  .rail{flex-wrap:wrap;row-gap:6px}
+  .rl.opt{display:none}
 }
 @media (max-width:1240px){
   .cols{grid-template-columns:224px minmax(0,1fr)}
@@ -680,11 +701,11 @@ footer b{color:var(--ink2)}
 
   <!-- ======= top rail ======= -->
   <div class="rail">
-    <div class="mark">THE<em>DESK</em><small>FLOW · BRIEF · CATALYSTS</small></div>
+    <h1 class="mark">THE<em>DESK</em><small>FLOW · BRIEF · CATALYSTS</small></h1>
     <span class="rl" id="railstate"><span class="lamp" id="raillamp"></span><b id="railstatetext">—</b></span>
     <span class="rl clock tn" id="clock">—</span>
     <span class="rl" id="railverdict" data-tip="The Morning Brief engine's synthesis score, computed once pre-market — same number the daily brief computes. Most of its measured edge is the overnight gap." hidden>verdict <b id="railverdicttext">—</b></span>
-    <span class="rl opt" id="railbackdrop" data-tip="Seven level/trend readings: 10Y, real yield, MOVE, crude, HY spread, 2s10s, and the Fed rate-hike odds. Display-only." hidden>backdrop <b id="railbackdroptext">—</b></span>
+    <span class="rl opt" id="railbackdrop" data-tip="Up to seven level/trend readings: 10Y, real yield, MOVE, crude, HY spread, 2s10s, and the Fed rate-hike odds. A reading that does not resolve is dropped and the Morning Brief panel says how many graded. Display-only." hidden>backdrop <b id="railbackdroptext">—</b></span>
     <span class="rl opt" id="railfed" data-tip="Polymarket's priced chance the Fed RAISES rates at its next meeting. A betting market, not a forecast — and the one macro reading here that is forward-looking about policy. Display-only." hidden>fed hike <b id="railfedtext">—</b></span>
     <div class="grow"></div>
     <button class="kbtn" id="palopen"><span>Search any ticker or action…</span><kbd id="palkbd">⌘K</kbd></button>
@@ -777,7 +798,7 @@ footer b{color:var(--ink2)}
         <div class="sb brief" id="briefbody"></div>
       </section>
       <section id="s-sector">
-        <div class="sh" data-collapse="s-sector"><span class="car">▼</span><h2>Sector rotation — week vs SPY</h2><span class="st">flows: 1w own, 1m vendor</span></div>
+        <div class="sh" data-collapse="s-sector"><span class="car">▼</span><h2>Sector rotation — week vs SPY</h2><span class="st tn" id="sectorstat">flows: 1w own, 1m vendor</span></div>
         <div class="sb xwrap" id="sector"></div>
       </section>
       <section id="s-etf">
@@ -1334,6 +1355,10 @@ function shortReading(name){
   if(n.indexOf("2s10s")>=0||n.indexOf("curve")>=0) return "2s10s";
   return name||"";
 }
+// Every reading macro_backdrop.py attempts, in its own order. A reading that
+// fails to resolve is dropped from the payload, so without this list the panel
+// silently grades on four inputs while the tooltip promises seven.
+var BACKDROP_ALL = ["10Y","real yield","MOVE","crude","HY spread","2s10s","fed hike"];
 function normalizeBrief(d){
   var b=d&&d.brief; if(!b||typeof b!=="object") return;
   if(Array.isArray(b.sectors)) b.sectors=b.sectors.map(function(r){
@@ -1727,8 +1752,27 @@ function normalizeFund(f){
   }) : [];
   return out;
 }
+function isFundSym(sym){
+  var f = factsOf(sym);
+  if(f && f.industry) return !!PEER_SKIP_INDUSTRY[f.industry];
+  // The index tiles carry no facts row at all — the scanner classifies them
+  // as indices, not companies — so the industry test cannot see them.
+  return MAIN_TAPE.some(function(m){ return m.s===sym; })
+      || MACRO_TAPE.some(function(m){ return (m.bk||m.s)===sym; });
+}
 function ensureFund(sym){
   if(Object.prototype.hasOwnProperty.call(FUND_CACHE, sym)) return Promise.resolve(FUND_CACHE[sym]);
+  // The daily sidecar covers companies. Asking for one on an ETF or an index
+  // 404s on every boot (the default symbol is SPY) and then falls through to
+  // exactly this path anyway.
+  if(isFundSym(sym)){
+    return adhocEnsureFacts(sym).then(function(){
+      return adhocEnsureFundamentals(sym).then(function(f){
+        if(f || symbolForTicker(sym)) FUND_CACHE[sym] = f;
+        return f;
+      });
+    });
+  }
   // Same reasoning as ensureBars: a once-a-day sidecar gets normal HTTP caching.
   return fetch(fundUrl(sym))
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
@@ -2026,7 +2070,14 @@ function mainTileHTML(t){
 }
 function macroTileHTML(m){
   var d = MACRO_LIVE[m.tv];
-  if(!d || d.px==null) return ""; // never resolved / errored -> hide entirely
+  if(!d || d.px==null){
+    // Keep the slot and say the quote is missing. Dropping the tile made a
+    // broken feed look like a tape that never carried the reading.
+    return '<div class="tp" data-sym="'+esc(m.bk||m.s)+'" role="button" tabindex="0" data-tip="'
+      + esc(m.s+" — no quote resolved this cycle. The tape keeps the slot so a missing reading is visible.")+'">'
+      +'<span class="s"><span class="t">'+esc(m.s)+' · '+esc(m.n)+'</span></span>'
+      +'<span class="p m">—</span><span class="c m">no quote</span></div>';
+  }
   var px = d.px, chPct = d.changePct, priceStr, changeStr, cls;
   if(m.isYield){
     priceStr = px.toFixed(2)+"%";
@@ -2648,7 +2699,7 @@ function renderBrief(data){
       ["bullish", stt.bullish_flow, "u", breadthTip],
       ["bearish", stt.bearish_flow, "d", breadthTip],
       ["firing", stt.firing, "hi", "Names scoring 80+ or clearly accelerating since the last refresh."],
-      ["score 60+", stt.high_conviction, "a", "Conviction-board names at or above the 60 line — the shortlist the Conviction board below opens on."]
+      ["score 60+", stt.high_conviction, "a", "Conviction-board names at or above the 60 line. The board below opens on these plus any firing name that scores under 60, so its row count can be higher."]
     ].filter(function(t){ return num(t[1])!=null; });
     if(tiles.length){
       html += '<div class="statrow tn">'+tiles.map(function(t){
@@ -2663,11 +2714,23 @@ function renderBrief(data){
   if(brief.gap_note) html += '<p class="q">'+esc(brief.gap_note)+'</p>';
   var readings = (brief.backdrop && Array.isArray(brief.backdrop.readings)) ? brief.backdrop.readings : [];
   if(readings.length){
+    var got = {};
+    readings.forEach(function(r){ got[String(r.label||"")] = true; });
+    var missing = BACKDROP_ALL.filter(function(l){ return !got[l]; });
     html += '<div class="bch">'+readings.map(function(r){
       var rc = r.reading==="hostile"?"h":r.reading==="supportive"?"s":"";
       var tip = r.tip ? (' data-tip="'+esc(r.tip)+'"') : "";
       return '<span class="bc '+rc+'"'+tip+'>'+esc(r.label||"")+' '+esc(r.reading||"")+'</span>';
-    }).join("")+'</div>';
+    }).join("")
+      + missing.map(function(l){
+          return '<span class="bc gone" data-tip="'+esc("This reading did not resolve this cycle, so the backdrop grade was computed without it.")
+            + '">'+esc(l)+' no data</span>';
+        }).join("")
+      + '</div>'
+      + (missing.length
+          ? ('<div class="note tn">Graded on '+readings.length+' of '+BACKDROP_ALL.length+' readings — '
+             + esc(missing.join(", ")) + (missing.length>1?' did not':' did not') + ' resolve this cycle.</div>')
+          : "");
   }
   html += fedOddsHTML(fed);
   if(brief.retreat_watch) html += '<div class="warn"><b>RETREAT WATCH</b>'+esc(brief.retreat_watch)+'</div>';
@@ -2724,7 +2787,7 @@ function fedOddsHTML(f){
       +'<i class="cut" style="width:'+(wc/tot*100).toFixed(1)+'%"></i></div>');
   }
   var leg=['<span><i class="hike" style="background:var(--dn)"></i>hike <em>'+hike.toFixed(0)+'%</em></span>'];
-  if(hold!=null) leg.push('<span><i style="background:var(--edge)"></i>no change <em>'+hold.toFixed(0)+'%</em></span>');
+  if(hold!=null) leg.push('<span><i class="hold" style="background:var(--ink3)"></i>no change <em>'+hold.toFixed(0)+'%</em></span>');
   if(cut!=null) leg.push('<span><i style="background:var(--up)"></i>cut <em>'+cut.toFixed(0)+'%</em></span>');
   h.push('<div class="fedlegend">'+leg.join("")+'</div>');
   // Deltas. Zach asked for the DAILY move specifically, so it leads.
@@ -2754,8 +2817,20 @@ function renderSectorSection(data){
   var brief = data && data.brief;
   var sectors = (brief && Array.isArray(brief.sectors)) ? brief.sectors : [];
   var havens = (brief && Array.isArray(brief.havens)) ? brief.havens : [];
-  if(!brief || (sectors.length===0 && havens.length===0)){ sec.hidden = true; return; }
+  var sstat = document.getElementById("sectorstat");
+  if(sstat){
+    sstat.innerHTML = "flows: 1w own, 1m vendor"
+      + (brief ? ageStampHTML(brief.date || (data && data.session_date), isStaleBrief(data)) : "");
+  }
+  if(!brief){ sec.hidden = true; return; }
   sec.hidden = false;
+  // A quiet cycle and a broken feed used to look identical: the whole section
+  // vanished. Say which one it is.
+  if(sectors.length===0 && havens.length===0){
+    document.getElementById("sector").innerHTML =
+      '<div class="note">No sector readings published this cycle. The brief ran, its rotation table came back empty.</div>';
+    return;
+  }
   var host = document.getElementById("sector");
   // Sorting used to delete Safe havens and the weekly totals: table()'s draw()
   // rewrites the element it owns with innerHTML, and havens was appended to
@@ -2891,8 +2966,13 @@ function boardCutNoteHTML(cut, key){
   if(cut.total===0) return "";
   var btn = '<button id="showall-'+key+'">';
   if(cut.showAll) return '<div class="boardcut">showing all '+cut.total+' names · '+btn+'back to the '+BOARD_SCORE_FLOOR+'+ shortlist</button></div>';
-  return '<div class="boardcut">'+cut.strong+' of '+cut.total+' names score '+BOARD_SCORE_FLOOR+'+'
-    + (cut.lowFiring ? (' (including '+cut.lowFiring+' firing below the line — a firing name is never hidden)') : '')
+  // cut.strong counts score-60+ names AND firing names. Printing that sum as
+  // "score 60+" contradicted the Morning Brief tile, which counts the 60+
+  // names only. Two numbers, said separately.
+  var scored = cut.strong - cut.lowFiring;
+  return '<div class="boardcut">'+scored+' of '+cut.total+' names score '+BOARD_SCORE_FLOOR+'+'
+    + (cut.lowFiring ? (', plus '+cut.lowFiring+' firing below the line (a firing name is never hidden) — '
+                        + cut.strong+' rows shown') : '')
     + ' — the rest of the watchlist sits below the line. '+btn+'show all '+cut.total+'</button></div>';
 }
 function wireBoardCut(el, key, rerender){
@@ -3017,7 +3097,8 @@ function renderSwing(data){
   ], cut.rows, function(c){
     var persist = num(c.persist), persistMax = num(c.persist_max);
     var f5pct = num(c.flow_5d_pct);
-    var f5Str = fmM(c.flow_5d) + (f5pct!=null ? (' <span class="m" style="font-size:9.5px">('+fm1SignedInt(f5pct)+'%)</span>') : '');
+    var f5Str = fmM(c.flow_5d) + (f5pct!=null ? (' <span class="m" style="font-size:9.5px" data-tip="'
+      + esc(TIPS["tip-flow5dpct"])+'">('+fm1SignedInt(f5pct)+'%)</span>') : '');
     var oic = c.oi_confirm;
     var oicCls = oic==="OPENING"?"u":oic==="CLOSING"?"d":"m";
     var oicStr = oic ? (oic + (c.oi_confirm_side ? (" "+c.oi_confirm_side+"S") : "")
@@ -3123,8 +3204,13 @@ function renderETF(data){
   var sessLab = ef && ef.flow_session ? fmtSessionLabel(ef.flow_session) : null;
   document.getElementById("etfstat").innerHTML =
     (sessLab ? ("money moved "+esc(sessLab)+" · one reading per session") : "one reading per session");
-  if(!ef || funds.length===0){ sec.hidden = true; return; }
+  if(!ef){ sec.hidden = true; return; }
   sec.hidden = false;
+  if(funds.length===0){
+    document.getElementById("etf").innerHTML =
+      '<div class="note">No fund flows published this cycle — the vendor returned no readings for these ETFs.</div>';
+    return;
+  }
   var rows = funds.map(function(f){
     var fd = num(f.flow_1d), d1Str, cls;
     if(fd===null){ d1Str = f.split_suppressed ? "split — n/a" : "collecting"; cls = "m"; }
@@ -3134,16 +3220,28 @@ function renderETF(data){
     // sign is unknowable, so the whole streak cell stays a dash (not "3d in").
     var streakStr = (streakN!=null && streakN>=1 && fd!=null) ? (Math.round(streakN)+"d "+(fd<0?"out":"in")) : "—";
     var m1 = num(f.flow_1m);
-    var m1Str = m1===null?"—":fmM(m1);
-    var m1cls = m1===null?"m":(m1>=0?"u":"d");
-    return '<tr><td><span class="sy2">'+esc(f.ticker||"?")+'</span></td>'
-      +'<td class="'+cls+'">'+d1Str+'</td><td class="m">'+esc(streakStr)+'</td>'
-      +'<td class="'+m1cls+'">'+m1Str+'</td></tr>';
-  }).join("");
-  document.getElementById("etf").innerHTML =
-    '<table class="tn"><thead><tr><th>Fund</th><th><span data-tip="'+esc(TIPS["tip-etfflows"])+'">$1d flow</span></th><th>Streak</th><th>1m flow</th></tr></thead>'
-    +'<tbody>'+rows+'</tbody></table>'
-    +'<div class="note">Slower money — funds, advisors, retail — versus the fast options tape above.</div>';
+    return {ticker: f.ticker||"?", d1: fd, d1Str: d1Str, d1cls: cls,
+            // Sort the streak by signed days, so an outflow run and an inflow
+            // run of the same length do not tie.
+            streak: (streakN!=null && fd!=null) ? (fd<0?-streakN:streakN) : null,
+            streakStr: streakStr, m1: m1,
+            m1Str: (m1===null?"—":fmM(m1)), m1cls: (m1===null?"m":(m1>=0?"u":"d"))};
+  });
+  // Through the shared table() helper, like every other board: the headers
+  // carried the sortable styling and did nothing when clicked.
+  table(document.getElementById("etf"), "etf",
+    [{l:"Fund", key:"ticker"},
+     {l:"$1d flow", key:"d1", tip:TIPS["tip-etfflows"]},
+     {l:"Streak", key:"streak", tip:"Consecutive sessions of flow in the same direction. Sorted by run length, inflow runs above outflow runs."},
+     {l:"1m flow", key:"m1"}],
+    rows,
+    function(r){
+      return '<tr><td><span class="sy2">'+esc(r.ticker)+'</span></td>'
+        +'<td class="'+r.d1cls+'">'+r.d1Str+'</td><td class="m">'+esc(r.streakStr)+'</td>'
+        +'<td class="'+r.m1cls+'">'+r.m1Str+'</td></tr>';
+    },
+    "d1",
+    {html:'<div class="note">Slower money — funds, advisors, retail — versus the fast options tape above.</div>'});
 }
 
 /* =================== catalysts =================== */
@@ -3381,7 +3479,11 @@ function renderNewsTicker(data){
   if(!el) return;
   var items = dedupeNews((data && data.news && Array.isArray(data.news.items))
     ? data.news.items.filter(function(n){ return n && n.title; }) : []);
-  if(!items.length){ el.hidden = true; NT_KEY = null; return; }
+  if(!items.length){
+    el.hidden = false; NT_KEY = null;
+    el.innerHTML = '<div class="nt-empty">No tagged headlines this cycle — the hourly scan ran and matched nothing.</div>';
+    return;
+  }
   var key = items.length+"|"+(items[0].ts||"")+"|"+(items[0].title||"");
   if(key === NT_KEY){ el.hidden = false; return; }
   NT_KEY = key;
@@ -3411,8 +3513,13 @@ function renderNews(){
   var items = dedupeNews((newsObj && Array.isArray(newsObj.items)) ? newsObj.items : []);
   var stale = isStaleContext(data);
   document.getElementById("newsstat").innerHTML = "TradingView news · hourly" + ageStampHTML(data.context_updated_at, stale);
-  if(!newsObj || items.length===0){ document.getElementById("s-news").hidden = true; return; }
+  if(!newsObj){ document.getElementById("s-news").hidden = true; return; }
   document.getElementById("s-news").hidden = false;
+  if(items.length===0){
+    document.getElementById("news").innerHTML =
+      '<div class="note">No tagged headlines in this cycle. The scan ran and matched nothing on these names.</div>';
+    return;
+  }
   var list = items;
   if(FOCUS) list = items.filter(function(n){ return (n.tickers||[]).indexOf(FOCUS)!==-1 || !(n.tickers||[]).length; });
   var html = "";
@@ -4806,6 +4913,29 @@ function medianOf(arr){
   if(!v.length) return null;
   return v.length%2 ? v[(v.length-1)/2] : (v[v.length/2-1]+v[v.length/2])/2;
 }
+// Give a chart just enough decimals to keep its own values apart. fmtAxisNum
+// stops at two, which printed MU 0.026 and SKHY 0.034 as the same "0.03"
+// directly under a caption that ranked one above the other.
+var PEER_LAST = {clampAt:null, spread:0};
+function peerFmtFor(vals, fmt){
+  var known = vals.filter(function(v){ return v!=null; });
+  function collides(f){
+    var seen = {};
+    for(var i=0;i<known.length;i++){
+      var k = String(f(known[i]));
+      if(Object.prototype.hasOwnProperty.call(seen,k) && Math.abs(seen[k]-known[i]) > 1e-12) return true;
+      seen[k] = known[i];
+    }
+    return false;
+  }
+  if(!collides(fmt)) return fmt;
+  var pct = /%$/.test(String(fmt(1)));
+  for(var dp=3; dp<=5; dp++){
+    var f = (function(d){ return function(v){ return (+v).toFixed(d)+(pct?"%":""); }; })(dp);
+    if(!collides(f)) return f;
+  }
+  return fmt;
+}
 function peerBarsSVG(entries, focusedSym, fmt, opts, kind){
   opts = opts || {};
   var vals = entries.map(function(e){ return num(e.val); });
@@ -4821,9 +4951,28 @@ function peerBarsSVG(entries, focusedSym, fmt, opts, kind){
   // One runaway value flattened everything else into slivers: CORZ at −217.5%
   // squashed CRWD's 28.1% and MSFT's 20.2% into a 6-pixel band. Clamp the axis
   // and mark the bars that run past it with their true value.
+  // The trigger was max/median > 8, which does not fire when two of four
+  // values are extreme — the median moves with them. CRWD's EV/EBITDA had a
+  // 25:1 bar-height ratio and no clamp, because median(1066,162,1008,42) = 585.
+  // Test the SPREAD as well: the smallest non-zero value against the largest.
+  var absVals = known.map(Math.abs).filter(function(v){ return v>0; }).sort(function(a,b){ return a-b; });
   var scaleMed = medianOf(known.map(Math.abs)) || 0;
-  var maxAbs = Math.max.apply(null, known.map(Math.abs));
-  var clampAt = (scaleMed>0 && maxAbs/scaleMed > 8) ? scaleMed*6 : null;
+  var maxAbs = absVals.length ? absVals[absVals.length-1] : 0;
+  var minAbs = absVals.length ? absVals[0] : 0;
+  var wideSpread = (minAbs>0 && maxAbs/minAbs > 20);
+  var clampAt = null;
+  if(scaleMed>0 && maxAbs/scaleMed > 8) clampAt = scaleMed*6;
+  else if(wideSpread){
+    // Clamp to the second largest, so the tall bars stay comparable with each
+    // other while the short ones stop being 2-pixel slivers.
+    var second = absVals[absVals.length-2];
+    if(second>0 && maxAbs/second > 2) clampAt = second*1.6;
+    else clampAt = medianOf(absVals)*8;
+  }
+  if(clampAt!=null && !(clampAt>0)) clampAt = null;
+  // A clamp above the tallest bar clips nothing. Reporting it as a clamp
+  // suppressed the caption that explains a genuinely 25:1 spread.
+  if(clampAt!=null && clampAt >= maxAbs) clampAt = null;
   var mn = Math.min(0, Math.min.apply(null, known)), mx = Math.max(0, Math.max.apply(null, known));
   if(clampAt!=null){ mn = Math.max(mn, -clampAt); mx = Math.min(mx, clampAt); }
   if(mn===mx){ mx = mn + 1; }
@@ -4873,21 +5022,41 @@ function peerBarsSVG(entries, focusedSym, fmt, opts, kind){
         out += '<path d="M'+(cx-bw/2).toFixed(1)+' '+by.toFixed(1)+' l'+(bw/4).toFixed(1)+' -3 l'+(bw/4).toFixed(1)
           + ' 6 l'+(bw/4).toFixed(1)+' -6 l'+(bw/4).toFixed(1)+' 3" fill="none" stroke="var(--srf)" stroke-width="2"/>';
       }
-      out += '<text x="'+cx.toFixed(1)+'" y="'+(v>=0?Math.max(11,top-4):top+hgt+11).toFixed(1)
+      var vy = (v>=0?Math.max(11,top-4):top+hgt+11);
+      // Nudge off the dashed median line rather than printing "8:32" where
+      // the line crosses "8.32".
+      if(med!=null){
+        var my2 = Y(med);
+        if(Math.abs(my2-(vy-3.5)) < 7) vy = (v>=0) ? Math.max(11, my2-9) : (my2+13);
+      }
+      out += '<text x="'+cx.toFixed(1)+'" y="'+vy.toFixed(1)
         + '" font-size="10" font-weight="'+(isFoc?"700":"400")+'" text-anchor="middle" fill="var(--ink2)">'+esc(fmt(v))+'</text>';
     } else {
       // A dash used to mean "the vendor reports nothing", which was wrong for
       // the cases that matter: CRWD's P/E is missing because CRWD is
       // loss-making, and the page already knows that on the Overview tab.
       out += '<text x="'+cx.toFixed(1)+'" y="'+(Y(0)-5).toFixed(1)+'" font-size="10" text-anchor="middle" fill="var(--ink3)">—</text>';
-      if(e.reason) out += '<text x="'+cx.toFixed(1)+'" y="'+(Y(0)+7).toFixed(1)
-        + '" font-size="8.5" text-anchor="middle" fill="var(--ink3)">'+esc(e.reason)+'</text>';
+      if(e.reason){
+        // The reason had no width handling, so on a chart with several dashes
+        // they overprinted each other ("growth n/atrailing earning") and ran
+        // off the right edge. Fit it to the slot, then clamp it inside.
+        var rTxt = String(e.reason), rFs = 8.5;
+        var maxChars = Math.max(4, Math.floor((slot-3) / (rFs*0.52)));
+        if(rTxt.length > maxChars) rTxt = rTxt.slice(0, Math.max(3, maxChars-1)) + "\u2026";
+        var rHalf = rTxt.length*rFs*0.26;
+        var rx = Math.min(W-2-rHalf, Math.max(padL+rHalf, cx));
+        out += '<text x="'+rx.toFixed(1)+'" y="'+(Y(0)+7).toFixed(1)
+          + '" font-size="'+rFs+'" text-anchor="middle" fill="var(--ink3)"><title>'+esc(e.reason)+'</title>'+esc(rTxt)+'</text>';
+      }
     }
     out += '<text x="'+cx.toFixed(1)+'" y="'+(H-10)+'" font-size="10.5" font-weight="'+(isFoc?"700":"600")
       + '" text-anchor="middle" fill="'+col+'">'+esc(e.sym)+'</text>';
     if(isFoc) out += '<line x1="'+(cx-bw/2-2).toFixed(1)+'" x2="'+(cx+bw/2+2).toFixed(1)+'" y1="'+(H-22)+'" y2="'+(H-22)
       + '" stroke="'+col+'" stroke-width="1.5"/>';
   });
+  // What the caller needs to caption honestly: whether the axis was clamped,
+  // and how far the drawn bars really span.
+  PEER_LAST = {clampAt: clampAt, spread: (minAbs>0 ? maxAbs/minAbs : 0)};
   return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img">'+out+'</svg>';
 }
 function renderGrowth(sym, fund){
@@ -5025,6 +5194,15 @@ var PEER_GROUPS = {
   CRWD: [["PANW","NASDAQ:PANW"],["ZS","NASDAQ:ZS"],["FTNT","NASDAQ:FTNT"],["S","NYSE:S"]],
   V:    [["MA","NYSE:MA"],["AXP","NYSE:AXP"],["PYPL","NASDAQ:PYPL"],["FISV","NASDAQ:FISV"]],
   TSEM: [["UMC","NYSE:UMC"],["GFS","NASDAQ:GFS"],["ASX","NYSE:ASX"],["ON","NASDAQ:ON"]],
+};
+// What each curated set IS, in words. "Curated set" alone told the reader
+// nothing about why these four names and not four others.
+var PEER_GROUP_LABEL = {
+  MU:   "the memory complex",
+  COHR: "optical components",
+  CRWD: "cybersecurity platforms",
+  V:    "payments networks",
+  TSEM: "foundries and specialty analog"
 };
 /* One company, one bar. TradingView lists a foreign issuer's ordinary line and
    its ADR as separate tickers with the same fundamentals, so an auto set could
@@ -5920,7 +6098,14 @@ function heatTextColor(bg){
   var L = 0.2126*_srgbL(+m[1]) + 0.7152*_srgbL(+m[2]) + 0.0722*_srgbL(+m[3]);
   var darkC = (L+0.05)/(_srgbL(28)*0.2126 + _srgbL(37)*0.7152 + _srgbL(48)*0.0722 + 0.05);
   var lightC = (_srgbL(242)*0.2126 + _srgbL(245)*0.7152 + _srgbL(248)*0.0722 + 0.05)/(L+0.05);
-  return darkC >= lightC ? "#1C2530" : "#F2F5F8";
+  if(Math.max(darkC, lightC) >= 4.5) return darkC >= lightC ? "#1C2530" : "#F2F5F8";
+  // The softened inks failed AA (3.8:1) through the middle of the scale, where
+  // a tile is neither red nor green. Go to full strength there, and pick the
+  // side on the PURE contrasts — on a mid-red tile the softened white wins the
+  // first comparison while pure black is the readable choice. Worst case on
+  // that band is 4.58:1.
+  var blackC = (L+0.05)/0.05, whiteC = 1.05/(L+0.05);
+  return blackC >= whiteC ? "#000000" : "#FFFFFF";
 }
 // Finviz shows two decimals on a day move; one decimal collapsed a third of a
 // 1D map onto the same printed number, and a flat name printed "−0.0%".
@@ -5940,7 +6125,8 @@ function renderHeatBar(){
     return '<button data-htf="'+t[0]+'" aria-pressed="'+(HEAT.tf===t[0])+'">'+t[1]+'</button>';
   }).join("");
   var wide = HEAT_WIDE_WANTED;
-  el.innerHTML = '<div class="seg" role="group">'+univBtns+'</div><div class="seg" role="group">'+tfBtns+'</div>'
+  el.innerHTML = '<div class="seg" role="group" aria-label="Heatmap universe">'+univBtns+'</div>'
+    + '<div class="seg" role="group" aria-label="Heatmap period">'+tfBtns+'</div>'
     + '<button class="fbtn" id="heatwide" aria-pressed="'+wide+'" data-tiphold="0" data-tip="Hide both side rails and give the map the full window, the way Finviz does. The watchlist and the brief come straight back.">'
     + (wide ? "\u21f2 shrink" : "\u21f1 expand")+'</button>'
     + (HEAT.isolate ? '<button class="fbtn" id="heatall" aria-pressed="true">'+esc(HEAT.isolate)+' only — show all sectors</button>' : '');
@@ -6061,7 +6247,14 @@ function heatRender(refetch){
               : (r.byVol ? ("~"+fmtCapDollars(r.cap)+" traded per day (a fund: no market cap, sized by dollar volume)")
                          : fmtCapDollars(r.cap)))
           + " · "+tf+" "+heatPct(v, tf)+(tf!=="1D" && r.chg["1D"]!=null?(" · 1D "+heatPct(r.chg["1D"],"1D")):"");
-        html += '<div class="hm-tile" data-sym="'+esc(r.sym)+'" data-htv="'+esc(r.tv)+'" data-hname="'+esc(r.name||"")+'" role="button" tabindex="0" data-tip="'+esc(tip)+'"'
+        // A tile too small to carry its own ticker is too small to be a
+        // keyboard stop: 387 of 502 announced "button" and nothing else, and
+        // 409 were under the 24px pointer-target minimum. They stay clickable
+        // and keep their tooltip; they leave the tab order and the a11y tree.
+        var reachable = showSym && t.wd>=24 && t.ht>=24;
+        html += '<div class="hm-tile" data-sym="'+esc(r.sym)+'" data-htv="'+esc(r.tv)+'" data-hname="'+esc(r.name||"")+'"'
+          + (reachable ? (' role="button" tabindex="0" aria-label="'+esc(tip)+'"') : '')
+          + ' data-tip="'+esc(tip)+'"'
           + ' style="left:'+t.x.toFixed(1)+'px;top:'+t.y.toFixed(1)+'px;width:'+t.wd.toFixed(1)+'px;height:'+t.ht.toFixed(1)+'px;background:'+bg+';color:'+fg+'">'
           + (showSym ? ('<b style="font-size:'+fs+'px">'+esc(r.sym)+'</b>') : "")
           + (showPct && v!=null ? ('<span style="font-size:'+Math.max(7,fs-3)+'px">'+heatPct(v, tf)+'</span>') : "")
@@ -6278,7 +6471,8 @@ function stageBar(){
   // the visible bars — the button read EMA200 while the caption read EMA53.
   var taBtns = [["trend","trend",TIPS.ta_trend],["sr","S/R",TIPS.ta_sr],["rsi","RSI",TIPS.ta_rsi],["ema","EMA",TIPS.ta_ema]]
     .map(function(t){ return '<button data-ta="'+t[0]+'" aria-pressed="'+!!prefs[t[0]]+'" data-tip="'+esc(t[2])+'">'+t[1]+'</button>'; }).join("");
-  el.innerHTML = '<div class="seg" role="group">'+ivBtns+'</div><div class="seg" role="group">'+tfBtns+'</div>'
+  el.innerHTML = '<div class="seg" role="group" aria-label="Chart interval">'+ivBtns+'</div>'
+    + '<div class="seg" role="group" aria-label="Chart range">'+tfBtns+'</div>'
     + '<div class="seg" role="group" aria-label="Overlays">'+taBtns+'</div>'+chips;
   $$(".seg button", el).forEach(function(b){
     b.addEventListener("click", function(){
@@ -6385,6 +6579,26 @@ function metricValue(sym, key){
 /* Why a cell is empty, in the words the Overview tab already uses. "The vendor
    reports nothing" was flatly wrong for CRWD's P/E and PEG: CrowdStrike has
    negative trailing earnings, so neither figure can exist. */
+// One sentence naming which rows on this tab came from the morning snapshot
+// and which were pulled live, because a single bar chart can hold both.
+function vintageNote(syms){
+  var snap = [], live = [];
+  syms.forEach(function(t){ (factsVintage(t).live ? live : snap).push(t); });
+  if(!snap.length || !live.length) return "";
+  var at = STATE.data && STATE.data.context_updated_at;
+  return 'Two vintages on one chart: '+esc(snap.join(", "))+(snap.length>1?' come':' comes')+' from the desk snapshot'
+    + (at?(' taken '+esc(ctTimeShort(at))+' CT'):'')+', while '+esc(live.join(", "))
+    + (live.length>1?' were':' was')+' pulled from the scanner when this tab opened. ';
+}
+function factsVintage(sym){
+  var snap = STATE.data && STATE.data.facts && STATE.data.facts[sym];
+  if(snap){
+    var at = STATE.data.context_updated_at;
+    return {live:false, word:"from the desk snapshot"+(at?(", "+ctTimeShort(at)+" CT"):"")};
+  }
+  if(ADHOC_FACTS[sym]) return {live:true, word:"pulled from the scanner when this tab opened"};
+  return {live:false, word:"of unknown vintage"};
+}
 function metricReason(sym, key){
   var f = factsOf(sym);
   if(!f) return "no data";
@@ -6395,6 +6609,15 @@ function metricReason(sym, key){
     if(key==="peg") return "no trailing earnings";
   }
   if((key==="ev_ebitda"||key==="ps"||key==="pb") && num(f[key])!=null && num(f[key])<=0) return "negative";
+  // A missing EV/EBITDA on a company running negative operating margins is a
+  // loss, not a vendor gap — and the Overview tab already says so.
+  if(key==="ev_ebitda"){
+    var om = metricValue(sym, "op_margin"), fcf = metricValue(sym, "fcf_margin");
+    if(om!=null && om < 0) return "no positive EBITDA";
+    if(om==null && eps!=null && eps<=0) return "loss-making";
+    if(om==null && fcf!=null && fcf<0) return "cash-burning";
+  }
+  if((key==="ps"||key==="pb") && num(f[key])==null && num(f.cap)==null) return "no market cap published";
   return "vendor n/a";
 }
 /* Where this name stands against the peers actually on screen. Returns null
@@ -6429,8 +6652,9 @@ function renderPeersInto(body, sym, res, seq){
          ? esc(sym)+' is a fund or wrapper — margins and multiples describe companies, not baskets.'
          : res.source==="thin"
            ? 'No peer set for '+esc(sym)+'. Its industry is "'+esc((f0&&f0.industry)||"unclassified")
-             + '", and the scanner returned no other US-listed company in that industry within 5× of its size. '
-             + 'A comparison against names five times bigger or smaller is worse than none.'
+             + '", and the scanner returned no other US-listed company in that industry — inside the 5× size band or outside it. '
+             + 'The desk prefers peers within 5× of a company\u2019s size and falls back to bigger or smaller names when nothing '
+             + 'closer is listed, marking them in the key. Here there was nothing to fall back to.'
            : res.source==="unresolved"
              ? 'No US listing resolved for '+esc(sym)+', so there are no fundamentals to compare. Search the company by name '
                + 'in the box on the left and chart it from there.'
@@ -6440,17 +6664,24 @@ function renderPeersInto(body, sym, res, seq){
   }
   var entries = [sym].concat(peers).map(function(t, i){ return {sym:t, color:seriesColor(i)}; });
   var srcLine = res.source==="curated"
-    ? "curated set (memory complex / documented comparisons)"
+    ? ("curated set — " + esc(PEER_GROUP_LABEL[sym] || "documented comparisons"))
     : 'US-listed names in TradingView’s "'+esc((factsOf(sym)||{}).industry||"")+'" industry, closest in market cap'
       + (res.source==="industry-scan" ? ", via the live scanner" : ", from the desk universe")
       + ((res.outOfBand && res.outOfBand.length)
           ? ('. '+esc(res.outOfBand.join(", "))+(res.outOfBand.length>1?' sit':' sits')
-             + ' more than 5× from '+esc(sym)+' in size — nothing closer is listed in that industry')
+             + ' more than 5× from '+esc(sym)+' in size — marked ✳ in the key, and used because nothing closer is '
+             + 'listed in that industry. A size-mismatched peer still sets a floor and a ceiling; read the gap, not the rank')
           : '');
+  var oob = {};
+  (res.outOfBand||[]).forEach(function(t){ oob[t] = true; });
   var key = '<div class="peerkey">'+entries.map(function(e){
       var c = factsOf(e.sym) && num(factsOf(e.sym).cap);
-      return '<span data-tip="'+esc(nameFor(e.sym)+(c!=null?(" · market cap "+fmtCompact(c)):""))+'">'
-        + '<i style="background:'+e.color+'"></i>'+esc(e.sym)+(e.sym===sym?" (focused)":"")+'</span>';
+      var vint = factsVintage(e.sym);
+      return '<span data-tip="'+esc(nameFor(e.sym)+(c!=null?(" · market cap "+fmtCompact(c)):"")
+          + (oob[e.sym]?" · more than 5× from "+sym+" in size":"")
+          + " · figures " + vint.word)+'">'
+        + '<i style="background:'+e.color+'"></i>'+esc(e.sym)+(e.sym===sym?" (focused)":"")
+        + (oob[e.sym]?'<b class="oob"> ✳</b>':"")+'</span>';
     }).join("")+'</div>';
   var html = '<div class="dsec"><h3>'+esc(sym)+' vs peers — trailing twelve months</h3>'+key+'<div class="gwrap">';
   var drew = 0, clipped = false;
@@ -6472,21 +6703,35 @@ function renderPeersInto(body, sym, res, seq){
       drew++;
       return;
     }
-    var svg = peerBarsSVG(rows, sym, fmt, null, (fmt===fmtAxisPct ? "pct" : "num"));
+    var fmtC = peerFmtFor(rows.map(function(r){ return r.val; }), fmt);
+    var svg = peerBarsSVG(rows, sym, fmtC, null, (fmt===fmtAxisPct ? "pct" : "num"));
     if(!svg) return;
     var known = rows.map(function(r){ return r.val; }).filter(function(v){ return v!=null; });
     var sm = medianOf(known.map(Math.abs)) || 0, mxa = Math.max.apply(null, known.map(Math.abs));
     if(sm>0 && mxa/sm > 8) clipped = true;
+    // CRWD's EV/EBITDA runs 1,024 against 41.8 with nothing in between to
+    // clamp against, so the low bar is honestly a sliver. Say the ratio out
+    // loud rather than letting a 4-pixel bar read as a rendering fault.
+    var spreadNote = (PEER_LAST.clampAt==null && PEER_LAST.spread>=20)
+      ? (' · these bars span a '+Math.round(PEER_LAST.spread)+':1 range — the short ones are short because the numbers are')
+      : '';
     var st = peerStat(sym, mk);
     var dir = METRIC_DIR[mk] || 1;
-    var peerMed = medianOf(rows.filter(function(r){ return r.sym!==sym && r.val!=null; }).map(function(r){ return r.val; }));
+    var peerVals2 = rows.filter(function(r){ return r.sym!==sym && r.val!=null; });
+    // The renderer refuses to DRAW a median from one point; the caption used
+    // to print that one point's value as "peer median" anyway.
+    var peerMed = peerVals2.length>=2 ? medianOf(peerVals2.map(function(r){ return r.val; })) : null;
+    var lonePeer = peerVals2.length===1 ? peerVals2[0] : null;
     var cap = st
       ? ('<b class="'+(st.better?"u":"d")+'">'+esc(sym)+' ranks '+st.rank+' of '+st.n+'</b> · '
-         + (dir>0?"higher is better":"lower is better") + ' · peer median '+esc(fmt(st.median)))
+         + (dir>0?"higher is better":"lower is better") + ' · peer median '+esc(fmtC(st.median)))
       : ('<span class="m">'+(dir>0?"higher is better":"lower is better")
          + (mine.val==null ? (' · '+esc(sym)+': '+esc(mine.reason||"no figure")) : ' · too few peers reported to rank')
-         + (peerMed!=null ? (' · peer median '+esc(fmt(peerMed))) : '')+'</span>');
-    html += '<div class="gchart"><h4>'+esc(METRIC_LABEL[mk]||mk)+'</h4>'+svg+'<div class="gcap">'+cap+'</div></div>';
+         + (peerMed!=null ? (' · peer median '+esc(fmtC(peerMed)))
+            : lonePeer ? (' · only '+esc(lonePeer.sym)+' reported ('+esc(fmtC(lonePeer.val))+') — no median from one name') : '')
+         + '</span>');
+    html += '<div class="gchart"><h4>'+esc(METRIC_LABEL[mk]||mk)+'</h4>'+svg
+      + '<div class="gcap">'+cap+(spreadNote?('<span class="m">'+esc(spreadNote)+'</span>'):'')+'</div></div>';
     drew++;
   });
   html += '</div><div class="note">Peers: '+srcLine+'. One company per bar — a foreign issuer’s ordinary line and its ADR '
@@ -6496,6 +6741,8 @@ function renderPeersInto(body, sym, res, seq){
     + 'PEERS, with '+esc(sym)+' left out of it. A dash carries its own reason underneath — "loss-making" is the page’s own reading, '
     + 'not a vendor gap. PEG falls back to P/E divided by TTM EPS growth when the vendor omits it, and stays blank when growth or '
     + 'earnings are negative. '
+    + vintageNote(entries.map(function(e){ return e.sym; }))
+    + ((res.outOfBand && res.outOfBand.length) ? ('\u2733 marks a peer more than 5× from '+esc(sym)+' in size. ') : '')
     + (clipped ? 'Where one name runs far off the scale, its bar is clipped with a break mark and its true value stays printed above it. ' : '')
     + 'Display only — none of this scores anything.</div></div>';
   if(!drew) html = '<div class="dsec note">No comparable trailing-twelve-month figures for this set.</div>';
@@ -7041,14 +7288,28 @@ document.getElementById("theme").addEventListener("click", function(){
   var r = document.documentElement, cur = r.dataset.theme;
   var next = cur==="light" ? "dark" : cur==="dark" ? "light" : (matchMedia("(prefers-color-scheme: light)").matches?"dark":"light");
   r.dataset.theme = next;
-  document.getElementById("theme").setAttribute("aria-pressed", next==="light");
+  var tbtn = document.getElementById("theme");
+  tbtn.setAttribute("aria-pressed", next==="light");
+  tbtn.setAttribute("aria-label", next==="light" ? "Theme: light. Switch to dark." : "Theme: dark. Switch to light.");
   store("desk.theme", next);
   stageTheme();
   _heatRGB = {};
   if(STAGE.sym) stageRender();
+  // The tab's SVGs bake the palette in at render time, so a theme flip left
+  // the whole vs Peers tab in the old palette on the new surface.
+  if(STAGE.sym) renderStageTab();
   if(STAGE.view==="heat") heatRender();
 });
-(function(){ var t=read("desk.theme"); if(t){ document.documentElement.dataset.theme=t; document.getElementById("theme").setAttribute("aria-pressed", t==="light"); } })();
+(function(){
+  var t=read("desk.theme");
+  if(t) document.documentElement.dataset.theme=t;
+  // With no stored choice the page follows the operating system, so read the
+  // EFFECTIVE theme rather than skipping the sync.
+  var light = t ? (t==="light") : matchMedia("(prefers-color-scheme: light)").matches;
+  var btn = document.getElementById("theme");
+  btn.setAttribute("aria-pressed", light);
+  btn.setAttribute("aria-label", light ? "Theme: light. Switch to dark." : "Theme: dark. Switch to light.");
+})();
 
 setInterval(function(){ if(!document.hidden) updatePricesTimestamp(); }, 1000);
 setInterval(function(){ if(STATE.data && !document.hidden) renderCats(); }, 30000);
