@@ -1396,7 +1396,11 @@ function normalizeFund(f){
     if(!labels || !labels.length) return null;
     return { labels: labels,
       revenue: Array.isArray(d.revenue) ? d.revenue : [],
-      eps: Array.isArray(d.eps) ? d.eps : [] };
+      eps: Array.isArray(d.eps) ? d.eps : [],
+      // net income + free cash flow (sidecar shape v2, 2026-08-19) — absent
+      // on pre-upgrade sidecars, and absence must read as "no data", never 0.
+      ni: Array.isArray(d.ni) ? d.ni : [],
+      fcf: Array.isArray(d.fcf) ? d.fcf : [] };
   }
   var g = (f.growth && typeof f.growth==="object") ? f.growth : f;
   var q = series(g.quarterly), a = series(g.annual);
@@ -3656,22 +3660,138 @@ function miniBarSVG(labels, values, opts){
   var baseLine = hasNeg ? ('<line x1="0" x2="'+W+'" y1="'+baseline+'" y2="'+baseline+'" stroke="var(--edge)" stroke-width="1"/>') : "";
   return '<svg viewBox="0 0 '+W+' '+H+'">'+baseLine+bars+'</svg>';
 }
+/* Multi-series mini line chart — the financials-tab workhorse (2026-08-19).
+   Series colors are page tokens validated as a trio (acc/up/hi) with the
+   dataviz six-checks; the CVD floor pair is covered by the direct last-value
+   labels and the legend the caller renders. Values hover via <title>. */
+function miniLineSVG(labels, seriesDefs, opts){
+  opts = opts||{};
+  var W=280, H=96, padT=10, padB=14, padR=44;
+  var defs = seriesDefs.map(function(sd){
+    return {name:sd.name, color:sd.color, vals:(sd.values||[]).map(num)};
+  }).filter(function(sd){ return sd.vals.some(function(v){ return v!=null; }); });
+  if(!defs.length) return "";
+  var n = Math.max.apply(null, defs.map(function(sd){ return sd.vals.length; }));
+  if(n<2) return "";
+  var all = [];
+  defs.forEach(function(sd){ sd.vals.forEach(function(v){ if(v!=null) all.push(v); }); });
+  var mn = Math.min.apply(null, all), mx = Math.max.apply(null, all);
+  if(opts.zeroFloor && mn>0) mn = 0;
+  if(mn===mx){ mn-=1; mx+=1; }
+  var pad=(mx-mn)*0.08; mn-=pad; mx+=pad;
+  var X=function(i){ return n<2?0:(i*(W-padR)/(n-1)); };
+  var Y=function(v){ return padT + (1-(v-mn)/(mx-mn))*(H-padT-padB); };
+  var out = "";
+  if(mn<0 && mx>0) out += '<line x1="0" x2="'+(W-padR)+'" y1="'+Y(0).toFixed(1)+'" y2="'+Y(0).toFixed(1)+'" stroke="var(--edge)" stroke-width="1"/>';
+  defs.forEach(function(sd){
+    var pts=[], dots="";
+    for(var i=0;i<sd.vals.length;i++){
+      var v=sd.vals[i]; if(v==null) continue;
+      var x=X(i), y=Y(v);
+      pts.push(x.toFixed(1)+","+y.toFixed(1));
+      dots += '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="2.4" fill="'+sd.color+'"><title>'
+        + esc((labels[i]||"")+" · "+sd.name+": "+(opts.pct?(v.toFixed(1)+"%"):fmtCompact(v)))+'</title></circle>';
+    }
+    if(pts.length<2) return;
+    out += '<polyline points="'+pts.join(" ")+'" fill="none" stroke="'+sd.color+'" stroke-width="1.6"/>'+dots;
+    var lastV=null; for(var k=sd.vals.length-1;k>=0;k--){ if(sd.vals[k]!=null){ lastV=sd.vals[k]; break; } }
+    if(lastV!=null) out += '<text x="'+(W-padR+4)+'" y="'+(Y(lastV)+3).toFixed(1)+'" font-size="8.5" font-weight="700" fill="'+sd.color+'">'
+      + esc(opts.pct? lastV.toFixed(1)+"%" : fmtCompact(lastV))+'</text>';
+  });
+  // sparse x labels: first + last
+  out += '<text x="0" y="'+(H-3)+'" font-size="8" fill="var(--ink3)">'+esc(labels[0]||"")+'</text>'
+    + '<text x="'+(W-padR)+'" y="'+(H-3)+'" font-size="8" text-anchor="end" fill="var(--ink3)">'+esc(labels[n-1]||"")+'</text>';
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+out+'</svg>';
+}
+function lineLegendHTML(seriesDefs){
+  return '<div class="leg" style="margin-top:2px">'+seriesDefs.map(function(sd){
+    return '<span><i style="border-top:2px solid '+sd.color+'"></i>'+esc(sd.name)+'</span>';
+  }).join("")+'</div>';
+}
+/* Peer-compare bars: one metric, one bar per ticker, the focused name in the
+   accent color and peers in muted ink — identity by label + emphasis, so no
+   categorical palette is needed at all. */
+function barsCompareSVG(entries, focusedSym, fmt){
+  var vals = entries.map(function(e){ return num(e.val); });
+  if(!vals.some(function(v){ return v!=null; })) return "";
+  var W=280, H=96, padT=14, padB=13;
+  var mx = Math.max.apply(null, vals.map(function(v){ return v==null?0:Math.abs(v); })) || 1;
+  var n = entries.length, slot=W/n, bw=Math.max(6, Math.min(34, slot*0.56));
+  var hasNeg = vals.some(function(v){ return v!=null && v<0; });
+  var base = hasNeg ? padT+(H-padT-padB)/2 : H-padB;
+  var scale = hasNeg ? ((H-padT-padB)/2)/mx : (H-padT-padB)/mx;
+  var out = hasNeg ? ('<line x1="0" x2="'+W+'" y1="'+base+'" y2="'+base+'" stroke="var(--edge)" stroke-width="1"/>') : "";
+  entries.forEach(function(e, i){
+    var v = vals[i];
+    var x = i*slot+(slot-bw)/2, cx = i*slot+slot/2;
+    var isFoc = e.sym===focusedSym;
+    var col = isFoc ? "var(--acc)" : "var(--spark-n)";
+    if(v!=null){
+      var hgt = Math.abs(v)*scale, y = v>=0 ? base-hgt : base;
+      out += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(1,hgt).toFixed(1)+'" rx="2" fill="'+col+'"'+(isFoc?'':' opacity=".75"')+'>'
+        + '<title>'+esc(e.sym+": "+fmt(v))+'</title></rect>'
+        + '<text x="'+cx.toFixed(1)+'" y="'+(v>=0? Math.max(9,y-3) : y+hgt+9).toFixed(1)+'" font-size="8" text-anchor="middle" fill="var(--ink2)">'+esc(fmt(v))+'</text>';
+    } else {
+      out += '<text x="'+cx.toFixed(1)+'" y="'+(base-4)+'" font-size="8.5" text-anchor="middle" fill="var(--ink3)">—</text>';
+    }
+    out += '<text x="'+cx.toFixed(1)+'" y="'+(H-2)+'" font-size="8.5" font-weight="'+(isFoc?'700':'400')+'" text-anchor="middle" fill="'+(isFoc?'var(--acc)':'var(--ink3)')+'">'+esc(e.sym)+'</text>';
+  });
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+out+'</svg>';
+}
 function renderGrowth(sym, fund){
   var g = fund && fund.growth;
   if(!g) return '<div id="growthbox"></div>';
   var out = "";
-  [["quarterly","Quarterly",4],["annual","Annual",1]].forEach(function(t){
-    var d = g[t[0]];
-    if(!d || !Array.isArray(d.labels) || !d.labels.length) return;
-    var hasRev = Array.isArray(d.revenue) && d.revenue.length;
-    var hasEps = Array.isArray(d.eps) && d.eps.length;
-    if(!hasRev && !hasEps) return;
-    out += '<div class="gwrap"><div class="glabel">'+t[1]+'</div>';
-    if(hasRev) out += '<div class="gchart"><h4>Revenue</h4>'+miniBarSVG(d.labels, d.revenue, {back:t[2]})+'</div>';
-    if(hasEps) out += '<div class="gchart"><h4>EPS</h4>'+miniBarSVG(d.labels, d.eps, {back:t[2], negRed:true})+'</div>';
-    out += '</div>';
-  });
-  return out ? ('<div class="dsec" id="growthbox"><h3>Growth</h3>'+out+'</div>') : '<div id="growthbox"></div>';
+  var q = g.quarterly;
+  if(q && Array.isArray(q.labels) && q.labels.length){
+    var accC = cssVar("--acc"), upC = cssVar("--up"), hiC = cssVar("--hi");
+    var money = [
+      {name:"Revenue", color:accC, values:q.revenue},
+      {name:"Net income", color:upC, values:q.ni||[]},
+      {name:"Free cash flow", color:hiC, values:q.fcf||[]}
+    ].filter(function(sd){ return (sd.values||[]).some(function(v){ return num(v)!=null; }); });
+    var moneySvg = miniLineSVG(q.labels, money, {zeroFloor:false});
+    if(moneySvg){
+      out += '<div class="gwrap"><div class="glabel">Quarterly — dollars</div>'
+        + '<div class="gchart" style="flex:1 1 100%;max-width:560px"><h4>Revenue · net income · free cash flow</h4>'
+        + moneySvg + lineLegendHTML(money) + '</div></div>';
+    }
+    // margins derived per quarter, only where BOTH legs reported (None stays None)
+    function marginSeries(numArr){
+      if(!Array.isArray(numArr) || !numArr.length) return [];
+      return q.labels.map(function(_, i){
+        var a=num(numArr[i]), r=num(q.revenue[i]);
+        return (a!=null && r!=null && r!==0) ? (a/r*100) : null;
+      });
+    }
+    var margins = [
+      {name:"Net margin", color:upC, values:marginSeries(q.ni||[])},
+      {name:"FCF margin", color:hiC, values:marginSeries(q.fcf||[])}
+    ].filter(function(sd){ return sd.values.some(function(v){ return v!=null; }); });
+    var yoy = q.labels.map(function(_, i){ return yoyPct(q.revenue.map(num), i, 4); });
+    var row2 = "";
+    var mSvg = margins.length ? miniLineSVG(q.labels, margins, {pct:true}) : "";
+    if(mSvg) row2 += '<div class="gchart"><h4>Margins %</h4>'+mSvg+lineLegendHTML(margins)+'</div>';
+    if(yoy.some(function(v){ return v!=null; })) row2 += '<div class="gchart"><h4>Revenue growth YoY %</h4>'+miniBarSVG(q.labels, yoy, {back:1, negRed:true})+'</div>';
+    if(Array.isArray(q.eps) && q.eps.length) row2 += '<div class="gchart"><h4>EPS (diluted)</h4>'+miniBarSVG(q.labels, q.eps, {back:4, negRed:true})+'</div>';
+    if(row2) out += '<div class="gwrap">'+row2+'</div>';
+  }
+  var a = g.annual;
+  if(a && Array.isArray(a.labels) && a.labels.length){
+    var arow = "";
+    [["revenue","Revenue"],["ni","Net income"],["fcf","Free cash flow"],["eps","EPS"]].forEach(function(t){
+      var vals = a[t[0]];
+      if(Array.isArray(vals) && vals.some(function(v){ return num(v)!=null; })){
+        arow += '<div class="gchart"><h4>'+t[1]+' — annual</h4>'+miniBarSVG(a.labels, vals, {back:1, negRed:true})+'</div>';
+      }
+    });
+    if(arow) out += '<div class="gwrap"><div class="glabel">Annual (summed from quarters)</div>'+arow+'</div>';
+  }
+  if(!out) return '<div id="growthbox"></div>';
+  out += '<div class="note">Reported figures from the daily fundamentals sidecar (stockanalysis.com income + cash-flow statements). '
+    + 'Margins are derived per quarter only where both legs were reported; annual rows sum complete 4-quarter fiscal years. '
+    + 'A missing quarter stays blank — never a zero.</div>';
+  return '<div class="dsec" id="growthbox"><h3>Financials</h3>'+out+'</div>';
 }
 
 function drawerPositionBlock(sym){
@@ -4024,8 +4144,177 @@ function stageLegend(){
     + '<span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span>'
     + '<span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span>';
 }
+/* =================== vs Peers: curated groups + auto industry =================== */
+// Curated sets first — TV's industry taxonomy lumps memory makers in with
+// GPU designers, and MU's honest peer set is the memory complex (the same
+// concept the Action List's MEMORY_COMPLEX tracks), so the curated map wins
+// when it has an entry. Everything else: same TradingView `industry`, largest
+// by market cap, from facts locally then the live scanner.
+var PEER_GROUPS = {
+  MU:   [["SKHY","NASDAQ:SKHY"],["SNDK","NASDAQ:SNDK"],["WDC","NASDAQ:WDC"],["STX","NASDAQ:STX"]],
+  COHR: [["LITE","NASDAQ:LITE"],["AAOI","NASDAQ:AAOI"],["FN","NYSE:FN"]],
+};
+var PEER_SKIP_INDUSTRY = {"Investment Trusts/Mutual Funds":true};   // ETFs have no peers
+var PEERS_CACHE = {};
+function adhocFactsBatch(tvList){
+  var missing = tvList.filter(function(tv){ return tv && !ADHOC_FACTS[tv.split(":")[1]]; });
+  if(!missing.length) return Promise.resolve();
+  var body = JSON.stringify({ symbols:{tickers:missing}, columns:ADHOC_FACTS_COLS });
+  return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(function(json){
+      var rows = (json && Array.isArray(json.data)) ? json.data : [];
+      rows.forEach(function(row){
+        if(!row || !row.s || !Array.isArray(row.d)) return;
+        var d = row.d, symb = row.s.split(":")[1];
+        function n(i){ return (typeof d[i]==="number" && isFinite(d[i])) ? d[i] : null; }
+        function t(i){ return (typeof d[i]==="string" && d[i]) ? d[i] : null; }
+        ADHOC_FACTS[symb] = ADHOC_FACTS[symb] || { hi52:n(0), lo52:n(1), cap:n(2), beta:n(3), avol:n(4),
+          short_pct:null, earn_days:null, rsi:n(5), avg_move:null, pe:n(6), peg:n(7), net_margin:n(8),
+          gross_margin:n(9), op_margin:n(10), fcf_margin:n(11), debt_eq:n(12), roe:n(13),
+          ps:n(14), pb:n(15), ev_ebitda:n(16), yld:n(17), target:n(18), rec_mark:n(19),
+          sector:t(20), industry:t(21) };
+      });
+    })
+    .catch(function(){});
+}
+function peersFor(sym){
+  if(PEERS_CACHE[sym]) return Promise.resolve(PEERS_CACHE[sym]);
+  var cur = PEER_GROUPS[sym];
+  if(cur){
+    cur.forEach(function(p){ adhocRegister(p[0], p[1], null); });
+    var syms = cur.map(function(p){ return p[0]; });
+    return adhocFactsBatch(cur.map(function(p){ return p[1]; })).then(function(){
+      PEERS_CACHE[sym] = {peers:syms, source:"curated"};
+      return PEERS_CACHE[sym];
+    });
+  }
+  var f = factsOf(sym);
+  var ind = f && f.industry;
+  if(!ind || PEER_SKIP_INDUSTRY[ind]){
+    PEERS_CACHE[sym] = {peers:[], source:ind ? "fund" : "none"};
+    return Promise.resolve(PEERS_CACHE[sym]);
+  }
+  // local first: pinned facts sharing the industry
+  var local = [];
+  var allFacts = (STATE.data && STATE.data.facts) || {};
+  Object.keys(allFacts).forEach(function(t){
+    if(t===sym) return;
+    var pf = allFacts[t];
+    if(pf && pf.industry===ind && num(pf.cap)!=null) local.push({sym:t, cap:pf.cap});
+  });
+  local.sort(function(a,b){ return b.cap-a.cap; });
+  var picks = local.slice(0,4).map(function(x){ return x.sym; });
+  if(picks.length >= 3){
+    PEERS_CACHE[sym] = {peers:picks, source:"industry-local"};
+    return Promise.resolve(PEERS_CACHE[sym]);
+  }
+  // widen via the live scanner: biggest names in the same industry
+  var body = JSON.stringify({
+    columns:["name","description","market_cap_basic"],
+    filter:[{left:"industry",operation:"equal",right:ind}],
+    options:{lang:"en"}, range:[0,7],
+    sort:{sortBy:"market_cap_basic",sortOrder:"desc"},
+    symbols:{query:{types:["stock","dr"]}}, markets:["america"]});
+  return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(function(json){
+      var rows = (json && Array.isArray(json.data)) ? json.data : [];
+      var out = picks.slice(), tvs = [];
+      rows.forEach(function(row){
+        if(!row || !row.s || !Array.isArray(row.d)) return;
+        var t = row.d[0];
+        if(typeof t!=="string" || !t || t===sym || out.indexOf(t)!==-1) return;
+        if(out.length>=4) return;
+        out.push(t); tvs.push(row.s);
+        adhocRegister(t, row.s, (typeof row.d[1]==="string")?row.d[1]:null);
+      });
+      return adhocFactsBatch(tvs).then(function(){
+        PEERS_CACHE[sym] = {peers:out, source:"industry-scan"};
+        return PEERS_CACHE[sym];
+      });
+    })
+    .catch(function(){
+      PEERS_CACHE[sym] = {peers:picks, source:"industry-local"};
+      return PEERS_CACHE[sym];
+    });
+}
+var PEER_METRICS = [
+  ["gross_margin","Gross margin %", function(v){ return v.toFixed(0)+"%"; }],
+  ["op_margin","Operating margin %", function(v){ return v.toFixed(0)+"%"; }],
+  ["fcf_margin","FCF margin %", function(v){ return v.toFixed(0)+"%"; }],
+  ["pe","P/E (ttm)", function(v){ return v.toFixed(1); }],
+  ["ev_ebitda","EV/EBITDA", function(v){ return v.toFixed(1); }],
+  ["ps","P/S", function(v){ return v.toFixed(1); }],
+];
+function renderPeersInto(body, sym, res){
+  var peers = res.peers;
+  if(!peers.length){
+    body.innerHTML = '<div class="dsec note">'
+      + (res.source==="fund"
+         ? esc(sym)+' is a fund/wrapper — margins and multiples compare companies, not baskets.'
+         : 'No peer set for '+esc(sym)+' — TradingView carries no industry classification for it this cycle.')
+      + '</div>';
+    return;
+  }
+  var entries = [sym].concat(peers);
+  var srcLine = res.source==="curated"
+    ? "curated set (memory complex / documented comparisons)"
+    : 'largest names in TradingView\u2019s "'+esc((factsOf(sym)||{}).industry||"")+'" industry'
+      + (res.source==="industry-scan" ? ", via the live scanner" : ", from the desk universe");
+  var html = '<div class="dsec"><h3>'+esc(sym)+' vs peers — trailing twelve months</h3><div class="gwrap">';
+  var drew = 0;
+  PEER_METRICS.forEach(function(m){
+    var rows = entries.map(function(t){ var pf = factsOf(t)||{}; return {sym:t, val:pf[m[0]]}; });
+    if(!rows.some(function(r){ return num(r.val)!=null; })) return;
+    var svg = barsCompareSVG(rows, sym, m[2]);
+    if(svg){ html += '<div class="gchart"><h4>'+m[1]+'</h4>'+svg+'</div>'; drew++; }
+  });
+  html += '</div><div class="note">Peers: '+srcLine+'. Scanner TTM figures, same fields as the fundamentals grid; a dash means the vendor reports nothing. Display only.</div></div>';
+  if(!drew) html = '<div class="dsec note">No comparable TTM figures for this set.</div>';
+  // Quarterly revenue, indexed to each name's own first bar — only names with
+  // a daily sidecar (the pinned universe) can draw a line.
+  var withFund = entries.filter(function(t){ return true; });
+  Promise.all(entries.map(function(t){ return ensureFund(t); })).then(function(funds){
+    if(STAGE.sym!==sym || STAGE.tab!=="peers") return;
+    var accC = cssVar("--acc"), inkC = cssVar("--ink3");
+    var lines = [], labelsRef = null;
+    entries.forEach(function(t, i){
+      var g = funds[i] && funds[i].growth && funds[i].growth.quarterly;
+      if(!g || !Array.isArray(g.revenue)) return;
+      var revs = g.revenue.map(num).filter(function(v){ return v!=null; }).slice(-8);
+      if(revs.length<5 || !revs[0]) return;
+      if(!labelsRef) labelsRef = g.labels.slice(-revs.length);
+      lines.push({name:t, color: t===sym?accC:inkC, values: revs.map(function(v){ return v/revs[0]*100; })});
+    });
+    if(lines.length>=2){
+      var idxLabels = labelsRef || [];
+      var svg2 = miniLineSVG(idxLabels, lines, {pct:false});
+      if(svg2){
+        var el2 = document.createElement("div");
+        el2.className = "dsec";
+        el2.innerHTML = '<h3>Revenue, indexed (first shown quarter = 100)</h3>'
+          + '<div class="gchart" style="max-width:560px">'+svg2+lineLegendHTML(lines)+'</div>'
+          + '<div class="note">Aligned by report recency, not by calendar — fiscal calendars differ across companies, so read this as growth shape, not same-quarter timing. Lines exist only for desk-pinned names (the daily sidecar covers those).</div>';
+        body.appendChild(el2);
+      }
+    }
+  });
+  body.innerHTML = html;
+}
+function renderPeersTab(sym){
+  var body = document.getElementById("stagetabbody");
+  if(!body) return;
+  body.innerHTML = '<div class="dsec note">comparing '+esc(sym)+' to its peers…</div>';
+  peersFor(sym).then(function(res){
+    if(STAGE.sym!==sym || STAGE.tab!=="peers") return;
+    var b = document.getElementById("stagetabbody");
+    if(b) renderPeersInto(b, sym, res);
+  });
+}
+
 /* ---- tabs under the chart: the old modal's panels, now always on screen ---- */
-var STAGE_TABS = [["ov","Overview"],["fin","Financials"],["flow","Options flow"]];
+var STAGE_TABS = [["ov","Overview"],["fin","Financials"],["peers","vs Peers"],["flow","Options flow"]];
 function stageTabsRender(){
   var el = document.getElementById("stagetabs");
   if(!el) return;
@@ -4068,6 +4357,8 @@ function renderStageTab(){
     var g = renderGrowth(sym, fund);
     body.innerHTML = (g && g.indexOf("dsec")!==-1) ? g
       : '<div class="dsec note">No quarterly financials for '+esc(sym)+' — the daily sidecar covers desk-pinned company names (indexes and funds have none).</div>';
+  } else if(STAGE.tab==="peers"){
+    renderPeersTab(sym);
   } else if(STAGE.tab==="flow"){
     body.innerHTML = stageFlowSecHTML(sym);
   } else {
