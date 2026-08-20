@@ -61,7 +61,11 @@
 }
 /* ============ base ============ */
 *{box-sizing:border-box;margin:0;padding:0}
-html{background:var(--bg)}
+/* The top rail is position:sticky, so every in-page jump — the skip link, the
+   command palette's "chart it", a section anchor — landed the target's first
+   11px under the rail. --railh is measured at boot; 11px is the section's own
+   top padding. */
+html{background:var(--bg);scroll-padding-top:calc(var(--railh,46px) + 11px)}
 body{
   background:var(--bg); color:var(--ink);
   font:13px/1.45 "Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
@@ -163,11 +167,25 @@ a.nt-item:hover{color:var(--ink)}
    sat empty while the boards were read. It now sticks under the top rail and
    scrolls inside itself. --railh is measured at boot (the rail wraps at
    narrow widths, so a hard-coded offset would be wrong). */
-@media (min-width:901px){
+@media (min-width:1381px){
   .wl{position:sticky;top:var(--railh,46px);align-self:start;
       max-height:calc(100vh - var(--railh,46px));overflow-y:auto;overscroll-behavior:contain}
 }
+.wl:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
 .rr{border-left:1px solid var(--edge)}
+/* Same treatment the watchlist got, for the same reason: in three-column mode
+   the rail is a column of its own, and a static one scrolled its Morning Brief
+   off the top after the first screen while the column sat empty beside the
+   boards. Only above the breakpoint — below it the rail is a full-width band
+   under the boards, where sticky would pin it over them. */
+@media (min-width:1381px){
+  .rr .inner{position:sticky;top:var(--railh,46px);align-self:start;
+    max-height:calc(100vh - var(--railh,46px));overflow-y:auto;overscroll-behavior:contain}
+  /* A scroll container reached only by the mouse is unreachable for a keyboard
+     user in Firefox and Safari, which do not focus overflow containers on
+     their own. tabindex="0" plus a visible ring makes the arrow keys work. */
+  .rr .inner:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+}
 .mid{min-width:0}
 
 /* ============ sections ============ */
@@ -390,9 +408,15 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .xscroll.more::after{opacity:1}
 .xhint{font-size:9.5px;color:var(--ink3);padding:3px 0 0}
 @media (prefers-reduced-motion: reduce){ .xscroll::after{transition:none} }
-.t-conv td:last-child{white-space:normal;min-width:200px;line-height:1.35}
-/* wider floor since the liquidity + needs-% additions (2026-08-18) */
-.t-swing td:last-child{white-space:normal;min-width:300px;line-height:1.35}
+/* The reason column wraps. It used to carry a hard min-width (200px on
+   conviction, 300px on swing) so that the sentence had room — but a min-width
+   on a table cell is a floor the table cannot go below, so at 1100px the
+   board pushed past its own column and the whole page scrolled sideways.
+   A max-width bounds the line length instead, and the cell shrinks when the
+   column does. */
+.t-conv td:last-child,.t-swing td:last-child{
+  white-space:normal;line-height:1.35;max-width:42ch;
+}
 
 /* ============ catalysts ============ */
 .filters{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
@@ -620,16 +644,21 @@ footer b{color:var(--ink2)}
   .rail{flex-wrap:wrap;row-gap:6px}
   .rl.opt{display:none}
 }
-@media (max-width:1240px){
+/* Breakpoint moved 1240 -> 1380 (2026-08-20). The two rails cost 620px of
+   chrome, so at 1250px the chart stage — the thing this page is built around —
+   was drawing in a 600px track: roughly 40 daily candles before the axis, with
+   the 15m view unreadable. Dropping to two columns 140px earlier gives the
+   stage ~1000px at that width. */
+@media (max-width:1380px){
   .cols{grid-template-columns:224px minmax(0,1fr)}
   .rr{grid-column:1/3;border-left:none;border-top:1px solid var(--edge)}
   .rr .inner{columns:2;column-gap:28px}
-  /* Below 1240 the right rail moves UNDER the watchlist column, so a pinned
-     watchlist paints straight over the Morning Brief and the sector table.
-     Sticky only makes sense while the rail owns its own column. */
+  /* Below the breakpoint the right rail moves UNDER the watchlist column, so a
+     pinned watchlist paints straight over the Morning Brief and the sector
+     table. Sticky only makes sense while the rail owns its own column. */
   .wl{position:static;max-height:none;overflow:visible}
 }
-/* Multicolumn band (900–1240px): keep catalyst rows, news rows and section
+/* Multicolumn band (900–1380px): keep catalyst rows, news rows and section
    headers from fracturing across the column gap. */
 .rr .inner .ct,.rr .inner .nw,.rr .inner .sh,.rr .inner .cg{break-inside:avoid}
 @media (max-width:900px){
@@ -651,7 +680,7 @@ footer b{color:var(--ink2)}
   /* Watchlist rows collapse behind a toggle on phones (default collapsed) */
   .wltoggle{display:block;width:100%;text-align:left;padding:10px 14px;font-size:10px;letter-spacing:.13em;color:var(--ink2);font-weight:700;text-transform:uppercase;border-bottom:1px solid var(--edge2)}
   .wl.collapsed .wrs,.wl.collapsed .wlnote{display:none}
-  /* Bug fix (present in the approved prototype too): .rr keeps the 1240px
+  /* Bug fix (present in the approved prototype too): .rr keeps the 1380px
      breakpoint's grid-column:1/3 span with no explicit line 3 in this single-
      column grid, so the browser silently adds an implicit second column to
      satisfy it -- .mid then renders in a track narrower than the viewport
@@ -731,7 +760,7 @@ footer b{color:var(--ink2)}
     <!-- Position Guard removed entirely 2026-08-19 (Zach's directive). The
          movers/shopping-list box leads, then search, then the rows; on
          phones the row list collapses behind a toggle. -->
-    <aside class="wl" id="wlrail">
+    <aside class="wl" id="wlrail" role="region" aria-label="Watchlist">
       <div class="alertbox" id="alerts"></div>
       <div class="searchbox">
         <input id="tksearch" placeholder="Search any US ticker…" autocomplete="off" spellcheck="false" aria-label="Search tickers">
@@ -793,7 +822,7 @@ footer b{color:var(--ink2)}
 
     <!-- ======= right rail: brief + rotation to the side, then calendar/news ======= -->
     <aside class="rr">
-      <div class="inner">
+      <div class="inner" role="region" aria-label="Brief, sectors, catalysts and news">
       <section id="s-brief">
         <div class="sh" data-collapse="s-brief"><span class="car">▼</span><h2>Morning Brief</h2><span class="st tn" id="briefstat"></span></div>
         <div class="sb brief" id="briefbody"></div>
@@ -1255,6 +1284,33 @@ function ctTimeShort(iso){
     var f = new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",hour:"numeric",minute:"2-digit",hour12:true});
     return f.format(new Date(t)).replace(/ /g," ");
   }catch(e){ return "—"; }
+}
+
+/* A bare clock time answers "when" only if you already know the day. The news
+   panel showed "3:40 PM" on a headline from yesterday afternoon, which reads
+   as this afternoon. Elapsed time is the honest primary; the clock time stays
+   in the hover title. */
+function elapsedShort(iso){
+  var t = Date.parse(iso);
+  if(!isFinite(t)) return "";
+  var mins = Math.round((Date.now() - t) / 60000);
+  if(mins < 0) return "just now";          // clock skew between the feed and this device
+  if(mins < 1) return "just now";
+  if(mins < 60) return mins + "m ago";
+  var hrs = Math.round(mins / 60);
+  if(hrs < 24) return hrs + "h ago";
+  var days = Math.round(hrs / 24);
+  if(days < 7) return days + "d ago";
+  return Math.round(days / 7) + "w ago";
+}
+/* Weekday + clock, for the hover title on a headline stamp. */
+function ctWhenLong(iso){
+  var t = Date.parse(iso);
+  if(!isFinite(t)) return "";
+  try{
+    return new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",weekday:"short",
+      month:"short",day:"numeric",hour:"numeric",minute:"2-digit",hour12:true}).format(new Date(t)) + " CT";
+  }catch(e){ return ""; }
 }
 
 /* =================== market state =================== */
@@ -3097,7 +3153,8 @@ function renderConv(data){
   ], cut.rows, rowHTMLConv, "score",
   {html: boardCutNoteHTML(cut, "conv"), wire: function(){ wireBoardCut(el, "conv", rerender); }});
   function rowHTMLConv(c){
-    var dq = dispQuote(liveBySym(c.ticker));
+    var q = liveBySym(c.ticker) || {};
+    var dq = dispQuote(q);
     var px = dq.px!=null?dq.px:num(c.spot), ch = dq.ch!=null?dq.ch:num(c.change_pct);
     // FLOW % with the $100K display floor; the basis rides in the tooltip
     // either way. Older snapshots without flow_pct_basis skip the floor.
@@ -3478,8 +3535,17 @@ function renderCats(){
   var arr = (data && Array.isArray(data.catalysts)) ? data.catalysts : [];
   var stale = isStaleContext(data);
   document.getElementById("catstat").innerHTML = "countdowns live" + ageStampHTML(data.context_updated_at, stale);
-  if(arr.length===0){ document.getElementById("s-cat").hidden = true; return; }
+  // An empty catalysts array used to hide the whole section. The panel simply
+  // disappeared from the rail, which reads as "nothing is coming up" when the
+  // real meaning is "the calendar feed returned nothing this cycle" — two very
+  // different facts for anyone sizing a position ahead of earnings.
   document.getElementById("s-cat").hidden = false;
+  if(arr.length===0){
+    document.getElementById("cats").innerHTML =
+      '<div class="note">No dated catalysts in this cycle. The calendar feed returned no earnings, Fed dates or product events for these names — '
+      + 'that is an empty feed, not a clear calendar.</div>';
+    return;
+  }
   var now = new Date();
   var wk = function(d){ try{ return WD_ABBR[new Date(d+"T12:00:00Z").getUTCDay()]; }catch(e){ return "—"; } };
   var groups = [
@@ -3511,7 +3577,18 @@ function renderCats(){
         +'<div class="rg"><span class="imp '+impCls+'">'+impLabel+'</span><span class="cd tn '+cd.cls+'">'+cd.txt+'</span></div></div>';
     }).join("");
   }).join("");
-  document.getElementById("cats").innerHTML = out || '<div class="note">nothing matches this filter</div>';
+  if(!out){
+    var why = [];
+    if(catKind!=="all") why.push('the "'+esc(catKind)+'" filter');
+    if(FOCUS) why.push("the "+esc(FOCUS)+" focus");
+    var more = (catKind==="all" && !catShowAll) ? ' Turning on "+ med econ" adds the medium-importance releases.' : '';
+    document.getElementById("cats").innerHTML =
+      '<div class="note">'+String(arr.length)+' catalyst'+(arr.length===1?"":"s")+' loaded, none shown. '
+      + (why.length ? ('Clear '+why.join(" or ")+' to see them.') : 'Every one falls outside the drawn windows.')
+      + more + '</div>';
+  } else {
+    document.getElementById("cats").innerHTML = out;
+  }
 }
 
 /* =================== news =================== */
@@ -3615,9 +3692,21 @@ function renderNews(){
       : esc(n.title||"");
     return '<div class="nw"'+(n.ticker?(' data-sym="'+esc(n.ticker)+'"'):'')+'>'
       +'<span class="tk">'+tkLabel+'</span><span class="h">'+body+'</span>'
-      +'<span class="tm tn">'+ctTimeShort(n.ts)+'</span></div>';
+      +'<span class="tm tn"'+(n.ts?(' data-ts="'+esc(n.ts)+'" title="'+esc(ctWhenLong(n.ts))+'"'):'')+'>'
+      +esc(elapsedShort(n.ts) || ctTimeShort(n.ts))+'</span></div>';
   }).join("") || ('<div class="note">no tagged headlines'+(FOCUS?(' for '+esc(FOCUS)):'')+'</div>');
   document.getElementById("news").innerHTML = html;
+}
+
+/* The news panel only re-renders on the 2-minute data poll, so its "2m ago"
+   stamps would still say "2m ago" an hour later on an idle page. Rewriting the
+   text of the stamp spans avoids re-rendering the panel, which would throw
+   away keyboard focus on a headline link. */
+function tickNewsStamps(){
+  $$("#news .tm[data-ts], #newsticker .tm[data-ts]").forEach(function(el){
+    var t = elapsedShort(el.getAttribute("data-ts"));
+    if(t && el.textContent !== t) el.textContent = t;
+  });
 }
 
 /* =================== focus cascade =================== */
@@ -7462,6 +7551,9 @@ function renderAll(data){
   applyFocus();
   updatePricesTimestamp();
   if(typeof markScrollables === "function") markScrollables();
+  // Last, not first: the two rail containers only have their real scroll
+  // heights once every panel above them has painted.
+  syncScrollTabStops();
 }
 function refreshLiveUI(){
   // Two halves. The PRICE half runs on every poll whether or not data.json
@@ -7497,13 +7589,13 @@ function updatePricesTimestamp(){
   var nowStr = ctClockString(new Date());
   if(tvPollFailed && lastPriceUpdateTs){
     el.innerHTML = esc(nowStr)
-      + ' · <span style="color:var(--hi)" data-tip="The price poll is failing, so every price on the page is frozen at the time shown here. The clock is your device; the prices are not.">prices as of '
+      + ' · <span style="color:var(--hi);white-space:nowrap" data-tip="The price poll is failing, so every price on the page is frozen at the time shown here. The clock is your device; the prices are not.">prices as of '
       + esc(ctTimeShort(new Date(lastPriceUpdateTs).toISOString()))+'</span>';
   } else if(tvPollFailed){
     // Never a successful poll, so there is no "as of" to show — and the page
     // said nothing at all while every price on it read "—".
     el.innerHTML = esc(nowStr)
-      + ' · <span style="color:var(--hi)" data-tip="The price poll has not answered once this session, so no price on this page is real. It retries every 30 seconds.">no prices yet</span>';
+      + ' · <span style="color:var(--hi);white-space:nowrap" data-tip="The price poll has not answered once this session, so no price on this page is real. It retries every 30 seconds.">no prices yet</span>';
   } else {
     el.textContent = nowStr;
   }
@@ -7735,8 +7827,17 @@ document.getElementById("theme").addEventListener("click", function(){
   btn.setAttribute("aria-label", light ? "Theme: light. Switch to dark." : "Theme: dark. Switch to light.");
 })();
 
-setInterval(function(){ if(!document.hidden) updatePricesTimestamp(); }, 1000);
-setInterval(function(){ if(STATE.data && !document.hidden) renderCats(); }, 30000);
+// The lamp is clock-derived (priceSessionNow), but it only repainted on the
+// 30-second data poll and on boot. At 8:30:00 the rail still read PRE-MARKET
+// beside prices that had already flipped to the regular session, and at
+// 15:00:00 it read OPEN beside prices tagged AFT. It rides the one-second
+// clock now, so the lamp and the price tags change in the same tick.
+setInterval(function(){
+  if(document.hidden) return;
+  updatePricesTimestamp();
+  renderMarketState(STATE.data || null);
+}, 1000);
+setInterval(function(){ if(STATE.data && !document.hidden){ renderCats(); tickNewsStamps(); } }, 30000);
 
 /* =================== tooltips =================== */
 var tipb = document.getElementById("tipb");
@@ -7874,9 +7975,26 @@ function measureRailHeight(){
   if(!r) return;
   document.documentElement.style.setProperty("--railh", Math.round(r.getBoundingClientRect().height)+"px");
 }
+/* A scroll container is only keyboard-scrollable if it can take focus, and
+   Firefox and Safari do not focus overflow containers on their own. Add the
+   tab stop when the container actually scrolls, and take it away when it does
+   not — a tab stop that scrolls nothing is just an extra press to get past. */
+function syncScrollTabStops(){
+  [document.getElementById("wlrail"), document.querySelector(".rr .inner")].forEach(function(el){
+    if(!el) return;
+    var scrolls = el.scrollHeight - el.clientHeight > 4
+      && getComputedStyle(el).overflowY !== "visible";
+    if(scrolls){ if(el.getAttribute("tabindex")!=="0") el.setAttribute("tabindex","0"); }
+    else if(el.hasAttribute("tabindex")){
+      // Never yank the tab stop out from under the key that is using it.
+      if(document.activeElement !== el) el.removeAttribute("tabindex");
+    }
+  });
+}
 var _lastNarrow = (window.innerWidth || 1440) <= 760;
 function onViewportChange(){
   measureRailHeight();
+  syncScrollTabStops();
   var narrow = (window.innerWidth || 1440) <= 760;
   if(narrow !== _lastNarrow){
     _lastNarrow = narrow;
@@ -7897,6 +8015,7 @@ function start(){
   });
   updatePricesTimestamp();
   renderMarketState(null);
+  syncScrollTabStops();
   lastDataFetchTs = Date.now();
   fetchData().then(function(){
     // Stage first, poll in parallel: the chart must not wait on the scanner
