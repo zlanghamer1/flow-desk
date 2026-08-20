@@ -706,6 +706,11 @@ footer b{color:var(--ink2)}
 /* Multicolumn band (900–1380px): keep catalyst rows, news rows and section
    headers from fracturing across the column gap. */
 .rr .inner .ct,.rr .inner .nw,.rr .inner .sh,.rr .inner .cg{break-inside:avoid}
+/* ...and the panels themselves. Only the ROWS were protected, so between 901
+   and 1380px the sector table split mid-body: three rows sat at the top of
+   column two under the Morning Brief's heading, reading as brief content. */
+.rr .inner section,.rr .inner table,.rr .inner .fedcard,
+.rr .inner .kvrow,.rr .inner .rotbanner{break-inside:avoid}
 @media (max-width:900px){
   .rail{flex-wrap:wrap;row-gap:6px}
   .rail .grow{display:none}
@@ -1630,7 +1635,11 @@ function normalizeBrief(d){
     return {ticker:t,name:SECTOR_NAMES[t]||r.name||"",w:(r.pct_1w!=null?r.pct_1w:r.w),m:(r.pct_1m!=null?r.pct_1m:r.m),flow_1w:r.flow_1w,flow_1m:r.flow_1m};
   });
   if(b.backdrop&&Array.isArray(b.backdrop.readings)) b.backdrop.readings=b.backdrop.readings.map(function(r){
-    if(r&&r.grade!=null&&r.reading==null) return {label:shortReading(r.name),reading:String(r.grade).toLowerCase()};
+    // Carry the full name through. The chips are three-character shorthand
+    // ("MOVE", "2s10s", "HY spread") and the mapping dropped the only thing
+    // that explained them, so the chip carried no tooltip at all.
+    if(r&&r.grade!=null&&r.reading==null) return {label:shortReading(r.name),reading:String(r.grade).toLowerCase(),
+      tip:(r.name||"")+" — graded "+String(r.grade).toLowerCase()};
     return r;
   });
   if(b.gap_note===true) b.gap_note="Verdict is the morning read — most of its edge is the overnight gap, not the rest of the session.";
@@ -2398,6 +2407,17 @@ function pollTvPrices(){
    as a current reading. */
 var MACRO_MISSES = 0, MACRO_LAST_OK = 0;
 function macroStale(){ return MACRO_MISSES >= 2 && MACRO_LAST_OK > 0; }
+/* PER SYMBOL, because the scanner OMITS a row it cannot resolve rather than
+   returning a null one. If DXY stops resolving at 10:00 while VIX and the
+   10-year keep answering, rows.length stays positive, the whole-request miss
+   counter never trips, and the dollar tile shows its 10:00 price all
+   afternoon as a current reading. */
+var MACRO_SYM_STALE_MS = 5 * 60 * 1000;
+function macroSymStale(tv){
+  var d = MACRO_LIVE[tv];
+  if(!d || d.at == null) return false;
+  return (Date.now() - d.at) > MACRO_SYM_STALE_MS;
+}
 function attemptMacroTiles(){
   var tickers = MACRO_TAPE.map(function(m){return m.tv;});
   var body = JSON.stringify({ symbols:{tickers:tickers, query:{types:[]}}, columns:["close","change","rtc"] });
@@ -2411,7 +2431,7 @@ function attemptMacroTiles(){
         // `ch` mirrors changePct so liveBySym's consumers (dispQuote, hotOf,
         // the modal header, the chart's live last point) read one field name
         // across both scanners. changePct is kept — macroTileHTML uses it.
-        MACRO_LIVE[row.s] = { px:num(px), changePct:num(row.d[1]), ch:num(row.d[1]) };
+        MACRO_LIVE[row.s] = { px:num(px), changePct:num(row.d[1]), ch:num(row.d[1]), at:Date.now() };
       });
       // Same rule the equity poll follows: a 200 that updated nothing is a
       // miss. The catch below used to re-render the unchanged cache and the
@@ -2470,10 +2490,12 @@ function macroTileHTML(m){
   // When the macro scanner has missed twice running, these numbers are the
   // last good read, not a current one — and nothing else on the page says so,
   // because the price banner watches the EQUITY poll.
-  var frozen = macroStale();
+  var frozen = macroStale() || macroSymStale(m.tv);
   var ftag = frozen
-    ? ' <span class="sess" data-tip="'+esc("The macro scanner has not answered for the last two refreshes. This is the last reading it "
-        + "returned, from "+(MACRO_LAST_OK?ctTimeShort(new Date(MACRO_LAST_OK).toISOString()):"earlier")+" CT — not a current quote.")
+    ? ' <span class="sess" data-tip="'+esc("This reading has not refreshed. Either the macro scanner stopped answering, or it stopped "
+        + "returning this symbol while the others kept coming — the vendor omits a row it cannot resolve rather than sending a null. "
+        + "Last real read " + ((d && d.at) ? ctTimeShort(new Date(d.at).toISOString())
+                               : (MACRO_LAST_OK ? ctTimeShort(new Date(MACRO_LAST_OK).toISOString()) : "earlier")) + " CT.")
       +'">FROZEN</span>' : '';
   return '<div class="tp" data-sym="'+esc(m.bk||m.s)+'" role="button" tabindex="0">'
     +'<span class="s"><span class="t">'+esc(m.s)+' · '+esc(m.n)+'</span>'+ftag+'</span>'
@@ -3324,9 +3346,25 @@ function fedOddsHTML(f){
       +'<i class="hold" style="width:'+(wo/tot*100).toFixed(1)+'%"></i>'
       +'<i class="cut" style="width:'+(wc/tot*100).toFixed(1)+'%"></i></div>');
   }
-  var leg=['<span><i class="hike" style="background:var(--dn)"></i>hike <em>'+hike.toFixed(0)+'%</em></span>'];
-  if(hold!=null) leg.push('<span><i class="hold" style="background:var(--ink3)"></i>no change <em>'+hold.toFixed(0)+'%</em></span>');
-  if(cut!=null) leg.push('<span><i style="background:var(--up)"></i>cut <em>'+cut.toFixed(0)+'%</em></span>');
+  // Largest-remainder rounding, so three whole numbers under a stacked bar
+  // add to 100. toFixed(0) on 28.6 / 69.9 / 1.5 printed 29 / 70 / 2 = 101%,
+  // directly beneath a bar whose widths were computed on the real figures.
+  var legPct = (function(){
+    var raw = [hike, hold, cut];
+    if(hold==null || cut==null) return raw.map(function(v){ return v==null?null:Math.round(v); });
+    var tot = hike+hold+cut;
+    if(!(tot>0)) return raw.map(function(v){ return Math.round(v); });
+    var scaled = raw.map(function(v){ return v/tot*100; });
+    var floors = scaled.map(function(v){ return Math.floor(v); });
+    var left = 100 - floors.reduce(function(a,b){ return a+b; }, 0);
+    var order = scaled.map(function(v,i){ return {i:i, frac:v-Math.floor(v)}; })
+                      .sort(function(a,b){ return b.frac-a.frac; });
+    for(var k=0;k<left && k<order.length;k++) floors[order[k].i]++;
+    return floors;
+  })();
+  var leg=['<span><i class="hike" style="background:var(--dn)"></i>hike <em>'+legPct[0]+'%</em></span>'];
+  if(hold!=null) leg.push('<span><i class="hold" style="background:var(--ink3)"></i>no change <em>'+legPct[1]+'%</em></span>');
+  if(cut!=null) leg.push('<span><i style="background:var(--up)"></i>cut <em>'+legPct[2]+'%</em></span>');
   h.push('<div class="fedlegend">'+leg.join("")+'</div>');
   // Deltas. Zach asked for the DAILY move specifically, so it leads.
   function dl(lbl,v){
@@ -3953,7 +3991,14 @@ function countdown(c, now){
     return {txt:"in "+dd+"d", cls:""};
   }
   var ms = catWhen(c) - now;
-  if(ms < 0) return {txt:"now", cls:"soon"};
+  if(ms < 0){
+    // catDone only clears a timed row six hours after its time, and the econ
+    // feed's `actual` is always null, so nothing short-circuits that. A print
+    // that landed at 07:30 read "now" in orange until 13:30 — the release is
+    // over, and the colour said it was happening. Say when it happened.
+    if(ms > -30*60e3) return {txt:"now", cls:"soon"};
+    return {txt:"released "+elapsedShort(new Date(catWhen(c)).toISOString()), cls:""};
+  }
   var h = ms/3600e3;
   if(h < 1) return {txt:"in "+Math.max(1,Math.round(ms/60e3))+"m", cls:"soon"};
   if(h < 48) return {txt:"in "+Math.round(h)+"h", cls:"soon"};
@@ -4005,6 +4050,13 @@ var AGENCY_FIX = {
   "Bureau of Labour Statistics": "Bureau of Labor Statistics",
   "Bureau of Economics Analysis": "Bureau of Economic Analysis"
 };
+/* ...and the general case, because the map missed "Department of Labour" —
+   the same British spelling it exists to correct, on four shipped rows. */
+function fixAgency(name){
+  if(!name) return name;
+  if(AGENCY_FIX[name]) return AGENCY_FIX[name];
+  return String(name).replace(/\bLabour\b/g, "Labor");
+}
 function catMetaLine(c){
   var bits = [];
   var fpa = fpaLine(c);
@@ -4017,7 +4069,7 @@ function catMetaLine(c){
   // every single row ended in "via tv_calendar" / "via tv_earnings" /
   // "via memory_events". That told Zach nothing and it is now gone from the
   // row entirely; `source` stays in data.json for debugging.
-  if(c.agency) bits.push(esc(AGENCY_FIX[c.agency] || c.agency));
+  if(c.agency) bits.push(esc(fixAgency(c.agency)));
   var prefix = c.anchor ? ('<span class="anch">anchor</span>'+(bits.length?' · ':'')) : '';
   return prefix + bits.join(' · ');
 }
@@ -4097,7 +4149,12 @@ var NT_KEY = null;
 function dedupeNews(items){
   var byTitle = {}, out = [];
   items.forEach(function(n){
-    var k = String(n.title||"").trim().toLowerCase();
+    // Key on the ARTICLE. Reuters publishes a recurring digest under the exact
+    // title "Mergers and acquisitions"; keying on the string alone collapsed
+    // two unrelated stories into one and hung both tickers on whichever
+    // survived. The URL is the real syndication key; the title is the
+    // fallback for a feed that publishes none.
+    var k = String(n.url||"").trim().toLowerCase() || String(n.title||"").trim().toLowerCase();
     if(!k) return;
     if(byTitle[k]){
       var t = n.ticker;
@@ -4114,11 +4171,16 @@ function dedupeNews(items){
 function renderNewsTicker(data){
   var el = document.getElementById("newsticker");
   if(!el) return;
+  var newsMissing = !!(data && data.news == null);
   var items = dedupeNews((data && data.news && Array.isArray(data.news.items))
     ? data.news.items.filter(function(n){ return n && n.title; }) : []);
   if(!items.length){
     el.hidden = false; NT_KEY = null;
-    el.innerHTML = '<div class="nt-empty">No tagged headlines this cycle — the hourly scan ran and matched nothing.</div>';
+    el.innerHTML = '<div class="nt-empty">'
+      + (newsMissing
+          ? 'The headline scan did not return this cycle — that is the feed, not an empty news day.'
+          : 'No tagged headlines this cycle — the hourly scan ran and matched nothing.')
+      + '</div>';
     return;
   }
   var key = items.length+"|"+(items[0].ts||"")+"|"+(items[0].title||"");
@@ -4151,8 +4213,17 @@ function renderNews(){
   var items = dedupeNews((newsObj && Array.isArray(newsObj.items)) ? newsObj.items : []);
   var stale = isStaleContext(data);
   document.getElementById("newsstat").innerHTML = "TradingView news · hourly" + ageStampHTML(data && data.context_updated_at, stale);
-  if(!newsObj){ document.getElementById("s-news").hidden = true; return; }
+  // A NULL news object means the scan did not return at all — the publisher
+  // emits null when nothing came back for any symbol. Hiding the panel read as
+  // "no headlines today" while the ticker above said the scan matched nothing.
+  // Two different facts, and the page stated the wrong one.
   document.getElementById("s-news").hidden = false;
+  if(!newsObj){
+    document.getElementById("news").innerHTML =
+      '<div class="note">The headline scan did not return this cycle — that is the feed, not an empty news day. '
+      + 'It retries on the next hourly build.</div>';
+    return;
+  }
   if(items.length===0){
     document.getElementById("news").innerHTML =
       '<div class="note">No tagged headlines in this cycle. The scan ran and matched nothing on these names.</div>';
@@ -5958,7 +6029,7 @@ function peerFmtFor(vals, fmt){
   }
   return fmt;
 }
-function peerBarsSVG(entries, focusedSym, fmt, opts, kind){
+function peerBarsSVG(entries, focusedSym, fmt, opts, kind, noMedian){
   opts = opts || {};
   var vals = entries.map(function(e){ return num(e.val); });
   if(!vals.some(function(v){ return v!=null; })) return "";
@@ -5969,7 +6040,10 @@ function peerBarsSVG(entries, focusedSym, fmt, opts, kind){
   // and told the reader nothing (COHR EV/EBITDA "peer median 41.5" was COHR).
   var peerVals = entries.map(function(e, k){ return e.sym===focusedSym ? null : vals[k]; })
                         .filter(function(v){ return v!=null; });
-  var med = peerVals.length>=2 ? medianOf(peerVals) : null;
+  // noMedian: the caller has decided the reporting peers cannot support one
+  // (two names an order of magnitude apart). Drawing the line anyway put a
+  // dashed reference on the chart that the caption underneath called unusable.
+  var med = (!noMedian && peerVals.length>=2) ? medianOf(peerVals) : null;
   // One runaway value flattened everything else into slivers: CORZ at −217.5%
   // squashed CRWD's 28.1% and MSFT's 20.2% into a 6-pixel band. Clamp the axis
   // and mark the bars that run past it with their true value.
@@ -6021,9 +6095,11 @@ function peerBarsSVG(entries, focusedSym, fmt, opts, kind){
       + '" stroke="'+(Math.abs(t)<1e-9?"var(--gridzero)":"var(--grid)")+'" stroke-width="1"/>'
       + '<text x="'+(padL-5)+'" y="'+(y+3.5).toFixed(1)+'" font-size="10" text-anchor="end" fill="var(--ink3)">'+esc(tfmt(t))+'</text>';
   });
+  var medDrawn = false;
   if(med!=null){
     var my = Y(med);
     if(my>=padT-1 && my<=padT+plotH+1){
+      medDrawn = true;
       out += '<line x1="'+padL+'" x2="'+(padL+plotW)+'" y1="'+my.toFixed(1)+'" y2="'+my.toFixed(1)
         + '" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="3 3" opacity=".75"><title>'
         + esc("peer median (excludes "+focusedSym+"): "+fmt(med))+'</title></line>';
@@ -6083,7 +6159,11 @@ function peerBarsSVG(entries, focusedSym, fmt, opts, kind){
   });
   // What the caller needs to caption honestly: whether the axis was clamped,
   // and how far the drawn bars really span.
-  PEER_LAST = {clampAt: clampAt, spread: (minAbs>0 ? maxAbs/minAbs : 0)};
+  // medDrawn, because the caption's "above this scale, so no dashed line is
+  // drawn" fired on a clamp comparison while the renderer decides on the plot
+  // domain — which is the clamp plus 12% padding, so the line was often drawn
+  // under a caption saying it was not.
+  PEER_LAST = {clampAt: clampAt, spread: (minAbs>0 ? maxAbs/minAbs : 0), medDrawn: medDrawn};
   return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img">'+out+'</svg>';
 }
 function renderGrowth(sym, fund){
@@ -6240,7 +6320,9 @@ var PEER_GROUPS = {
   // miner, Visa next to United Rentals, and Tower Semi next to NVIDIA. These
   // are the sets a trader would name.
   CRWD: [["PANW","NASDAQ:PANW"],["ZS","NASDAQ:ZS"],["FTNT","NASDAQ:FTNT"],["S","NYSE:S"]],
-  V:    [["MA","NYSE:MA"],["AXP","NYSE:AXP"],["PYPL","NASDAQ:PYPL"],["FISV","NASDAQ:FISV"]],
+  // FISV was Fiserv's NASDAQ line; the company moved to NYSE:FI in 2023, so
+  // the pinned symbol resolved to nothing and rode along as an empty column.
+  V:    [["MA","NYSE:MA"],["AXP","NYSE:AXP"],["PYPL","NASDAQ:PYPL"],["FI","NYSE:FI"]],
   TSEM: [["UMC","NYSE:UMC"],["GFS","NASDAQ:GFS"],["ASX","NYSE:ASX"],["ON","NASDAQ:ON"]],
 };
 // What each curated set IS, in words. "Curated set" alone told the reader
@@ -6327,8 +6409,13 @@ function peersFor(sym){
       // find Fiserv".
       var live = syms.filter(function(t){ return !!factsOf(t); });
       var lost = syms.filter(function(t){ return !factsOf(t); });
-      PEERS_CACHE[sym] = {peers:live, source: live.length ? "curated" : "curated-empty", unresolved:lost};
-      return PEERS_CACHE[sym];
+      var res2 = {peers:live, source: live.length ? "curated" : "curated-empty", unresolved:lost};
+      // Cache only a COMPLETE answer. A scanner outage resolves none of them,
+      // and caching that told the reader for the rest of the session that
+      // MU's curated peers do not exist — with "reopen this tab to retry" as
+      // the advice, which the cache made a no-op.
+      if(live.length === syms.length) PEERS_CACHE[sym] = res2;
+      return res2;
     });
     return PEERS_INFLIGHT[sym];
   }
@@ -8289,16 +8376,34 @@ function renderPeersInto(body, sym, res, seq, isRedraw){
     var others = rows.filter(function(r){ return r.sym!==sym && r.val!=null; }).length;
     // A one-bar chart is not a comparison. Say why the focused name has no
     // figure instead of drawing an axis around a single value.
-    if(mine.val==null && others<2){
+    // ...and the mirror case: the focused name reports and nobody else does.
+    // COHR's curated set drew a single bar with an axis around it, captioned
+    // as a ranking of one.
+    if(others<2){
+      var whoElse = rows.filter(function(r){ return r.sym!==sym && r.val==null; })
+        .map(function(r){ return r.sym+" ("+(METRIC_REASON_LONG[r.reason] || r.reason || "no figure")+")"; });
       html += '<div class="gchart"><h4>'+esc(METRIC_LABEL[mk]||mk)+'</h4>'
-        + '<div class="gcap">'+esc(sym)+' has no '+esc(METRIC_LABEL[mk]||mk)+' ('
-        + esc(METRIC_REASON_LONG[mine.reason] || mine.reason || "the vendor publishes no figure")
-        + ') and fewer than two peers reported one, so there is nothing to compare.</div></div>';
+        + '<div class="gcap">'
+        + (mine.val==null
+            ? (esc(sym)+' has no '+esc(METRIC_LABEL[mk]||mk)+' ('
+               + esc(METRIC_REASON_LONG[mine.reason] || mine.reason || "the vendor publishes no figure")+')')
+            : (esc(sym)+' reports '+esc(fmt(mine.val))))
+        + ' and fewer than two peers reported one, so there is nothing to compare'
+        + (whoElse.length ? (' — '+esc(whoElse.join(", "))) : '')
+        + '.</div></div>';
       drew++;
       return;
     }
     var fmtC = peerFmtFor(rows.map(function(r){ return r.val; }), fmt);
-    var svg = peerBarsSVG(rows, sym, fmtC, null, (fmt===fmtAxisPct ? "pct" : "num"));
+    // Decide the median's usability ONCE, and before the chart is drawn. The
+    // renderer drew the dashed reference whenever two peers reported, while
+    // the caption below it separately decided two peers 106x apart have no
+    // usable median — so the chart quoted a line the caption called nonsense.
+    var pv0 = rows.filter(function(r){ return r.sym!==sym && r.val!=null; });
+    var pvA = pv0.map(function(r){ return Math.abs(r.val); }).filter(function(v){ return v>0; });
+    var spread0 = pvA.length>=2 ? (Math.max.apply(null,pvA)/Math.min.apply(null,pvA)) : 1;
+    var noMedian = (pv0.length===2 && spread0 > 10);
+    var svg = peerBarsSVG(rows, sym, fmtC, null, (fmt===fmtAxisPct ? "pct" : "num"), noMedian);
     if(!svg) return;
     var known = rows.map(function(r){ return r.val; }).filter(function(v){ return v!=null; });
     // What actually clipped: the renderer's own clamp, not a second guess.
@@ -8317,13 +8422,12 @@ function renderPeersInto(body, sym, res, seq, isRedraw){
     // A midpoint between two numbers 106x apart names a value no company on
     // the chart is within 40x of. KLAC 2.72 and SKHY 0.026 gave "peer median
     // 1.37" on MRVL's PEG chart.
-    var pvAbs = peerVals2.map(function(r){ return Math.abs(r.val); }).filter(function(v){ return v>0; });
-    var peerSpread = pvAbs.length>=2 ? (Math.max.apply(null,pvAbs)/Math.min.apply(null,pvAbs)) : 1;
-    var medUseless = (peerVals2.length===2 && peerSpread > 10);
+    var peerSpread = spread0;
+    var medUseless = noMedian;
     var peerMed = (peerVals2.length>=2 && !medUseless) ? medianOf(peerVals2.map(function(r){ return r.val; })) : null;
     var lonePeer = peerVals2.length===1 ? peerVals2[0] : null;
-    var medOff = (PEER_LAST.clampAt != null && st && st.median!=null && Math.abs(st.median) > PEER_LAST.clampAt)
-      ? " — above this scale, so no dashed line is drawn" : "";
+    var medOff = (st && st.median!=null && !PEER_LAST.medDrawn && !medUseless)
+      ? " — off this scale, so no dashed line is drawn" : "";
     var cap = st
       ? ('<b class="'+(st.better?"u":"d")+'">'+esc(sym)+' ranks '+st.rank+' of '+st.n+' reporting</b> · '
          + (dir>0?"higher is better":"lower is better")
@@ -8360,12 +8464,30 @@ function renderPeersInto(body, sym, res, seq, isRedraw){
     entries.forEach(function(e, i){
       var g = funds[i] && funds[i].growth && funds[i].growth.quarterly;
       if(!g || !Array.isArray(g.revenue)) return;
-      var revs = g.revenue.map(num).filter(function(v){ return v!=null; }).slice(-8);
-      if(revs.length<5 || !revs[0]) return;
+      // ZIP first, then filter. Stripping nulls out of the values and then
+      // slicing the LAST N labels paired them wrong the moment a series had a
+      // gap: a company missing Q2 got its Q1 value under the Q2 label and
+      // everything after it shifted a quarter.
+      var pairs = (g.labels||[]).map(function(L, k){ return {L:L, v:num(g.revenue[k])}; })
+                                .filter(function(x){ return x.v!=null; })
+                                .slice(-8);
+      if(pairs.length<5 || !pairs[0].v) return;
+      var revs = pairs.map(function(x){ return x.v; });
       nQ = Math.max(nQ, revs.length);
-      perLabels[e.sym] = (g.labels||[]).slice(-revs.length);
+      perLabels[e.sym] = pairs.map(function(x){ return x.L; });
       sources[e.sym] = (funds[i] && funds[i].source==="scanner") ? "scanner" : "sidecar";
       lines.push({name:e.sym, color:e.color, values: revs.map(function(v){ return v/revs[0]*100; })});
+    });
+    // RIGHT-ALIGN every series to the longest one. axisChartSVG positions
+    // point i at a fixed x, so a company with five quarters against another's
+    // eight had its LATEST report plotted under "3q ago" — read as a company
+    // whose revenue stopped three quarters back.
+    lines.forEach(function(L){
+      if(L.values.length >= nQ) return;
+      var pad = nQ - L.values.length;
+      L.values = new Array(pad).fill(null).concat(L.values);
+      var pl = perLabels[L.name];
+      if(pl) perLabels[L.name] = new Array(pad).fill("").concat(pl);
     });
     if(lines.length>=2){
       // Position labels, not one company's fiscal quarters: the old axis
