@@ -1030,6 +1030,15 @@ function wlRemove(sym){
 // Rebuild the resolver map from storage at boot so custom names poll live
 // prices from the first cycle.
 wlCustom().forEach(function(r){ adhocRegister(r.sym, r.tv, r.name); });
+// …and their facts, so the earnings countdown survives a reload instead of
+// appearing only after the row is clicked.
+setTimeout(function(){
+  var customs = wlCustom();
+  if(!customs.length || typeof adhocEnsureFacts !== "function") return;
+  Promise.all(customs.map(function(r){
+    try{ return adhocEnsureFacts(r.sym); }catch(e){ return null; }
+  })).then(function(){ if(typeof renderWL === "function") renderWL(); });
+}, 0);
 
 /* =================== utils =================== */
 var $=function(q){return document.querySelector(q)};
@@ -1070,7 +1079,13 @@ function fmDollarsSigned(v){
 }
 function fmB(v){ return fmDollarsSigned(v); }
 function fmM(v){ return fmDollarsSigned(v); }
-function fmtpx(v){ var n=num(v); if(n===null) return "—"; return n>=1000? n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}) : n.toFixed(2); }
+function fmtpx(v){
+  var n=num(v); if(n===null) return "—";
+  if(n>=1000) return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+  // A $0.0035 quote is a real price, not a missing one.
+  if(Math.abs(n) < 1 && n !== 0) return n.toFixed(4);
+  return n.toFixed(2);
+}
 function fmtCapDollars(v){
   var n=num(v); if(n===null) return "—";
   var a=Math.abs(n);
@@ -1276,12 +1291,35 @@ function priceSessionNow(now){
 // always the % of the price next to it. No pre/post reading (an index, a thin
 // wrapper, or simply no extended-hours trade yet) falls back to the regular
 // figures untagged — never a dash, never a fabricated 0.
-function dispQuote(q){
-  if(!q) return {px:null, ch:null, tag:null};
+// The price today's candle should close at: the live print while the session
+// is open (and in pre-market, where it is the only reading for the new day),
+// the settled close once it is over.
+function candleClose(live){
+  if(!live) return null;
   var s = priceSessionNow();
-  if(s==="premarket" && q.prepx!=null && q.prech!=null) return {px:q.prepx, ch:q.prech, tag:"PRE"};
-  if(s==="afterhours" && q.postpx!=null && q.postch!=null) return {px:q.postpx, ch:q.postch, tag:"AFT"};
-  return {px:q.px, ch:q.ch, tag:null};
+  if(s==="open" || s==="premarket") return live.px;
+  return (live.c!=null) ? live.c : live.px;
+}
+function dispQuote(q){
+  if(!q) return {px:null, ch:null, tag:null, ext:null};
+  var s = priceSessionNow();
+  if(s==="premarket" && q.prepx!=null && q.prech!=null) return {px:q.prepx, ch:q.prech, tag:"PRE", ext:null};
+  if((s==="afterhours" || s==="closed") && q.postpx!=null){
+    // The settled session stays the row's number — and that means the `close`
+    // column, because `rtc` is the after-hours print once the session ends.
+    return {px:(q.c!=null?q.c:q.px), ch:q.ch, tag:null,
+            ext:{px:q.postpx, ch:q.postch, tag:"AFT"}};
+  }
+  if(s==="closed" && q.c!=null) return {px:q.c, ch:q.ch, tag:null, ext:null};
+  return {px:q.px, ch:q.ch, tag:null, ext:null};
+}
+// The extended-hours chip: a second, smaller story next to the day's move.
+function extChipHTML(ext){
+  if(!ext || ext.ch==null) return "";
+  return ' <span class="sess" data-tip="'+esc("The last after-hours print from TradingView's delayed feed, measured against the most recent 3:00 PM CT close. "
+    + "Thin volume — a large after-hours move is a headline reaction, not a settled price. Overnight and at the weekend this is simply "
+    + "the last thing that traded. The percentage beside the ticker is the regular session, which is the day this page ranks and scores on.")
+    + '">AFT '+esc(fm1(ext.ch))+'%</span>';
 }
 function sessTagHTML(tag){
   if(!tag) return "";
@@ -2004,7 +2042,11 @@ function pollTvPrices(){
     columns:["rtc","change","relative_volume_10d_calc",
              "premarket_close","premarket_change","premarket_volume",
              "postmarket_close","postmarket_change",
-             "open","high","low","volume"] });
+             "open","high","low","volume",
+             // `close` is the SETTLED session close. After 15:00 CT `rtc` is
+             // the after-hours print, so without this column the desk has no
+             // way to show the day's real close.
+             "close"] });
   return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:body})
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
     .then(function(json){
@@ -2014,14 +2056,22 @@ function pollTvPrices(){
         LIVE[row.s] = { px:num(row.d[0]), ch:num(row.d[1]), rvol:num(row.d[2]),
                         prepx:num(row.d[3]), prech:num(row.d[4]), prevol:num(row.d[5]),
                         postpx:num(row.d[6]), postch:num(row.d[7]),
-                        o:num(row.d[8]), h:num(row.d[9]), l:num(row.d[10]), v:num(row.d[11]) };
+                        o:num(row.d[8]), h:num(row.d[9]), l:num(row.d[10]), v:num(row.d[11]),
+                        c:num(row.d[12]) };
       });
       tvPollFailed = false; tvPollMisses = 0;
       lastPriceUpdateTs = Date.now();
       refreshLiveUI();
       return true;
     })
-    .catch(function(){ tvPollFailed = true; tvPollMisses++; updatePricesTimestamp(); return false; });
+    .catch(function(){
+      tvPollFailed = true; tvPollMisses++; updatePricesTimestamp();
+      // Re-render on the failure too, or the rail keeps whatever it drew on
+      // the last good poll and the movers box reports "none yet" — a claim
+      // about the market — with no prices behind it.
+      refreshLiveUI();
+      return false;
+    });
 }
 // Global scanner for VIX/US10Y/crude/DXY. Fails soft: any error/CORS failure
 // just hides those four tiles, it never blocks the rest of the page.
@@ -2064,8 +2114,12 @@ function mainTileHTML(t){
   // data-sym makes the tile a chart target via the page's existing
   // [data-sym] -> setFocus -> stageShow path. t.bk is the bars
   // key, which is the tile symbol for the four index ETFs.
-  return '<div class="tp" data-sym="'+esc(t.bk||t.s)+'" role="button" tabindex="0">'
-    +'<span class="s"><span class="t">'+esc(t.s)+' · '+esc(t.n)+'</span>'+sessTagHTML(d.tag)+'</span>'
+  var tip = t.s+" · "+t.n+" — "+(px===null?"no quote":(fmtpx(px)+", "+(ch===null?"no change":fm1(ch)+"% on the day")))
+    + (d.ext && d.ext.ch!=null ? (". After hours: "+fmtpx(d.ext.px)+" ("+fm1(d.ext.ch)+"% since the 3:00 PM CT close).") : "")
+    + " Click to chart it.";
+  return '<div class="tp" data-sym="'+esc(t.bk||t.s)+'" role="button" tabindex="0" data-tip="'+esc(tip)+'">'
+    +'<span class="s"><span class="t">'+esc(t.s)+' · '+esc(t.n)+'</span>'+sessTagHTML(d.tag)
+    + (d.ext ? sessTagHTML(d.ext.tag) : "")+'</span>'
     +'<span class="p">'+pxStr+'</span><span class="c '+cls+'">'+chStr+'</span></div>';
 }
 function macroTileHTML(m){
@@ -2205,6 +2259,13 @@ var WLIO_DRAFT = null, WLIO_MSG = "", WLIO_FOCUS = false, WLIO_SEL = [0,0];
 // device the export string was supposed to serve.
 function wlIoApply(text){
   var raw = String(text||"").toUpperCase().split(/[\s,]+/).filter(Boolean);
+  var had = wlCustom();
+  if(!raw.length && had.length){
+    var names = had.map(function(r){ return r.sym; }).join(", ");
+    if(!window.confirm("Remove all "+had.length+" custom name"+(had.length===1?"":"s")+" ("+names+") from this browser's list?")){
+      WLIO_MSG = "nothing changed"; renderWL(); return Promise.resolve();
+    }
+  }
   var seen = {}, want = [], pinned = [];
   raw.forEach(function(sym){
     if(seen[sym]) return;
@@ -2229,7 +2290,9 @@ function wlIoApply(text){
     wlSaveCustom(list);
     list.forEach(function(r){ adhocRegister(r.sym, r.tv, r.name); });
     var parts = [];
+    var removed = had.filter(function(r){ return list.every(function(x){ return x.sym!==r.sym; }); });
     if(list.length) parts.push(list.length+" added");
+    if(removed.length) parts.push(removed.length+" removed: "+removed.map(function(r){ return r.sym; }).join(", "));
     if(dropped.length) parts.push("dropped (nothing listed): "+dropped.join(", "));
     if(pinned.length) parts.push("already pinned, left alone: "+pinned.join(", "));
     WLIO_MSG = parts.join(" · ");
@@ -2251,6 +2314,7 @@ function railRowHTML(s, opts){
   var metaHtml = esc(nameFor(s));
   if(earnDays!=null) metaHtml += ' <span class="tn">· earn '+Math.round(earnDays)+'d</span>';
   if(d.tag) metaHtml = sessTagHTML(d.tag) + " " + metaHtml;
+  else if(d.ext) metaHtml = extChipHTML(d.ext).replace(/^ /,"") + " " + metaHtml;
   // A symbol the resolver cannot map will NEVER get a price, which is a
   // different fact from "the 30s poll has not answered yet". Say which.
   var unresolved = !symbolForTicker(s);
@@ -2310,7 +2374,8 @@ function renderWL(){
   }
   if(wlEdit){
     var ioVal = customSyms.join(",");
-    html += '<div class="wlio"><input id="wlio-in" value="'+esc(WLIO_DRAFT!=null?WLIO_DRAFT:ioVal)+'" placeholder="MU,NKE,…" aria-label="Custom list as text">'
+    html += '<div class="wlnote">Your custom list as text — copy it to move the list to another device, or paste one in and apply. Apply REPLACES the list.</div>'
+      + '<div class="wlio"><input id="wlio-in" value="'+esc(WLIO_DRAFT!=null?WLIO_DRAFT:ioVal)+'" placeholder="MU,NKE,…" aria-label="Custom list as text">'
       + '<button id="wlio-apply" data-tip="Replace this browser\u2019s custom adds with the comma-separated tickers in the box. Each one is looked up on the scanner first, so it arrives with its exchange and company name — paste this string on another device and the list rebuilds live there. Anything that does not resolve is dropped and named.">apply</button></div>'
       + (WLIO_MSG ? ('<div class="wlnote" id="wlio-msg">'+esc(WLIO_MSG)+'</div>') : '');
   }
@@ -2543,6 +2608,8 @@ function tsRender(){
       tsPick(+el.dataset.i, false);
     });
   });
+  var onRow = document.querySelector("#tsdrop .tsr.on");
+  if(onRow && onRow.scrollIntoView) try{ onRow.scrollIntoView({block:"nearest"}); }catch(e){}
   $$("#tsdrop [data-add]").forEach(function(b){
     b.addEventListener("click", function(e){
       e.stopPropagation();
@@ -2879,8 +2946,8 @@ function renderSectorSection(data){
                : '<span class="iodot n" data-tip="No flow or relative-strength reading published for this sector this cycle."></span>')
         +'<span class="sy2">'+esc(r.ticker||"?")+'</span><span class="nm">'+esc(r.name||"")+'</span></td>'
         +'<td>'+(num(r.rel)!=null ? ('<span class="dvg"><em></em><i style="'+side+';'+dim+'"></i></span> ') : '')
-        +'<span class="'+sign(r.rel)+'">'+fm1(r.rel)+'</span></td>'
-        +'<td class="'+sign(r.m)+'">'+fm1(r.m)+'</td>'
+        +'<span class="'+sign1(r.rel)+'">'+fm1(r.rel)+'</span></td>'
+        +'<td class="'+sign1(r.m)+'">'+fm1(r.m)+'</td>'
         +'<td class="'+sign(r.flow_1w)+'">'+fmB(r.flow_1w)+'</td></tr>';
     }, "rel");
     el.insertAdjacentHTML("beforeend",
@@ -2899,7 +2966,7 @@ function renderSectorSection(data){
       + '<tbody>'+havens.map(function(r){
           var htip = "One month: "+fm1(r.m)+"% · "+fmB(r.flow_1m);
           return '<tr><td><span class="sy2">'+esc(r.ticker||"?")+'</span><span class="nm">'+esc(r.name||"")+'</span></td>'
-            +'<td class="'+sign(r.w)+'">'+fm1(r.w)+'</td><td class="'+sign(r.m)+'">'+fm1(r.m)+'</td>'
+            +'<td class="'+sign1(r.w)+'">'+fm1(r.w)+'</td><td class="'+sign1(r.m)+'">'+fm1(r.m)+'</td>'
             +'<td class="'+sign(r.flow_1w)+'" data-tip="'+esc(htip)+'">'+fmB(r.flow_1w)+'</td></tr>';
         }).join("")+'</tbody></table>'
       + (totalBits.length ? ('<div class="note">This week: '+totalBits.join(" · ")+' — <span data-tip="'+esc(TIPS.flows)+'">flows chase returns</span>.</div>') : "");
@@ -3029,8 +3096,8 @@ function renderConv(data){
   ], cut.rows, rowHTMLConv, "score",
   {html: boardCutNoteHTML(cut, "conv"), wire: function(){ wireBoardCut(el, "conv", rerender); }});
   function rowHTMLConv(c){
-    var q = liveBySym(c.ticker) || {};
-    var px = q.px!=null?q.px:num(c.spot), ch = q.ch!=null?q.ch:num(c.change_pct);
+    var dq = dispQuote(liveBySym(c.ticker));
+    var px = dq.px!=null?dq.px:num(c.spot), ch = dq.ch!=null?dq.ch:num(c.change_pct);
     // FLOW % with the $100K display floor; the basis rides in the tooltip
     // either way. Older snapshots without flow_pct_basis skip the floor.
     var fp = num(c.flow_pct), fpSide = c.flow_side, basis = num(c.flow_pct_basis);
@@ -3066,7 +3133,8 @@ function renderConv(data){
       +'<td><span class="sy2">'+esc(c.ticker||"?")+'</span> <span class="pill '+(c.direction==="BULL"?"b":"s")+'">'+(c.direction==="BULL"?"BULL":"BEAR")+'</span>'
       +(c.firing?' <span class="pill f" data-tip="'+esc(TIPS["tip-firing-badge"])+'">FIRING</span>':'')
       + eHtml + chaseChipHTML(c, px)
-      +'<span class="nm">'+(px!=null?px.toFixed(2):"—")+' · <span class="'+sign(ch)+'">'+fm1(ch)+'%</span></span></td>'
+      +'<span class="nm">'+(px!=null?px.toFixed(2):"—")+' · <span class="'+sign1(ch)+'">'+fm1(ch)+'%</span>'
+      + sessTagHTML(dq.tag) + (dq.ext?extChipHTML(dq.ext):"") + '</span></td>'
       +'<td><b>'+(num(c.score)!=null?Math.round(c.score):"—")+'</b></td>'
       +'<td class="'+sign(c.net_flow)+'">'+fmM(c.net_flow)+'</td>'
       +'<td>'+fpHtml+'</td>'
@@ -3112,8 +3180,8 @@ function renderSwing(data){
       ? '<span class="m" data-tip="IV rank needs 20+ sessions of this name’s own IV history and is still collecting. Today’s raw IV30 is '+(num(c.iv30)!=null?Math.round(c.iv30*100)+"%":"unknown")+' — with no history there is no basis to call that high or low.">—</span>'
       : (ivr!=null?Math.round(ivr):"—");
     var spot = num(c.spot);
-    var q = liveBySym(c.ticker) || {};
-    var px = q.px!=null ? q.px : spot;
+    var dq = dispQuote(liveBySym(c.ticker));
+    var px = dq.px!=null ? dq.px : spot;
     var ed = num(c.earnings_days);
     var eHtml = c.earnings_in_window
       ? ' <span class="pill f" data-tip="An earnings report lands '+(ed!=null?("in "+Math.round(ed)+" day"+(Math.round(ed)===1?"":"s")+" "):"")+'inside this contract’s life. Earnings gap straight through option positions — a flow signal that spans a report is a bet on the report.">E'+(ed!=null?(" "+Math.round(ed)+"d"):"")+'</span>' : "";
@@ -3965,10 +4033,10 @@ function stageDailyData(sym){
         // null). `synthetic` still marks the bar as today's partial candle —
         // it is 15 minutes behind and it is not closed — but its numbers are
         // no longer invented.
-        var ro=live.o, rh=live.h, rl=live.l;
+        var ro=live.o, rh=live.h, rl=live.l, rc=candleClose(live);
         if(ro!=null && rh!=null && rl!=null && rh>=rl && ro>0){
-          var rhi = Math.max(rh, live.px), rlo = Math.min(rl, live.px);
-          rows = rows.concat([[ro, rhi, rlo, live.px, (live.v!=null?live.v:null)]]);
+          var rhi = Math.max(rh, rc), rlo = Math.min(rl, rc);
+          rows = rows.concat([[ro, rhi, rlo, rc, (live.v!=null?live.v:null)]]);
           syntheticReal = true;
         } else {
           rows = rows.concat([[prevClose, Math.max(prevClose, live.px), Math.min(prevClose, live.px), live.px]]);
@@ -4005,7 +4073,15 @@ function stageDailyData(sym){
       if(todayCT && lastD && todayCT.getTime() > lastD.getTime()){
         var pc = num(rows[rows.length-1][3]);
         if(pc!=null){
-          rows = rows.concat([[pc, Math.max(pc, aliv.px), Math.min(pc, aliv.px), aliv.px]]);
+          var ao=aliv.o, ah=aliv.h, al=aliv.l, ac=candleClose(aliv);
+          if(ao!=null && ah!=null && al!=null && ah>=al && ao>0){
+            rows = rows.concat([[ao, Math.max(ah, ac), Math.min(al, ac), ac,
+                                 (aliv.v!=null?aliv.v:null)]]);
+            syntheticReal = true;
+          } else {
+            // Bracket fallback only when the scanner sent no open/high/low.
+            rows = rows.concat([[pc, Math.max(pc, ac), Math.min(pc, ac), ac]]);
+          }
           dates = dates.concat([todayCT]);
           synthetic = true;
         }
@@ -4508,7 +4584,11 @@ function renderCatList(sym){
 }
 
 /* ---- fundamentals grid (facts[] + fund sidecar, Finviz-snapshot-style) ---- */
-function numStr(v, dp){ var n=num(v); if(n===null) return "—"; return n.toFixed(dp==null?2:dp); }
+function numStr(v, dp){
+  var n=num(v); if(n===null) return "—";
+  var d = (dp==null?2:dp), t = n.toFixed(d);
+  return (/^-0\.?0*$/.test(t)) ? t.slice(1) : t;
+}
 function pctStr(v, dp){ var n=num(v); if(n===null) return "—"; return n.toFixed(dp==null?1:dp)+"%"; }
 function recLabel(v){
   var n = num(v);
@@ -4639,7 +4719,9 @@ function renderFundamentals(sym, fund){
     fcellPeer("Debt/Eq", "debt_eq", numStr(f.debt_eq), sym, fmtAxisNum, deCls),
     fcell("Dividend yield", pctStr(f.yld)),
     fcell("Short % float", shortPct!=null?shortPct.toFixed(1)+"%":"—", shortCls),
-    fcell("Beta", numStr(f.beta)),
+    fcell("Beta (1y)", f.beta!=null
+      ? ('<span data-tip="'+esc("How much this name moves against the S&P 500 over the past year — TradingView's 1-year beta. 1.0 moves with the index, 2.0 twice as far, below zero moves against it. Most sites quote a 5-year beta, which will differ.")+'">'+numStr(f.beta)+'</span>')
+      : "\u2014"),
     fcell("Avg volume", f.avol!=null?fmtShareCount(f.avol):"—"),
     fcell("RVOL today", q.rvol!=null?q.rvol.toFixed(1)+"×":"—"),
     fcell("RSI (14)", f.rsi!=null?('<span data-tip="'+esc("TradingView's RSI(14) for this name, on 15-minute-delayed data. The RSI pane under the chart recomputes it from the bars on screen including today's partial candle, so the two can differ by a point or two.")+'">'+Math.round(f.rsi)+'</span>'):"—", fundCls("rsi",f), "delayed"),
@@ -6580,10 +6662,10 @@ function stageHeaderHTML(sym){
   var f = factsOf(sym) || {};
   var clsf = [f.sector, f.industry].filter(function(x){ return typeof x==="string" && x; }).join(" · ");
   return '<span class="sy">'+esc(sym)+'</span>'
-    + '<span class="nm2">'+esc(nameFor(sym))+sessTagHTML(d.tag)+'</span>'
+    + '<span class="nm2">'+esc(nameFor(sym))+sessTagHTML(d.tag)+(d.ext?extChipHTML(d.ext):"")+'</span>'
     + (clsf ? '<span class="clsf">'+esc(clsf)+'</span>' : '')
     + '<span class="px tn">'+(d.px!=null?fmtpx(d.px):"—")+'</span>'
-    + '<span class="ch tn '+sign(d.ch)+'">'+(d.ch!=null?fm1(d.ch)+"%":"—")+'</span>'
+    + '<span class="ch tn '+sign1(d.ch)+'">'+(d.ch!=null?fm1(d.ch)+"%":"—")+'</span>'
     + (h!=null && h>=HOT_AT ? ('<span class="hotb" data-tip="'+esc(TIPS.hot)+'">'+h.toFixed(1)+'× usual move</span>') : "")
     + stageNextEarnHTML(sym)
     + stageStarHTML(sym)
@@ -6745,8 +6827,8 @@ function stageLegend(){
   }
   var bits = [];
   if(maLen("ma20")) bits.push('<span><i class="d20"></i>20-day</span>');
-  if(maLen("ma50")) bits.push('<span><i class="d50"></i>50-day · <b class="'+sign(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span>');
-  if(maLen("ma200")) bits.push('<span><i class="d200"></i>200-day · <b class="'+sign(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span>');
+  if(maLen("ma50")) bits.push('<span><i class="d50"></i>50-day · <b class="'+sign1(st.v50)+'">'+fm1(st.v50)+'%</b> vs it</span>');
+  if(maLen("ma200")) bits.push('<span><i class="d200"></i>200-day · <b class="'+sign1(st.v200)+'">'+fm1(st.v200)+'%</b> vs it</span>');
   if(nEarn || hasNext || nRat){
     bits.push('<span data-tip="Earnings reports (amber E) and analyst rating changes — green arrow up for an upgrade, red arrow down for a downgrade. Click any marker for the detail. Initiations, reiterations and price-target-only moves are deliberately left off.">'
       + ((nEarn||hasNext) ? '<b style="color:var(--hi)">E</b> earnings' : '')
@@ -7241,7 +7323,7 @@ function stageLivePoke(){
   }
   if(STAGE.iv==="1W" && STAGE.synthetic && STAGE.rows.length>=2 && STAGE.chart){
     var wlive = liveBySym(STAGE.sym);
-    var wc = wlive ? wlive.px : null;
+    var wc = candleClose(wlive);
     if(wc!=null){
       var wn = STAGE.rows.length, wr = STAGE.rows[wn-1];
       var wo = num(wr[0]);
@@ -7267,16 +7349,17 @@ function stageLivePoke(){
         // re-bracket prevClose..live on every rebuild and forget the day's
         // real extremes).
         var op = (live.o!=null && live.o>0) ? live.o : prevClose;
+        var cc = candleClose(live);
         var hi, lo;
         if(live.h!=null && live.l!=null && live.h>=live.l){
-          hi = Math.max(live.h, live.px); lo = Math.min(live.l, live.px);
+          hi = Math.max(live.h, cc); lo = Math.min(live.l, cc);
         } else {
-          hi = Math.max(num(cur[1])!=null?num(cur[1]):op, live.px);
-          lo = Math.min(num(cur[2])!=null?num(cur[2]):op, live.px);
+          hi = Math.max(num(cur[1])!=null?num(cur[1]):op, cc);
+          lo = Math.min(num(cur[2])!=null?num(cur[2]):op, cc);
         }
-        STAGE.rows[n-1] = [op, hi, lo, live.px, (live.v!=null?live.v:(cur.length>=5?cur[4]:null))];
+        STAGE.rows[n-1] = [op, hi, lo, cc, (live.v!=null?live.v:(cur.length>=5?cur[4]:null))];
         try{
-          STAGE.s.candle.update({time:STAGE.times[n-1], open:op, high:hi, low:lo, close:live.px});
+          STAGE.s.candle.update({time:STAGE.times[n-1], open:op, high:hi, low:lo, close:cc});
         }catch(e){}
         if(!STAGE.hovering) stageSetOhlc(null);
         stageLegend();
@@ -7396,13 +7479,31 @@ var PAL_REMOTE = [], PAL_SEQ = 0, palTimer = null, PAL_ERR = false;
 function palItems(q){
   q = (q||"").trim().toUpperCase();
   var local = {};
+  function quoteHint(sym, px, ch, exch){
+    var d = dispQuote(liveBySym(sym));
+    var pxv = (d.px!=null) ? d.px : px;
+    var chv = (d.ch!=null) ? d.ch : ch;
+    var bits = [];
+    if(exch) bits.push(esc(exch));
+    if(pxv!=null) bits.push(fmtpx(pxv));
+    if(chv!=null) bits.push('<span class="'+sign1(chv)+'">'+esc(fm1(chv))+'%</span>'
+      + (d.tag ? (' '+esc(d.tag)) : (d.ext && d.ext.ch!=null ? (' <span class="m">AFT '+esc(fm1(d.ext.ch))+'%</span>') : '')));
+    return bits.join(" · ");
+  }
   var syms = paletteTickers().filter(function(s){ return !q || s.indexOf(q)!==-1 || nameFor(s).toUpperCase().indexOf(q)!==-1; })
-    .slice(0,6).map(function(s){ local[s]=true; return {k:"ticker", l:s+" — "+nameFor(s), hint:"on the desk", run:function(){ setFocus(s); }}; });
+    .slice(0,6).map(function(s){
+      local[s]=true;
+      return {k:"ticker", l:s+" — "+nameFor(s),
+        hint:(quoteHint(s, null, null, null) || "on the desk")+" · on the desk",
+        run:function(){ setFocus(s); }};
+    });
   var remote = (q ? PAL_REMOTE : []).filter(function(it){ return !local[it.sym]; }).slice(0,6)
     .map(function(it){
+      var onList = tsOnList(it.sym);
       return {k:"search", l:it.sym+" — "+(it.name||it.sym),
-        hint:esc(it.exch||"")+(it.px!=null?(" · "+fmtpx(it.px)):"")+" · chart it",
-        run:function(){ adhocRegister(it.sym, it.tv, it.name); setFocus(it.sym); pollTvPrices(); }};
+        hint:quoteHint(it.sym, it.px, it.ch, it.exch)+" · chart it"+(onList?"":" · Shift+Enter adds it"),
+        run:function(){ adhocRegister(it.sym, it.tv, it.name); setFocus(it.sym); pollTvPrices(); },
+        add:function(){ wlAdd(it.sym, it.tv, it.name); adhocRegister(it.sym, it.tv, it.name); setFocus(it.sym); pollTvPrices(); }};
     });
   var acts = ACTIONS.filter(function(a){ return !q || a.l.toUpperCase().indexOf(q)!==-1; });
   return syms.concat(remote).concat(acts);
@@ -7448,6 +7549,8 @@ function palDraw(){
     return '<div class="pi '+(i===palIdx?"on":"")+'" data-i="'+i+'"><span class="k">'+it.k+'</span><span>'+esc(it.l)+'</span>'+(it.hint?('<span class="hint">'+it.hint+'</span>'):'')+'</div>';
   }).join("");
   $$("#pallist .pi").forEach(function(el){ el.addEventListener("click", function(){ items[+el.dataset.i].run(); palClose(); }); });
+  var onEl = document.querySelector("#pallist .pi.on");
+  if(onEl && onEl.scrollIntoView) try{ onEl.scrollIntoView({block:"nearest"}); }catch(e){}
   return items;
 }
 // Escape used to drop focus on the document body rather than returning it to
@@ -7622,7 +7725,14 @@ document.addEventListener("keydown", function(e){
     if(e.key==="Escape") palClose();
     else if(e.key==="ArrowDown"){ palIdx=Math.min(items.length-1,palIdx+1); palDraw(); }
     else if(e.key==="ArrowUp"){ palIdx=Math.max(0,palIdx-1); palDraw(); }
-    else if(e.key==="Enter"){ if(items[palIdx]){ items[palIdx].run(); palClose(); } }
+    else if(e.key==="Enter"){
+      var it = items[palIdx];
+      if(it){
+        // Shift+Enter adds a searched name, the same as the rail box.
+        if(e.shiftKey && typeof it.add === "function") it.add(); else it.run();
+        palClose();
+      }
+    }
     return;
   }
   if(e.key==="Escape"){
