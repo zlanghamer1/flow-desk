@@ -22,6 +22,14 @@ values are `null` (never a string sentinel). All strings are already plain
     "with_options": 35,    // of those, how many had a usable CBOE chain
     "pinned": 35           // len(PINNED) — watchlist + sector ETFs
   },
+  // READER NOTE (2026-08-20): the page reads this block for two statements it
+  // could not otherwise make. The flow-board footer says "N of your M watched
+  // names had a usable option chain this cycle" whenever candidates < pinned,
+  // so "show all 57" is not read as the whole watchlist. And an EMPTY board
+  // branches on with_options: zero chains resolved is a vendor outage, not a
+  // quiet tape, and it says so. Publishers must keep these four counts honest
+  // — a with_options that mirrors candidates when no chain resolved would make
+  // the page report an outage as a calm market.
   "stats": {                 // header tiles (computed across BOTH boards' members, deduped by ticker)
     "bullish_flow": 12,
     "bearish_flow": 9,
@@ -382,6 +390,14 @@ bars fall on, and `bar_dates`, which carries a date array only for the tickers
 whose own dates are NOT the last N entries of `sessions` (a listing that started
 mid-window matches the tail and needs no entry; one that missed a session in the
 middle gets its own array).
+
+**A second reader (2026-08-20): `sessions` also drives the market-state lamp.**
+`index.html`'s `isTradingDay` consults `sessions` before falling back to its own
+holiday table, so a v4 payload keeps the lamp honest on a holiday without anyone
+editing the page. The lookup is decisive only for a date the calendar covers —
+`sessions` ends at the last built session, so anything after it falls through to
+the table. That means the table still has to be extended each December; the
+calendar removes the risk of a wrong answer for past dates, not the maintenance.
 
 `sessions` is the EQUITY calendar, not a union across the file: the tape rides
 in the same payload and CL=F, ^VIX, ^TNX and DX-Y.NYB trade on days the NYSE is
