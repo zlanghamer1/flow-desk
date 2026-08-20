@@ -1192,7 +1192,7 @@ var TIPS = {
   "tip-etfflows": "Real invested money entering or leaving each semiconductor ETF, estimated as the day-over-day change in the fund's shares outstanding times its NAV (ETFs create and destroy shares as money moves in and out). One reading per session — slower than the options boards, and it mixes retail and institutional money. The 1M figure is the fund's trailing one-month net flow. Shows 'split — n/a' when a fund split that day: a split changes the share count without any money moving, so the day's flow is unknowable rather than zero. Context only; it doesn't affect any score.",
   netflow:"Call premium traded minus put premium traded (volume × last × 100). Free data can't see buy vs sell side — this is premium changing hands, not directional order flow.",
   flows:"Fund flows = change in shares outstanding × NAV (creations/redemptions). Flows chase returns — context, never a signal.",
-  fund:"Colored from a buyer's lens against rough thresholds: short % of float green under 2% / red over 5%; RSI green at 35 or under (washed out) / red at 70+ (hot); PEG green at 1 or under / red at 2+; net margin green at 20%+ / red below 0%; Debt/Eq green at 0.5 or under / red at 2+; analyst target green when 15%+ above price. A gauge, not a rating.",
+  fund:"Colored from a buyer's lens against rough thresholds: short % of float green under 2% / red over 5%; RSI green at 30 or under (washed out) / red at 70+ (hot) — the same boundaries the chart’s RSI pane draws; PEG green at 1 or under / red at 2+; net margin green at 20%+ / red below 0%; Debt/Eq green at 0.5 or under / red at 2+; analyst target green when 15%+ above price. A gauge, not a rating.",
   range:"Position in the 52-week range. Near the low = shopping territory, near the high = hot runner. The diamond is today.",
   hot:"Today's move divided by this name's own average daily move — Micron swinging 2% is normal, Google swinging 2% is not. Highlights at 1.8× and up.",
   stale:"This section is older than expected for its usual refresh cadence — showing the last good read.",
@@ -3878,22 +3878,41 @@ function isExtendedHours(d){
   var m = (+parts[0])*60 + (+parts[1]);
   return m < 510 || m >= 900;
 }
+/* Which 4-hour slot of the CT day a timestamp belongs to. Buckets are keyed on
+   the SESSION, not on a count of bars: pre-market, then 08:30-12:30, then
+   12:30-15:00, then post-market.
+
+   Counting four hourly bars from the day's first print put the 08:30 open in
+   the same bucket as the 03:00-07:00 pre-market bars — MU's 2026-08-18 series
+   bucketed as [03,04,05,06], [07,08,08:30,09:30], ... so the candle carrying
+   the opening auction, the highest-volume bar of the day, was dimmed as
+   extended hours and its open was a 7 AM pre-market print. */
+function slot4H(d){
+  var parts = CT_HM_FMT.format(d).split(":");
+  var m = (+parts[0])*60 + (+parts[1]);
+  if(m < 510) return {k:"pre",  ext:true,  at:0};      // before 08:30
+  if(m < 750) return {k:"am",   ext:false, at:510};    // 08:30-12:30
+  if(m < 900) return {k:"pm",   ext:false, at:750};    // 12:30-15:00
+  return {k:"post", ext:true, at:900};                 // after 15:00
+}
 function resample4H(rows){
-  // hourly [t,o,h,l,c,v] -> 4H buckets within each CT session day (RTH has ~7
-  // hourly bars, so a day yields a 4-bar and a 3-bar bucket — deliberate: a
-  // bucket never spans the overnight gap).
-  var out=[], cur=null, curKey=null, curCount=0;
+  // hourly [t,o,h,l,c,v] -> session-aligned 4H buckets. A bucket never spans
+  // the overnight gap and never mixes extended hours with the regular session,
+  // so the ext dimming on the drawn candle is a true statement about it.
+  var out=[], cur=null, curKey=null;
   rows.forEach(function(r){
-    var key = ctDayKey(new Date(r[0]*1000));
-    if(cur===null || key!==curKey || curCount>=4){
-      if(cur) out.push(cur);
-      cur=[r[0],r[1],r[2],r[3],r[4],r[5]]; curKey=key; curCount=1; return;
+    var d = new Date(r[0]*1000);
+    var sl = slot4H(d);
+    var key = ctDayKey(d)+"|"+sl.k;
+    if(cur===null || key!==curKey){
+      if(cur) out.push(cur.row);
+      cur={row:[r[0],r[1],r[2],r[3],r[4],r[5]], ext:sl.ext}; curKey=key; return;
     }
-    cur[2]=Math.max(cur[2],r[2]); cur[3]=Math.min(cur[3],r[3]); cur[4]=r[4];
-    if(r[5]!=null) cur[5]=(cur[5]==null?0:cur[5])+r[5];
-    curCount++;
+    var row = cur.row;
+    row[2]=Math.max(row[2],r[2]); row[3]=Math.min(row[3],r[3]); row[4]=r[4];
+    if(r[5]!=null) row[5]=(row[5]==null?0:row[5])+r[5];
   });
-  if(cur) out.push(cur);
+  if(cur) out.push(cur.row);
   return out;
 }
 function resampleWeekly(quints, dates){
@@ -3963,7 +3982,10 @@ var DRAWER_FUND = null;   // fund/{SYM}.json sidecar for the stage's current sym
 function fundCls(kind, f){
   if(!f) return "";
   if(kind==="short"){ var s=num(f.short_pct); if(s===null) return ""; return s<=2?"u":s>=5?"d":""; }
-  if(kind==="rsi"){ var r=num(f.rsi); if(r===null) return ""; return r<=35?"u":r>=70?"d":""; }
+  // 30, the same boundary the RSI pane's guide line and its tooltip use. At 35
+  // the grid coloured a name washed-out that the chart under it called
+  // ordinary — two readings of one indicator, on one screen.
+  if(kind==="rsi"){ var r=num(f.rsi); if(r===null) return ""; return r<=30?"u":r>=70?"d":""; }
   return "";
 }
 function safeMin(arr){ var f=arr.filter(function(v){return v!=null && isFinite(v);}); return f.length?Math.min.apply(null,f):0; }
@@ -4140,8 +4162,22 @@ function stageInit(){
     var pr = res.priceRange;
     var mid = (pr.maxValue + pr.minValue)/2, half = (pr.maxValue - pr.minValue)/2;
     if(!isFinite(mid) || !isFinite(half) || half<=0) return res;
+    // Stretch around the LAST CLOSE, not the arithmetic midpoint of the
+    // window. On MU's 1Y window the range runs 113 to 1255, midpoint 684 —
+    // ten notches of stretch and the current price at 940 was above the top
+    // of the pane, with the chart zoomed in on a price MU last traded at in
+    // January. Whatever you stretch, today's price stays on screen.
+    var anchor = mid;
+    if(STAGE.rows.length){
+      var lastC = num(STAGE.rows[STAGE.rows.length-1][3]);
+      if(lastC!=null && isFinite(lastC)) anchor = lastC;
+    }
     half = half / STAGE.vZoom;
-    return { priceRange:{ minValue: mid-half, maxValue: mid+half }, margins: res.margins };
+    var lo = anchor-half, hi = anchor+half;
+    // A price axis below zero is not a price axis. Shift the window up rather
+    // than clipping it, so the stretch factor still means what it says.
+    if(lo < 0){ hi += -lo; lo = 0; }
+    return { priceRange:{ minValue: lo, maxValue: hi }, margins: res.margins };
   }});
   stageWireVerticalZoom(el);
   stageTheme();
@@ -4499,7 +4535,10 @@ function stageRender(){
   // stageBar() rebuilds the chips hidden, so a stretch that survived an
   // interval switch or an overlay toggle stayed applied with no chip and no
   // reset hint. Re-assert it after the rebuild.
-  stageBar(); stageApplyVZoom(); stageLegend(); stageSetOhlc(null);
+  // stageHeader too: stageMarkers has just resolved the next-earnings
+  // countdown, and without a repaint the chip only appeared on the next
+  // 30-second poll.
+  stageBar(); stageApplyVZoom(); stageLegend(); stageSetOhlc(null); stageHeader();
   // stageBar() rebuilds the chips hidden and the range subscription only fires
   // when the range CHANGES, so a re-render that landed on the same window left
   // the "% shown" chip blank. Re-assert it from the range that is on screen.
@@ -4537,7 +4576,12 @@ function stageMarkers(){
   STAGE.markerByTime = {};
   STAGE.ratingByTime = {};
   var fund = STAGE.fund;
-  STAGE.nextEarn = null;
+  // The next-earnings countdown belongs to the COMPANY, not to the daily
+  // interval. Setting it inside the marker pass meant the header chip vanished
+  // the moment you clicked 15m, 1H, 4H or 1W — the intervals a trader uses
+  // right before a report — and, on first load, only appeared 30 seconds later
+  // when the poll happened to repaint the header.
+  STAGE.nextEarn = (fund && fund.next_earnings && fund.next_earnings.date) ? fund.next_earnings : null;
   if(STAGE.iv!=="1D" || !fund || !STAGE.dates.length){ STAGE.markersApi.setMarkers([]); return; }
   var markers=[], hi=cssVar("--hi");
   var startDate=STAGE.dates[0], endDate=STAGE.dates[STAGE.dates.length-1];
@@ -4557,7 +4601,6 @@ function stageMarkers(){
   // popover revealed 2026-09-23. The countdown belongs in the header, where
   // the Overview tab already shows it, and the header carries the same
   // clickable card.
-  STAGE.nextEarn = (fund.next_earnings && fund.next_earnings.date) ? fund.next_earnings : null;
   // Analyst rating changes (Zach 2026-08-19: "red for downgrade, green for
   // upgrade"). Snapped to the nearest bar, same as the earnings badges, and
   // stacked ABOVE the bar so they never sit on top of an E. Clicking one
@@ -6076,14 +6119,18 @@ function taFitLine(rows, piv, side, sym){
       //    separation of 2×PIVOT_K so one cluster of adjacent pivots is one
       //    visit, not five (V 1Y counted five pivots from a single Sep-Jan
       //    congestion as five confirmations).
-      var touches=0, lastTouchX=null;
+      var touches=0, lastTouchX=null, worstTouch=null;
       for(var t=0; t<piv.length; t++){
         var xt=piv[t];
         if(xt<=xa || xt>=xb) continue;
         if(lastTouchX!=null && (xt-lastTouchX) < TA_PIVOT_K*2) continue;
         var pt2=num(rows[xt][side]);
         var lt=lineAt(ya,slope,xa,xt);
-        if(pt2!=null && Math.abs(pt2-lt) <= lt*touchTol){ touches++; lastTouchX = xt; }
+        if(pt2!=null && Math.abs(pt2-lt) <= lt*touchTol){
+          touches++; lastTouchX = xt;
+          var gap = Math.abs(pt2-lt)/lt;
+          if(worstTouch==null || gap > worstTouch) worstTouch = gap;
+        }
       }
       if(touches < 1){ gate.touch++; continue; }  // 2 anchors + at least one more visit
       // 5. shape: a descending ceiling or a rising floor. The wrong-way slope
@@ -6134,7 +6181,8 @@ function taFitLine(rows, piv, side, sym){
       if(!best || score>best.score) best={xa:xa,xb:xb,ya:ya,yb:yb,slope:slope,touches:touches,
                                           score:score, bo:bo, dist:dist, lineNow:lineNow,
                                           status:status, age:age, side:side,
-                                          backAfter:backAfter, sinceBars:sinceBars};
+                                          backAfter:backAfter, sinceBars:sinceBars,
+                                          worstTouch:worstTouch};
     }
   }
   if(!best){
@@ -6193,8 +6241,20 @@ function taLevels(rows, pivH, pivL){
       c.last = Math.max(c.last, pt.i);
     } else clusters.push({mean:pt.px, lo:pt.px, hi:pt.px, pts:[pt], last:pt.i});
   });
+  // Collapse pivots inside the same congestion into ONE visit, the rule the
+  // trend fitter already applies and names ("V 1Y counted five pivots from a
+  // single Sep-Jan congestion as five confirmations"). Without it, "×5" on a
+  // level could be five adjacent bars of one week's chop.
+  clusters.forEach(function(c){
+    var byBar = c.pts.slice().sort(function(a,b){ return a.i-b.i; });
+    var visits = 0, lastI = null;
+    byBar.forEach(function(pt){
+      if(lastI==null || (pt.i-lastI) >= TA_PIVOT_K*2){ visits++; lastI = pt.i; }
+    });
+    c.visits = visits;
+  });
   return clusters.filter(function(c){
-      if(c.pts.length < 2) return false;
+      if(c.visits < 2) return false;
       // A level the stock is nowhere near is noise on a name that has moved a
       // long way — MU's 1-year window drew levels at $220 under a $937 stock,
       // and because price lines join the price scale's autoscale it squashed
@@ -6206,11 +6266,11 @@ function taLevels(rows, pivH, pivL){
       if(rangeAbs!=null) lim = Math.min(lim, rangeAbs*0.5);
       return Math.abs(c.mean-last) <= lim;
     })
-    .sort(function(a,b){ return b.pts.length-a.pts.length || b.last-a.last; })
+    .sort(function(a,b){ return b.visits-a.visits || b.last-a.last; })
     .slice(0,3)
     // lo/hi ride along so the caption can print the band rather than implying
     // the whole cluster sits on one price.
-    .map(function(c){ return {price:c.mean, touches:c.pts.length, lo:c.lo, hi:c.hi}; });
+    .map(function(c){ return {price:c.mean, touches:c.visits, lo:c.lo, hi:c.hi}; });
 }
 function taRSI(closes, period){
   period = period||14;
@@ -6490,7 +6550,12 @@ function stageTALegend(prefs){
     // contradiction ("resistance … 0.4% below").
     var atLine = (last!=null && fit.lineNow!=null && Math.abs(fit.lineNow/last - 1) <= TA_BREAK_CONF);
     if(atLine) name = label+" (at the line)";
-    var bits = name+' — 2 anchors + '+fit.touches+' touch'+(fit.touches===1?"":"es");
+    // On a name that moves 6.7% a day the touch tolerance caps out at 3%, so a
+    // "touch" can be $21 off the line and read exactly like a 0.08% one. Print
+    // the worst gap when it is wide enough to matter.
+    var q = (fit.worstTouch!=null && fit.worstTouch >= 0.01)
+      ? (' <span class="m">(closest approach within '+(fit.worstTouch*100).toFixed(1)+'% of the line)</span>') : '';
+    var bits = name+' — 2 anchors + '+fit.touches+' touch'+(fit.touches===1?"":"es")+q;
     // A FAILED line is history, not a level. Quoting its projected price with
     // a distance read as live support/resistance — a green "support" 6.5%
     // ABOVE price, a red "resistance" 11% BELOW its own break.
