@@ -2210,7 +2210,9 @@ function adhocEnsureFacts(sym){
         if(delta>=0) earnDays = delta;
       }
       ADHOC_FACTS[sym] = { hi52:n(0), lo52:n(1), cap:n(2), beta:n(3), avol:n(4), short_pct:null,
-        earn_days:earnDays, rsi:n(5), avg_move:null, pe:n(6), peg:n(7), net_margin:n(8),
+        // Measured against Date.now() right here, not against the snapshot's
+        // session_date — so earnDaysNow must not age it a second time.
+        earn_days:earnDays, earn_live:true, rsi:n(5), avg_move:null, pe:n(6), peg:n(7), net_margin:n(8),
         gross_margin:n(9), op_margin:n(10), fcf_margin:n(11), debt_eq:n(12), roe:n(13),
         ps:n(14), pb:n(15), ev_ebitda:n(16), yld:n(17), target:n(18), rec_mark:n(19),
         sector:t(20), industry:t(21) };
@@ -2259,6 +2261,7 @@ function pollTvPrices(){
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
     .then(function(json){
       var rows = (json && Array.isArray(json.data)) ? json.data : [];
+      var updated = 0;
       rows.forEach(function(row){
         if(!row || !row.s || !Array.isArray(row.d)) return;
         LIVE[row.s] = { px:num(row.d[0]), ch:num(row.d[1]), rvol:num(row.d[2]),
@@ -2266,7 +2269,18 @@ function pollTvPrices(){
                         postpx:num(row.d[6]), postch:num(row.d[7]),
                         o:num(row.d[8]), h:num(row.d[9]), l:num(row.d[10]), v:num(row.d[11]),
                         c:num(row.d[12]) };
+        updated++;
       });
+      // A 200 carrying an empty data array is not a successful poll. The
+      // scanner answers 200 with {"data":[]} on a malformed symbol list or a
+      // rate-limited window, and the old code stamped lastPriceUpdateTs and
+      // cleared tvPollFailed anyway — so every price on the page froze at its
+      // last good value with a live clock beside it and no banner.
+      if(!updated){
+        tvPollFailed = true; tvPollMisses++;
+        updatePricesTimestamp(); refreshLiveUI();
+        return false;
+      }
       tvPollFailed = false; tvPollMisses = 0;
       lastPriceUpdateTs = Date.now();
       refreshLiveUI();
@@ -2290,6 +2304,12 @@ function pollTvPrices(){
 // separate premarket_close (probed live: null on all four). They trade nearly
 // around the clock, so their regular quote already IS the pre-market number.
 // Cost is one extra POST per 30s cycle.
+/* The macro scanner is a separate request from the equity one, so the page's
+   price-feed banner says nothing about it. Its own miss counter and last-good
+   stamp let the four tiles say they are frozen instead of showing a stale VIX
+   as a current reading. */
+var MACRO_MISSES = 0, MACRO_LAST_OK = 0;
+function macroStale(){ return MACRO_MISSES >= 2 && MACRO_LAST_OK > 0; }
 function attemptMacroTiles(){
   var tickers = MACRO_TAPE.map(function(m){return m.tv;});
   var body = JSON.stringify({ symbols:{tickers:tickers, query:{types:[]}}, columns:["close","change","rtc"] });
@@ -2305,11 +2325,15 @@ function attemptMacroTiles(){
         // across both scanners. changePct is kept — macroTileHTML uses it.
         MACRO_LIVE[row.s] = { px:num(px), changePct:num(row.d[1]), ch:num(row.d[1]) };
       });
+      // Same rule the equity poll follows: a 200 that updated nothing is a
+      // miss. The catch below used to re-render the unchanged cache and the
+      // four macro tiles kept showing yesterday's VIX indefinitely.
+      if(!rows.length){ MACRO_MISSES++; }
+      else { MACRO_MISSES = 0; MACRO_LAST_OK = Date.now(); }
       renderTape();
       if(FOCUS) refreshLiveUI();
     })
-    /* macro tiles: loop-side fallback is a fast-follow */
-    .catch(function(){ renderTape(); });
+    .catch(function(){ MACRO_MISSES++; renderTape(); });
 }
 
 /* =================== tape =================== */
@@ -2355,8 +2379,16 @@ function macroTileHTML(m){
     cls = chPct==null?"m":(chPct>0?"u":chPct<0?"d":"m");
     changeStr = chPct==null?"—":((chPct>0?"+":"−")+Math.abs(chPct).toFixed(2)+"%");
   }
+  // When the macro scanner has missed twice running, these numbers are the
+  // last good read, not a current one — and nothing else on the page says so,
+  // because the price banner watches the EQUITY poll.
+  var frozen = macroStale();
+  var ftag = frozen
+    ? ' <span class="sess" data-tip="'+esc("The macro scanner has not answered for the last two refreshes. This is the last reading it "
+        + "returned, from "+(MACRO_LAST_OK?ctTimeShort(new Date(MACRO_LAST_OK).toISOString()):"earlier")+" CT — not a current quote.")
+      +'">FROZEN</span>' : '';
   return '<div class="tp" data-sym="'+esc(m.bk||m.s)+'" role="button" tabindex="0">'
-    +'<span class="s"><span class="t">'+esc(m.s)+' · '+esc(m.n)+'</span></span>'
+    +'<span class="s"><span class="t">'+esc(m.s)+' · '+esc(m.n)+'</span>'+ftag+'</span>'
     +'<span class="p">'+priceStr+'</span><span class="c '+cls+'">'+changeStr+'</span></div>';
 }
 function renderTape(){
@@ -2450,8 +2482,8 @@ function rangeBarHTML(sym, big){
   var p = (pos*100).toFixed(0);
   var tag = newHi ? ' <b class="u">new 52-week high today</b>' : newLo ? ' <b class="d">new 52-week low today</b>' : '';
   return '<div class="rb '+(big?"big":"")+'" data-tip="'+esc(TIPS.range)+' Now at '+p+'% of the range.'
-    + (newHi ? ' Today\u2019s price is above the highest close in the snapshot, so this is a new 52-week high — the upper bound shown is today.' : '')
-    + (newLo ? ' Today\u2019s price is below the lowest close in the snapshot, so this is a new 52-week low — the lower bound shown is today.' : '')
+    + (newHi ? ' Today\u2019s price is above the vendor\u2019s 52-week high — the highest price TRADED in the last year, not the highest close — so this is a new high and the upper bound shown is today.' : '')
+    + (newLo ? ' Today\u2019s price is below the vendor\u2019s 52-week low — the lowest price TRADED in the last year, not the lowest close — so this is a new low and the lower bound shown is today.' : '')
     + '">'
     +'<i style="width:'+p+'%"></i><b style="left:'+p+'%"></b>'
     +'<span class="lo tn">'+fmtpx(lo)+'</span><span class="hi tn">'+fmtpx(hi)+tag+'</span></div>';
@@ -3258,6 +3290,21 @@ function renderSectorSection(data){
 }
 
 /* =================== contract-string builders (loudest / suggested) =================== */
+/* The $100K near-money basis floor, in one place. It was written inline in the
+   conviction row and simply not applied in the chart's Options flow tab, so
+   the same name showed "95% CALL" on one surface and an explained em dash on
+   the other — a percentage computed on $445 of premium. */
+function flowPctThinHTML(basis){
+  return '<span class="m" data-tip="Only $'+fmtDollarsUnit(basis)
+    + ' of near-money premium traded — under the $100K floor, too thin for a percentage to mean anything.">\u2014</span>';
+}
+function flowPctHTML(fp, side, basis){
+  if(fp==null || !side) return "—";
+  if(basis!=null && basis < FLOWPCT_MIN_BASIS) return flowPctThinHTML(basis);
+  return '<span class="'+(side==="CALL"?"u":"d")+'"'
+    + (basis!=null?(' data-tip="Of $'+fmtDollarsUnit(basis)+' near-money premium traded today."'):'')
+    + '>'+fp.toFixed(0)+'% '+esc(side)+'</span>';
+}
 function contractLine(c){
   if(!c || typeof c !== "object") return '<span class="m">no liquid contract</span>';
   var side = c.side==="PUT"?"PUT":c.side==="CALL"?"CALL":"?";
@@ -3426,7 +3473,7 @@ function renderConv(data){
     var fp = num(c.flow_pct), fpSide = c.flow_side, basis = num(c.flow_pct_basis);
     var fpHtml;
     if(fp!=null && fpSide && basis!=null && basis < FLOWPCT_MIN_BASIS){
-      fpHtml = '<span class="m" data-tip="Only $'+fmtDollarsUnit(basis)+' of near-money premium traded — under the $100K floor, too thin for a percentage to mean anything.">—</span>';
+      fpHtml = flowPctThinHTML(basis);
     } else if(fp!=null && fpSide){
       var fpCls = fpSide==="CALL" ? "u" : "d";
       fpHtml = '<span class="'+fpCls+'"'+(basis!=null?(' data-tip="Of $'+fmtDollarsUnit(basis)+' near-money premium traded today."'):'')+'>'+fp.toFixed(0)+'% '+fpSide+'</span>';
@@ -3442,7 +3489,7 @@ function renderConv(data){
       }
     } else fpHtml = "—";
     var f = factsOf(c.ticker) || {};
-    var ed = f.earn_days!=null ? num(f.earn_days) : null;
+    var ed = earnDaysNow(f);
     var eHtml = (ed!=null && ed>=0 && ed<=7)
       ? ' <span class="pill f" data-tip="Earnings in '+Math.round(ed)+' day'+(Math.round(ed)===1?"":"s")+' — inside this board’s 0–7 day window. Flow into a report is a bet on the report: a different trade.">E '+Math.round(ed)+'d</span>' : "";
     var rv = q.rvol!=null ? q.rvol : num(c.rvol);
@@ -4438,6 +4485,9 @@ function earnDaysNow(f){
   if(!f || f.earn_days==null) return null;
   var d = num(f.earn_days);
   if(d==null) return null;
+  // A searched name's countdown was measured against the clock when its facts
+  // were fetched, not against the snapshot. Aging it would subtract twice.
+  if(f.earn_live) return d;
   var sd = STATE.data && STATE.data.session_date;
   var today = ctTodayDate();
   if(sd && today){
@@ -4653,6 +4703,7 @@ function stageRender(){
   stageMsg(null);
   STAGE.rows=d.rows; STAGE.dates=d.dates; STAGE.intraday=d.intraday;
   STAGE.hasVolume=d.hasVolume; STAGE.synthetic=d.synthetic; STAGE.premarketBar=!!d.premarketBar;
+  STAGE.syntheticReal=!!d.syntheticReal;
   STAGE.times = d.rows.map(function(r,i){
     return d.intraday ? Math.floor(d.dates[i].getTime()/1000) : d.dates[i].toISOString().slice(0,10);
   });
@@ -4839,10 +4890,19 @@ function stageSetOhlc(param){
     // A pre-market bar is not "today, still open" — the session has not
     // opened. Its range is yesterday's close to the pre-market print, and
     // that is what it says.
+    // A today candle built WITHOUT the scanner's open/high/low has an invented
+    // open and an invented range — it brackets yesterday's close against the
+    // live print. syntheticReal has always known the difference and nothing
+    // read it, so a fabricated bar printed O/H/L exactly like a real one.
+    var fabricated = !STAGE.premarketBar && !STAGE.syntheticReal;
     todayTag = STAGE.premarketBar
       ? ' <span class="m" data-tip="The regular session has not opened. This bar runs from yesterday\u2019s close to the latest pre-market print; there is no session open, high or low yet.">· pre-market</span>'
       : (' <span class="m">· '+(STAGE.iv==="1W" ? "this week" : "today")+', '
-         + ((sess==="open"||sess==="premarket") ? "still open" : "closed")+'</span>');
+         + ((sess==="open"||sess==="premarket") ? "still open" : "closed")+'</span>'
+         + (fabricated ? (' <span class="sess" data-tip="'
+             + esc("The scanner published no session open, high or low for this name, so only the CLOSE on this bar is a "
+                   + "reading. Its open is yesterday's close, and its high and low are just those two bracketed — not the "
+                   + "day's real range.")+'">CLOSE ONLY</span>') : ''));
   }
   // A reconstructed date is not a date. Say so where the date is printed.
   var approxTag = (BAR_DATES_APPROX && !STAGE.intraday)
@@ -5185,7 +5245,8 @@ function renderFundamentals(sym, fund){
   var rec = recLabel(f.rec_mark);
   var posPct = st.pos!=null ? Math.round(st.pos*100) : null;
   var fwdPe = (fund && fund.pe_forward!=null) ? numStr(fund.pe_forward,1) : "—";
-  var earnTxt = (f.earn_days!=null ? (Math.round(f.earn_days)+"d") : "—")
+  var _edg = earnDaysNow(f);
+  var earnTxt = (_edg!=null ? (Math.round(_edg)+"d") : "—")
     + (fund && fund.next_earnings && fund.next_earnings.date ? (" · "+esc(fund.next_earnings.date)) : "");
   var targetTxt = f.target!=null ? (fmtpx(f.target)+(targetPct!=null?(" ("+(targetPct>=0?"+":"")+targetPct.toFixed(1)+"%)"):"")) : "—";
 
@@ -7391,7 +7452,8 @@ function stageNextEarnHTML(sym){
   var ne = STAGE.nextEarn;
   if(!ne || !ne.date || STAGE.sym !== sym) return "";
   var f = factsOf(sym) || {};
-  var days = (f.earn_days!=null) ? Math.round(num(f.earn_days)) : null;
+  var _ednow = earnDaysNow(f);
+  var days = (_ednow!=null) ? Math.round(_ednow) : null;
   if(days==null){
     var dd = new Date(String(ne.date)+"T12:00:00Z"), today = ctTodayDate();
     if(!isNaN(dd.getTime()) && today) days = Math.round((dd.getTime()-today.getTime())/86400000);
@@ -7479,8 +7541,11 @@ function stageBar(){
   if(STAGE.sym && STAGE.intraday && STAGE.dates && STAGE.dates.length){
     var lastBar = STAGE.dates[STAGE.dates.length-1];
     if(lastBar && !isNaN(lastBar.getTime())){
-      chips += '<span class="pchip tn m" data-tip="'+esc("These bars come from the desk's own intraday file, rebuilt about every 7 minutes. "
-        + "The price in the header is the 15-minute-delayed quote from the 30-second poll, so it runs ahead of the last bar drawn here.")
+      chips += '<span class="pchip tn m" data-tip="'+esc("These bars come from the desk's own intraday file, which the publisher rebuilds "
+        + "about every 25 minutes (its INTRA_STALE_SEC gate) — a slower cadence than the 7-minute flow-board cycle. "
+        + "So the last bar here can be roughly 25 minutes behind the tape ON TOP OF the feed's own 15-minute delay. "
+        + "The page refetches the file every 5 minutes while an intraday view is open. The price in the header is the "
+        + "30-second poll, so it always runs ahead of the last bar drawn here.")
         + '">bars through '+esc(ctTimeShort(lastBar.toISOString()))+' CT</span>';
     }
   }
@@ -7917,7 +7982,7 @@ function stageFlowSecHTML(sym){
   var convSec = conv ? ('<div class="dsec"><h3>Conviction board</h3>'
     + '<div class="kvrow"><span>Score</span><b>'+(num(conv.score)!=null?Math.round(conv.score):"—")+(conv.firing?" · FIRING":"")+'</b></div>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-netflow"])+'">Net flow 0–7d</span></span><b class="'+sign(conv.net_flow)+'">'+fmM(conv.net_flow)+'</b></div>'
-    + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-flowpct"])+'">Flow %</span></span><b>'+(num(conv.flow_pct)!=null&&conv.flow_side?(conv.flow_pct.toFixed(0)+"% "+conv.flow_side):"—")+'</b></div>'
+    + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-flowpct"])+'">Flow %</span></span><b>'+flowPctHTML(num(conv.flow_pct), conv.flow_side, num(conv.flow_pct_basis))+'</b></div>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-cpratio"])+'">C/P by contract count</span></span><b>'+(num(conv.cp_ratio)!=null?conv.cp_ratio.toFixed(2)+"×":"—")+'</b></div>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-tilt"])+'">Aggressor tilt</span></span><b>'+esc(tiltStr)+'</b></div>'
     + '<div class="kvrow"><span>Loudest contract</span><b style="font-size:10.5px">'+contractLine(conv.popular_contract)+'</b></div></div>') : "";
