@@ -1135,7 +1135,7 @@ var TIPS = {
   range:"Position in the 52-week range. Near the low = shopping territory, near the high = hot runner. The diamond is today.",
   hot:"Today's move divided by this name's own average daily move — Micron swinging 2% is normal, Google swinging 2% is not. Highlights at 1.8× and up.",
   stale:"This section is older than expected for its usual refresh cadence — showing the last good read.",
-  ta_trend:"Auto trend lines, fit on the selected window: swing highs and lows (4 bars each side), then the best line through two or more pivots that the price respected — pokes beyond 1.2% kill the fit, and a pivot counts as a touch only within 1% of the line, once per cluster. Same geometry AND the same status grading as the vault's trendline scanner: a line whose break is more than 12 bars old is not drawn at all, and one price has traded back through is captioned as failed rather than quoted as a level. Windows under 40 bars draw no trend line — 20 bars have to separate the anchors. Red = resistance through highs, green = support through lows; the dashed part is the line projected forward, and a failed line gets no projection. Display only — never a signal, never in any score.",
+  ta_trend:"Auto trend lines, fit on the selected window: swing highs and lows (4 bars each side, 2 on short windows), then the best line through two or more pivots that price respected. On the intraday views a pivot counts as a touch within 1% of the line and a wick poking 1.2% through kills the fit — the vault scanner's own numbers. On the daily view both scale with what the name actually moves in a day (touch up to 3%, poke up to 4%) and the poke is judged on CLOSES rather than wicks, because the flat intraday numbers drew nothing on three quarters of daily charts. The anchor, containment and break rules come from that scanner, generalized to the support side; its rising-lows condition is not applied here. A line whose break is more than 12 bars old is not drawn, one price has traded back through and walked away from is captioned as failed, and one price closed through and stayed through has FLIPPED — broken support is drawn and captioned as overhead resistance. Windows under 40 bars draw no trend line. The dashed part is the line projected forward, and a failed line gets no projection. Display only — never a signal, never in any score.",
   ta_sr:"Horizontal support/resistance: swing-point prices clustered inside half a 60-bar ATR (floored at 1%, capped at 5%, so a $900 stock and a $12 one both cluster sensibly); a level needs 2+ touches, strongest three drawn. A level that held as a floor often matters again as a ceiling, so highs and lows cluster together. Every level's price and touch count is named in the caption under the chart; only the one nearest price takes an axis badge, and even that is dropped when it would land on a moving-average badge. Display only.",
   ta_rsi:"RSI(14), Wilder smoothing, in its own pane, on a fixed 0-100 scale. 70+ = hot, 30 or under = washed out (dotted guides). IT FOLLOWS THE INTERVAL YOU ARE ON — the pane title and the caption say which (daily, weekly, 15m, 1H, 4H), because a 40 on an hourly chart is not a 40 on the daily one. Against the fundamentals grid's daily figure it usually lands within a few points and occasionally 5 or more: both come off the same 15-minute-delayed feed but cover different bars, and the pane includes today's partial candle.",
   ta_ema:"Exponential moving average, dashed purple — weights recent bars more than the simple moving averages the chart already draws. It is computed on whatever bars are showing, so the span shortens on the intraday views (a third of the visible bars, floor 20, cap 200) rather than drawing nothing there. The caption under the chart carries the span it actually used.",
@@ -5505,6 +5505,7 @@ var TA_BREAK_CONF = 0.005; // .BREAKOUT_CONF — a close must clear the line by 
 // a red "resistance" 11% BELOW the break it claimed, one line still captioned
 // 85 sessions after it broke.
 var TA_FRESH_BARS = 12;    // .FRESH_BARS — past this the break is history, not a level
+var TA_RETEST_NEAR = 0.03; // .dist floor — a "retest" is price back AT the line, not 8% away
 var TA_MAX_EXT = 0.12;     // .MAX_EXTENSION — 12% past the line and the move is gone
 // A trend line needs bars to sit on. The source scanner's MIN_SPAN is 20 and
 // the 1-month window is 21 bars total, so a "line" there is two adjacent
@@ -5526,9 +5527,27 @@ function taPrefs(){
 function taSave(p){ store("desk.stage.ta", JSON.stringify(p)); }
 function taPivotIdx(rows, k, leg){ // leg: 1=high, 2=low
   var out = [];
+  var ranges = [];
+  for(var q=0;q<rows.length;q++){
+    var hq=num(rows[q][1]), lq=num(rows[q][2]);
+    if(hq!=null && lq!=null && hq>=lq) ranges.push(hq-lq);
+  }
+  ranges.sort(function(a,b){ return a-b; });
+  var medRange = ranges.length ? ranges[Math.floor(ranges.length/2)] : null;
   for(var i=k; i<rows.length-k; i++){
     var v = num(rows[i][leg]);
     if(v==null) continue;
+    // Deliberately narrow: the wick has to run three typical ranges past its
+    // own body AND the whole bar has to be an outlier, so a real spike with a
+    // body behind it still anchors.
+    if(medRange!=null && medRange>0){
+      var o2=num(rows[i][0]), c2=num(rows[i][3]), h2=num(rows[i][1]), l2=num(rows[i][2]);
+      if(o2!=null && c2!=null && h2!=null && l2!=null){
+        var bodyEdge = (leg===1) ? Math.max(o2,c2) : Math.min(o2,c2);
+        var past = (leg===1) ? (v - bodyEdge) : (bodyEdge - v);
+        if(past > medRange*3 && (h2-l2) > medRange*3) continue;
+      }
+    }
     var ext = true;
     for(var j=i-k; j<=i+k; j++){
       if(j===i) continue;
@@ -5574,8 +5593,22 @@ function taMaxDist(sym){
    ceiling through four swing highs vanished the day price closed through it.
    The break is returned so the renderer can dash the line past it and the
    caption can say when it broke. */
+function taContainTol(sym){
+  if(STAGE.iv !== "1D") return TA_CONTAIN_TOL;
+  var am = num((factsOf(sym)||{}).avg_move);
+  if(am==null || !(am>0)) return TA_CONTAIN_TOL;
+  return Math.max(TA_CONTAIN_TOL, Math.min(0.04, am/100*0.8));
+}
+var TA_LAST_GATE = null;   // why the last fit came up empty, for the caption
 function taFitLine(rows, piv, side, sym){
   var N = rows.length, best = null;
+  var gate = {pairs:0, span:0, anchor:0, contain:0, post:0, touch:0, shape:0, dist:0, stale:0};
+  var containTol = taContainTol(sym);
+  var postTol = Math.max(TA_POST_TOL, containTol*2.5);
+  var amv = num((factsOf(sym)||{}).avg_move);
+  var touchTol = (STAGE.iv==="1D" && amv!=null && amv>0)
+    ? Math.max(TA_TOUCH_TOL/2, Math.min(0.03, amv/100*0.6))
+    : TA_TOUCH_TOL/2;
   var lastClose = num(rows[N-1][3]);
   var minSpan = Math.max(8, Math.min(TA_MIN_SPAN, Math.floor(N/4)));
   var maxDist = taMaxDist(sym);
@@ -5588,21 +5621,26 @@ function taFitLine(rows, piv, side, sym){
   for(var ai=0; ai<piv.length; ai++){
     for(var bi=ai+1; bi<piv.length; bi++){
       var xa=piv[ai], xb=piv[bi];
-      if(xb-xa < minSpan) continue;
+      gate.pairs++;
+      if(xb-xa < minSpan){ gate.span++; continue; }
       // The newer anchor has to be RECENT, or a line pinned to two ancient
       // pivots clears containment for free and draws a confident diagonal.
-      if(xb < N*TA_MIN_ANCHOR_POS) continue;
+      if(xb < N*TA_MIN_ANCHOR_POS){ gate.anchor++; continue; }
       var ya=num(rows[xa][side]), yb=num(rows[xb][side]);
       if(ya==null||yb==null||ya<=0) continue;
       var slope=(yb-ya)/(xb-xa);
       // 1. containment between the anchors
       var bad=false;
+      // Daily containment is judged on CLOSES: a wick through a line is not a
+      // broken pattern, and wick-based containment killed 55% of all candidate
+      // pairs on daily charts.
+      var containLeg = (STAGE.iv==="1D") ? 3 : side;
       for(var x=xa; x<=xb; x++){
         var lv=lineAt(ya,slope,xa,x); if(lv<=0){ bad=true; break; }
-        var pv=num(rows[x][side]); if(pv==null) continue;
-        if(side===1 ? (pv > lv*(1+TA_CONTAIN_TOL)) : (pv < lv*(1-TA_CONTAIN_TOL))){ bad=true; break; }
+        var pv=num(rows[x][containLeg]); if(pv==null) continue;
+        if(side===1 ? (pv > lv*(1+containTol)) : (pv < lv*(1-containTol))){ bad=true; break; }
       }
-      if(bad) continue;
+      if(bad){ gate.contain++; continue; }
       // 2. the first close through the line ends the pattern — that is the break
       var bo=null;
       for(var y=xb+1; y<N; y++){
@@ -5615,9 +5653,9 @@ function taFitLine(rows, piv, side, sym){
       for(var z=xb+1; z<stop; z++){
         var lz=lineAt(ya,slope,xa,z); if(lz<=0){ bad=true; break; }
         var pz=num(rows[z][side]); if(pz==null) continue;
-        if(side===1 ? (pz > lz*(1+TA_POST_TOL)) : (pz < lz*(1-TA_POST_TOL))){ bad=true; break; }
+        if(side===1 ? (pz > lz*(1+postTol)) : (pz < lz*(1-postTol))){ bad=true; break; }
       }
-      if(bad) continue;
+      if(bad){ gate.post++; continue; }
       // 4. touches EXCLUDING the two anchors — they sit on the line by
       //    construction, so counting them made the "2 touches" gate vacuous
       //    and every 2-anchor line looked as confirmed as a 5-touch one.
@@ -5633,18 +5671,18 @@ function taFitLine(rows, piv, side, sym){
         if(lastTouchX!=null && (xt-lastTouchX) < TA_PIVOT_K*2) continue;
         var pt2=num(rows[xt][side]);
         var lt=lineAt(ya,slope,xa,xt);
-        if(pt2!=null && Math.abs(pt2-lt) <= lt*(TA_TOUCH_TOL/2)){ touches++; lastTouchX = xt; }
+        if(pt2!=null && Math.abs(pt2-lt) <= lt*touchTol){ touches++; lastTouchX = xt; }
       }
-      if(touches < 1) continue;                  // 2 anchors + at least one more visit
+      if(touches < 1){ gate.touch++; continue; }  // 2 anchors + at least one more visit
       // 5. shape: a descending ceiling or a rising floor. The wrong-way slope
       //    is only meaningful as a channel, which needs more visits.
       var wrongWay = (side===1) ? (slope > 0) : (slope < 0);
-      if(wrongWay && touches < 3) continue;
+      if(wrongWay && touches < 3){ gate.shape++; continue; }
       // 6. and it has to be near enough to today's price to mean something
       var lineNow = lineAt(ya, slope, xa, N-1);
       if(lastClose==null || !(lineNow>0)) continue;
       var dist = lineNow/lastClose - 1;
-      if(maxAbs!=null && Math.abs(lineNow-lastClose) > maxAbs) continue;
+      if(maxAbs!=null && Math.abs(lineNow-lastClose) > maxAbs){ gate.dist++; continue; }
       // 7. STATUS, ported from trendline_break_scan.py. `side===1` is a
       //    resistance line, so a break is a close ABOVE it and "back on the
       //    pre-break side" means back below; support mirrors both.
@@ -5653,7 +5691,12 @@ function taFitLine(rows, piv, side, sym){
         age = (N-1) - bo;
         var backOver = (side===1) ? (lastClose <= lineNow) : (lastClose >= lineNow);
         var past = (side===1) ? (lastClose/lineNow - 1) : (1 - lastClose/lineNow);
-        if(backOver && age <= TA_FRESH_BARS) status = "RETEST";
+        // Back on the pre-break side AND still near the line: the scanner's
+        // dist >= -3% rule, mirrored for the support side. Without it a line
+        // price broke and then walked 8% away from was still "retesting".
+        var near = (side===1) ? (lastClose >= lineNow*(1-TA_RETEST_NEAR))
+                              : (lastClose <= lineNow*(1+TA_RETEST_NEAR));
+        if(backOver && age <= TA_FRESH_BARS && near) status = "RETEST";
         else if(backOver) status = "FAILED";
         else if(past > TA_MAX_EXT || age > TA_FRESH_BARS) status = "EXTENDED";
         else status = "BREAKOUT";
@@ -5662,8 +5705,8 @@ function taFitLine(rows, piv, side, sym){
       // line stops describing the chart: NVDA carried a support broken 15 bars
       // back and, before this, one broken 85 sessions back. EXTENDED is the
       // scanner's rank-0 bucket for the same reason — the move has already run.
-      if(status === "EXTENDED") continue;
-      if(age != null && age > TA_FRESH_BARS) continue;
+      if(status === "EXTENDED"){ gate.stale++; continue; }
+      if(age != null && age > TA_FRESH_BARS){ gate.stale++; continue; }
       var rank = {BREAKOUT:5, RETEST:4, INTACT:3, FAILED:1}[status];
       var score = rank*10 + touches*3 + (xb-xa)/20 - (N-1-xb)/40;
       if(!best || score>best.score) best={xa:xa,xb:xb,ya:ya,yb:yb,slope:slope,touches:touches,
@@ -5671,6 +5714,26 @@ function taFitLine(rows, piv, side, sym){
                                           status:status, age:age};
     }
   }
+  if(!best){
+    // The gate that killed the most candidates, in the reader's words.
+    var WORDS = {
+      span:"no two swing points far enough apart",
+      anchor:"the newer swing point was too far back in the window",
+      contain:"price traded through every candidate line inside the pattern",
+      post:"price left the line before it could break it",
+      touch:"no line had a third visit to confirm it",
+      shape:"the only lines that fit ran the wrong way",
+      dist:"every line that fit sits too far from today's price to describe it",
+      stale:"the lines that fit broke too long ago to still describe the chart"
+    };
+    var top = null, topN = 0;
+    Object.keys(WORDS).forEach(function(k){ if(gate[k] > topN){ topN = gate[k]; top = k; } });
+    TA_LAST_GATE = (gate.pairs===0) ? "not enough swing points on this window"
+                 : (top ? WORDS[top] : null);
+  } else TA_LAST_GATE = null;
+  // Per side too: the caller draws both and the caption has to name the reason
+  // each one came up empty, not whichever ran last.
+  taFitLine.lastGate = TA_LAST_GATE;
   return best;
 }
 // Horizontal support/resistance: cluster ALL pivot prices (highs and lows —
@@ -5698,11 +5761,14 @@ function taLevels(rows, pivH, pivL){
   var clusters=[];
   pts.forEach(function(pt){
     var c = clusters[clusters.length-1];
-    if(c && Math.abs(pt.px - c.mean) <= c.mean*tol){
+    // Two tests, not one: near the running mean AND inside the cluster's own
+    // total width. Without the second, each point pulled the mean along.
+    if(c && Math.abs(pt.px - c.mean) <= c.mean*tol && (pt.px - c.lo) <= c.lo*tol*2){
       c.pts.push(pt);
       c.mean = c.pts.reduce(function(a,b){return a+b.px;},0)/c.pts.length;
+      c.lo = Math.min(c.lo, pt.px); c.hi = Math.max(c.hi, pt.px);
       c.last = Math.max(c.last, pt.i);
-    } else clusters.push({mean:pt.px, pts:[pt], last:pt.i});
+    } else clusters.push({mean:pt.px, lo:pt.px, hi:pt.px, pts:[pt], last:pt.i});
   });
   return clusters.filter(function(c){
       if(c.pts.length < 2) return false;
@@ -5719,7 +5785,9 @@ function taLevels(rows, pivH, pivL){
     })
     .sort(function(a,b){ return b.pts.length-a.pts.length || b.last-a.last; })
     .slice(0,3)
-    .map(function(c){ return {price:c.mean, touches:c.pts.length}; });
+    // lo/hi ride along so the caption can print the band rather than implying
+    // the whole cluster sits on one price.
+    .map(function(c){ return {price:c.mean, touches:c.pts.length, lo:c.lo, hi:c.hi}; });
 }
 function taRSI(closes, period){
   period = period||14;
@@ -5784,11 +5852,30 @@ function stageTA(){
   var summary = {res:null, sup:null, levels:[], srTried:false, winN:winN, pivotK:k,
                  tooShort:(winN < TA_MIN_WIN_FOR_TREND)};
   if(prefs.trend && !summary.tooShort){
-    [[1,pivH,"tRes","tResProj"],[2,pivL,"tSup","tSupProj"]].forEach(function(cfg){
-      var fit = taFitLine(win, cfg[1], cfg[0], STAGE.sym);
+    // Fit both sides first: when the support fit ends up ABOVE the resistance
+    // fit at the last bar the two lines cross and the caption asserted both as
+    // live. Keep the better-scoring one.
+    var fitRes = taFitLine(win, pivH, 1, STAGE.sym);
+    var gateRes = taFitLine.lastGate;
+    var fitSup = taFitLine(win, pivL, 2, STAGE.sym);
+    var gateSup = taFitLine.lastGate;
+    if(fitRes && fitSup && fitSup.lineNow > fitRes.lineNow){
+      if(fitSup.score >= fitRes.score) fitRes = null; else fitSup = null;
+    }
+    summary.gate = (!fitRes && !fitSup)
+      ? ((gateRes && gateSup && gateRes !== gateSup)
+          ? ("no resistance line — "+gateRes+"; no support line — "+gateSup)
+          : (gateRes || gateSup))
+      : null;
+    [[1,pivH,"tRes","tResProj",fitRes],[2,pivL,"tSup","tSupProj",fitSup]].forEach(function(cfg){
+      var fit = cfg[4];
       if(!fit) return;
       summary[cfg[0]===1?"res":"sup"] = fit;
-      var color = cssVar(cfg[0]===1 ? "--dn" : "--up");
+      // A line price closed through and stayed through has FLIPPED: broken
+      // support is overhead resistance, and it is drawn in that colour.
+      var flipped = (fit.status === "BREAKOUT");
+      var isRes = (cfg[0]===1);
+      var color = cssVar((isRes !== flipped) ? "--dn" : "--up");
       function lv(x){ return fit.ya + fit.slope*(x-fit.xa); }
       var opts = {color:color, lineWidth:2, priceLineVisible:false, lastValueVisible:false,
                   crosshairMarkerVisible:false, autoscaleInfoProvider: function(){ return null; }};
@@ -5844,10 +5931,11 @@ function stageTA(){
     lvls.forEach(function(l, i){
       summary.levels.push(l);
       var collides = maNow.some(function(v){ return v>0 && Math.abs(l.price-v)/v < 0.012; });
+      var wideBand = (l.lo!=null && l.hi!=null && l.price>0 && (l.hi-l.lo)/l.price > 0.02);
       STAGE.srLines.push(STAGE.s.candle.createPriceLine({
         price:l.price, color:edge, lineWidth:1, lineStyle:LWC.LineStyle.Dashed,
-        axisLabelVisible:(i===nearestIdx && !collides),
-        title:"S/R "+fmtpx(l.price)+" ×"+l.touches }));
+        axisLabelVisible:(i===nearestIdx && !collides && !wideBand),
+        title:"S/R "+(wideBand ? (fmtpx(l.lo)+"–"+fmtpx(l.hi)) : fmtpx(l.price))+" ×"+l.touches }));
     });
   }
   if(prefs.ema){
@@ -5874,14 +5962,22 @@ function stageTA(){
     if(rdata.length){
       STAGE.s.rsi = STAGE.chart.addSeries(LWC.LineSeries, {color:cssVar("--acc"), lineWidth:1,
         priceLineVisible:false, lastValueVisible:true, title:"RSI 14 · "+taTfLabel(),
-        priceFormat:{type:"price", precision:0, minMove:1},
+        // One decimal, matching the caption. At precision 0 the badge FLOORED
+        // (29.65 -> "29") while the caption rounded ("30").
+        priceFormat:{type:"price", precision:1, minMove:0.1},
         // Pinned 0-100. On an autoscaled pane the 30 guide fell off screen and
         // the pane floor read as oversold when RSI never went below 44.
         autoscaleInfoProvider: function(){ return {priceRange:{minValue:0, maxValue:100}}; }}, 1);
       STAGE.s.rsi.setData(rdata);
-      STAGE.s.rsi.createPriceLine({price:70, color:cssVar("--dn"), lineWidth:1, lineStyle:LWC.LineStyle.Dotted, axisLabelVisible:true, title:""});
-      STAGE.s.rsi.createPriceLine({price:30, color:cssVar("--up"), lineWidth:1, lineStyle:LWC.LineStyle.Dotted, axisLabelVisible:true, title:""});
-      try{ STAGE.s.rsi.priceScale().applyOptions({scaleMargins:{top:0.06, bottom:0.06}}); }catch(e){}
+      var rsiNow = rdata[rdata.length-1].value;
+      STAGE.rsiGuides = [
+        {at:70, line:STAGE.s.rsi.createPriceLine({price:70, color:cssVar("--dn"), lineWidth:1, lineStyle:LWC.LineStyle.Dotted,
+          axisLabelVisible:(rsiNow==null || Math.abs(rsiNow-70) > 6), title:""})},
+        {at:30, line:STAGE.s.rsi.createPriceLine({price:30, color:cssVar("--up"), lineWidth:1, lineStyle:LWC.LineStyle.Dotted,
+          axisLabelVisible:(rsiNow==null || Math.abs(rsiNow-30) > 6), title:""})}
+      ];
+      // Room for the topmost gridline label, which the pane edge cut in half.
+      try{ STAGE.s.rsi.priceScale().applyOptions({scaleMargins:{top:0.12, bottom:0.08}}); }catch(e){}
       summary.rsiLast = rdata.length ? rdata[rdata.length-1].value : null;
       summary.rsiTf = taTfLabel();
       // setHeight before the chart has laid out is dropped, so the pane only
@@ -5896,6 +5992,24 @@ function stageTA(){
   STAGE.taSummary = summary;
   stageTALegend(prefs);
 }
+function stageTAPoke(){
+  if(!STAGE.chart || !STAGE.s.rsi || !STAGE.rows.length) return;
+  var closes = STAGE.rows.map(function(r){ return num(r[3]); });
+  var rsi = taRSI(closes, 14), rdata = [];
+  for(var j=0;j<STAGE.rows.length;j++){ if(rsi[j]!=null) rdata.push({time:STAGE.times[j], value:rsi[j]}); }
+  if(!rdata.length) return;
+  try{ STAGE.s.rsi.setData(rdata); }catch(e){ return; }
+  // The guide labels hide when the live value lands on them; that test ran
+  // once, at creation.
+  var rNow = rdata[rdata.length-1].value;
+  (STAGE.rsiGuides||[]).forEach(function(g){
+    try{ g.line.applyOptions({axisLabelVisible: Math.abs(rNow-g.at) > 6}); }catch(e){}
+  });
+  if(STAGE.taSummary){
+    STAGE.taSummary.rsiLast = rNow;
+    stageTALegend(taPrefs());
+  }
+}
 function stageTALegend(prefs){
   var el = document.getElementById("staget");
   if(!el) return;
@@ -5903,41 +6017,68 @@ function stageTALegend(prefs){
   var last = STAGE.rows.length ? num(STAGE.rows[STAGE.rows.length-1][3]) : null;
   function lineBit(fit, label, colorVar){
     if(!fit) return null;
-    var bits = label+' ×'+(fit.touches+2);
+    var flipped = (fit.status === "BREAKOUT");
+    var name = flipped ? ("broken "+label) : label;
+    var col = flipped ? (colorVar==="--dn" ? "--up" : "--dn") : colorVar;
+    var overhead = (last!=null && fit.lineNow!=null) ? (fit.lineNow > last) : null;
+    // Price sitting on the line has not chosen a side; naming one reads as a
+    // contradiction ("resistance … 0.4% below").
+    var atLine = (last!=null && fit.lineNow!=null && Math.abs(fit.lineNow/last - 1) <= TA_BREAK_CONF);
+    if(atLine) name = label+" (at the line)";
+    var bits = name+' — 2 anchors + '+fit.touches+' touch'+(fit.touches===1?"":"es");
     // A FAILED line is history, not a level. Quoting its projected price with
     // a distance read as live support/resistance — a green "support" 6.5%
     // ABOVE price, a red "resistance" 11% BELOW its own break.
     if(fit.status === "FAILED"){
       bits += ', broke '+(fit.breakLabel||"")+' and failed — price is back on the other side';
     } else {
-      if(fit.dist!=null && last!=null) bits += ' at '+fmtpx(fit.lineNow)+' ('+fm1(fit.dist*100)+'%)';
+      if(fit.dist!=null && last!=null){
+        bits += ' at '+fmtpx(fit.lineNow)
+          + (atLine ? ' (price is on it)'
+                    : (' ('+Math.abs(fit.dist*100).toFixed(1)+'% '
+                       + (overhead===null ? "away" : (overhead ? "overhead" : "below"))+')'));
+      }
       if(fit.status === "RETEST") bits += ', broke '+(fit.breakLabel||"")+' and is retesting it';
-      else if(fit.status === "BREAKOUT") bits += ', broke '+(fit.breakLabel||"")+' and held';
+      else if(fit.status === "BREAKOUT"){
+        bits += ', broke '+(fit.breakLabel||"")+' and price has stayed '
+          + (overhead ? "below it" : "above it")+' since';
+      }
     }
-    return '<span style="color:var('+colorVar+')">'+esc(bits)+'</span>';
+    return '<span style="color:var('+col+')">'+esc(bits)+'</span>';
   }
   var on = [], empty = [];
   if(prefs.trend){
     if(sm && sm.tooShort){
-      empty.push("this window is too short to fit a trend line — 20 bars have to separate the two anchors and "
-        + (sm.winN||0) + " bars is the whole window; try 3M or longer");
+      empty.push("a trend line needs at least "+TA_MIN_WIN_FOR_TREND+" bars to fit; this window has "
+        + (sm.winN||0) + " — try 3M or longer");
     } else {
       var r = lineBit(sm && sm.res, "resistance", "--dn"), u = lineBit(sm && sm.sup, "support", "--up");
       if(r) on.push(r);
       if(u) on.push(u);
-      if(!r && !u) empty.push("no trend line held two anchors plus a touch near price");
+      if(!r && !u){
+        empty.push("no trend line fits this window" + (sm && sm.gate ? (": "+sm.gate) : ""));
+      }
     }
   }
   if(prefs.sr){
     // Name every level. Only the one nearest price gets an axis badge, so the
     // other two were anonymous dashed grey lines with no price anywhere.
     if(sm && sm.levels.length){
-      on.push('levels ' + sm.levels.map(function(l){ return fmtpx(l.price)+' ×'+l.touches; }).join(" · "));
+      var sorted = sm.levels.slice().sort(function(a,b){ return b.price-a.price; });
+      on.push('levels ' + sorted.map(function(l){
+        var inBand = (last!=null && l.lo!=null && l.hi!=null && last>=l.lo && last<=l.hi);
+        var side = (last==null) ? "" : (inBand ? "price is inside " : ((l.price>last) ? "overhead " : "under "));
+        // A cluster wider than a tick is a BAND. Printing its mean to the
+        // penny claimed a precision the pivots do not have.
+        var wide = (l.lo!=null && l.hi!=null && l.price>0 && (l.hi-l.lo)/l.price > 0.004);
+        var px = wide ? (fmtpx(l.lo)+'–'+fmtpx(l.hi)) : fmtpx(l.price);
+        return side+px+' ×'+l.touches;
+      }).join(" · "));
     }
     else empty.push("no horizontal level with 2+ touches near price");
   }
   if(prefs.ema && sm && sm.emaSpan) on.push('<span style="color:'+TA_EMA_COLOR+'">EMA'+sm.emaSpan+'</span>');
-  if(prefs.rsi && sm && sm.rsiLast!=null) on.push('RSI '+Math.round(sm.rsiLast)+' <span class="m">'+esc(sm.rsiTf||taTfLabel())+'</span>');
+  if(prefs.rsi && sm && sm.rsiLast!=null) on.push('RSI '+sm.rsiLast.toFixed(1)+' <span class="m">'+esc(sm.rsiTf||taTfLabel())+'</span>');
   if(!prefs.trend && !prefs.sr && !prefs.rsi && !prefs.ema){ el.innerHTML = ""; return; }
   var tail = ' <span class="m">(fit on this window — display only, never a signal)</span>';
   if(on.length){
@@ -7098,6 +7239,22 @@ function stageLivePoke(){
     stageRender();
     return;
   }
+  if(STAGE.iv==="1W" && STAGE.synthetic && STAGE.rows.length>=2 && STAGE.chart){
+    var wlive = liveBySym(STAGE.sym);
+    var wc = wlive ? wlive.px : null;
+    if(wc!=null){
+      var wn = STAGE.rows.length, wr = STAGE.rows[wn-1];
+      var wo = num(wr[0]);
+      var whi = Math.max(num(wr[1])!=null?num(wr[1]):wc, wc);
+      var wlo = Math.min(num(wr[2])!=null?num(wr[2]):wc, wc);
+      STAGE.rows[wn-1] = [wo, whi, wlo, wc, (wr.length>=5?wr[4]:null)];
+      try{ STAGE.s.candle.update({time:STAGE.times[wn-1], open:wo, high:whi, low:wlo, close:wc}); }catch(e){}
+      if(!STAGE.hovering) stageSetOhlc(null);
+      stageLegend();
+    }
+  }
+  // The indicator moves with whatever bars are on screen, on every interval.
+  stageTAPoke();
   if(STAGE.iv==="1D" && STAGE.synthetic && STAGE.rows.length>=2 && STAGE.chart){
     var live = liveBySym(STAGE.sym);
     if(live && live.px!=null){
