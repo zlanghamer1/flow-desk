@@ -1647,7 +1647,10 @@ function normalizeFedOdds(d){
     hike:num(src.hike_pct), hold:num(src.hold_pct), cut:num(src.cut_pct),
     d1:num(src.chg_1d_pp), d7:num(src.chg_1w_pp), d30:num(src.chg_1m_pp),
     meeting:(typeof src.meeting_date==="string")?src.meeting_date:null,
-    days:num(src.days_to_meeting),
+    // days_to_meeting is DELIBERATELY not carried through. The publisher
+    // stamps it at build time, so the card counted down from whenever the
+    // file was written while the catalyst row for the same meeting counted
+    // down from today. fedDaysToMeeting derives it from `meeting`.
     year:num(src.year_hike_pct),
     grade:(typeof src.grade==="string")?src.grade:null,
     alarm:src.alarm===true,
@@ -5084,8 +5087,11 @@ function earnPopoverHTML(row, nextRow, isNext){
     if(!nextRow) return '<span class="cl" id="popclose">×</span><div class="note">no upcoming estimate</div>';
     return '<span class="cl" id="popclose">×</span><b>Upcoming'+(nextRow.session?(" · "+esc(nextRow.session)):"")+'</b><br>'+esc(nextRow.date||"—")
       + '<div style="margin-top:4px">EPS est '+(nextRow.eps_estimate!=null?numStr(nextRow.eps_estimate):"—")+'</div>'
-      + '<div>Rev est '+(nextRow.rev_estimate!=null?fmtCapDollars(nextRow.rev_estimate):"—")+'</div>'
-      + approxDateNoteHTML();
+      + '<div>Rev est '+(nextRow.rev_estimate!=null?fmtCapDollars(nextRow.rev_estimate):"—")+'</div>';
+      // No approximate-date note here: the NEXT report is deliberately not
+      // drawn on a candle (see stageMarkers), so there is no bar under it
+      // whose date could be reconstructed. The card is opened from the header
+      // chip, and the date it prints is the vendor's own.
   }
   if(!row) return '<span class="cl" id="popclose">×</span><div class="note">no data</div>';
   return '<span class="cl" id="popclose">×</span><b>'+esc(row.period||"—")+'</b><br>'
