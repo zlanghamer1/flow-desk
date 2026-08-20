@@ -1858,8 +1858,11 @@ var INTRA_CACHE = null;
 // limit — naming the tracked watchlist as the reason a tracked name had no
 // intraday bars.
 var INTRA_FAILED = false, INTRA_RETRY_AFTER = 0;
-// The publisher rebuilds bars_intraday.json about every 7 minutes during the
-// session. The cache was filled once on the first intraday click and never
+// The publisher rebuilds bars_intraday.json on its own 25-minute gate during
+// the session — the loop CYCLES every 7 minutes (LOOP_SLEEP_SEC 420) but the
+// intraday file has a separate INTRA_STALE_SEC of 25 minutes, so the last bar
+// can be that far behind on top of the feed's own 15-minute delay.
+// The cache was filled once on the first intraday click and never
 // again, so a page left open on the 15-minute view all morning drew a chart
 // that stopped at the time it was opened while the price above it kept
 // ticking — the "bars through 10:15" chip said so, in small grey text.
@@ -3708,7 +3711,11 @@ function renderConv(data){
       +'<td><b>'+(num(c.score)!=null?Math.round(c.score):"—")+'</b></td>'
       +'<td class="'+sign(c.net_flow)+'">'+fmM(c.net_flow)+'</td>'
       +'<td>'+fpHtml+'</td>'
-      +'<td'+(rvTip?(' data-tip="'+esc(rvTip)+'"'):'')+'>'+(rv!=null?rv.toFixed(1)+"×":"—")+'</td>'
+      +'<td'+((rvTip||rv==null)?(' data-tip="'+esc(rvTip ||
+          "Neither the 30-second poll nor the last publish carried a relative-volume reading for this name. "
+          + "The scanner does not compute one for every symbol — an ETF or a thin listing often has no 10-day "
+          + "average volume to measure against.")+'"'):'')+'>'
+      +(rv!=null?rv.toFixed(1)+"×":"—")+'</td>'
       +'<td class="m" style="font-size:10.5px">'+contractLine(c.popular_contract)+'</td></tr>';
   }
 }
