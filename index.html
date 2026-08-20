@@ -1354,8 +1354,22 @@ function priceSessionNow(now){
 function candleClose(live){
   if(!live) return null;
   var s = priceSessionNow();
-  if(s==="open" || s==="premarket") return live.px;
+  if(s==="open") return live.px;
+  // Pre-market: rtc is still YESTERDAY's regular-session close (the comment
+  // above says so, and dispQuote already swaps for it). Using it drew a
+  // "today, still open" candle whose four prices were yesterday's bar,
+  // repeated. The pre-market print is the only real reading for the new day.
+  if(s==="premarket") return (live.prepx!=null) ? live.prepx : null;
   return (live.c!=null) ? live.c : live.px;
+}
+/* Pre-market has no session open, high or low — the scanner's open/high/low
+   columns still hold yesterday's. All a pre-market bar can honestly show is
+   the range between yesterday's close and the pre-market print. */
+function preMarketBar(live, prevClose){
+  if(!live || live.prepx==null || prevClose==null) return null;
+  var c = live.prepx;
+  return [prevClose, Math.max(prevClose, c), Math.min(prevClose, c), c,
+          (live.prevol!=null ? live.prevol : null)];
 }
 function dispQuote(q){
   if(!q) return {px:null, ch:null, tag:null, ext:null};
@@ -1670,17 +1684,38 @@ var INTRA_CACHE = null;
 // limit — naming the tracked watchlist as the reason a tracked name had no
 // intraday bars.
 var INTRA_FAILED = false, INTRA_RETRY_AFTER = 0;
-function ensureIntra(){
+// The publisher rebuilds bars_intraday.json about every 7 minutes during the
+// session. The cache was filled once on the first intraday click and never
+// again, so a page left open on the 15-minute view all morning drew a chart
+// that stopped at the time it was opened while the price above it kept
+// ticking — the "bars through 10:15" chip said so, in small grey text.
+var INTRA_TTL_MS = 5 * 60 * 1000;
+var INTRA_FETCHED_AT = 0;
+function ensureIntra(force){
   // The failure path used to cache {} — truthy — so the early return
   // short-circuited every later call and the "it retries" sentence was a
   // promise the code could not keep. A failure leaves the cache null and
   // schedules the next attempt instead.
-  if(INTRA_CACHE) return Promise.resolve(INTRA_CACHE);
-  if(INTRA_FAILED && Date.now() < INTRA_RETRY_AFTER) return Promise.resolve({});
-  return fetch(INTRA_URL)
+  var fresh = INTRA_CACHE && !force && (Date.now() - INTRA_FETCHED_AT < INTRA_TTL_MS);
+  if(fresh) return Promise.resolve(INTRA_CACHE);
+  if(INTRA_FAILED && Date.now() < INTRA_RETRY_AFTER){
+    return Promise.resolve(INTRA_CACHE || {});
+  }
+  return fetch(INTRA_URL, {cache:"no-cache"})
     .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
-    .then(function(json){ INTRA_CACHE = (json && typeof json==="object") ? json : {}; INTRA_FAILED = false; return INTRA_CACHE; })
-    .catch(function(){ INTRA_FAILED = true; INTRA_RETRY_AFTER = Date.now() + 20000; return {}; });
+    .then(function(json){
+      INTRA_CACHE = (json && typeof json==="object") ? json : {};
+      INTRA_FETCHED_AT = Date.now(); INTRA_FAILED = false;
+      // A rebuilt file may have repaired bars the old one carried; drop the
+      // per-symbol repair memo so it is recomputed against the new series.
+      INTRA_REPAIRS = {};
+      return INTRA_CACHE;
+    })
+    .catch(function(){
+      INTRA_FAILED = true; INTRA_RETRY_AFTER = Date.now() + 20000;
+      // Keep whatever bars we already have rather than blanking the chart.
+      return INTRA_CACHE || {};
+    });
 }
 // bars.json's split_fixed map (2026-08-18): {sym: factor} for any ticker whose
 // pre-split history the fetcher had to rescale because Yahoo served it on the
@@ -4110,28 +4145,38 @@ function ctTodayDate(){
 // appended exactly the way seriesQuads always did it (o=prevClose, h/l
 // bracket prevClose..live, c=live).
 function stageDailyData(sym){
-  var q = quadsRaw(sym), rows, dates, synthetic = false, syntheticReal = false;
+  var q = quadsRaw(sym), rows, dates, synthetic = false, syntheticReal = false, premarketBar = false;
   var adhoc = (!q || q.length<2) && ADHOC_BARS[sym] && ADHOC_BARS[sym].D;
   if(q && q.length >= 2){
     rows = q.slice();
     var live = liveBySym(sym);
     if(live && live.px!=null){
       var prevClose = num(rows[rows.length-1][3]);
+      var storedLen = rows.length;
       if(prevClose!=null){
         // The REAL session bar when the scanner gave us one; the prevClose
         // bracket only as a fallback (a symbol whose open/high/low come back
         // null). `synthetic` still marks the bar as today's partial candle —
         // it is 15 minutes behind and it is not closed — but its numbers are
         // no longer invented.
-        var ro=live.o, rh=live.h, rl=live.l, rc=candleClose(live);
-        if(ro!=null && rh!=null && rl!=null && rh>=rl && ro>0){
-          var rhi = Math.max(rh, rc), rlo = Math.min(rl, rc);
-          rows = rows.concat([[ro, rhi, rlo, rc, (live.v!=null?live.v:null)]]);
-          syntheticReal = true;
+        var _sess = priceSessionNow();
+        if(_sess==="premarket"){
+          // The scanner's open/high/low are yesterday's until the bell. Draw
+          // the pre-market bar from the pre-market print, or draw no extra
+          // bar at all when the name has not traded pre-market yet.
+          var pmb = preMarketBar(live, prevClose);
+          if(pmb){ rows = rows.concat([pmb]); synthetic = true; premarketBar = true; }
         } else {
-          rows = rows.concat([[prevClose, Math.max(prevClose, live.px), Math.min(prevClose, live.px), live.px]]);
+          var ro=live.o, rh=live.h, rl=live.l, rc=candleClose(live);
+          if(ro!=null && rh!=null && rl!=null && rh>=rl && ro>0 && rc!=null){
+            var rhi = Math.max(rh, rc), rlo = Math.min(rl, rc);
+            rows = rows.concat([[ro, rhi, rlo, rc, (live.v!=null?live.v:null)]]);
+            syntheticReal = true;
+          } else if(rc!=null){
+            rows = rows.concat([[prevClose, Math.max(prevClose, rc), Math.min(prevClose, rc), rc]]);
+          }
+          if(rows.length !== storedLen) synthetic = true;
         }
-        synthetic = true;
       }
     }
     var endDateStr = (STATE.data && STATE.data.session_date) || (BARS_CACHE && BARS_CACHE.built) || null;
@@ -4163,17 +4208,26 @@ function stageDailyData(sym){
       if(todayCT && lastD && todayCT.getTime() > lastD.getTime()){
         var pc = num(rows[rows.length-1][3]);
         if(pc!=null){
-          var ao=aliv.o, ah=aliv.h, al=aliv.l, ac=candleClose(aliv);
-          if(ao!=null && ah!=null && al!=null && ah>=al && ao>0){
-            rows = rows.concat([[ao, Math.max(ah, ac), Math.min(al, ac), ac,
-                                 (aliv.v!=null?aliv.v:null)]]);
-            syntheticReal = true;
+          var aSess = priceSessionNow();
+          if(aSess==="premarket"){
+            var apmb = preMarketBar(aliv, pc);
+            if(apmb){ rows = rows.concat([apmb]); dates = dates.concat([todayCT]);
+                      synthetic = true; premarketBar = true; }
           } else {
-            // Bracket fallback only when the scanner sent no open/high/low.
-            rows = rows.concat([[pc, Math.max(pc, ac), Math.min(pc, ac), ac]]);
+            var ao=aliv.o, ah=aliv.h, al=aliv.l, ac=candleClose(aliv);
+            if(ac!=null){
+              if(ao!=null && ah!=null && al!=null && ah>=al && ao>0){
+                rows = rows.concat([[ao, Math.max(ah, ac), Math.min(al, ac), ac,
+                                     (aliv.v!=null?aliv.v:null)]]);
+                syntheticReal = true;
+              } else {
+                // Bracket fallback only when the scanner sent no open/high/low.
+                rows = rows.concat([[pc, Math.max(pc, ac), Math.min(pc, ac), ac]]);
+              }
+              dates = dates.concat([todayCT]);
+              synthetic = true;
+            }
           }
-          dates = dates.concat([todayCT]);
-          synthetic = true;
         }
       }
     }
@@ -4183,7 +4237,8 @@ function stageDailyData(sym){
   var closes = rows.map(function(r){ return num(r[3]); });
   return { rows:rows, dates:dates, m20:rollMA(closes,20), m50:rollMA(closes,50), m200:rollMA(closes,200),
            hasVolume: rows.some(function(r){ return r && r.length>=5 && num(r[4])!=null && num(r[4])>0; }),
-           intraday:false, synthetic:synthetic, syntheticReal:syntheticReal };
+           intraday:false, synthetic:synthetic, syntheticReal:syntheticReal,
+           premarketBar:premarketBar };
 }
 function stageViewData(sym, iv){
   if(iv==="1D") return stageDailyData(sym);
@@ -4286,7 +4341,7 @@ function stageRender(){
   }
   stageMsg(null);
   STAGE.rows=d.rows; STAGE.dates=d.dates; STAGE.intraday=d.intraday;
-  STAGE.hasVolume=d.hasVolume; STAGE.synthetic=d.synthetic;
+  STAGE.hasVolume=d.hasVolume; STAGE.synthetic=d.synthetic; STAGE.premarketBar=!!d.premarketBar;
   STAGE.times = d.rows.map(function(r,i){
     return d.intraday ? Math.floor(d.dates[i].getTime()/1000) : d.dates[i].toISOString().slice(0,10);
   });
@@ -4461,9 +4516,16 @@ function stageSetOhlc(param){
   // US10Y and DXY bar. No number is better than a wrong one.
   var volPart = (r.length>=5 && r[4]!=null && num(r[4])>0) ? (' V <b>'+fmtVolShort(r[4])+'</b>') : '';
   var sess = priceSessionNow();
-  var todayTag = (STAGE.synthetic && i===STAGE.rows.length-1)
-    ? (' <span class="m">· '+(STAGE.iv==="1W" ? "this week" : "today")+', '
-       + ((sess==="open"||sess==="premarket") ? "still open" : "closed")+'</span>') : '';
+  var todayTag = "";
+  if(STAGE.synthetic && i===STAGE.rows.length-1){
+    // A pre-market bar is not "today, still open" — the session has not
+    // opened. Its range is yesterday's close to the pre-market print, and
+    // that is what it says.
+    todayTag = STAGE.premarketBar
+      ? ' <span class="m" data-tip="The regular session has not opened. This bar runs from yesterday\u2019s close to the latest pre-market print; there is no session open, high or low yet.">· pre-market</span>'
+      : (' <span class="m">· '+(STAGE.iv==="1W" ? "this week" : "today")+', '
+         + ((sess==="open"||sess==="premarket") ? "still open" : "closed")+'</span>');
+  }
   // A reconstructed date is not a date. Say so where the date is printed.
   var approxTag = (BAR_DATES_APPROX && !STAGE.intraday)
     ? ' <span class="m" data-tip="This bars file publishes no per-bar dates, so the page counted weekdays back from the session date. Market holidays make that drift — read the date as approximate.">≈</span>' : '';
@@ -4518,15 +4580,18 @@ function stageOnVisRange(range){
     var n = STAGE.rows.length;
     var a = Math.max(0, Math.min(n-1, Math.round(range.from)));
     var b = Math.max(0, Math.min(n-1, Math.round(range.to)));
-    if(b<=a){ return; }
-    var c0 = num(STAGE.rows[a][3]), c1 = num(STAGE.rows[b][3]);
     var el = document.getElementById("stagepct");
+    // One bar (or none) on screen has no move to report. Returning here left
+    // the chip showing the previous window's number — zoom into a single
+    // candle on MU 3M and it still read "+43.9% shown".
+    if(b<=a){ if(el) el.hidden = true; return; }
+    var c0 = num(STAGE.rows[a][3]), c1 = num(STAGE.rows[b][3]);
     if(el && c0!=null && c1!=null && c0!==0){
       var pct = (c1/c0-1)*100;
       el.className = "pchip tn "+(pct>=0?"u":"d");
       el.textContent = fm1(pct)+"% shown";
       el.hidden = false;
-    }
+    } else if(el){ el.hidden = true; }
   });
 }
 
@@ -5904,9 +5969,19 @@ function taFitLine(rows, piv, side, sym){
       // 7. STATUS, ported from trendline_break_scan.py. `side===1` is a
       //    resistance line, so a break is a close ABOVE it and "back on the
       //    pre-break side" means back below; support mirrors both.
-      var status = "INTACT", age = null;
+      var status = "INTACT", age = null, backAfter = 0, sinceBars = 0;
       if(bo!=null){
         age = (N-1) - bo;
+        // Every close between the break and now, and how many of them went
+        // back through the line. The caption used to say "price has stayed
+        // above it since" after comparing only the LAST close to the line —
+        // a statement about the whole stretch, checked on one bar of it.
+        for(var w=bo+1; w<N; w++){
+          var cw = num(rows[w][3]), lw = lineAt(ya,slope,xa,w);
+          if(cw==null || !(lw>0)) continue;
+          sinceBars++;
+          if(side===1 ? (cw <= lw) : (cw >= lw)) backAfter++;
+        }
         var backOver = (side===1) ? (lastClose <= lineNow) : (lastClose >= lineNow);
         var past = (side===1) ? (lastClose/lineNow - 1) : (1 - lastClose/lineNow);
         // Back on the pre-break side AND still near the line: the scanner's
@@ -5929,7 +6004,8 @@ function taFitLine(rows, piv, side, sym){
       var score = rank*10 + touches*3 + (xb-xa)/20 - (N-1-xb)/40;
       if(!best || score>best.score) best={xa:xa,xb:xb,ya:ya,yb:yb,slope:slope,touches:touches,
                                           score:score, bo:bo, dist:dist, lineNow:lineNow,
-                                          status:status, age:age};
+                                          status:status, age:age, side:side,
+                                          backAfter:backAfter, sinceBars:sinceBars};
     }
   }
   if(!best){
@@ -6211,30 +6287,72 @@ function stageTA(){
   stageTALegend(prefs);
 }
 function stageTAPoke(){
-  if(!STAGE.chart || !STAGE.s.rsi || !STAGE.rows.length) return;
-  var closes = STAGE.rows.map(function(r){ return num(r[3]); });
-  var rsi = taRSI(closes, 14), rdata = [];
-  for(var j=0;j<STAGE.rows.length;j++){ if(rsi[j]!=null) rdata.push({time:STAGE.times[j], value:rsi[j]}); }
-  if(!rdata.length) return;
-  try{ STAGE.s.rsi.setData(rdata); }catch(e){ return; }
-  // The guide labels hide when the live value lands on them; that test ran
-  // once, at creation.
-  var rNow = rdata[rdata.length-1].value;
-  (STAGE.rsiGuides||[]).forEach(function(g){
-    try{ g.line.applyOptions({axisLabelVisible: Math.abs(rNow-g.at) > 6}); }catch(e){}
-  });
-  if(STAGE.taSummary){
-    STAGE.taSummary.rsiLast = rNow;
-    stageTALegend(taPrefs());
+  if(!STAGE.chart || !STAGE.rows.length) return;
+  if(STAGE.s.rsi){
+    var closes = STAGE.rows.map(function(r){ return num(r[3]); });
+    var rsi = taRSI(closes, 14), rdata = [];
+    for(var j=0;j<STAGE.rows.length;j++){ if(rsi[j]!=null) rdata.push({time:STAGE.times[j], value:rsi[j]}); }
+    if(rdata.length){
+      try{
+        STAGE.s.rsi.setData(rdata);
+        // The guide labels hide when the live value lands on them; that test
+        // ran once, at creation.
+        var rNow = rdata[rdata.length-1].value;
+        (STAGE.rsiGuides||[]).forEach(function(g){
+          try{ g.line.applyOptions({axisLabelVisible: Math.abs(rNow-g.at) > 6}); }catch(e){}
+        });
+        if(STAGE.taSummary) STAGE.taSummary.rsiLast = rNow;
+      }catch(e){}
+    }
   }
+  // The trend lines are drawn in the colour of their verdict, and the verdict
+  // moves with price. Re-colour them from the same re-grade the caption uses,
+  // or a line the caption calls broken resistance stays drawn support-green.
+  var lastC = num(STAGE.rows[STAGE.rows.length-1][3]);
+  [["res","tRes","tResProj",true],["sup","tSup","tSupProj",false]].forEach(function(cfg){
+    var fit = STAGE.taSummary && STAGE.taSummary[cfg[0]];
+    if(!fit) return;
+    var g = taRegrade(fit, lastC);
+    var col = cssVar((cfg[3] !== (g.status === "BREAKOUT")) ? "--dn" : "--up");
+    [STAGE.s[cfg[1]], STAGE.s[cfg[2]]].forEach(function(sr){
+      if(sr){ try{ sr.applyOptions({color: col}); }catch(e){} }
+    });
+  });
+  // Draw the caption whether or not RSI produced anything — it carries the
+  // trend-line verdict, which is what the re-grade above just changed.
+  if(STAGE.taSummary) stageTALegend(taPrefs());
+}
+/* The line's GEOMETRY comes from settled bars and does not move during the
+   session. Its VERDICT does: RETEST, FAILED and BREAKOUT are all decided by
+   where the last close sits against the line, and so are "overhead", "below"
+   and the distance. Those were computed once, when the chart opened, and the
+   30-second poke only recomputed RSI — so a line MU broke at 10:05 still read
+   "1.2% overhead" at 14:30 with price 4% through it. Re-grade against the
+   close the chart is currently showing, every time the caption is drawn. */
+function taRegrade(fit, lastClose){
+  if(!fit || lastClose==null || !(fit.lineNow>0)) return fit;
+  var side = (fit.side!=null) ? fit.side : (fit.status==="INTACT" ? 1 : 1);
+  var out = {}; for(var k in fit) if(Object.prototype.hasOwnProperty.call(fit,k)) out[k]=fit[k];
+  out.dist = fit.lineNow/lastClose - 1;
+  if(fit.bo==null){ out.status = "INTACT"; return out; }
+  var backOver = (side===1) ? (lastClose <= fit.lineNow) : (lastClose >= fit.lineNow);
+  var past = (side===1) ? (lastClose/fit.lineNow - 1) : (1 - lastClose/fit.lineNow);
+  var near = (side===1) ? (lastClose >= fit.lineNow*(1-TA_RETEST_NEAR))
+                        : (lastClose <= fit.lineNow*(1+TA_RETEST_NEAR));
+  if(backOver && fit.age <= TA_FRESH_BARS && near) out.status = "RETEST";
+  else if(backOver) out.status = "FAILED";
+  else if(past > TA_MAX_EXT || fit.age > TA_FRESH_BARS) out.status = "EXTENDED";
+  else out.status = "BREAKOUT";
+  return out;
 }
 function stageTALegend(prefs){
   var el = document.getElementById("staget");
   if(!el) return;
   var sm = STAGE.taSummary;
   var last = STAGE.rows.length ? num(STAGE.rows[STAGE.rows.length-1][3]) : null;
-  function lineBit(fit, label, colorVar){
-    if(!fit) return null;
+  function lineBit(fit0, label, colorVar){
+    if(!fit0) return null;
+    var fit = taRegrade(fit0, last);
     var flipped = (fit.status === "BREAKOUT");
     var name = flipped ? ("broken "+label) : label;
     var col = flipped ? (colorVar==="--dn" ? "--up" : "--dn") : colorVar;
@@ -6249,6 +6367,10 @@ function stageTALegend(prefs){
     // ABOVE price, a red "resistance" 11% BELOW its own break.
     if(fit.status === "FAILED"){
       bits += ', broke '+(fit.breakLabel||"")+' and failed — price is back on the other side';
+    } else if(fit.status === "EXTENDED"){
+      // Reachable only from the live re-grade: the fitter drops EXTENDED fits.
+      bits += ', broke '+(fit.breakLabel||"")+' and price has run '
+        + Math.abs(fit.dist*100).toFixed(1)+'% past it — the move is already made';
     } else {
       if(fit.dist!=null && last!=null){
         bits += ' at '+fmtpx(fit.lineNow)
@@ -6258,8 +6380,18 @@ function stageTALegend(prefs){
       }
       if(fit.status === "RETEST") bits += ', broke '+(fit.breakLabel||"")+' and is retesting it';
       else if(fit.status === "BREAKOUT"){
-        bits += ', broke '+(fit.breakLabel||"")+' and price has stayed '
-          + (overhead ? "below it" : "above it")+' since';
+        var sideWord = overhead ? "below it" : "above it";
+        if(fit.backAfter > 0 && fit.sinceBars > 0){
+          // It did NOT stay through. Say how often it came back rather than
+          // asserting a clean break the bars do not show.
+          bits += ', broke '+(fit.breakLabel||"")+' but closed back through on '
+            + fit.backAfter+' of the '+fit.sinceBars+' session'+(fit.sinceBars===1?"":"s")+' since';
+        } else if(fit.sinceBars > 0){
+          bits += ', broke '+(fit.breakLabel||"")+' and has closed '+sideWord
+            + ' on all '+fit.sinceBars+' session'+(fit.sinceBars===1?"":"s")+' since';
+        } else {
+          bits += ', broke '+(fit.breakLabel||"")+' on the latest bar';
+        }
       }
     }
     return '<span style="color:var('+col+')">'+esc(bits)+'</span>';
@@ -7500,14 +7632,21 @@ function stageLivePoke(){
       var wo = num(wr[0]);
       var whi = Math.max(num(wr[1])!=null?num(wr[1]):wc, wc);
       var wlo = Math.min(num(wr[2])!=null?num(wr[2]):wc, wc);
-      STAGE.rows[wn-1] = [wo, whi, wlo, wc, (wr.length>=5?wr[4]:null)];
-      try{ STAGE.s.candle.update({time:STAGE.times[wn-1], open:wo, high:whi, low:wlo, close:wc}); }catch(e){}
+      var wv = (wr.length>=5) ? num(wr[4]) : null;
+      STAGE.rows[wn-1] = [wo, whi, wlo, wc, wv];
+      try{
+        STAGE.s.candle.update({time:STAGE.times[wn-1], open:wo, high:whi, low:wlo, close:wc});
+        // Keep the volume bar's colour with the candle it sits under: a week
+        // that flips from up to down left a green volume bar under a red one.
+        if(STAGE.s.volume && wv!=null && STAGE.hasVolume){
+          STAGE.s.volume.update({time:STAGE.times[wn-1], value:wv,
+            color: hexA(cssVar(wc>=wo ? "--up" : "--dn"), 0.45)});
+        }
+      }catch(e){}
       if(!STAGE.hovering) stageSetOhlc(null);
       stageLegend();
     }
   }
-  // The indicator moves with whatever bars are on screen, on every interval.
-  stageTAPoke();
   if(STAGE.iv==="1D" && STAGE.synthetic && STAGE.rows.length>=2 && STAGE.chart){
     var live = liveBySym(STAGE.sym);
     if(live && live.px!=null){
@@ -7519,24 +7658,45 @@ function stageLivePoke(){
         // ratchet is only the fallback path's memory (the SVG engine used to
         // re-bracket prevClose..live on every rebuild and forget the day's
         // real extremes).
-        var op = (live.o!=null && live.o>0) ? live.o : prevClose;
-        var cc = candleClose(live);
-        var hi, lo;
-        if(live.h!=null && live.l!=null && live.h>=live.l){
-          hi = Math.max(live.h, cc); lo = Math.min(live.l, cc);
+        var op, cc, hi, lo, vv;
+        if(STAGE.premarketBar){
+          // Pre-market: yesterday's close to the pre-market print, nothing else.
+          var pmb = preMarketBar(live, prevClose);
+          if(pmb){ op = pmb[0]; hi = pmb[1]; lo = pmb[2]; cc = pmb[3]; vv = pmb[4]; }
         } else {
-          hi = Math.max(num(cur[1])!=null?num(cur[1]):op, cc);
-          lo = Math.min(num(cur[2])!=null?num(cur[2]):op, cc);
+          op = (live.o!=null && live.o>0) ? live.o : prevClose;
+          cc = candleClose(live);
+          if(live.h!=null && live.l!=null && live.h>=live.l){
+            hi = Math.max(live.h, cc); lo = Math.min(live.l, cc);
+          } else {
+            hi = Math.max(num(cur[1])!=null?num(cur[1]):op, cc);
+            lo = Math.min(num(cur[2])!=null?num(cur[2]):op, cc);
+          }
+          vv = (live.v!=null?live.v:(cur.length>=5?cur[4]:null));
         }
-        STAGE.rows[n-1] = [op, hi, lo, cc, (live.v!=null?live.v:(cur.length>=5?cur[4]:null))];
+        if(cc!=null){
+        STAGE.rows[n-1] = [op, hi, lo, cc, vv];
         try{
           STAGE.s.candle.update({time:STAGE.times[n-1], open:op, high:hi, low:lo, close:cc});
+          // The volume pane never moved with the candle: the only setData is
+          // at build time, so today's volume bar froze at whatever it was when
+          // the chart was drawn while the price bar above it kept updating.
+          if(STAGE.s.volume && vv!=null && STAGE.hasVolume){
+            STAGE.s.volume.update({time:STAGE.times[n-1], value:vv,
+              color: hexA(cssVar(cc>=op ? "--up" : "--dn"), 0.45)});
+          }
         }catch(e){}
         if(!STAGE.hovering) stageSetOhlc(null);
         stageLegend();
+        }
       }
     }
   }
+  // The indicator moves with whatever bars are on screen, on every interval —
+  // and it runs LAST, after the synthetic candle above has taken the poll's
+  // close. Running it first meant every RSI reading was computed on the
+  // previous poll's price while the number beside it was the current one.
+  stageTAPoke();
 }
 
 /* =================== master render + live-poll refresh =================== */
@@ -7974,6 +8134,19 @@ function tick(){
   // The heatmap refreshes on the same 2-minute cadence as data.json, and
   // only while it is actually on screen — a hidden map polls nothing.
   if(STAGE.view==="heat" && now - HEAT.lastFetch >= DATA_POLL_MS - 500) heatRender(true);
+  // Same rule for the intraday file: refetch it only while an intraday view
+  // is actually on screen, and only once its five-minute window has passed.
+  if(STAGE.view==="chart" && STAGE.sym && INTRA_CACHE
+     && (STAGE.iv==="15m" || STAGE.iv==="1H" || STAGE.iv==="4H")
+     && now - INTRA_FETCHED_AT >= INTRA_TTL_MS){
+    var _sym = STAGE.sym, _iv = STAGE.iv, _before = INTRA_FETCHED_AT;
+    ensureIntra(true).then(function(){
+      if(STAGE.sym!==_sym || STAGE.iv!==_iv) return;
+      if(INTRA_FETCHED_AT === _before) return;   // the refetch failed; keep the chart
+      stageRender();
+      if(STAGE.tab!=="fin" && STAGE.tab!=="peers") renderStageTab();
+    });
+  }
 }
 document.addEventListener("visibilitychange", function(){ if(!document.hidden){ tick(); updatePricesTimestamp(); } });
 // The sticky left rail parks under the top rail, whose height changes when
