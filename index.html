@@ -1183,6 +1183,11 @@ var TIPS = {
   "tip-trend": "Whether the stock price is above its 20- and 50-day moving averages (UP), below both (DOWN), or split between them (MIXED).",
   "tip-ivrank": "Where today's option prices (implied volatility) sit versus this stock's own recent history — up to the last 60 trading sessions (about 3 months), not a full year. High = options are relatively expensive right now. Needs 20+ sessions of history to calculate; until then the cell shows a dash with the raw IV in its tooltip.",
   "tip-suggested": "The highest-premium contract with a delta between 0.30 and 0.60, expiring 2 weeks to 6 months out — a middle-of-the-road strike, not a lottery ticket.",
+  // The conviction board's column is a DIFFERENT selection: it reports what
+  // the day's flow actually concentrated in, not a strike anyone should buy.
+  // It used to carry the swing board's tooltip, which described a rule this
+  // column does not apply — and then called the result a suggestion.
+  "tip-loudest": "The single contract that took the most premium today on this name, from the 0-7 day expiries inside \u00b120% of spot — the strike the day's flow actually concentrated in. This is a REPORT of where the money went, not a suggested trade: the swing board's Suggested contract column is the one that applies a delta and expiry rule. 15-minute-delayed CBOE data.",
   "tip-entry-ref": "Entry reference = this contract's last traded price — 15-minute-delayed, and on a thin contract possibly hours old. Check the live bid/ask before treating it as a fillable price.",
   "tip-stop-ref": "Stop reference = 30% below the entry price — a fixed constant, not tuned to this name's volatility. A reference level, never a recommendation.",
   "tip-target-ref": "Target reference = entry price plus 105% — a fixed constant. A reference level, never a recommendation; see the 'needs ~x% on the stock' figure for what the stock must do to get there.",
@@ -1346,14 +1351,51 @@ function ctMinutesOfDay(d){
     return (+p.slice(0,2))*60 + (+p.slice(3,5));
   }catch(e){ return ctHour(d)*60; }
 }
+/* NYSE/Nasdaq full closures. Without these the lamp painted a green OPEN at
+   10:00 CT on Thanksgiving over prices that had not moved since Wednesday,
+   and every quote showed its previous close as today's untagged move. Dates
+   are the CT calendar day, YYYY-MM-DD. Extend each December; when bars.json
+   v4's session calendar is live, MARKET_SESSIONS below prefers it. */
+var MARKET_HOLIDAYS = {
+  "2026-01-01":1,"2026-01-19":1,"2026-02-16":1,"2026-04-03":1,"2026-05-25":1,
+  "2026-06-19":1,"2026-07-03":1,"2026-09-07":1,"2026-11-26":1,"2026-12-25":1,
+  "2027-01-01":1,"2027-01-18":1,"2027-02-15":1,"2027-03-26":1,"2027-05-31":1,
+  "2027-06-18":1,"2027-07-05":1,"2027-09-06":1,"2027-11-25":1,"2027-12-24":1
+};
+/* Early closes: the tape stops at 12:00 CT. */
+var MARKET_HALF_DAYS = {
+  "2026-11-27":1,"2026-12-24":1,"2027-11-26":1
+};
+function ctDateKey(d){
+  try{
+    return new Intl.DateTimeFormat("en-CA",{timeZone:"America/Chicago",
+      year:"numeric",month:"2-digit",day:"2-digit"}).format(d);
+  }catch(e){ return null; }
+}
+/* Is this CT calendar day one the US equity market trades? Prefers the session
+   calendar bars.json v4 publishes; falls back to the table above. */
+function isTradingDay(now){
+  var wd = ctWeekdayIndex(now);
+  if(wd===0 || wd===6) return false;
+  var key = ctDateKey(now);
+  if(!key) return true;
+  var sess = BARS_CACHE && Array.isArray(BARS_CACHE.sessions) ? BARS_CACHE.sessions : null;
+  if(sess && sess.length){
+    // Only decisive for a day the published calendar actually covers; it ends
+    // at the last built session, so anything after that falls back.
+    if(key <= sess[sess.length-1]) return sess.indexOf(key) !== -1;
+  }
+  return !MARKET_HOLIDAYS[key];
+}
 function priceSessionNow(now){
   now = now || new Date();
-  var wd = ctWeekdayIndex(now);
-  if(wd===0 || wd===6) return "closed";
+  if(!isTradingDay(now)) return "closed";
   var m = ctMinutesOfDay(now);
+  var key = ctDateKey(now);
+  var closeM = MARKET_HALF_DAYS[key] ? 12*60 : 15*60;
   if(m >= 3*60 && m < 8*60+30) return "premarket";
-  if(m >= 8*60+30 && m < 15*60) return "open";
-  if(m >= 15*60 && m < 19*60) return "afterhours";
+  if(m >= 8*60+30 && m < closeM) return "open";
+  if(m >= closeM && m < 19*60) return "afterhours";
   return "closed";
 }
 // One place that answers "what price and what change do I show for this
@@ -1434,11 +1476,18 @@ function marketStateOf(data){
 function marketClosedWording(now){
   var idx = ctWeekdayIndex(now);
   var hh = ctHour(now);
+  // A weekday the market does not trade needs its own sentence, or the tooltip
+  // reads "as of Wednesday's close · next session Friday" on Thanksgiving and
+  // never says why today is not one.
+  if(idx!==0 && idx!==6 && !isTradingDay(now)){
+    return { lastCloseLabel: prevWeekdayName(idx)+"'s close",
+             nextLabel: nextWeekdayName(idx), holiday: true };
+  }
   var lastCloseLabel;
   if(idx===0 || idx===6){ lastCloseLabel = "Friday's close"; }
   else if(hh>=15){ lastCloseLabel = "today's close"; }
   else { lastCloseLabel = prevWeekdayName(idx)+"'s close"; }
-  return { lastCloseLabel: lastCloseLabel, nextLabel: nextWeekdayName(idx) };
+  return { lastCloseLabel: lastCloseLabel, nextLabel: nextWeekdayName(idx), holiday: false };
 }
 function renderMarketState(data){
   var lamp = document.getElementById("raillamp");
@@ -1459,8 +1508,9 @@ function renderMarketState(data){
     // line); the fuller "as of Friday's close / next session" wording lives
     // in the tooltip via the page's existing data-tip mechanism.
     var w = marketClosedWording(new Date());
-    label = "CLOSED";
-    tip = "As of "+w.lastCloseLabel+" · next session "+w.nextLabel+" 8:30 AM CT.";
+    label = w.holiday ? "MARKET HOLIDAY" : "CLOSED";
+    tip = (w.holiday ? "US equity markets are closed today. " : "")
+        + "As of "+w.lastCloseLabel+" · next session "+w.nextLabel+" 8:30 AM CT.";
     color = "var(--ink3)";
   }
   lamp.style.background = color;
@@ -1479,17 +1529,30 @@ function renderMarketState(data){
    desk_private blob still arrives in data.json but nothing here reads it —
    Position Guard was removed 2026-08-19 by Zach's directive.) */
 var SECTOR_NAMES={XLP:"Staples",XLU:"Utilities",XLV:"Health care",XLK:"Technology",XLC:"Comm svcs",XLI:"Industrials",XLY:"Discretionary",XLF:"Financials",XLB:"Materials",XLRE:"Real estate",XLE:"Energy",GLD:"Gold",TLT:"20y+ Treasuries",IEF:"7–10y Treasuries",TIP:"Inflation-protected",BIL:"Cash (T-bills)"};
+/* Days from today (CT) to a YYYY-MM-DD meeting date. Both sides are UTC noon,
+   the convention every date in this file uses, so no timezone drift. */
+function fedDaysToMeeting(dateStr){
+  if(!dateStr) return null;
+  var t = Date.parse(String(dateStr).slice(0,10)+"T12:00:00Z");
+  var today = ctTodayDate();
+  if(!isFinite(t) || !today) return null;
+  return Math.round((t - today.getTime())/86400000);
+}
 function shortReading(name){
   var n=(name||"").toLowerCase();
   // Checked first only for readability; "Fed rate-hike odds (next meeting)"
   // collides with none of the rules below.
   if(n.indexOf("hike odds")>=0||n.indexOf("fed rate")>=0) return "fed hike";
   if(n.indexOf("real")>=0) return "real yield";
+  // BEFORE the 10-year rule. The publisher emits the curve as "2-to-10-year
+  // curve", which contains "10-year" — so it returned "10Y", drew a second
+  // chip under the 10-year label, and the panel then listed 2s10s as a
+  // reading that had not resolved.
+  if(n.indexOf("2s10s")>=0||n.indexOf("curve")>=0) return "2s10s";
   if(n.indexOf("10-year")>=0||n.indexOf("10y")>=0) return "10Y";
   if(n.indexOf("move")>=0) return "MOVE";
   if(n.indexOf("crude")>=0||n.indexOf("oil")>=0) return "crude";
   if((n.indexOf("high")>=0&&n.indexOf("yield")>=0)||n.indexOf("credit spread")>=0) return "HY spread";
-  if(n.indexOf("2s10s")>=0||n.indexOf("curve")>=0) return "2s10s";
   return name||"";
 }
 // Every reading macro_backdrop.py attempts, in its own order. A reading that
@@ -1525,12 +1588,25 @@ function normalizeBrief(d){
       if(!r) return false;
       var f = (r.flow_1w!=null) ? +r.flow_1w : null;
       return f!=null ? f>=0 : r.tag==="IN";
-    }).slice(0,3).map(function(r){return r.ticker;});
+    })
+    // SORT BY FLOW. b.sectors arrives ordered by price relative strength, so
+    // slicing the first three named "the week's biggest inflows" from a list
+    // ranked on something else entirely.
+    .sort(function(a,b2){
+      var fa = (a.flow_1w!=null) ? +a.flow_1w : -Infinity;
+      var fb = (b2.flow_1w!=null) ? +b2.flow_1w : -Infinity;
+      return fb-fa;
+    })
+    .slice(0,3);
+    var topFlows = tops.map(function(r){
+      return r.ticker + (r.flow_1w!=null ? (" ("+fmB(r.flow_1w)+")") : "");
+    });
+    tops = tops.map(function(r){return r.ticker;});
     var defo = tops.filter(function(t){ return DEFENSIVE[t]; });
     // State the count and let the reader judge. "Defensives lead the week" was
     // being printed over a list led by Energy.
     b.retreat_watch = tops.length
-      ? (tops.join(", ")+" took the week's biggest inflows — "
+      ? (topFlows.join(", ")+" took the week's biggest inflows — "
          + (defo.length===tops.length ? "all of them are defensive sectors."
             : defo.length ? (defo.length+" of the "+tops.length+" ("+defo.join(", ")+") "+(defo.length===1?"is a defensive sector.":"are defensive sectors."))
             : "none of them is a defensive sector."))
@@ -2861,6 +2937,14 @@ function table(el, cls, cols, rows, rowHTML, defaultKey, foot){
   // A remembered key may no longer exist after a column change — fall back.
   if(!cols.some(function(c){ return c.key===st.key; })){ st.key = defaultKey; st.dir = -1; }
   function draw(){
+    // Sorting rewrites innerHTML, which resets the horizontal scroll of the
+    // wrapper and drops the "scroll this table sideways" hint that
+    // markScrollables appends. Only refreshLiveUI saved and restored these, so
+    // a click on a column header sent a scrolled board back to column one with
+    // no hint that there was more to the right. Save here, where the rewrite
+    // actually happens.
+    var wrap = el.closest ? el.closest(".xwrap") : null;
+    var keepX = wrap ? wrap.scrollLeft : 0;
     // Unknown values sort to the BOTTOM in either direction. A null used to
     // compare as less-than-everything, so sectors with no readings published
     // took the top three rows of the "1w vs SPY" board.
@@ -2883,6 +2967,8 @@ function table(el, cls, cols, rows, rowHTML, defaultKey, foot){
       });
     });
     if(foot && foot.wire) foot.wire();
+    if(wrap && keepX) wrap.scrollLeft = keepX;
+    if(typeof markScrollables === "function") markScrollables();
   }
   draw();
   return {redraw:draw};
@@ -2913,17 +2999,35 @@ function renderBrief(data){
     return;
   }
   sec.hidden = false;
+  var staleB = isStaleBrief(data);
+  var bdate0 = brief.date || data.session_date;
+  // The panel header carries a stale badge; the two RAIL chips carried none,
+  // and their tooltips said the read was computed this pre-market. On a day
+  // the brief fails to send, the top of the page showed yesterday's verdict as
+  // this morning's, in the same colour, with nothing to catch the eye.
+  function railTip(base){
+    return staleB
+      ? (base + " NOT FROM TODAY: this is the " + (bdate0 || "previous") + " brief — today's has not arrived.")
+      : base;
+  }
+  var RAIL_V_TIP = "The Morning Brief's overall read, computed before the open from the overnight tape, the macro backdrop and the week's sector flows.";
+  var RAIL_B_TIP = "The macro backdrop grade behind the verdict — yields, credit, volatility, crude and the curve.";
   if(brief.verdict){
     railV.hidden = false;
-    document.getElementById("railverdicttext").textContent = brief.verdict + (brief.score!=null ? (" "+fm1SignedInt(brief.score)) : "");
+    railV.classList.toggle("bad", staleB);
+    railV.setAttribute("data-tip", railTip(RAIL_V_TIP));
+    document.getElementById("railverdicttext").textContent = brief.verdict + (brief.score!=null ? (" "+fm1SignedInt(brief.score)) : "")
+      + (staleB ? " (stale)" : "");
   } else railV.hidden = true;
   if(brief.backdrop && brief.backdrop.grade){
     railB.hidden = false;
-    document.getElementById("railbackdroptext").textContent = brief.backdrop.grade;
+    railB.classList.toggle("bad", staleB);
+    railB.setAttribute("data-tip", railTip(RAIL_B_TIP));
+    document.getElementById("railbackdroptext").textContent = brief.backdrop.grade + (staleB ? " (stale)" : "");
   } else railB.hidden = true;
 
-  var stale = isStaleBrief(data);
-  var bdate = brief.date || data.session_date;
+  var stale = staleB;
+  var bdate = bdate0;
   document.getElementById("briefstat").innerHTML = ageStampHTML(bdate, stale) || (bdate?esc(bdate):"");
 
   // The date lives in the section header, which is also where the stale badge
@@ -3010,7 +3114,13 @@ function fedOddsHTML(f){
       var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
       when=(MON[parseInt(mp[1],10)-1]||mp[1])+" "+parseInt(mp[2],10);
     } else when=f.meeting;
-    if(f.days!=null&&f.days>=0) when+=" · in "+Math.round(f.days)+"d";
+    // Derive the countdown from the meeting DATE against today, not from the
+    // payload's days_to_meeting — which the publisher stamped when it built
+    // the file. The card said "in 28d" while the catalyst row for the same
+    // FOMC meeting, three inches lower, counted down correctly.
+    var dLeft = fedDaysToMeeting(f.meeting);
+    if(dLeft!=null && dLeft>0) when+=" · in "+dLeft+"d";
+    else if(dLeft===0) when+=" · today";
   }
   var h=['<div class="fedcard'+(f.alarm?" alarm":"")+(alarm?"":" quiet")+'">'];
   h.push('<div class="fedhead"><b>'+hike.toFixed(0)+'%</b>'
@@ -3155,9 +3265,15 @@ function contractLine(c){
   var expiry = c.expiry ? esc(c.expiry) : "—";
   var dte = num(c.dte);
   var iv = num(c.iv);
+  var delta = num(c.delta);
   var bits = [side + (strike!=null?(" $"+fmtStrike(strike)):"")];
   bits.push(expiry + (dte!=null?(" ("+Math.round(dte)+"d)"):""));
-  if(iv!=null) bits.push("IV "+Math.round(iv*100)+"%");
+  // Δ says whether this is a stock substitute or a lottery ticket, and it was
+  // the one number the column left out.
+  if(delta!=null) bits.push("\u0394"+Math.abs(delta).toFixed(2));
+  // The vendor publishes 0.0 for a contract it has no IV for — 8 of 57 cards
+  // in a typical cycle. "IV 0%" is not a low reading, it is no reading.
+  if(iv!=null && iv>0) bits.push("IV "+Math.round(iv*100)+"%");
   return esc(bits.join(" · "));
 }
 function suggestedContractLine(c, spot){
@@ -3206,7 +3322,7 @@ function boardCutApply(arr, key){
 function boardCutNoteHTML(cut, key){
   if(cut.total===0) return "";
   var btn = '<button id="showall-'+key+'">';
-  if(cut.showAll) return '<div class="boardcut">showing all '+cut.total+' names · '+btn+'back to the '+BOARD_SCORE_FLOOR+'+ shortlist</button></div>';
+  if(cut.showAll) return '<div class="boardcut">showing all '+cut.total+' names · '+btn+'back to the '+BOARD_SCORE_FLOOR+'+ shortlist</button>'+boardCoverageHTML()+'</div>';
   // cut.strong counts score-60+ names AND firing names. Printing that sum as
   // "score 60+" contradicted the Morning Brief tile, which counts the 60+
   // names only. Two numbers, said separately.
@@ -3214,7 +3330,39 @@ function boardCutNoteHTML(cut, key){
   return '<div class="boardcut">'+scored+' of '+cut.total+' names score '+BOARD_SCORE_FLOOR+'+'
     + (cut.lowFiring ? (', plus '+cut.lowFiring+' firing below the line (a firing name is never hidden) — '
                         + cut.strong+' rows shown') : '')
-    + ' — the rest of the watchlist sits below the line. '+btn+'show all '+cut.total+'</button></div>';
+    + ' — the rest of the watchlist sits below the line. '+btn+'show all '+cut.total+'</button>'+boardCoverageHTML()+'</div>';
+}
+/* "show all 57" reads as the whole watchlist. The payload says 62 names are
+   watched and 57 had a usable option chain — five resolved no quote or no
+   chain and are absent from both boards in every view, silently. */
+/* An empty board reads the same whether the tape was quiet or the option-chain
+   vendor was down. universe.with_options is the difference: zero chains
+   resolved is a data outage, not a market with nothing in it. */
+function boardEmptyHTML(what){
+  var u = STATE.data && STATE.data.universe;
+  var wo = u ? num(u.with_options) : null;
+  var cand = u ? num(u.candidates) : null;
+  if(wo === 0){
+    return '<div class="boardmsg">No option chains resolved this cycle, so this board has nothing to rank — '
+      + 'that is the chain vendor, not a quiet tape. It retries on the next publish.</div>';
+  }
+  if(wo!=null && cand!=null && cand>0 && wo < cand*0.5){
+    return '<div class="boardmsg">Only '+wo+' of '+cand+' names returned an option chain this cycle, and none of them '
+      + 'cleared the '+what+' bar. Partial chain coverage, so read this as thin data rather than a quiet tape.</div>';
+  }
+  return '<div class="boardmsg">No '+what+' setups on the board right now.</div>';
+}
+function boardCoverageHTML(){
+  var u = STATE.data && STATE.data.universe;
+  if(!u) return "";
+  var pinned = num(u.pinned!=null ? u.pinned : u.watched);
+  var cand = num(u.candidates);
+  if(pinned==null || cand==null || !(pinned > cand)) return "";
+  var miss = pinned - cand;
+  return ' <span class="m" data-tip="A name needs a resolvable quote and a usable option chain to reach either board. '
+    + 'These are on your watchlist and had neither this cycle — most often a leveraged wrapper or a thin listing with no '
+    + 'options at all.">' + cand + ' of your ' + pinned + ' watched names had a usable option chain this cycle; '
+    + miss + ' did not.</span>';
 }
 function wireBoardCut(el, key, rerender){
   var b = el.querySelector("#showall-"+key);
@@ -3246,7 +3394,7 @@ function renderConv(data){
     // as two different times.
     + ' · CBOE 15-min delayed' + ageStampHTML(data && data.generated_at_ct, stale);
   var el = document.getElementById("conv");
-  if(arr.length===0){ el.innerHTML = '<div class="boardmsg">No conviction setups on the board right now.</div>'; return; }
+  if(arr.length===0){ el.innerHTML = boardEmptyHTML("conviction"); return; }
   var cut = boardCutApply(arr, "conv");
   // The cell prints the LIVE rvol and the header sorted the SNAPSHOT one, so
   // "RVOL ▼" produced a visibly unsorted column — 24 order breaks in 57 rows.
@@ -3266,7 +3414,7 @@ function renderConv(data){
     {l:"Name",key:"ticker"},{l:"Score",key:"score",tip:TIPS["tip-score-conviction"]},{l:"Net flow",key:"net_flow",tip:TIPS["tip-netflow"]},
     {l:"Flow %",tip:TIPS["tip-flowpct"]},
     {l:"RVOL",key:"rvol_shown",tip:"Today's stock volume vs this name's own 10-day average, LIVE from the 30-second poll — and the column sorts on the number you can see. The score beside it used the reading at the last publish, so the two can differ during the session; hover a cell for the number the score actually used."},
-    {l:"Loudest contract",tip:TIPS["tip-suggested"]}
+    {l:"Loudest contract",tip:TIPS["tip-loudest"]}
   ], cut.rows, rowHTMLConv, "score",
   {html: boardCutNoteHTML(cut, "conv"), wire: function(){ wireBoardCut(el, "conv", rerender); }});
   function rowHTMLConv(c){
@@ -3301,6 +3449,12 @@ function renderConv(data){
     // The cell is the live poll's reading; the score was computed from the
     // snapshot's. Say both rather than let one stand in for the other.
     var snapRv = num(c.rvol);
+    // Same treatment the RVOL cell gets: the price and % are live, the score
+    // beside them was computed on the snapshot's %. When they have drifted
+    // apart, say both instead of letting one stand in for the other.
+    var snapCh = num(c.change_pct);
+    var chTip = (ch!=null && snapCh!=null && Math.abs(ch-snapCh) > 1)
+      ? ("Live now "+fm1(ch)+"% · the score used "+fm1(snapCh)+"% from the last publish.") : "";
     var rvTip = (q.rvol!=null && snapRv!=null)
       ? ("Live now "+q.rvol.toFixed(2)+"× · the score used "+snapRv.toFixed(2)+"× from the last publish.")
       : (snapRv!=null ? ("The score used "+snapRv.toFixed(2)+"× from the last publish.") : "");
@@ -3308,7 +3462,8 @@ function renderConv(data){
       +'<td><span class="sy2">'+esc(c.ticker||"?")+'</span> <span class="pill '+(c.direction==="BULL"?"b":"s")+'">'+(c.direction==="BULL"?"BULL":"BEAR")+'</span>'
       +(c.firing?' <span class="pill f" data-tip="'+esc(TIPS["tip-firing-badge"])+'">FIRING</span>':'')
       + eHtml + chaseChipHTML(c, px)
-      +'<span class="nm">'+(px!=null?px.toFixed(2):"—")+' · <span class="'+sign1(ch)+'">'+fm1(ch)+'%</span>'
+      +'<span class="nm">'+(px!=null?px.toFixed(2):"—")+' · <span class="'+sign1(ch)+'"'
+      + (chTip?(' data-tip="'+esc(chTip)+'"'):'')+'>'+fm1(ch)+'%</span>'
       + sessTagHTML(dq.tag) + (dq.ext?extChipHTML(dq.ext):"") + '</span></td>'
       +'<td><b>'+(num(c.score)!=null?Math.round(c.score):"—")+'</b></td>'
       +'<td class="'+sign(c.net_flow)+'">'+fmM(c.net_flow)+'</td>'
@@ -3324,7 +3479,7 @@ function renderSwing(data){
   var stale = isStaleFlow(data);
   document.getElementById("swingstat").innerHTML = "persistence-weighted" + ageStampHTML(data.generated_at_ct, stale);
   var el = document.getElementById("swing");
-  if(arr.length===0){ el.innerHTML = '<div class="boardmsg">No swing setups on the board right now.</div>'; return; }
+  if(arr.length===0){ el.innerHTML = boardEmptyHTML("swing"); return; }
   var cut = boardCutApply(arr, "swing");
   var rerender = function(){ renderSwing(STATE.data); };
   if(cut.rows.length===0){
@@ -3400,7 +3555,7 @@ function renderOrders(data){
     // this paper was opened TODAY (SMH 20,225 traded vs 42 held is a brand-new
     // position; the same dollars against 300K held is recycling).
     var newHtml = (vol!=null && vol>0 && oi!=null && (oi===0 || vol/oi>=1))
-      ? ' <span class="pill f" data-tip="Today’s volume exceeds all open interest carried into the day — this activity is NEW positioning being opened, not old positions churning.">NEW</span>' : '';
+      ? ' <span class="pill f" data-tip="Today’s volume on this contract is at least as large as all the open interest carried into the day. That is consistent with new positions being opened, and it is also what heavy same-day round-tripping looks like — free data cannot tell them apart. Tomorrow’s open-interest change is what settles it.">VOL &gt; OI</span>' : '';
     return '<tr class="rw" data-sym="'+esc(o.ticker||"")+'">'
       +'<td><span class="sy2">'+esc(o.ticker||"?")+'</span></td><td><span class="pill '+(o.side==="CALL"?"b":"s")+'">'+esc(o.side||"?")+'</span>'+deltaHtml+'</td>'
       +'<td>'+(strike!=null?("$"+fmtStrike(strike)):"—")+'</td><td>'+(o.expiry?esc(o.expiry):"—")+(num(o.dte)!=null?(' ('+Math.round(o.dte)+'d)'):'')+'</td>'
@@ -3445,8 +3600,25 @@ function renderETF(data){
   // retires the stale badge here: a once-per-session card wearing the flow
   // boards' 14-minute staleness threshold was amber every day from 15:35 on.
   var sessLab = ef && ef.flow_session ? fmtSessionLabel(ef.flow_session) : null;
+  // Naming the session is not the same as saying how old it is. This is the
+  // one board with no age signal at all, so a stalled fund-flow source kept
+  // printing the same day's dollars, correctly labelled and indefinitely old.
+  var gap = null;
+  if(ef && ef.flow_session && data && data.session_date){
+    var a = Date.parse(String(ef.flow_session).slice(0,10)+"T12:00:00Z");
+    var b2 = Date.parse(String(data.session_date).slice(0,10)+"T12:00:00Z");
+    if(isFinite(a) && isFinite(b2)) gap = Math.round((b2-a)/86400000);
+  }
+  var gapTxt = "";
+  if(gap!=null && gap > 0){
+    var amber = gap >= 3;   // a weekend alone is 3 calendar days
+    gapTxt = ' <span class="'+(amber?"stale":"m")+'" data-tip="'
+      + esc("How far behind the desk's own session this fund-flow reading is. The source publishes once a session and lags a day "
+            + "by design; three or more days behind means it has stalled.")+'">'
+      + (gap===1 ? "1 day behind" : (gap+" days behind"))+'</span>';
+  }
   document.getElementById("etfstat").innerHTML =
-    (sessLab ? ("money moved "+esc(sessLab)+" · one reading per session") : "one reading per session");
+    (sessLab ? ("money moved "+esc(sessLab)+" · one reading per session"+gapTxt) : "one reading per session");
   if(!ef){ sec.hidden = true; return; }
   sec.hidden = false;
   if(funds.length===0){
@@ -3651,7 +3823,7 @@ function renderCats(){
   var data = STATE.data;
   var arr = (data && Array.isArray(data.catalysts)) ? data.catalysts : [];
   var stale = isStaleContext(data);
-  document.getElementById("catstat").innerHTML = "countdowns live" + ageStampHTML(data.context_updated_at, stale);
+  document.getElementById("catstat").innerHTML = "countdowns live" + ageStampHTML(data && data.context_updated_at, stale);
   // An empty catalysts array used to hide the whole section. The panel simply
   // disappeared from the rail, which reads as "nothing is coming up" when the
   // real meaning is "the calendar feed returned nothing this cycle" — two very
@@ -3754,7 +3926,8 @@ function renderNewsTicker(data){
     var href = safeHref(n.url);
     var tks = (n.tickers && n.tickers.length) ? n.tickers.join(" · ") : (n.ticker||"MKT");
     var inner = '<span class="tk">'+esc(tks)+'</span><span>'+esc(n.title||"")+'</span>'
-      + '<span class="tm tn">'+esc(ctTimeShort(n.ts))+'</span>';
+      + '<span class="tm tn"'+(n.ts?(' data-ts="'+esc(n.ts)+'" title="'+esc(ctWhenLong(n.ts))+'"'):'')+'>'
+      + esc(elapsedShort(n.ts) || ctTimeShort(n.ts))+'</span>';
     return (href ? '<a class="nt-item" href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">' : '<span class="nt-item">')
       + inner + (href ? '</a>' : '</span>') + '<span class="nt-sep">◆</span>';
   }
@@ -3775,7 +3948,7 @@ function renderNews(){
   var newsObj = data && data.news;
   var items = dedupeNews((newsObj && Array.isArray(newsObj.items)) ? newsObj.items : []);
   var stale = isStaleContext(data);
-  document.getElementById("newsstat").innerHTML = "TradingView news · hourly" + ageStampHTML(data.context_updated_at, stale);
+  document.getElementById("newsstat").innerHTML = "TradingView news · hourly" + ageStampHTML(data && data.context_updated_at, stale);
   if(!newsObj){ document.getElementById("s-news").hidden = true; return; }
   document.getElementById("s-news").hidden = false;
   if(items.length===0){
@@ -8299,7 +8472,13 @@ document.addEventListener("click", function(e){
   var row = e.target.closest("[data-sym]");
   // `a` excluded (2026-08-18): a headline link sits inside a [data-sym] row,
   // and clicking it used to open the article AND hijack focus to the drawer.
-  if(row && !e.target.closest("[data-tip]") && !e.target.closest("button") && !e.target.closest("input") && !e.target.closest("a")){ setFocus(row.dataset.sym); }
+  // The [data-tip] guard exists to stop an INNER explanatory span from
+  // charting a ticker. It used to bail on the row's own tooltip too — and the
+  // four tape tiles carry theirs on the row, so SPY, QQQ, DIA and IWM were
+  // dead on click while their tooltip said "Click to chart it".
+  var tip = e.target.closest("[data-tip]");
+  var tipBlocks = tip && row && tip !== row && row.contains(tip);
+  if(row && !tipBlocks && !e.target.closest("button") && !e.target.closest("input") && !e.target.closest("a")){ setFocus(row.dataset.sym); }
 });
 // Keyboard activation for the rows that advertise it: rail rows and tape
 // tiles carry role="button" tabindex="0" but had no keydown path — Tab plus
