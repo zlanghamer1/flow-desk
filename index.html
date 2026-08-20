@@ -608,6 +608,14 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 .kvrow b.u{color:var(--up)}
 .kvrow b.d{color:var(--dn)}
 .kvrow b.m{color:var(--ink2)}
+/* The tooltip target sits over the bar but lets clicks through to the row, so
+   the strip explains itself AND still charts the ticker. */
+.rb .rbtip{position:absolute;inset:-3px 0;pointer-events:auto;cursor:help;z-index:1}
+.rb .rbtip:hover{background:transparent}
+/* The new-high / new-low wording used to sit inside the .hi label and collide
+   with the price at 224px of rail. It wraps under instead. */
+.rb .hi{max-width:70%;text-align:right}
+.rb .hi b{display:block;font-size:9px;font-weight:700}
 .rb.big{height:6px;margin:10px 0 16px}
 .rb.big b{width:9px;height:9px}
 .rb.big .lo,.rb.big .hi{top:9px;font-size:9.5px}
@@ -2249,10 +2257,14 @@ function adhocEnsureFacts(sym){
         var delta = Math.round((earnTs*1000 - Date.now())/86400e3);
         if(delta>=0) earnDays = delta;
       }
+      // ADHOC_FACTS is a permanent in-memory cache, so a countdown stamped
+      // against Date.now() at add time froze there — a tab left open over a
+      // long weekend still read "earn 3d" on the Monday the report landed.
+      // Keep the absolute timestamp; earnDaysNow recomputes from it.
       ADHOC_FACTS[sym] = { hi52:n(0), lo52:n(1), cap:n(2), beta:n(3), avol:n(4), short_pct:null,
         // Measured against Date.now() right here, not against the snapshot's
         // session_date — so earnDaysNow must not age it a second time.
-        earn_days:earnDays, earn_live:true, rsi:n(5), avg_move:null, pe:n(6), peg:n(7), net_margin:n(8),
+        earn_days:earnDays, earn_ts:(earnTs!=null?earnTs:null), rsi:n(5), avg_move:null, pe:n(6), peg:n(7), net_margin:n(8),
         gross_margin:n(9), op_margin:n(10), fcf_margin:n(11), debt_eq:n(12), roe:n(13),
         ps:n(14), pb:n(15), ev_ebitda:n(16), yld:n(17), target:n(18), rec_mark:n(19),
         sector:t(20), industry:t(21) };
@@ -2506,6 +2518,10 @@ function hotOf(sym){
   return Math.abs(d.ch)/am;
 }
 var HOT_AT = 1.8;
+// The shopping list below is capped at three; this list was uncapped, so on a
+// broad-tape day where 30 names all move 2x their average it grew until the
+// search box and the whole watchlist were below the fold.
+var MOVERS_CAP = 8;
 function rangeBarHTML(sym, big){
   var st = statsOf(sym);
   if(st.hi==null || st.lo==null || st.pos==null) return ""; // skip the bar when either 52w bound is null
@@ -2521,10 +2537,13 @@ function rangeBarHTML(sym, big){
   var pos = (hi>lo && px!=null) ? Math.min(1, Math.max(0, (px-lo)/(hi-lo))) : st.pos;
   var p = (pos*100).toFixed(0);
   var tag = newHi ? ' <b class="u">new 52-week high today</b>' : newLo ? ' <b class="d">new 52-week low today</b>' : '';
-  return '<div class="rb '+(big?"big":"")+'" data-tip="'+esc(TIPS.range)+' Now at '+p+'% of the range.'
+  // The tooltip rides an INNER span, not the bar. On the bar, the global click
+  // guard treated the whole strip — roughly a third of a 52w-sorted row — as
+  // an explanatory element and refused to chart the ticker.
+  return '<div class="rb '+(big?"big":"")+'"><span class="rbtip" data-tip="'+esc(TIPS.range)+' Now at '+p+'% of the range.'
     + (newHi ? ' Today\u2019s price is above the vendor\u2019s 52-week high — the highest price TRADED in the last year, not the highest close — so this is a new high and the upper bound shown is today.' : '')
     + (newLo ? ' Today\u2019s price is below the vendor\u2019s 52-week low — the lowest price TRADED in the last year, not the lowest close — so this is a new low and the lower bound shown is today.' : '')
-    + '">'
+    + '"></span>'
     +'<i style="width:'+p+'%"></i><b style="left:'+p+'%"></b>'
     +'<span class="lo tn">'+fmtpx(lo)+'</span><span class="hi tn">'+fmtpx(hi)+tag+'</span></div>';
 }
@@ -2584,11 +2603,19 @@ function wlIoApply(text){
     return tsSearch(sym).then(function(items){
       var hit = items.filter(function(it){ return it.sym===sym; })[0];
       return hit ? {sym:sym, tv:hit.tv, name:hit.name||sym} : null;
-    }, function(){ return null; });
+    }, function(){ return {sym:sym, _err:true}; });   // the SEARCH failed, not the symbol
   });
   return Promise.all(jobs).then(function(res){
-    var list = [], dropped = [];
-    res.forEach(function(r, i){ if(r) list.push(r); else dropped.push(want[i]); });
+    var list = [], dropped = [], unchecked = [];
+    // "dropped (nothing listed)" is a statement about the market: this symbol
+    // does not exist. A failed scanner call is a statement about the network,
+    // and flattening one into the other told the reader their ticker was not
+    // real when the truth was that nothing had been checked.
+    res.forEach(function(r, i){
+      if(r && r._err) unchecked.push(want[i]);
+      else if(r) list.push(r);
+      else dropped.push(want[i]);
+    });
     wlSaveCustom(list);
     list.forEach(function(r){ adhocRegister(r.sym, r.tv, r.name); });
     var parts = [];
@@ -2596,6 +2623,7 @@ function wlIoApply(text){
     if(list.length) parts.push(list.length+" added");
     if(removed.length) parts.push(removed.length+" removed: "+removed.map(function(r){ return r.sym; }).join(", "));
     if(dropped.length) parts.push("dropped (nothing listed): "+dropped.join(", "));
+    if(unchecked.length) parts.push("could not check (search unreachable, not added): "+unchecked.join(", "));
     if(pinned.length) parts.push("already pinned, left alone: "+pinned.join(", "));
     WLIO_MSG = parts.join(" · ");
     WLIO_DRAFT = null;
@@ -2738,7 +2766,32 @@ function renderWL(){
       }
     }
   }
-  $("#wl").innerHTML = html;
+  // The 30-second poll rewrites this container wholesale, which dropped focus
+  // to BODY — so a keyboard user's next Tab restarted at the top of the page,
+  // every 30 seconds. The stage header already solves this by remembering
+  // which control had focus; do the same here, keyed on the data attribute
+  // rather than an id, because rail controls have none.
+  var wlEl = $("#wl");
+  var focusKey = null, focusWasIn = wlEl && wlEl.contains(document.activeElement);
+  if(focusWasIn){
+    var a = document.activeElement;
+    ["ws","wlx","wlback","sym"].some(function(k){
+      if(a.dataset && a.dataset[k]!=null){ focusKey = "[data-"+k+'="'+a.dataset[k]+'"]'; return true; }
+      if(a.closest){
+        var host = a.closest("[data-"+k+"]");
+        if(host && host===a){ focusKey = "[data-"+k+'="'+host.dataset[k]+'"]'; return true; }
+      }
+      return false;
+    });
+    if(!focusKey && a.id) focusKey = "#"+a.id;
+  }
+  wlEl.innerHTML = html;
+  if(focusKey){
+    try{
+      var again = wlEl.querySelector(focusKey);
+      if(again) again.focus();
+    }catch(e){}
+  }
   $$("#wl [data-ws]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlSort=b.dataset.ws; renderWL(); applyFocus(); }); });
   var we = document.getElementById("wledit");
   if(we) we.addEventListener("click", function(e){
@@ -2786,11 +2839,15 @@ function renderWL(){
   var alertsHtml = '<b>MOVERS · RELATIVE TO THEIR OWN AVERAGE DAY</b>'
     + (feedDead ? '<span class="m">price feed not answering — no readings</span>'
        : noBasis ? '<span class="m">no reference data — each name\u2019s average day comes from the daily snapshot, which has not loaded</span>' : "")
-    + (feedDead || noBasis ? "" : (hot.length ? hot.map(function(s){
+    + (feedDead || noBasis ? "" : (hot.length ? hot.slice(0, MOVERS_CAP).map(function(s){
         var d=dispQuote(liveBySym(s)); var f=factsOf(s)||{};
         return '<span class="hm2">'+esc(s)+' '+hotOf(s).toFixed(1)+'×</span> <span class="m">('
           +(d.tag?esc(d.tag)+" ":"")+fm1(d.ch)+'% vs '+(f.avg_move!=null?f.avg_move:"—")+'% usual)</span>';
-      }).join(" · ") : (function(){
+      }).join(" · ") + (hot.length > MOVERS_CAP
+        ? (' <span class="m" data-tip="'+esc("Every name at or above "+HOT_AT+"x its own average day is counted in the tab title; "
+            + "the box lists the "+MOVERS_CAP+" biggest so it cannot push the search box and the whole watchlist off screen. "
+            + "Sort the rail by \u201chot\u201d to see them all in order.")+'">+'+(hot.length-MOVERS_CAP)+' more — sort by hot</span>')
+        : "") : (function(){
         // In pre-market a name with no pre-market print carries yesterday's
         // move, which this box refuses to rank. "none yet" would then be a
         // claim about this morning built on names that have not traded.
@@ -4582,9 +4639,15 @@ function earnDaysNow(f){
   if(!f || f.earn_days==null) return null;
   var d = num(f.earn_days);
   if(d==null) return null;
-  // A searched name's countdown was measured against the clock when its facts
-  // were fetched, not against the snapshot. Aging it would subtract twice.
-  if(f.earn_live) return d;
+  // A searched name carries the report's absolute timestamp, so recompute the
+  // delta against the clock every render. Aging it against session_date would
+  // be wrong (it was never measured from there) and leaving it alone would
+  // freeze it at whatever it was when the name was added.
+  if(f.earn_ts!=null){
+    var today = ctTodayDate();
+    if(!today) return d;
+    return Math.round((f.earn_ts*1000 - today.getTime())/86400000);
+  }
   var sd = STATE.data && STATE.data.session_date;
   var today = ctTodayDate();
   if(sd && today){
