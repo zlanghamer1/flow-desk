@@ -367,18 +367,43 @@ volume]` quints, the fetch window doubled from 1y to 2y, and the file carries
 a `"v": 3` marker. Source is unchanged — the SAME Yahoo v8 chart call this
 file always used already returns `open`/`high`/`low`/`close`/`volume`
 parallel arrays in `indicators.quote[0]`; earlier versions just read less of
-it. **Any consumer of this file must accept ALL THREE shapes**: v1 (no `"v"`
+it. **Any consumer of this file must accept ALL FOUR shapes**: v1 (no `"v"`
 key, `bars` values are plain close-only number arrays), v2 (`"v": 2`, `bars`
-values are `[o,h,l,c]` quad arrays), and v3 (`"v": 3`, `bars` values are
-`[o,h,l,c,v]` quint arrays) — the same "old readers keep working" rule every
+values are `[o,h,l,c]` quad arrays), v3 (`"v": 3`, `bars` values are
+`[o,h,l,c,v]` quint arrays), and v4 (same rows, plus the `sessions` calendar
+described below) — the same "old readers keep working" rule every
 other addition in this file follows. A reader that only wants the close can
 take `row[3]` in v2 or v3, or `row` itself in v1 — that index didn't move
 when volume was appended after it.
 
+**v4 (2026-08-19): the file names the sessions its rows came from.** The row
+shape is unchanged. What is new is `sessions`, the CT calendar dates the file's
+bars fall on, and `bar_dates`, which carries a date array only for the tickers
+whose own dates are NOT the last N entries of `sessions` (a listing that started
+mid-window matches the tail and needs no entry; one that missed a session in the
+middle gets its own array).
+
+`sessions` is the EQUITY calendar, not a union across the file: the tape rides
+in the same payload and CL=F, ^VIX, ^TNX and DX-Y.NYB trade on days the NYSE is
+shut, so a union would put those dates into the shared calendar and shift every
+equity's labels. The builder takes the most common full date list — measured
+live, the equities share one 500-session list while CRUDE (504 rows) and VIX
+(502) fall out into `bar_dates` as the exceptions they are.
+
+Why it exists: the page had no dates at all and reconstructed them by walking
+back one weekday per bar from the session date. That ignores market holidays,
+so the error compounds — MU's oldest bar was labeled 2024-09-17 when it is
+really 2024-08-20, twenty sessions off, and the earnings badges and rating
+arrows were then snapped to those wrong bars. A reader must still accept a file
+with no `sessions` key (v1-v3, or a v4 build whose feed sent no timestamp
+array) and say on screen that its dates are approximate.
+
 ```json
 {
-  "built": "2026-08-15",
-  "v": 3,
+  "built": "2026-08-19",
+  "v": 4,
+  "sessions": ["2024-08-20", "…", "2026-08-18"],
+  "bar_dates": { "CRUDE": ["2024-08-19", "…", "2026-08-18"] },
   "bars": {
     "MU": [[112.80, 114.10, 112.50, 113.46, 24581900], "...", [968.00, 975.20, 965.10, 971.66, 5124300]]
   }
@@ -955,7 +980,7 @@ versa):
 {
   "context_fetched_at": "2026-08-15T14:32:00Z",
   "bars_built_date": "2026-08-15",
-  "bars_sig": "v3-2y-vol",
+  "bars_sig": "v4-2y-vol-tape-splitfix-sessions",
   "avg_move": {"MU": 3.45},
   "brief": {"...": "..."},
   "fed_odds": {"...": "..."},

@@ -99,7 +99,7 @@ run_cycle can't clobber each other)
   "context_fetched_at": "2026-08-15T14:32:00Z",   // last time the hourly-gated
                                                    // vault/econ/news fetch ran
   "bars_built_date": "2026-08-15",                 // last session bars.json built for
-  "bars_sig": "v3-2y-vol",                         // build_bars's BARS_BUILD_SIG as of
+  "bars_sig": "v4-2y-vol-tape-splitfix-sessions",                         // build_bars's BARS_BUILD_SIG as of
                                                     // that last build (added 2026-08-15,
                                                     // Task 2 wave 3) — a mismatch forces
                                                     // a same-day rebuild even when
@@ -1207,8 +1207,8 @@ def build_catalysts(econ_rows: list[dict], memory_rows: list[dict],
 
 # ── Bars (Yahoo daily OHLC, at most once per day) ───────────────────────────
 
-BARS_VERSION = 3   # bars.json schema version — see build_bars's docstring
-BARS_BUILD_SIG = "v3-2y-vol-tape-splitfix"  # bumped whenever build_bars's OUTPUT
+BARS_VERSION = 4   # bars.json schema version — see build_bars's docstring
+BARS_BUILD_SIG = "v4-2y-vol-tape-splitfix-sessions"  # bumped whenever build_bars's OUTPUT
                                 # SHAPE or VALUES change (not on an ordinary
                                 # daily rebuild) — the 2026-08-18 split repair
                                 # below rewrites values, so it rides this gate
@@ -1395,7 +1395,15 @@ def _extract_yahoo_ohlcv(obj, drop_on_or_after: Optional[date] = None) -> Option
                     continue
         vol_raw = volumes[i] if i < len(volumes) else None
         vol = int(vol_raw) if isinstance(vol_raw, (int, float)) and not isinstance(vol_raw, bool) else None
-        out.append([float(v) for v in row] + [vol])
+        # 7th element: the bar's own CT calendar date, or None when the
+        # timestamp array is short or malformed. build_bars strips it back out
+        # into bars.json's session calendar; every other caller ignores it.
+        day = None
+        if i < len(timestamps):
+            ts_i = timestamps[i]
+            if isinstance(ts_i, (int, float)) and not isinstance(ts_i, bool):
+                day = datetime.fromtimestamp(ts_i, tz=timezone.utc).astimezone(TZ_CT).date().isoformat()
+        out.append([float(v) for v in row] + [vol, day])
     return out or None
 
 
@@ -1679,6 +1687,7 @@ def build_bars(universe: list[str], session_date: date,
     the bar with v: None rather than 0.
     """
     bars: dict[str, list[list]] = {}
+    bar_dates: dict[str, list[Optional[str]]] = {}
     avg_move: dict[str, float] = {}
     split_fixed: dict[str, float] = {}
     for i, sym in enumerate(universe):
@@ -1726,11 +1735,41 @@ def build_bars(universe: list[str], session_date: date,
                 f"Expected for a young listing; investigate for anything older.")
         bars[sym] = [[round(row[0], 2), round(row[1], 2), round(row[2], 2), round(row[3], 2), row[4]]
                      for row in quints]
+        # The dates ride alongside, never inside the rows: the row shape is a
+        # published contract and three consumers index it positionally.
+        bar_dates[sym] = [(row[5] if len(row) > 5 else None) for row in quints]
         closes_for_avg_move = [row[3] for row in quints[-AVG_MOVE_BASIS:]]
         mv = _avg_move(closes_for_avg_move)
         if mv is not None:
             avg_move[sym] = mv
     payload = {"built": session_date.isoformat(), "v": BARS_VERSION, "bars": bars}
+    # v4: the session calendar, so the page stops reconstructing dates by
+    # counting weekdays backwards. Counting ignores market holidays and the
+    # drift compounded to about 20 sessions at the left edge of a 2-year
+    # series.
+    #
+    # The calendar is the EQUITY session list, not a union across the file: the
+    # tape rides in the same payload and CL=F, ^VIX, ^TNX and DX-Y.NYB trade on
+    # days the NYSE is shut, so a union would put those dates into the shared
+    # calendar and shift every equity's labels. Take the most common full date
+    # list instead — 40-odd equities share one, and the tape symbols fall out
+    # into `bar_dates` as the exceptions they are, alongside any ticker that
+    # missed a session mid-window.
+    full_lists = [tuple(ds) for ds in bar_dates.values() if ds and all(ds)]
+    sessions: list[str] = []
+    if full_lists:
+        counts: dict[tuple, int] = {}
+        for lst in full_lists:
+            counts[lst] = counts.get(lst, 0) + 1
+        sessions = list(max(counts.items(), key=lambda kv: (kv[1], len(kv[0])))[0])
+    if sessions:
+        payload["sessions"] = sessions
+        exceptions: dict[str, list] = {}
+        for sym, ds in bar_dates.items():
+            if any(d is None for d in ds) or list(ds) != sessions[-len(ds):]:
+                exceptions[sym] = list(ds)
+        if exceptions:
+            payload["bar_dates"] = exceptions
     if split_fixed:
         # Published so the page can SAY it rescaled a history rather than
         # silently redrawing it (see DATA_CONTRACT.md, split_fixed).

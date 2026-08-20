@@ -686,7 +686,7 @@ def test_build_bars_end_to_end_and_fail_soft_skip():
         raise urllib.error.URLError("boom")
     payload, avg_move = context.build_bars(["GOOD", "BAD"], date(2026, 8, 15), _get=fake_get)
     assert payload["built"] == "2026-08-15"
-    assert payload["v"] == 3
+    assert payload["v"] == 4
     assert "GOOD" in payload["bars"] and "BAD" not in payload["bars"]
     # No "volume" array in this fixture at all -> v is None (never 0) for every row.
     assert payload["bars"]["GOOD"][0] == [100.0, 100.0, 100.0, 100.0, None]
@@ -776,7 +776,7 @@ def test_stale_context_triggers_full_refetch_and_updates_cache(tmp_path, monkeyp
     assert fields["desk_private"] == {"v": 1, "blob": "abc"}
     assert fields["context_updated_at"] == "2026-08-15T14:00:00Z"
     assert bars_payload is not None
-    assert bars_payload["v"] == 3
+    assert bars_payload["v"] == 4
     assert fund_payload is not None and "MU" in fund_payload   # same gate as bars — both rebuilt
 
     saved = context.load_context_cache()
@@ -844,7 +844,7 @@ def test_bars_only_gate_rebuilds_bars_without_refetching_context(tmp_path, monke
                      "market_cap": None, "beta": None, "avol": None, "rsi": None}}
     fields, bars_payload, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert bars_payload is not None and bars_payload["built"] == "2026-08-15"
-    assert bars_payload["v"] == 3
+    assert bars_payload["v"] == 4
     assert fields["brief"] == {"date": "2026-08-15", "stale": False}   # carried from cache
     assert fields["facts"]["MU"]["avg_move"] is not None
     assert fields["facts"]["MU"]["avg_move"] != 9.99   # replaced by the fresh rebuild
@@ -981,7 +981,7 @@ def test_build_bars_v3_quints_and_facts_fundamentals_passthrough():
         "volume": [1000, 2000, 3000, 4000]}]}}]}}
     bars, avg = context.build_bars(["ZZZ"], date(2026, 8, 15),
                                     _get=lambda url, headers=None: json.dumps(payload).encode())
-    assert bars["v"] == 3
+    assert bars["v"] == 4
     assert bars["bars"]["ZZZ"] == [[10.0, 10.5, 9.5, 10.2, 1000], [11.0, 11.5, 10.5, 11.2, 2000],
                                     [12.0, 12.5, 11.5, 12.2, 4000]]
     assert "ZZZ" in avg and avg["ZZZ"] > 0
@@ -1019,7 +1019,7 @@ def test_extract_yahoo_ohlcv_null_volume_on_valid_bar_stays_none_not_zero():
         "open": [10.0, 11.0], "high": [10.5, 11.5], "low": [9.5, 10.5], "close": [10.2, 11.2],
         "volume": [1500, None]}]}}]}}
     rows = context._extract_yahoo_ohlcv(payload)
-    assert rows == [[10.0, 10.5, 9.5, 10.2, 1500], [11.0, 11.5, 10.5, 11.2, None]]
+    assert rows == [[10.0, 10.5, 9.5, 10.2, 1500, None], [11.0, 11.5, 10.5, 11.2, None, None]]
 
 
 def test_extract_yahoo_ohlcv_float_volume_cast_to_int_and_missing_index_is_none():
@@ -2355,3 +2355,91 @@ def test_repair_quote_wicks_survives_malformed_rows():
 
 def test_repair_quote_wicks_empty_series_is_zero():
     assert context._repair_quote_wicks([], "X", "15m") == 0
+
+def _yahoo_json_with_ts(closes, stamps):
+    """Yahoo v8 chart payload with explicit epoch timestamps, one per bar."""
+    n = len(closes)
+    return json.dumps({"chart": {"result": [{
+        "timestamp": stamps,
+        "indicators": {"quote": [{"open": list(closes), "high": list(closes),
+                                  "low": list(closes), "close": list(closes),
+                                  "volume": [1000] * n}]}}]}}).encode()
+
+
+def _ct_noon_epoch(y, m, d):
+    return int(datetime(y, m, d, 17, 0, tzinfo=timezone.utc).timestamp())
+
+
+def test_build_bars_publishes_the_real_session_calendar_not_a_weekday_count():
+    """v4: bars.json carries the sessions its rows actually came from.
+
+    The page used to reconstruct dates by walking back one weekday per bar,
+    which ignores market holidays — the drift reached ~20 sessions at the left
+    edge of a 2-year series and put every earnings badge and rating arrow on
+    the wrong candle. Here Labor Day (2026-09-07) is missing from the feed, so
+    a weekday count would label the oldest bar Sep 1 when it is really Aug 31.
+    """
+    stamps = [_ct_noon_epoch(2026, 8, 31), _ct_noon_epoch(2026, 9, 1),
+              _ct_noon_epoch(2026, 9, 2), _ct_noon_epoch(2026, 9, 3),
+              _ct_noon_epoch(2026, 9, 4),   # 9/7 is Labor Day: no bar
+              _ct_noon_epoch(2026, 9, 8)]
+    payload, _ = context.build_bars(
+        ["AAA"], date(2026, 9, 9),
+        _get=lambda url, headers=None: _yahoo_json_with_ts([10.0 + i for i in range(6)], stamps))
+    assert payload["v"] == 4
+    assert payload["sessions"] == ["2026-08-31", "2026-09-01", "2026-09-02",
+                                    "2026-09-03", "2026-09-04", "2026-09-08"]
+    assert "bar_dates" not in payload
+    assert len(payload["bars"]["AAA"]) == len(payload["sessions"])
+
+
+def test_build_bars_names_the_tickers_whose_dates_are_not_the_calendar_tail():
+    """A young listing shares the calendar's tail and needs no entry; a ticker
+    that missed a session in the middle carries its own date array."""
+    full = [_ct_noon_epoch(2026, 9, d) for d in (1, 2, 3, 4, 8)]
+    young = full[-2:]                      # listed late: a clean tail
+    gappy = [full[0], full[1], full[3], full[4]]   # halted on 9/3
+    series = {"FULL": (5, full), "YOUNG": (2, young), "GAPPY": (4, gappy)}
+    def fake_get(url, headers=None):
+        for sym, (n, st) in series.items():
+            if f"/{sym}?" in url or f"/{sym}" in url:
+                return _yahoo_json_with_ts([10.0 + i for i in range(n)], st)
+        raise AssertionError("unexpected url " + url)
+    payload, _ = context.build_bars(["FULL", "YOUNG", "GAPPY"], date(2026, 9, 9), _get=fake_get)
+    assert payload["sessions"] == ["2026-09-01", "2026-09-02", "2026-09-03",
+                                    "2026-09-04", "2026-09-08"]
+    assert "FULL" not in payload.get("bar_dates", {})
+    assert "YOUNG" not in payload.get("bar_dates", {})
+    assert payload["bar_dates"]["GAPPY"] == ["2026-09-01", "2026-09-02",
+                                              "2026-09-04", "2026-09-08"]
+
+
+def test_build_bars_calendar_is_the_equity_list_not_a_union_with_the_tape():
+    """The tape rides in the same payload and crude trades on days the NYSE is
+    shut. If `sessions` were the union, every equity's labels would shift by
+    the extra futures days; the calendar is the most common equity list and the
+    odd symbol out carries its own array."""
+    eq = [_ct_noon_epoch(2026, 9, d) for d in (1, 2, 3, 4)]
+    fut = [_ct_noon_epoch(2026, 9, d) for d in (1, 2, 3, 4, 5)]   # trades Saturday too
+    series = {"AAA": (4, eq), "BBB": (4, eq), "CRUDE": (5, fut)}
+    def fake_get(url, headers=None):
+        for sym, (n, st) in series.items():
+            if f"/{sym}?" in url or f"/{sym}" in url:
+                return _yahoo_json_with_ts([10.0 + i for i in range(n)], st)
+        raise AssertionError("unexpected url " + url)
+    payload, _ = context.build_bars(["AAA", "BBB", "CRUDE"], date(2026, 9, 9), _get=fake_get)
+    assert payload["sessions"] == ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"]
+    assert "AAA" not in payload.get("bar_dates", {})
+    assert "BBB" not in payload.get("bar_dates", {})
+    assert payload["bar_dates"]["CRUDE"][-1] == "2026-09-05"
+
+
+def test_build_bars_omits_the_calendar_when_the_feed_sends_no_timestamps():
+    """No timestamp array means no dates to publish. The payload says nothing
+    rather than guessing, and the page falls back to its own reconstruction
+    with the approximation stated on screen."""
+    payload, _ = context.build_bars(
+        ["NOTS"], date(2026, 8, 15),
+        _get=lambda url, headers=None: _yahoo_json([10.0, 11.0, 12.0]))
+    assert "sessions" not in payload
+    assert payload["bars"]["NOTS"]
