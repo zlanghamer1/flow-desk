@@ -3410,11 +3410,16 @@ function renderSectorSection(data){
       '<div class="note">No sector readings published this cycle. The brief ran, its rotation table came back empty.</div>';
     return;
   }
+  // One of the two empty is its own fact: the havens table drawn alone read as
+  // a complete panel, and nothing said the eleven sector rows were missing.
+  var halfNote = "";
+  if(sectors.length===0) halfNote = '<div class="note">The eleven sector rows did not publish this cycle — only the safe-haven readings came back.</div>';
+  else if(havens.length===0) halfNote = '<div class="note">The safe-haven readings did not publish this cycle — only the sector rotation came back.</div>';
   var host = document.getElementById("sector");
   // Sorting used to delete Safe havens and the weekly totals: table()'s draw()
   // rewrites the element it owns with innerHTML, and havens was appended to
   // that same element afterwards. Each gets its own box.
-  host.innerHTML = '<div id="sectortbl"></div><div id="havensbox"></div>';
+  host.innerHTML = halfNote + '<div id="sectortbl"></div><div id="havensbox"></div>';
   var el = document.getElementById("sectortbl");
   if(sectors.length){
     var mx = Math.max.apply(null, sectors.map(function(x){ return Math.abs(num(x.rel)||0); })) || 1;
@@ -3866,8 +3871,16 @@ function renderETF(data){
   }
   document.getElementById("etfstat").innerHTML =
     (sessLab ? ("money moved "+esc(sessLab)+" · one reading per session"+gapTxt) : "one reading per session");
-  if(!ef){ sec.hidden = true; return; }
+  // A NULL etf_flows means the fund-flow source did not return — the same
+  // distinction the news panel makes. Hiding the section read as "no flows
+  // today", which for a once-a-session reading is a real and different claim.
   sec.hidden = false;
+  if(!ef){
+    document.getElementById("etf").innerHTML =
+      '<div class="note">The fund-flow reading did not publish this cycle — that is the source, not a session with no '
+      + 'flows. It is a once-a-session figure, so it returns with the next daily build.</div>';
+    return;
+  }
   if(funds.length===0){
     document.getElementById("etf").innerHTML =
       '<div class="note">No fund flows published this cycle — the vendor returned no readings for these ETFs.</div>';
