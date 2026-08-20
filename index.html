@@ -329,7 +329,12 @@ section.closed .sb{display:none}
 .chasef{font-size:9px;font-weight:600;color:var(--ink3);background:var(--srf2);border:1px solid var(--edge);border-radius:3px;padding:0 4px;margin-left:6px}
 .chasef.warn2{color:var(--hi);background:var(--hibg);border-color:transparent}
 /* board threshold cut line + show-all toggle */
-.boardcut{margin-top:8px;font-size:10.5px;color:var(--ink3)}
+/* Sticky at the left edge: the board IS the horizontal scroll container, and
+   these are plain block children of it — so scrolling right to read the last
+   column carried the cut note and the "show all" control off the left side,
+   out of reach without scrolling back. */
+.boardcut{margin-top:8px;font-size:10.5px;color:var(--ink3);
+  position:sticky;left:0;width:max-content;max-width:100%}
 .boardcut button{color:var(--acc);font-size:10.5px;text-decoration:underline;padding:0}
 /* data-feed failure banner */
 .databanner{padding:6px 16px;border-bottom:1px solid var(--edge);background:var(--dnbg);color:var(--dn);font-size:11.5px}
@@ -406,7 +411,7 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
   background:linear-gradient(90deg, transparent, var(--srf) 82%);opacity:0;transition:opacity .15s;
 }
 .xscroll.more::after{opacity:1}
-.xhint{font-size:9.5px;color:var(--ink3);padding:3px 0 0}
+.xhint{font-size:9.5px;color:var(--ink3);padding:3px 0 0;position:sticky;left:0;width:max-content;max-width:100%}
 @media (prefers-reduced-motion: reduce){ .xscroll::after{transition:none} }
 /* The reason column wraps. It used to carry a hard min-width (200px on
    conviction, 300px on swing) so that the sentence had room — but a min-width
@@ -1232,9 +1237,9 @@ function safeHref(url){
    hot-tag strings have no live-site equivalent and come from the approved
    prototype unchanged. */
 var TIPS = {
-  "tip-netflow": "Net flow = call premium traded minus put premium traded (options volume x last price x 100). Free data can't see which side (buyer or seller) initiated a trade — this is dollars of premium changing hands, not confirmed directional order flow.",
+  "tip-netflow": "Net flow = call premium traded minus put premium traded (options volume x last price x 100), across the WHOLE 0-7 day bucket at every strike. Free data can't see which side (buyer or seller) initiated a trade — this is dollars of premium changing hands, not confirmed directional order flow. NOTE the difference from Flow % beside it: this column and the BULL/BEAR pill count every strike, while Flow % counts only strikes within 20% of the price. A deep in-the-money contract costs almost exactly what it is already worth, so a handful of them can swing this column without being a bet on anything — which is why the two can point opposite ways on the same row.",
   "tip-cpratio": "Call option volume divided by put option volume today, for 0-7 day options only. Above 1x means more call-side activity.",
-  "tip-flowpct": "The premium-weighted put/call split for 0-7 day options — of every dollar of option premium traded today on strikes NEAR the current price (within 20% either way), the share that went to the busier side. Shown as '73% PUT' or '69% CALL'. C/P counts contracts; this counts dollars, and the two disagree when one side's options are much more expensive. Why only near-the-money: an option deep in the money costs almost exactly what it's already worth, so a few of those contracts carry enormous 'premium' without being a bet on anything. Shows a dash when nothing traded near the money. Display only — it doesn't move the score.",
+  "tip-flowpct": "The premium-weighted put/call split for 0-7 day options — of every dollar of option premium traded today on strikes NEAR the current price (within 20% either way), the share that went to the busier side. Shown as '73% PUT' or '69% CALL'. C/P counts contracts; this counts dollars, and the two disagree when one side's options are much more expensive. Why only near-the-money: an option deep in the money costs almost exactly what it's already worth, so a few of those contracts carry enormous 'premium' without being a bet on anything. Shows a dash when nothing traded near the money. This is a NARROWER universe than the Net flow column and the BULL/BEAR pill beside it, which count every strike in the bucket — so when the two disagree, this one is the read that excludes contracts bought for what they are already worth. Display only — it doesn't move the score.",
   "tip-tilt": "Aggressor tilt: each refresh, contracts that traded are checked against their bid/ask — trades near the ask count as bought, near the bid as sold. Calls bought + puts sold = bullish premium; calls sold + puts bought = bearish. +100% = everything classified leaned bullish. This samples one trade per contract per refresh (~7 min) — a rough proxy for who's initiating, not the full tape. Shows 'sampling' until enough trades classify.",
   "tip-score-conviction": "0-100 score, six parts: RVOL 25, momentum 20 (15 for the size of today's move, +5 only when the move is still running the way it opened), flow magnitude 25 (20 for size, +5 only when the flow's direction agrees with the price move), call/put extremity 15, volume-vs-OI 10, contract concentration 5. Then the aggressor tilt nudges the total ±5 when the sampled buy/sell lean agrees or disagrees (needs |tilt| ≥ 0.30 on $100K+ classified premium). Note the two +5 agreement bonuses reward flow CONFIRMING a move already underway — a chase lean is built into the number. It measures how loud and unusual today is; it is not a prediction, and no version of it has been backtested.",
   "tip-score-swing": "0-100 score: persistence 35, 5-day flow magnitude 20, OI build 15, trend alignment 15 (a MIXED trend earns 7, an opposing trend 0), IV rank 10 (inverted — cheap vol scores higher; while history is still collecting it earns a neutral 5), call/put skew 5. Then OI-confirm nudges it +5 (OPENING) or -10 (CLOSING) when yesterday's side matches today's direction. Higher = stronger signal, not a guarantee — no version of this score has been backtested.",
@@ -1254,7 +1259,7 @@ var TIPS = {
   "tip-entry-ref": "Entry reference = this contract's last traded price — 15-minute-delayed, and on a thin contract possibly hours old. Check the live bid/ask before treating it as a fillable price.",
   "tip-stop-ref": "Stop reference = 30% below the entry price — a fixed constant, not tuned to this name's volatility. A reference level, never a recommendation.",
   "tip-target-ref": "Target reference = entry price plus 105% — a fixed constant. A reference level, never a recommendation; see the 'needs ~x% on the stock' figure for what the stock must do to get there.",
-  "tip-bigorders": "The single options contracts with the most dollars traded today, ranked across the whole watch list. Dollars = contracts traded × the contract's last price × 100. IMPORTANT: each line is one contract's ENTIRE SESSION, not one order. Free data publishes a daily total per contract, never a trade-by-trade tape. Only strikes within 20% of the stock price count, and only expiries inside 6 months. At most 3 rows per ticker, so one busy name can't say the same thing five times. Any name that earned more rows than it shows is named in the line under the board, so the cap is never silent. Display only; it doesn't move any score.",
+  "tip-bigorders": "The single options contracts with the most dollars traded today, ranked across the whole watch list. Dollars = contracts traded × the contract's last price × 100. THE RANKING IS GROSS DOLLARS, so a deep in-the-money contract can top the board on money that is already in the strike rather than on a bet about a move — those rows are badged MOSTLY INTRINSIC. IMPORTANT: each line is one contract's ENTIRE SESSION, not one order. Free data publishes a daily total per contract, never a trade-by-trade tape. Only strikes within 20% of the stock price count, and only expiries inside 6 months. At most 3 rows per ticker, so one busy name can't say the same thing five times. Any name that earned more rows than it shows is named in the line under the board, so the cap is never silent. Display only; it doesn't move any score.",
   "tip-logscale": "This chart is drawn on a log price scale, which the desk switches to on its own when a window spans more than 4x high-to-low AND its recent bars have been squeezed into less than a fifth of the pane. On the usual (linear) scale a name that has fallen 99% draws its whole recent history as a flat line along the bottom — a 3x inverse ETF like SOXS does exactly that. On a log scale the same percentage move takes the same vertical space anywhere on the chart, so a 10% week reads the same at $4,000 and at $40. Prices on the axis are real prices either way; only the spacing changes.",
   "tip-splitfix": "This ticker's older bars arrived from the price feed on the wrong scale — a split the feed never applied to the history — so the desk divided everything before the break by the factor shown and scaled those days' volumes the other way. SOXS came back with every bar before 2026-05-26 priced 15x too high, which drew the 3-month chart as a flat line. The repaired series matches Polygon and TradingView bar for bar. Said out loud here rather than fixed silently.",
   "tip-etfflows": "Real invested money entering or leaving each semiconductor ETF, estimated as the day-over-day change in the fund's shares outstanding times its NAV (ETFs create and destroy shares as money moves in and out). One reading per session — slower than the options boards, and it mixes retail and institutional money. The 1M figure is the fund's trailing one-month net flow. Shows 'split — n/a' when a fund split that day: a split changes the share count without any money moving, so the day's flow is unknowable rather than zero. Context only; it doesn't affect any score.",
@@ -1420,6 +1425,16 @@ function ctMinutesOfDay(d){
    are the CT calendar day, YYYY-MM-DD. Extend each December; when bars.json
    v4's session calendar is live, MARKET_SESSIONS below prefers it. */
 var MARKET_HOLIDAYS = {
+  // Back-filled across the whole two-year bars window, not just forward.
+  // weekdayDatesEndingAt walks back one weekday per bar, so a closure it does
+  // not know about shifts every earlier date by a session — over 504 bars and
+  // eighteen closures that is a fortnight of drift, under a note that used to
+  // promise "a session or two".
+  "2024-01-01":1,"2024-01-15":1,"2024-02-19":1,"2024-03-29":1,"2024-05-27":1,
+  "2024-06-19":1,"2024-07-04":1,"2024-09-02":1,"2024-11-28":1,"2024-12-25":1,
+  "2025-01-01":1,"2025-01-09":1,"2025-01-20":1,"2025-02-17":1,"2025-04-18":1,
+  "2025-05-26":1,"2025-06-19":1,"2025-07-04":1,"2025-09-01":1,"2025-11-27":1,
+  "2025-12-25":1,
   "2026-01-01":1,"2026-01-19":1,"2026-02-16":1,"2026-04-03":1,"2026-05-25":1,
   "2026-06-19":1,"2026-07-03":1,"2026-09-07":1,"2026-11-26":1,"2026-12-25":1,
   "2027-01-01":1,"2027-01-18":1,"2027-02-15":1,"2027-03-26":1,"2027-05-31":1,
@@ -2368,7 +2383,13 @@ function pollTvPrices(){
                         prepx:num(row.d[3]), prech:num(row.d[4]), prevol:num(row.d[5]),
                         postpx:num(row.d[6]), postch:num(row.d[7]),
                         o:num(row.d[8]), h:num(row.d[9]), l:num(row.d[10]), v:num(row.d[11]),
-                        c:num(row.d[12]) };
+                        c:num(row.d[12]),
+                        // The scanner OMITS a row it cannot resolve rather than
+                        // sending a null, so a single symbol can go dark while
+                        // the request keeps succeeding. The macro tape has
+                        // carried this stamp since it hit the same problem;
+                        // the equity poll, which feeds every board, did not.
+                        at:Date.now() };
         updated++;
       });
       // A 200 carrying an empty data array is not a successful poll. The
@@ -2416,6 +2437,15 @@ function macroStale(){ return MACRO_MISSES >= 2 && MACRO_LAST_OK > 0; }
    counter never trips, and the dollar tile shows its 10:00 price all
    afternoon as a current reading. */
 var MACRO_SYM_STALE_MS = 5 * 60 * 1000;
+/* Two poll cycles without a refresh. Same reasoning as macroSymStale, applied
+   to the prices the rail, the boards and the chart header all read. */
+var LIVE_STALE_MS = 75 * 1000;
+function liveStale(sym){
+  var tv = symbolForTicker(sym);
+  var d = tv ? LIVE[tv] : null;
+  if(!d || d.at == null) return false;
+  return (Date.now() - d.at) > LIVE_STALE_MS;
+}
 function macroSymStale(tv){
   var d = MACRO_LIVE[tv];
   if(!d || d.at == null) return false;
@@ -2578,6 +2608,12 @@ function hotOf(sym){
   if(am===null || am===0) return null;
   return Math.abs(d.ch)/am;
 }
+/* build_snapshot.TRACK_ONLY — full members of the pinned universe that
+   select_candidates() deliberately excludes from CBOE chain fetches, because
+   each has a confirmed ghost chain or no listed options at all. They get
+   quotes, facts, bars and a fundamentals sidecar like every other name; what
+   they never get is an options reading. DATA_CONTRACT.md, "TRACK_ONLY". */
+var TRACK_ONLY_SYMS = {SKHX:1, NRGU:1, OILU:1, STLL:1, AAOG:1};
 var HOT_AT = 1.8;
 // The shopping list below is capped at three; this list was uncapped, so on a
 // broad-tape day where 30 names all move 2x their average it grew until the
@@ -2723,7 +2759,12 @@ function railRowHTML(s, opts){
     +'<div class="l1"><span class="sy">'+esc(s)+'</span>'
     +(unresolved
         ? '<span class="noq" data-tip="No exchange listing resolves for this symbol, so the 30-second poll has nothing to ask for. It is not a slow quote — it will stay blank until the symbol is corrected.">no quote</span>'
-        : '<span class="px tn">'+pxStr+'</span><span class="ch tn '+cls+'">'+chStr+'</span>')
+        : ('<span class="px tn">'+pxStr+'</span><span class="ch tn '+cls+'">'+chStr+'</span>'
+           + (liveStale(s)
+               ? ('<span class="sess" data-tip="'+esc("The scanner has stopped returning this symbol while the rest of the request "
+                   + "keeps succeeding — it omits a row it cannot resolve rather than sending a null. This price is the last one it "
+                   + "returned, not a current quote.")+'">STALE</span>')
+               : '')))
     +'</div>'
     +'<div class="l2"><span class="meta">'+metaHtml+'</span>'
     +(isHot? '<span class="hotb" data-tip="'+esc(TIPS.hot)+' Today: '+h.toFixed(1)+'× its usual '+(f.avg_move!=null?f.avg_move:"?")+'% day.">'+h.toFixed(1)+'×</span>' : "")
@@ -3175,6 +3216,12 @@ function table(el, cls, cols, rows, rowHTML, defaultKey, foot){
       + (foot && foot.html ? foot.html : "");
     el.querySelectorAll("th.sort").forEach(function(th){
       th.addEventListener("click", function(){
+        // The header's explanation lives on an inner span, and draw() replaces
+        // the whole header row — so the tip bar was left pointing at an element
+        // that no longer exists and parked itself in the top-left corner of
+        // the window. Dismiss it before the rewrite.
+        var tipb = document.getElementById("tipb");
+        if(tipb) tipb.style.display = "none";
         var k=th.dataset.k; if(k===st.key) st.dir*=-1; else { st.key=k; st.dir=-1; } draw(); applyFocus();
       });
     });
@@ -3259,9 +3306,19 @@ function renderBrief(data){
       ["score 60+", stt.high_conviction, "a", "Conviction-board names at or above the 60 line. The board below opens on these plus any firing name that scores under 60, so its row count can be higher."]
     ].filter(function(t){ return num(t[1])!=null; });
     if(tiles.length){
+      // These four count THIS CYCLE's flow, not the brief's. They sit under
+      // the panel's own age stamp, which carries the brief's date and goes
+      // amber when the vault brief did not send — so on a stale-brief morning
+      // four live numbers wore an "as of yesterday" badge. Give them their own
+      // stamp, from the snapshot that actually produced them.
+      var statAt = data && (data.generated_at_ct || data.generated_at);
       html += '<div class="statrow tn">'+tiles.map(function(t){
         return '<div class="stat"><b class="'+t[2]+'">'+Math.round(num(t[1]))+'</b><span data-tip="'+esc(t[3])+'">'+esc(t[0])+'</span></div>';
-      }).join("")+'</div>';
+      }).join("")
+      + (statAt ? ('<div class="stat"><span class="m" data-tip="'
+          + esc("These four are this cycle's option-flow counts, from the "+String(statAt)+" snapshot — not from the Morning Brief, "
+                + "whose own date is stamped in this panel's header.")+'">this cycle</span></div>') : '')
+      + '</div>';
     }
   }
   // The Fed alarm sits ABOVE the gap note and the chips: when the market is
@@ -3543,7 +3600,7 @@ function suggestedContractLine(c, spot){
   if(target!=null && entry!=null && delta!=null && delta!==0 && num(spot)){
     var movePct = (target-entry)/Math.abs(delta)/num(spot)*100;
     if(isFinite(movePct) && movePct>0){
-      trade.push('<span class="m" data-tip="Rough stock move needed to reach the target, translated through the contract’s delta. It ignores time decay working against the position the whole way, so the real move needed is LARGER than this.">needs ~'
+      trade.push('<span class="m" data-tip="Rough stock move needed to reach the target, translated through the contract’s delta AS IT IS TODAY. Two things move the real answer, in opposite directions: time decay works against the position the whole way, which makes the move needed larger; and delta itself RISES as the stock moves your way, which makes it smaller. A slow grind lands worse than this number, a fast move lands better. Treat it as an order of magnitude, not an estimate.">needs ~'
         +(side==="PUT"?"−":"+")+movePct.toFixed(0)+'% on the stock</span>');
     }
   }
@@ -3604,13 +3661,21 @@ function boardCoverageHTML(){
   var u = STATE.data && STATE.data.universe;
   if(!u) return "";
   var pinned = num(u.pinned!=null ? u.pinned : u.watched);
-  var cand = num(u.candidates);
-  if(pinned==null || cand==null || !(pinned > cand)) return "";
-  var miss = pinned - cand;
-  return ' <span class="m" data-tip="A name needs a resolvable quote and a usable option chain to reach either board. '
-    + 'These are on your watchlist and had neither this cycle — most often a leveraged wrapper or a thin listing with no '
-    + 'options at all.">' + cand + ' of your ' + pinned + ' watched names had a usable option chain this cycle; '
-    + miss + ' did not.</span>';
+  var cand = num(u.candidates);          // resolved a live QUOTE
+  var chain = num(u.with_options);       // ...and a usable option CHAIN
+  if(pinned==null) return "";
+  var bits = [];
+  // Two different counts, and the footer used to print the quote count under
+  // the chain sentence. candidates is how many resolved a quote; with_options
+  // is how many of those had a chain. Say whichever is short, in its own
+  // words, rather than one number wearing the other's label.
+  if(cand!=null && pinned > cand) bits.push((pinned-cand)+' of your '+pinned+' watched names resolved no live quote this cycle');
+  if(chain!=null && cand!=null && cand > chain) bits.push((cand-chain)+' more resolved a quote but no usable option chain');
+  else if(chain!=null && cand==null && pinned > chain) bits.push((pinned-chain)+' of your '+pinned+' watched names had no usable option chain');
+  if(!bits.length) return "";
+  return ' <span class="m" data-tip="A name needs BOTH a resolvable quote and a usable option chain to reach either board. '
+    + 'A leveraged wrapper or a thin listing often has no options at all, and a symbol whose exchange prefix has gone stale '
+    + 'resolves no quote.">' + esc(bits.join("; ")) + '.</span>';
 }
 function wireBoardCut(el, key, rerender){
   var b = el.querySelector("#showall-"+key);
@@ -3802,6 +3867,26 @@ function renderOrders(data){
     // substitute); a ±0.5 delta is an at-the-money bet. Same dollars, very
     // different meaning.
     var deltaHtml = delta!=null ? (' <span class="nm tn" data-tip="Delta near ±1.0 means deep in the money — the contract moves like the stock itself, often a hedge or stock substitute rather than a directional bet. Delta near ±0.5 is an at-the-money bet on the move.">Δ'+delta.toFixed(2)+'</span>') : '';
+    // Ranking on gross premium ranks INTRINSIC VALUE. MSFT's top three rows on
+    // a typical day are 2-day $400/$410/$450 calls against a 484 spot: the
+    // dollars are almost entirely the money already in the strike, and reading
+    // them as the day's loudest directional bets is reading a stock purchase
+    // as a call buy. The row says which it is.
+    var spotNow = (function(){ var q = dispQuote(liveBySym(o.ticker)); return q.px!=null ? q.px : num(o.spot); })();
+    var intrinsic = null;
+    if(spotNow!=null && strike!=null){
+      intrinsic = (o.side==="PUT") ? Math.max(0, strike-spotNow) : Math.max(0, spotNow-strike);
+    }
+    var lastPx = num(o.last);
+    var extrinsicShare = (lastPx!=null && lastPx>0 && intrinsic!=null) ? Math.max(0, (lastPx-intrinsic)/lastPx) : null;
+    var stockLike = (extrinsicShare!=null && extrinsicShare < 0.10) || (delta!=null && Math.abs(delta) >= 0.95);
+    var stockHtml = stockLike
+      ? (' <span class="pill n" data-tip="'+esc("Almost all of this contract's price is the money already in the strike, not a bet on a move"
+          + (extrinsicShare!=null ? (" — about "+Math.round(extrinsicShare*100)+"% of the premium is time value")
+                                  : "")
+          + ". Ranked by gross dollars it sits near the top of this board, but it behaves like buying the stock: a hedge, an assignment "
+          + "play or a stock substitute, not a directional option bet.")+'">MOSTLY INTRINSIC</span>')
+      : '';
     var vol = num(o.volume), oi = num(o.open_interest);
     // New positioning vs churn: volume beyond everything previously held means
     // this paper was opened TODAY (SMH 20,225 traded vs 42 held is a brand-new
@@ -3809,7 +3894,7 @@ function renderOrders(data){
     var newHtml = (vol!=null && vol>0 && oi!=null && (oi===0 || vol/oi>=1))
       ? ' <span class="pill f" data-tip="Today’s volume on this contract is at least as large as all the open interest carried into the day. That is consistent with new positions being opened, and it is also what heavy same-day round-tripping looks like — free data cannot tell them apart. Tomorrow’s open-interest change is what settles it.">VOL &gt; OI</span>' : '';
     return '<tr class="rw" data-sym="'+esc(o.ticker||"")+'">'
-      +'<td><span class="sy2">'+esc(o.ticker||"?")+'</span></td><td><span class="pill '+(o.side==="CALL"?"b":"s")+'">'+esc(o.side||"?")+'</span>'+deltaHtml+'</td>'
+      +'<td><span class="sy2">'+esc(o.ticker||"?")+'</span></td><td><span class="pill '+(o.side==="CALL"?"b":"s")+'">'+esc(o.side||"?")+'</span>'+deltaHtml+stockHtml+'</td>'
       +'<td>'+(strike!=null?("$"+fmtStrike(strike)):"—")+'</td><td>'+(o.expiry?esc(o.expiry):"—")+(num(o.dte)!=null?(' ('+Math.round(o.dte)+'d)'):'')+'</td>'
       +'<td>'+(vol!=null?Math.round(vol).toLocaleString():"—")+'</td><td>'+(oi!=null?Math.round(oi).toLocaleString():"—")+newHtml+'</td>'
       +'<td><b>'+fmtOrderPremium(o.premium)+'</b></td></tr>';
@@ -3855,19 +3940,32 @@ function renderETF(data){
   // Naming the session is not the same as saying how old it is. This is the
   // one board with no age signal at all, so a stalled fund-flow source kept
   // printing the same day's dollars, correctly labelled and indefinitely old.
+  // SESSIONS, not calendar days. Friday's reading read on Monday is three
+  // calendar days old and exactly one session old — the normal state of a
+  // once-a-session figure — and the old test painted every Monday amber.
   var gap = null;
   if(ef && ef.flow_session && data && data.session_date){
     var a = Date.parse(String(ef.flow_session).slice(0,10)+"T12:00:00Z");
     var b2 = Date.parse(String(data.session_date).slice(0,10)+"T12:00:00Z");
-    if(isFinite(a) && isFinite(b2)) gap = Math.round((b2-a)/86400000);
+    if(isFinite(a) && isFinite(b2) && b2 >= a){
+      gap = 0;
+      var cur = new Date(a);
+      while(cur.getTime() < b2){
+        cur.setUTCDate(cur.getUTCDate()+1);
+        var wd = cur.getUTCDay();
+        if(wd===0 || wd===6) continue;
+        if(MARKET_HOLIDAYS[cur.toISOString().slice(0,10)]) continue;
+        gap++;
+      }
+    }
   }
   var gapTxt = "";
   if(gap!=null && gap > 0){
-    var amber = gap >= 3;   // a weekend alone is 3 calendar days
+    var amber = gap >= 2;   // one session behind is the design; two is a stall
     gapTxt = ' <span class="'+(amber?"stale":"m")+'" data-tip="'
-      + esc("How far behind the desk's own session this fund-flow reading is. The source publishes once a session and lags a day "
-            + "by design; three or more days behind means it has stalled.")+'">'
-      + (gap===1 ? "1 day behind" : (gap+" days behind"))+'</span>';
+      + esc("How many TRADING SESSIONS behind the desk's own session this fund-flow reading is — weekends and market holidays "
+            + "do not count. The source publishes once a session and lags one by design; two or more means it has stalled.")+'">'
+      + (gap===1 ? "1 session behind" : (gap+" sessions behind"))+'</span>';
   }
   document.getElementById("etfstat").innerHTML =
     (sessLab ? ("money moved "+esc(sessLab)+" · one reading per session"+gapTxt) : "one reading per session");
@@ -5202,7 +5300,7 @@ function stageSetOhlc(param){
   }
   // A reconstructed date is not a date. Say so where the date is printed.
   var approxTag = (BAR_DATES_APPROX && !STAGE.intraday)
-    ? ' <span class="m" data-tip="This bars file publishes no per-bar dates, so the page counted weekdays back from the session date. Market holidays make that drift — read the date as approximate.">≈</span>' : '';
+    ? ' <span class="m" data-tip="This bars file publishes no per-bar dates. The page reconstructs them by walking back one trading day per bar, skipping weekends and the market holidays it knows — so a closure outside that list shifts every earlier bar by a session. The further left on the chart, the further a date can sit from the real one.">≈</span>' : '';
   el.innerHTML = esc(stageTimeLabel(STAGE.times[i])) + approxTag
     + ' · O <b>'+fmtpx(r[0])+'</b> H <b>'+fmtpx(r[1])+'</b> L <b>'+fmtpx(r[2])+'</b> C <b>'+fmtpx(r[3])+'</b>'+volPart+todayTag;
 }
@@ -5372,8 +5470,10 @@ function revLineHTML(row){
 function approxDateNoteHTML(){
   if(!BAR_DATES_APPROX || STAGE.intraday) return "";
   return '<div class="note" style="margin-top:5px">This bars file publishes no per-bar dates, so the candle '
-    + 'under this marker sits on a reconstructed date and can be a session or two off. The date printed above '
-    + 'is the reported one and is exact.</div>';
+    + 'under this marker sits on a date the page RECONSTRUCTED, walking back one trading day per bar and skipping '
+    + 'weekends and the market holidays it knows. A closure outside that list shifts every earlier bar by a session, '
+    + 'so the further back the marker, the further its candle can be from the real date. The date printed above is '
+    + 'the reported one and is exact.</div>';
 }
 function earnPopoverHTML(row, nextRow, isNext){
   if(isNext){
@@ -5544,8 +5644,13 @@ function renderFundamentals(sym, fund){
   var rec = recLabel(f.rec_mark);
   var posPct = st.pos!=null ? Math.round(st.pos*100) : null;
   var fwdPe = (fund && fund.pe_forward!=null) ? numStr(fund.pe_forward,1) : "—";
-  var _edg = earnDaysNow(f);
-  var earnTxt = (_edg!=null ? (Math.round(_edg)+"d") : "—")
+  // ONE vendor's answer. The cell used to concatenate TradingView's day count
+  // (facts.earn_days) with Yahoo's date (the sidecar's next_earnings.date),
+  // and the two disagree by up to six days — so the reader read "in 41d" beside
+  // a date 35 days out. Prefer the sidecar's date and derive the count from it.
+  var _neDate = (fund && fund.next_earnings && fund.next_earnings.date) ? fund.next_earnings.date : null;
+  var _edg = _neDate ? fedDaysToMeeting(_neDate) : earnDaysNow(f);
+  var earnTxt = (_edg!=null && _edg>=0 ? (Math.round(_edg)+"d") : "—")
     + (fund && fund.next_earnings && fund.next_earnings.date ? (" · "+esc(fund.next_earnings.date)) : "");
   var targetTxt = f.target!=null ? (fmtpx(f.target)+(targetPct!=null?(" ("+(targetPct>=0?"+":"")+targetPct.toFixed(1)+"%)"):"")) : "—";
 
@@ -8230,7 +8335,11 @@ function vintageNote(syms){
   var snap = [], live = [];
   syms.forEach(function(t){ (factsVintage(t).live ? live : snap).push(t); });
   if(!snap.length || !live.length) return "";
-  var at = STATE.data && STATE.data.context_updated_at;
+  // generated_at, not context_updated_at. The contract is explicit: facts ride
+  // the ~7-minute snapshot, while context_updated_at is the last time the
+  // HOURLY gathering ran — so a facts row was being dated with a stamp that
+  // could be 50 minutes older than the figures it labelled.
+  var at = STATE.data && (STATE.data.generated_at || STATE.data.generated_at_ct);
   return 'Two vintages on one chart: '+esc(snap.join(", "))+(snap.length>1?' come':' comes')+' from the desk snapshot'
     + (at?(' taken '+esc(ctTimeShort(at))+' CT'):'')+', while '+esc(live.join(", "))
     + (live.length>1?' were':' was')+' pulled from the scanner when this tab opened. ';
@@ -8238,7 +8347,7 @@ function vintageNote(syms){
 function factsVintage(sym){
   var snap = STATE.data && STATE.data.facts && STATE.data.facts[sym];
   if(snap){
-    var at = STATE.data.context_updated_at;
+    var at = STATE.data.generated_at || STATE.data.generated_at_ct;
     return {live:false, word:"from the desk snapshot"+(at?(", "+ctTimeShort(at)+" CT"):"")};
   }
   if(ADHOC_FACTS[sym]) return {live:true, word:"pulled from the scanner when this tab opened"};
@@ -8594,9 +8703,24 @@ function stageFlowSecHTML(sym){
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-oiconfirm"])+'">OI-confirm</span></span><b>'+(sw.oi_confirm||"—")+'</b></div>'
     + '<div class="kvrow"><span>Suggested</span><b style="font-size:10.5px">'+suggestedContractLine(sw.suggested_contract, num(sw.spot))+'</b></div></div>') : "";
   if(!convSec && !swSec){
-    var tracked = railHasSym(sym) || (STATE.data && STATE.data.facts && STATE.data.facts[sym]);
+    // THREE states, not two. The middle one is a TRACK_ONLY name: a full
+    // member of the pinned universe with quotes, facts, bars and a sidecar,
+    // which select_candidates() deliberately excludes from the CBOE chain
+    // fetch. Saying its "options activity was ordinary" claimed a chain had
+    // been read for a name whose chain is never fetched — five of them.
+    var inFacts = !!(STATE.data && STATE.data.facts && STATE.data.facts[sym]);
+    var onBoards = !!(STATE.data && (
+      (Array.isArray(STATE.data.conviction) && STATE.data.conviction.some(function(c){ return c && c.ticker===sym; })) ||
+      (Array.isArray(STATE.data.swing) && STATE.data.swing.some(function(c){ return c && c.ticker===sym; })) ||
+      (Array.isArray(STATE.data.big_orders) && STATE.data.big_orders.some(function(c){ return c && c.ticker===sym; }))));
+    var chainNeverFetched = inFacts && !onBoards && TRACK_ONLY_SYMS[sym];
+    var tracked = railHasSym(sym) || inFacts;
     return '<div class="dsec note">'
-      + (tracked
+      + (chainNeverFetched
+          ? esc(sym)+' is tracked for price, bars and financials, but the desk never fetches an options chain for it: the vendor '
+            + 'publishes no usable chain for this name (a ghost chain, or a listing with no options at all). Nothing was read '
+            + 'this cycle, so there is no reading here to be ordinary or otherwise.'
+      : tracked
           ? esc(sym)+' scored onto neither flow board this cycle: its options activity was ordinary. The boards rebuild every ~7 minutes '
             + 'during market hours from 15-minute-delayed CBOE chains, so this can change during the session — the full boards sit below this chart.'
           : esc(sym)+' is outside the desk\u2019s options universe, so there is no chain data for it here. Options chains are fetched '
@@ -8887,6 +9011,12 @@ function refreshLiveUI(){
   // The BOARD half needs the snapshot the boards are built from.
   if(data){
     renderConv(data);
+    // ...and the orders board. Its age stamp is painted inside renderOrders,
+    // which only runs from renderAll — and renderAll short-circuits when
+    // generated_at has not changed. So with the fetcher dead, the conviction
+    // board went amber on schedule while the orders board two inches below it
+    // still showed a fresh stamp for the same payload.
+    renderOrders(data);
     renderSwing(data);
   }
   $$(".xwrap").forEach(function(x){ if(x.id && scrolls[x.id]) x.scrollLeft = scrolls[x.id]; });
