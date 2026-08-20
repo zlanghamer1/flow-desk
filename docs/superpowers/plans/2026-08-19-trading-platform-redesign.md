@@ -444,3 +444,75 @@ lacking the field. That directory is gitignored local test data and was months
 stale. The live `data` branch publishes MU as USD, TSM as TWD and SKHY as KRW —
 the feature works. The real problem it exposed was the stale local copy, now
 refreshed from the branch.
+
+---
+
+## Round 5 (2026-08-20) — the same nine, read harder
+
+| Section | R3 | R4 | R5 |
+|---|---|---|---|
+| Right rail panels | 69 | 72 | 78 |
+| Data honesty | 72 | 81 | 78 |
+| Sector heatmap | 74 | 76 | 74 |
+| Flow boards | — | 74 | 73 |
+| Left rail and search | 46 | 72 | 72 |
+| vs Peers | 82 | 73 | 71 |
+| Financials | 85 | 71 | 64 |
+| Auto-TA | 56 | 67 | 58 |
+| Chart stage | 69 | 67 | 55 |
+
+Scores falling while the page improves is the expected shape here. Each round's
+reviewer opens a page whose obvious faults are gone and goes further in; round
+5's findings are almost all things rounds 3 and 4 never reached, and several are
+holes in round 4's own fixes.
+
+### The ones that mattered most
+
+**Earnings and rating markers were silently dropped.** Lightweight Charts
+binary-searches its marker array, so an unsorted one loses entries. The earnings
+badges are pushed in bar order and the rating arrows appended in the sidecar's
+own order, which is newest-first — so on 20 of the 63 tracked names an earnings
+badge inside the default 3-month window never drew, while the legend under the
+chart went on advertising it.
+
+**A line that broke during the session was still captioned intact.** Round 4
+added a live re-grade; it returned early for any fit with no break bar, which is
+every unbroken line. KLAC's support could be closed through at 10:20 and still
+read green "support" at 14:30 with price below it. The re-grade now tests the
+live close against the line with the fitter's own confirmation threshold.
+
+**"Support at $192.09" came from a chord nothing came near.** Containment asks
+only that no bar pokes through, so a line from a deep low to a much later low
+passed while price spent the whole span far above it — CRWD's anchors at $91.12
+and $174.14, with no close in the window within 4% of the line. A fit must now
+also HUG its span: measured on the live universe, fits that genuinely track
+their price action sit 2.0 to 2.6 average days off the line, so four average
+days is the gate.
+
+**Three quarters of the heatmap printed nothing.** The name cap only fired below
+700px, so at 1440×900 — a laptop with both rails showing, a 788×558 map — all
+502 names drew and 355 landed under the size a tile needs to carry its own
+ticker. Capping by area instead puts 97% of tiles over the labelling gate.
+
+**The year-over-year chart assumed everyone files quarterly.** CBRS files
+semiannually; a four-slot step compared H1 2026 against H1 2024 and captioned it
+"the same period a year ago". The same four-slot assumption was summing two
+fiscal years and calling the result trailing twelve months.
+
+### Themes
+
+- **Round 4's own fixes had edges.** The live re-grade skipped unbroken lines.
+  The vertical-zoom anchor blanked the chart when the last close was off screen.
+  The board footer read the quote count under the chain sentence.
+- **One rule, several universes.** Net flow and the BULL/BEAR pill count every
+  strike; Flow % counts only strikes near the money — and nothing on the row
+  said so, though they can point opposite ways. The biggest-orders board ranks
+  gross premium, so deep in-the-money paper leads on money already in the strike.
+- **Vendors spliced.** The next-earnings cell paired TradingView's day count
+  with Yahoo's date, and the two disagree by up to six days.
+- **A feed that goes half-dark.** The scanner omits a row it cannot resolve
+  rather than sending a null, so one symbol can freeze while the request keeps
+  succeeding. The macro tape was guarded; the equity poll that feeds every board
+  was not.
+- **Panels that vanished rather than explaining.** The Semi ETF panel on a null
+  payload, the news panel on a failed scan, half a sector table.
