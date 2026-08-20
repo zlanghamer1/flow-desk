@@ -5425,9 +5425,12 @@ function peerBarsSVG(entries, focusedSym, fmt, opts, kind){
   var wideSpread = (minAbs>0 && maxAbs/minAbs > 20);
   var clampAt = null;
   if(scaleMed>0 && maxAbs/scaleMed > 8) clampAt = scaleMed*6;
-  else if(wideSpread){
+  else if(wideSpread && absVals.length >= 3){
     // Clamp to the second largest, so the tall bars stay comparable with each
     // other while the short ones stop being 2-pixel slivers.
+    // THREE values minimum: with exactly two, "the second largest" IS the
+    // smaller one, so the clamp landed at 1.6x the short bar and drew a 106:1
+    // fact as 1.6:1 — MRVL's PEG chart, KLAC 2.72 against SKHY 0.026.
     var second = absVals[absVals.length-2];
     if(second>0 && maxAbs/second > 2) clampAt = second*1.6;
     else clampAt = medianOf(absVals)*8;
@@ -5745,7 +5748,15 @@ function peersFor(sym){
     var syms = cur.map(function(p){ return p[0]; });
     PEERS_INFLIGHT[sym] = adhocFactsBatch(cur.map(function(p){ return p[1]; })).then(function(){
       delete PEERS_INFLIGHT[sym];
-      PEERS_CACHE[sym] = {peers:syms, source:"curated"};
+      // Drop a curated peer the scanner cannot resolve. A pinned exchange
+      // prefix goes stale when a company moves listing — V's set pins
+      // NASDAQ:FISV, and Fiserv is NYSE:FI now. The unresolved name kept its
+      // colour, its key entry and a full-width empty column on every chart,
+      // reading as "Fiserv reports none of this" rather than "we could not
+      // find Fiserv".
+      var live = syms.filter(function(t){ return !!factsOf(t); });
+      var lost = syms.filter(function(t){ return !factsOf(t); });
+      PEERS_CACHE[sym] = {peers:live, source: live.length ? "curated" : "curated-empty", unresolved:lost};
       return PEERS_CACHE[sym];
     });
     return PEERS_INFLIGHT[sym];
@@ -5790,7 +5801,7 @@ function _peersByIndustry(sym){
     seenSym[t] = true;
     cands.push({sym:t, tv:null, cap:num(pf.cap), local:true});
   });
-  function finish(list, scanned){
+  function finish(list, scanned, scanFailed){
     list.sort(function(a,b){
       return (inBand(b.cap)?1:0)-(inBand(a.cap)?1:0) || ratio(a.cap)-ratio(b.cap);
     });
@@ -5800,9 +5811,15 @@ function _peersByIndustry(sym){
     var out = picks.map(function(c){ return c.sym; });
     var wide = picks.filter(function(c){ return !inBand(c.cap); }).map(function(c){ return c.sym; });
     return adhocFactsBatch(tvs).then(function(){
-      PEERS_CACHE[sym] = {peers:out, source: out.length ? (scanned?"industry-scan":"industry-local") : "thin",
-                          outOfBand: wide};
-      return PEERS_CACHE[sym];
+      var res = {peers:out, source: out.length ? (scanned?"industry-scan":"industry-local")
+                                               : (scanFailed ? "scan-failed" : "thin"),
+                 outOfBand: wide};
+      // Never cache a network failure as an answer. "The scanner returned no
+      // other company in that industry" is a claim about the market; a failed
+      // POST is a claim about the connection, and caching it meant the page
+      // repeated the wrong one for the rest of the session.
+      if(res.source !== "scan-failed") PEERS_CACHE[sym] = res;
+      return res;
     });
   }
   if(cands.filter(function(c){ return inBand(c.cap); }).length >= 4) return finish(cands, false);
@@ -5859,11 +5876,11 @@ function _peersByIndustry(sym){
         return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:scanBody(false)})
           .then(function(r2){ if(!r2.ok) throw new Error("HTTP "+r2.status); return r2.json(); })
           .then(function(j2){ ingest((j2 && Array.isArray(j2.data)) ? j2.data : []); return finish(cands, true); },
-                function(){ return finish(cands, true); });
+                function(){ return finish(cands, true, cands.length===0); });
       }
       return finish(cands, true);
     })
-    .catch(function(){ return finish(cands, false); });
+    .catch(function(){ return finish(cands, false, cands.length===0); });
 }
 /* Which direction is good, per metric: +1 higher is better, -1 lower is better.
    Used for the rank caption and for the peer-relative coloring in the
@@ -7344,12 +7361,17 @@ function metricReason(sym, key){
   // A peer whose sidecar has not landed yet is not a vendor gap.
   if(!Object.prototype.hasOwnProperty.call(FUND_CACHE, sym)) return "loading…";
   var eps = ttmEpsOf(FUND_CACHE[sym]);
+  // Run the negative test FIRST and over every ratio metricValue nulls out.
+  // It covered only ev_ebitda/ps/pb, so a negative vendor P/E fell through to
+  // "vendor n/a" — the page saying the vendor publishes nothing about a
+  // figure the vendor had published, as a negative number.
+  if((key==="pe"||key==="peg"||key==="ev_ebitda"||key==="ps"||key==="pb")
+     && num(f[key])!=null && num(f[key])<=0) return "negative";
   if(key==="pe" || key==="peg"){
     if(num(f.pe)==null && eps!=null && eps<=0) return "loss";
     if(key==="peg" && num(f.pe)!=null) return "no growth";
     if(key==="peg") return "no EPS";
   }
-  if((key==="ev_ebitda"||key==="ps"||key==="pb") && num(f[key])!=null && num(f[key])<=0) return "negative";
   // A missing EV/EBITDA on a company running negative operating margins is a
   // loss, not a vendor gap — and the Overview tab already says so.
   if(key==="ev_ebitda"){
@@ -7391,6 +7413,12 @@ function renderPeersInto(body, sym, res, seq, isRedraw){
     body.innerHTML = '<div class="dsec note">'
       + (res.source==="fund"
          ? esc(sym)+' is a fund or wrapper — margins and multiples describe companies, not baskets.'
+         : res.source==="curated-empty"
+           ? 'None of '+esc(sym)+'\u2019s curated peers resolved on the scanner this cycle — usually a company that changed '
+             + 'listing, or a scanner request that did not answer. Reopen this tab to retry.'
+         : res.source==="scan-failed"
+           ? 'The peer scan did not answer. TradingView\u2019s scanner is the source for an industry set, and this request '
+             + 'failed — that is a connection problem, not a statement about '+esc(sym)+'\u2019s industry. Reopen this tab to retry.'
          : res.source==="thin"
            ? 'No peer set for '+esc(sym)+'. Its industry is "'+esc((f0&&f0.industry)||"unclassified")
              + '", and the scanner returned no other US-listed company in that industry — inside the 5× size band or outside it. '
@@ -7405,7 +7433,12 @@ function renderPeersInto(body, sym, res, seq, isRedraw){
   }
   var entries = [sym].concat(peers).map(function(t, i){ return {sym:t, color:seriesColor(i)}; });
   var srcLine = res.source==="curated"
-    ? ("curated set — " + esc(PEER_GROUP_LABEL[sym] || "documented comparisons"))
+    ? ("curated set — " + esc(PEER_GROUP_LABEL[sym] || "documented comparisons")
+       + ((res.unresolved && res.unresolved.length)
+           ? ('. '+esc(res.unresolved.join(", "))+(res.unresolved.length>1?' did':' did')
+              + ' not resolve on the scanner and '+(res.unresolved.length>1?'are':'is')+' not shown — '
+              + 'usually a company that changed listing')
+           : ''))
     : 'US-listed names in TradingView’s "'+esc((factsOf(sym)||{}).industry||"")+'" industry, closest in market cap'
       + (res.source==="industry-scan" ? ", via the live scanner" : ", from the desk universe")
       + ((res.outOfBand && res.outOfBand.length)
@@ -7424,6 +7457,10 @@ function renderPeersInto(body, sym, res, seq, isRedraw){
       if(c && (c/myCapNow > PEER_CAP_BAND || myCapNow/c > PEER_CAP_BAND)) oob[t] = true;
     });
   }
+  // The footnote that DEFINES the mark used to read res.outOfBand, which the
+  // curated branch never sets — so a curated set stamped "AAOI ✳" in the key
+  // and left the symbol undefined anywhere on the page.
+  var oobAny = Object.keys(oob).length > 0;
   var key = '<div class="peerkey">'+entries.map(function(e){
       var c = factsOf(e.sym) && num(factsOf(e.sym).cap);
       var vint = factsVintage(e.sym);
@@ -7471,18 +7508,28 @@ function renderPeersInto(body, sym, res, seq, isRedraw){
     var peerVals2 = rows.filter(function(r){ return r.sym!==sym && r.val!=null; });
     // The renderer refuses to DRAW a median from one point; the caption used
     // to print that one point's value as "peer median" anyway.
-    var peerMed = peerVals2.length>=2 ? medianOf(peerVals2.map(function(r){ return r.val; })) : null;
+    // A midpoint between two numbers 106x apart names a value no company on
+    // the chart is within 40x of. KLAC 2.72 and SKHY 0.026 gave "peer median
+    // 1.37" on MRVL's PEG chart.
+    var pvAbs = peerVals2.map(function(r){ return Math.abs(r.val); }).filter(function(v){ return v>0; });
+    var peerSpread = pvAbs.length>=2 ? (Math.max.apply(null,pvAbs)/Math.min.apply(null,pvAbs)) : 1;
+    var medUseless = (peerVals2.length===2 && peerSpread > 10);
+    var peerMed = (peerVals2.length>=2 && !medUseless) ? medianOf(peerVals2.map(function(r){ return r.val; })) : null;
     var lonePeer = peerVals2.length===1 ? peerVals2[0] : null;
     var medOff = (PEER_LAST.clampAt != null && st && st.median!=null && Math.abs(st.median) > PEER_LAST.clampAt)
       ? " — above this scale, so no dashed line is drawn" : "";
     var cap = st
       ? ('<b class="'+(st.better?"u":"d")+'">'+esc(sym)+' ranks '+st.rank+' of '+st.n+' reporting</b> · '
-         + (dir>0?"higher is better":"lower is better") + ' · peer median '+esc(fmtC(st.median))+esc(medOff))
+         + (dir>0?"higher is better":"lower is better")
+         + (medUseless
+             ? (' · no usable median — the two reporting peers are '+Math.round(peerSpread)+'× apart')
+             : (' · peer median '+esc(fmtC(st.median))+esc(medOff))))
       : ('<span class="m">'+(dir>0?"higher is better":"lower is better")
          + (mine.val==null ? (' · '+esc(sym)+': '+esc(METRIC_REASON_LONG[mine.reason] || mine.reason || "no figure")) : ' · too few peers reported to rank')
          + (peerMed!=null ? (' · peer median '+esc(fmtC(peerMed))
              + ((PEER_LAST.clampAt != null && Math.abs(peerMed) > PEER_LAST.clampAt) ? esc(" — above this scale") : ""))
-            : lonePeer ? (' · only '+esc(lonePeer.sym)+' reported ('+esc(fmtC(lonePeer.val))+') — no median from one name') : '')
+            : lonePeer ? (' · only '+esc(lonePeer.sym)+' reported ('+esc(fmtC(lonePeer.val))+') — no median from one name')
+            : medUseless ? (' · no usable median — the two reporting peers are '+Math.round(peerSpread)+'× apart') : '')
          + '</span>');
     html += '<div class="gchart"><h4>'+esc(METRIC_LABEL[mk]||mk)+'</h4>'+svg
       + '<div class="gcap">'+cap+(spreadNote?('<span class="m">'+esc(spreadNote)+'</span>'):'')+'</div></div>';
@@ -7496,7 +7543,7 @@ function renderPeersInto(body, sym, res, seq, isRedraw){
     + 'not a vendor gap. PEG falls back to P/E divided by TTM EPS growth when the vendor omits it, and stays blank when growth or '
     + 'earnings are negative. '
     + vintageNote(entries.map(function(e){ return e.sym; }))
-    + ((res.outOfBand && res.outOfBand.length) ? ('\u2733 marks a peer more than 5× from '+esc(sym)+' in size. ') : '')
+    + (oobAny ? ('\u2733 marks a peer more than 5× from '+esc(sym)+' in size — read the gap, not the rank. ') : '')
     + (clipped ? 'Where one name runs far off the scale, its bar is clipped with a break mark and its true value stays printed above it. ' : '')
     + 'Display only — none of this scores anything.</div></div>';
   if(!drew) html = '<div class="dsec note">No comparable trailing-twelve-month figures for this set.</div>';
