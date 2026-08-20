@@ -37,11 +37,19 @@ December. It currently runs 2024 through 2027.
 
 ### 2. Round 6 of the review was never scored
 
+Round 5's adversarial verification finished after the fixes: of 72 findings it
+checked, **70 were refuted because they were already fixed**, and the two it
+confirmed are both closed (one was the board footer, already corrected; the
+other was a caveat sentence made false by its own fix, corrected after).
+
+Round 6 itself was launched and stopped before it scored anything, so there is
+no round-6 finding list.
+
 Rounds 4 and 5 each ran nine section reviewers with adversarial verification;
 every confirmed finding from both is fixed. Round 6 was launched and stopped
 before it scored anything, so there is no round-6 finding list.
 
-Re-run it with:
+Re-run round 6 with:
 
     Workflow({scriptPath: ".../flow-desk-review-r4-wf_9e7063ce-dfb.js"})
 
