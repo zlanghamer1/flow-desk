@@ -548,8 +548,9 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
    the loudest thing on the tab. A grid track cannot widow. */
 .gwrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:6px 16px;margin-top:4px;align-items:start}
 .gwrap .glabel{grid-column:1/-1;font-size:9.5px;letter-spacing:.12em;color:var(--ink3);font-weight:700;text-transform:uppercase;margin-top:8px}
-.gwrap .gfull{grid-column:1/-1}
 .gchart{min-width:0;max-width:420px}
+/* After .gchart, so the 420px cap does not win: this one spans the row. */
+.gwrap .gfull{grid-column:1/-1;max-width:none}
 .gchart h4{font-size:9.5px;letter-spacing:.09em;color:var(--ink3);text-transform:uppercase;margin-bottom:3px;font-weight:600}
 .gchart svg{width:100%;height:auto;display:block}
 .gcap{font-size:10px;color:var(--ink3);margin-top:2px}
@@ -4736,16 +4737,18 @@ function renderFundamentals(sym, fund){
 
 /* ---- growth charts (fund sidecar: quarterly up to 12 bars, annual up to 6) ---- */
 function fmtCompact(v){
-  var n=num(v); if(n===null) return "—";
+  var n=num(v); if(n===null) return "\u2014";
   var a=Math.abs(n);
+  // U+2212, matching the axis ticks this label sits under: the legend printed
+  // an ASCII hyphen directly below "\u2212200M".
+  function m(t){ return String(t).replace(/^-/, "\u2212"); }
   // Trillions step added 2026-08-19: SK hynix reports in won, so its revenue
-  // printed as "79319.0B" — a nine-character label that ran off the left of
-  // the axis and rendered as "0000.0B".
-  if(a>=1e12) return (n/1e12).toFixed(1)+"T";
-  if(a>=1e9) return (n/1e9).toFixed(1)+"B";
-  if(a>=1e6) return (n/1e6).toFixed(1)+"M";
-  if(a>=1e3) return (n/1e3).toFixed(1)+"K";
-  return n.toFixed(2);
+  // printed as "79319.0B" \u2014 a nine-character label that ran off the axis.
+  if(a>=1e12) return m((n/1e12).toFixed(1))+"T";
+  if(a>=1e9) return m((n/1e9).toFixed(1))+"B";
+  if(a>=1e6) return m((n/1e6).toFixed(1))+"M";
+  if(a>=1e3) return m((n/1e3).toFixed(1))+"K";
+  return m(n.toFixed(2));
 }
 /* One unit and one decimal count for the WHOLE tick set, chosen from the
    axis's own magnitude. Per-tick formatting produced "0.00 / 20.0B / 40.0B"
@@ -4756,7 +4759,11 @@ function fmtCompact(v){
    value". */
 function hoverFormatter(kind){
   if(kind==="pct") return function(v){ var n2=num(v); return n2==null?"—":(Math.round(n2*100)/100)+"%"; };
-  if(kind==="num") return function(v){ var n2=num(v); return n2==null?"—":String(Math.round(n2*10000)/10000); };
+  if(kind==="num") return function(v){
+    var n2=num(v); if(n2==null) return "—";
+    return (Math.abs(n2) >= 10000) ? Math.round(n2).toLocaleString("en-US")
+                                   : String(Math.round(n2*10000)/10000);
+  };
   return function(v){
     var n2=num(v); if(n2==null) return "—";
     var a=Math.abs(n2), sgn=n2<0?"\u2212":"";
@@ -4765,6 +4772,18 @@ function hoverFormatter(kind){
     if(a>=1e6)  return sgn+(a/1e6).toFixed(1)+"M";
     if(a>=1e3)  return sgn+(a/1e3).toFixed(1)+"K";
     return sgn+a.toFixed(2);
+  };
+}
+// The hover TITLE carries the compact figure and then the full one:
+// "17.56B (17,562,000,000)". The legend keeps the compact form.
+function titleFormatter(kind){
+  var short = hoverFormatter(kind);
+  if(kind==="pct" || kind==="num") return short;
+  return function(v){
+    var n2=num(v); if(n2==null) return "—";
+    var a=Math.abs(n2);
+    if(a < 1e6) return short(v);
+    return short(v)+" ("+(n2<0?"\u2212":"")+Math.round(a).toLocaleString("en-US")+")";
   };
 }
 function tickFormatter(ticks, kind){
@@ -4780,7 +4799,11 @@ function tickFormatter(ticks, kind){
   }
   if(kind==="num"){
     var dpn = dpOf(mx);
-    return function(v){ return Math.abs(v)<1e-9 ? "0" : m((num(v)||0).toFixed(dpn)); };
+    return function(v){
+      if(Math.abs(v)<1e-9) return "0";
+      var nv = num(v)||0;
+      return (Math.abs(nv) >= 10000) ? m(Math.round(nv).toLocaleString("en-US")) : m(nv.toFixed(dpn));
+    };
   }
   var div = 1, suf = "";
   if(mx>=1e12){ div=1e12; suf="T"; } else if(mx>=1e9){ div=1e9; suf="B"; }
@@ -4875,7 +4898,9 @@ function niceTicks(mn, mx, want){
   return out;
 }
 function fmtAxisMoney(v){ return fmtCompact(v); }
-function fmtAxisPct(v){ return (Math.round(v*10)/10)+"%"; }
+// One decimal always, and the page's minus sign: the legend printed "2%" next
+// to "35.6%" on the same line.
+function fmtAxisPct(v){ var n=num(v); if(n===null) return "\u2014"; return String(n.toFixed(1)).replace(/^-/,"\u2212")+"%"; }
 function fmtAxisNum(v){ var a=Math.abs(v); return (a>=100? v.toFixed(0) : a>=10? v.toFixed(1) : v.toFixed(2)); }
 /* One renderer for every financials chart. defs: [{name,color,values,type}]
    type is "line" (default) or "bar". opts: {fmt, W, H, zeroLine, xEvery}. */
@@ -4911,7 +4936,7 @@ function axisChartSVG(labels, defs, opts){
   // "0000.0B" and printed the same wrong label on two different gridlines.
   var ticks = niceTicks(mn, mx, 4);
   var fmt = opts.fmt || tickFormatter(ticks, opts.kind || "money");
-  var hfmt = hoverFormatter(opts.kind || "money");
+  var hfmt = titleFormatter(opts.kind || "money");
   var widest = 0;
   ticks.forEach(function(t){ widest = Math.max(widest, String(fmt(t)).length); });
   var padL = Math.max(opts.padL || 40, Math.ceil(widest*AX_TICK_FS*0.62) + 12);
@@ -4979,7 +5004,15 @@ function axisChartSVG(labels, defs, opts){
     if(d.type==="bar"){
       var bi = barDefs.indexOf(d);
       for(var k=0;k<d.vals.length;k++){
-        var v = d.vals[k]; if(v==null) continue;
+        var v = d.vals[k];
+        if(v==null){
+          // "not reported" is not zero. A dash at the baseline says which.
+          var xn = XB(k) - groupW/2 + bi*bw + Math.max(1.5,bw-1)/2;
+          out += '<text x="'+xn.toFixed(1)+'" y="'+(Y(0)-3).toFixed(1)+'" font-size="'+(AX_TICK_FS-1)
+            + '" text-anchor="middle" fill="var(--ink3)">\u2014<title>'
+            + esc((labels[k]||"")+" · "+d.name+": not reported")+'</title></text>';
+          continue;
+        }
         var x = XB(k) - groupW/2 + bi*bw;
         var y0 = Y(0), y1 = Y(v);
         var top = Math.min(y0,y1), hgt = Math.max(1, Math.abs(y1-y0));
@@ -5207,7 +5240,9 @@ function peerBarsSVG(entries, focusedSym, fmt, opts, kind){
         var rHalf = rTxt.length*rFs*0.26;
         var rx = Math.min(W-2-rHalf, Math.max(padL+rHalf, cx));
         out += '<text x="'+rx.toFixed(1)+'" y="'+(Y(0)+7).toFixed(1)
-          + '" font-size="'+rFs+'" text-anchor="middle" fill="var(--ink3)"><title>'+esc(e.reason)+'</title>'+esc(rTxt)+'</text>';
+          + '" font-size="'+rFs+'" text-anchor="middle" fill="var(--ink3)"><title>'
+          + esc(e.sym+": "+((typeof METRIC_REASON_LONG==="object" && METRIC_REASON_LONG[e.reason]) || e.reason))
+          + '</title>'+esc(rTxt)+'</text>';
       }
     }
     out += '<text x="'+cx.toFixed(1)+'" y="'+(H-10)+'" font-size="10.5" font-weight="'+(isFoc?"700":"600")
@@ -5229,7 +5264,9 @@ function renderGrowth(sym, fund){
   // 10-11px instead of 5-7px. Re-rendered on a width-class change.
   var narrow = (window.innerWidth || 1440) <= 760;
   var SM = narrow ? {W:340, H:200} : {W:340, H:180};
-  var BIG = narrow ? {W:380, H:230} : {W:560, H:200};
+  var hostW = (function(){ var el=document.getElementById("stagetabbody"); return el ? el.clientWidth : 0; })();
+  var bigW = Math.max(560, Math.min(1000, Math.round((hostW || 600) - 44)));
+  var BIG = narrow ? {W:380, H:230} : {W:bigW, H:200};
   // What the statements are reported in. NEVER assume dollars: SK hynix files
   // in won and Taiwan Semi in New Taiwan dollars, both with US listings.
   var cur = (fund && typeof fund.currency === "string" && fund.currency) ? fund.currency : null;
@@ -5244,7 +5281,7 @@ function renderGrowth(sym, fund){
     var moneySvg = axisChartSVG(q.labels, money, {kind:"money", zeroLine:true, W:BIG.W, H:BIG.H});
     if(moneySvg){
       out += '<div class="gwrap"><div class="glabel">Quarterly — '+esc(curWord)+'</div>'
-        + '<div class="gchart gfull" style="max-width:640px"><h4>Revenue · net income · free cash flow</h4>'
+        + '<div class="gchart gfull"><h4>Revenue · net income · free cash flow</h4>'
         + moneySvg + chartLegendHTML(money, fmtAxisMoney, q.labels) + '</div></div>';
     }
     function marginSeries(arr){
@@ -5302,7 +5339,8 @@ function renderGrowth(sym, fund){
            fcf:(a.fcf||[]).slice(keepFrom), eps:(a.eps||[]).slice(keepFrom)};
     }
   }
-  if(a && Array.isArray(a.labels) && a.labels.length){
+  var hasAnnual = !!(a && Array.isArray(a.labels) && a.labels.length);
+  if(hasAnnual){
     var arow = "";
     [["revenue","Revenue",0,"money",fmtAxisMoney],["ni","Net income",1,"money",fmtAxisMoney],
      ["fcf","Free cash flow",2,"money",fmtAxisMoney],["eps","EPS",3,"num",fmtAxisNum]].forEach(function(t){
@@ -5324,7 +5362,8 @@ function renderGrowth(sym, fund){
           + 'labels and fiscal years are not calendar years. Annual rows and earnings-surprise history need the sidecar and are not shown here. '
         : 'Reported figures from the daily fundamentals sidecar (stockanalysis.com income and cash-flow statements)'
           + (fund.built ? (', built '+esc(fund.built)) : '')
-          + '. Fiscal quarters are labeled on each axis. Annual rows sum complete 4-quarter years. ')
+          + '. Fiscal quarters are labeled on each axis. Annual rows sum complete 4-quarter years — including EPS, which the '
+          + 'company itself files on a weighted share count for the year, so the annual EPS bar can sit a few percent off its filed figure. ')
     + (cur
         ? (cur==="USD" ? 'Statements are filed in US dollars. '
                        : 'Statements are filed in '+esc(cur)+' and are NOT converted — the share price above is in dollars, these figures are not. ')
@@ -5332,11 +5371,19 @@ function renderGrowth(sym, fund){
     + (yearsDropped.length ? ('Annual charts show only the unbroken run of years ending at the newest one; '
         + esc(yearsDropped.join(", "))+' sat behind a gap in the vendor data and would have plotted as if adjacent. ') : '')
     + 'The year-over-year chart starts at the fifth quarter, because the first four have no prior-year quarter to compare against. '
+    + (hasAnnual
+        ? ('Annual EPS is the four quarters added up, so it can differ by a couple of percent from the diluted EPS the company files, '
+           + 'which uses a share count weighted across the year. ')
+        : '')
     + 'Annual EPS is the four quarters added up, so it can differ by a couple of percent from the diluted EPS the company files, '
     + 'which uses a share count weighted across the year. '
-    + 'Margins are derived per quarter only where both legs reported. A missing quarter stays blank, never a zero — and an annual '
-    + 'slot is blank when any quarter in that year is missing the figure, which is why a year can draw on one chart and not the one '
-    + 'beside it. Hover any point or bar for its exact value.</div>';
+    + 'Margins are derived per quarter only where both legs reported. A missing quarter is marked with a dash at the baseline, never '
+    + 'drawn as a zero'
+    + (hasAnnual
+        ? (' — and an annual slot is blank when any quarter in that year is missing the figure, which is why a year can draw on one '
+           + 'chart and not the one beside it')
+        : '')
+    + '. Hover any point or bar for its exact value.</div>';
   return '<div class="dsec" id="growthbox"><h3>Financials</h3>'+out+'</div>';
 }
 
@@ -6912,25 +6959,38 @@ function factsVintage(sym){
   if(ADHOC_FACTS[sym]) return {live:true, word:"pulled from the scanner when this tab opened"};
   return {live:false, word:"of unknown vintage"};
 }
+var METRIC_REASON_LONG = {
+  "loss": "loss-making — no positive trailing earnings to divide by",
+  "no EBITDA": "no positive EBITDA — the company is losing money at the operating line",
+  "no EPS": "no trailing earnings to divide by",
+  "no growth": "the vendor publishes no growth rate, so PEG cannot be derived",
+  "negative": "the vendor's own figure is negative, which this ratio cannot express",
+  "cash burn": "free cash flow is negative",
+  "loading…": "this peer's figures are still loading",
+  "no cap": "no market cap published for this name",
+  "vendor n/a": "the vendor publishes no figure for this name"
+};
 function metricReason(sym, key){
   var f = factsOf(sym);
   if(!f) return "no data";
+  // A peer whose sidecar has not landed yet is not a vendor gap.
+  if(!Object.prototype.hasOwnProperty.call(FUND_CACHE, sym)) return "loading…";
   var eps = ttmEpsOf(FUND_CACHE[sym]);
   if(key==="pe" || key==="peg"){
-    if(num(f.pe)==null && eps!=null && eps<=0) return "loss-making";
-    if(key==="peg" && num(f.pe)!=null) return "growth n/a";
-    if(key==="peg") return "no trailing earnings";
+    if(num(f.pe)==null && eps!=null && eps<=0) return "loss";
+    if(key==="peg" && num(f.pe)!=null) return "no growth";
+    if(key==="peg") return "no EPS";
   }
   if((key==="ev_ebitda"||key==="ps"||key==="pb") && num(f[key])!=null && num(f[key])<=0) return "negative";
   // A missing EV/EBITDA on a company running negative operating margins is a
   // loss, not a vendor gap — and the Overview tab already says so.
   if(key==="ev_ebitda"){
     var om = metricValue(sym, "op_margin"), fcf = metricValue(sym, "fcf_margin");
-    if(om!=null && om < 0) return "no positive EBITDA";
-    if(om==null && eps!=null && eps<=0) return "loss-making";
-    if(om==null && fcf!=null && fcf<0) return "cash-burning";
+    if(om!=null && om < 0) return "no EBITDA";
+    if(om==null && eps!=null && eps<=0) return "loss";
+    if(om==null && fcf!=null && fcf<0) return "cash burn";
   }
-  if((key==="ps"||key==="pb") && num(f[key])==null && num(f.cap)==null) return "no market cap published";
+  if((key==="ps"||key==="pb") && num(f[key])==null && num(f.cap)==null) return "no cap";
   return "vendor n/a";
 }
 /* Where this name stands against the peers actually on screen. Returns null
@@ -6956,7 +7016,7 @@ function peerStat(sym, key){
   var better = dir>0 ? mine.v > med : mine.v < med;
   return {rank:rank, n:pairs.length, median:med, better:better, dir:dir, value:mine.v};
 }
-function renderPeersInto(body, sym, res, seq){
+function renderPeersInto(body, sym, res, seq, isRedraw){
   var peers = res.peers;
   if(!peers.length){
     var f0 = factsOf(sym);
@@ -6987,6 +7047,15 @@ function renderPeersInto(body, sym, res, seq){
           : '');
   var oob = {};
   (res.outOfBand||[]).forEach(function(t){ oob[t] = true; });
+  // Curated sets are picked by what a company competes with, not by size — but
+  // the size gap is a fact about the comparison either way.
+  var myCapNow = num((factsOf(sym)||{}).cap);
+  if(myCapNow){
+    peers.forEach(function(t){
+      var c = num((factsOf(t)||{}).cap);
+      if(c && (c/myCapNow > PEER_CAP_BAND || myCapNow/c > PEER_CAP_BAND)) oob[t] = true;
+    });
+  }
   var key = '<div class="peerkey">'+entries.map(function(e){
       var c = factsOf(e.sym) && num(factsOf(e.sym).cap);
       var vint = factsVintage(e.sym);
@@ -7011,7 +7080,8 @@ function renderPeersInto(body, sym, res, seq){
     // figure instead of drawing an axis around a single value.
     if(mine.val==null && others<2){
       html += '<div class="gchart"><h4>'+esc(METRIC_LABEL[mk]||mk)+'</h4>'
-        + '<div class="gcap">'+esc(sym)+' has no '+esc(METRIC_LABEL[mk]||mk)+' ('+esc(mine.reason||"vendor n/a")
+        + '<div class="gcap">'+esc(sym)+' has no '+esc(METRIC_LABEL[mk]||mk)+' ('
+        + esc(METRIC_REASON_LONG[mine.reason] || mine.reason || "the vendor publishes no figure")
         + ') and fewer than two peers reported one, so there is nothing to compare.</div></div>';
       drew++;
       return;
@@ -7020,8 +7090,8 @@ function renderPeersInto(body, sym, res, seq){
     var svg = peerBarsSVG(rows, sym, fmtC, null, (fmt===fmtAxisPct ? "pct" : "num"));
     if(!svg) return;
     var known = rows.map(function(r){ return r.val; }).filter(function(v){ return v!=null; });
-    var sm = medianOf(known.map(Math.abs)) || 0, mxa = Math.max.apply(null, known.map(Math.abs));
-    if(sm>0 && mxa/sm > 8) clipped = true;
+    // What actually clipped: the renderer's own clamp, not a second guess.
+    if(PEER_LAST.clampAt != null && known.some(function(v){ return Math.abs(v) > PEER_LAST.clampAt; })) clipped = true;
     // CRWD's EV/EBITDA runs 1,024 against 41.8 with nothing in between to
     // clamp against, so the low bar is honestly a sliver. Say the ratio out
     // loud rather than letting a 4-pixel bar read as a rendering fault.
@@ -7035,12 +7105,15 @@ function renderPeersInto(body, sym, res, seq){
     // to print that one point's value as "peer median" anyway.
     var peerMed = peerVals2.length>=2 ? medianOf(peerVals2.map(function(r){ return r.val; })) : null;
     var lonePeer = peerVals2.length===1 ? peerVals2[0] : null;
+    var medOff = (PEER_LAST.clampAt != null && st && st.median!=null && Math.abs(st.median) > PEER_LAST.clampAt)
+      ? " — above this scale, so no dashed line is drawn" : "";
     var cap = st
-      ? ('<b class="'+(st.better?"u":"d")+'">'+esc(sym)+' ranks '+st.rank+' of '+st.n+'</b> · '
-         + (dir>0?"higher is better":"lower is better") + ' · peer median '+esc(fmtC(st.median)))
+      ? ('<b class="'+(st.better?"u":"d")+'">'+esc(sym)+' ranks '+st.rank+' of '+st.n+' reporting</b> · '
+         + (dir>0?"higher is better":"lower is better") + ' · peer median '+esc(fmtC(st.median))+esc(medOff))
       : ('<span class="m">'+(dir>0?"higher is better":"lower is better")
-         + (mine.val==null ? (' · '+esc(sym)+': '+esc(mine.reason||"no figure")) : ' · too few peers reported to rank')
-         + (peerMed!=null ? (' · peer median '+esc(fmtC(peerMed)))
+         + (mine.val==null ? (' · '+esc(sym)+': '+esc(METRIC_REASON_LONG[mine.reason] || mine.reason || "no figure")) : ' · too few peers reported to rank')
+         + (peerMed!=null ? (' · peer median '+esc(fmtC(peerMed))
+             + ((PEER_LAST.clampAt != null && Math.abs(peerMed) > PEER_LAST.clampAt) ? esc(" — above this scale") : ""))
             : lonePeer ? (' · only '+esc(lonePeer.sym)+' reported ('+esc(fmtC(lonePeer.val))+') — no median from one name') : '')
          + '</span>');
     html += '<div class="gchart"><h4>'+esc(METRIC_LABEL[mk]||mk)+'</h4>'+svg
@@ -7061,6 +7134,7 @@ function renderPeersInto(body, sym, res, seq){
   if(!drew) html = '<div class="dsec note">No comparable trailing-twelve-month figures for this set.</div>';
   Promise.all(entries.map(function(e){ return ensureFund(e.sym); })).then(function(funds){
     if(STAGE.sym!==sym || STAGE.tab!=="peers" || seq!==PEERS_SEQ) return;
+    if(!isRedraw){ renderPeersInto(body, sym, res, seq, true); return; }
     var lines = [], nQ = 0, perLabels = {}, sources = {};
     entries.forEach(function(e, i){
       var g = funds[i] && funds[i].growth && funds[i].growth.quarterly;
