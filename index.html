@@ -676,7 +676,12 @@ footer b{color:var(--ink2)}
   .wl .wrs{display:grid;grid-template-columns:1fr 1fr;column-gap:8px}
   /* Group headers and the sort strip are grid CHILDREN here — without an
      explicit span they became half-width cells sitting beside ticker rows. */
-  .wl .wrs .wg,.wl .wrs .wlsort{grid-column:1/-1}
+  /* Every full-width child of the two-column phone grid, not just the two
+     that were listed. In edit mode at 768px the manage line, the note and
+     the paste box each landed in column 1 beside a ticker row, so "3
+     pinned hidden" wrapped over four lines in half the width. */
+  .wl .wrs .wg,.wl .wrs .wlsort,.wl .wrs .wlmanage,.wl .wrs .wlnote,
+  .wl .wrs .wlio,.wl .wrs #wlio-msg{grid-column:1/-1}
   /* Watchlist rows collapse behind a toggle on phones (default collapsed) */
   .wltoggle{display:block;width:100%;text-align:left;padding:10px 14px;font-size:10px;letter-spacing:.13em;color:var(--ink2);font-weight:700;text-transform:uppercase;border-bottom:1px solid var(--edge2)}
   .wl.collapsed .wrs,.wl.collapsed .wlnote{display:none}
@@ -1372,9 +1377,16 @@ function preMarketBar(live, prevClose){
           (live.prevol!=null ? live.prevol : null)];
 }
 function dispQuote(q){
-  if(!q) return {px:null, ch:null, tag:null, ext:null};
+  if(!q) return {px:null, ch:null, tag:null, ext:null, prev:false};
   var s = priceSessionNow();
-  if(s==="premarket" && q.prepx!=null && q.prech!=null) return {px:q.prepx, ch:q.prech, tag:"PRE", ext:null};
+  if(s==="premarket" && q.prepx!=null && q.prech!=null) return {px:q.prepx, ch:q.prech, tag:"PRE", ext:null, prev:false};
+  if(s==="premarket"){
+    // No pre-market print — a thin wrapper, an index, or simply no trade yet.
+    // The only percentage available is YESTERDAY's regular session, and shown
+    // untagged at 6:40 AM it reads as this morning's move. Tag it PREV, and
+    // mark it so the movers box and the "today's move" sort leave it out.
+    return {px:(q.c!=null?q.c:q.px), ch:q.ch, tag:"PREV", ext:null, prev:true};
+  }
   if((s==="afterhours" || s==="closed") && q.postpx!=null){
     // The settled session stays the row's number — and that means the `close`
     // column, because `rtc` is the after-hours print once the session ends.
@@ -1394,6 +1406,11 @@ function extChipHTML(ext){
 }
 function sessTagHTML(tag){
   if(!tag) return "";
+  if(tag==="PREV"){
+    return '<span class="sess" data-tip="'+esc("This name has not traded pre-market yet, so the only percentage that exists is "
+      + "yesterday's regular session. It is yesterday's move, not this morning's. The movers box and the "
+      + "today's-move sort leave these names out until they print.")+'">PREV</span>';
+  }
   var tip = tag==="PRE"
     ? "Pre-market print from TradingView's delayed feed, with its % measured against yesterday's closing price. Extended-hours volume is thin, so a big pre-market move on light volume often does not survive the 8:30 CT open. Index and macro tiles (VIX, yields, crude, dollar) have no separate pre-market quote — they trade nearly around the clock, so the price shown there already is the overnight read."
     : "After-hours print from TradingView's delayed feed, with its % measured against today's 3:00 PM CT close. Thin volume — treat a large after-hours move as a headline reaction, not a settled price.";
@@ -1898,7 +1915,11 @@ function ensureFund(sym){
   if(isFundSym(sym)){
     return adhocEnsureFacts(sym).then(function(){
       return adhocEnsureFundamentals(sym).then(function(f){
-        if(f || symbolForTicker(sym)) FUND_CACHE[sym] = f;
+        // Always cache. A symbol that resolves to no exchange is a FINAL
+        // answer — "there is nothing here" — not a pending one. Caching only
+        // resolvable names left the Financials tab on "loading financials…"
+        // forever for a ticker the search could not map.
+        FUND_CACHE[sym] = f || null;
         return f;
       });
     });
@@ -1921,7 +1942,7 @@ function ensureFund(sym){
       // and the tab reported "no fundamentals" for a name that has them.
       return adhocEnsureFacts(sym).then(function(){
         return adhocEnsureFundamentals(sym).then(function(f){
-          if(f || symbolForTicker(sym)) FUND_CACHE[sym] = f;   // a resolvable name with no statements is a real answer
+          FUND_CACHE[sym] = f || null;   // resolvable or not, this is the answer
           return f;
         });
       });
@@ -2042,7 +2063,15 @@ function adhocEnsureFundamentals(sym){
       var n = Math.min(ADHOC_FIN_QUARTERS,
         Math.max(rev.length, ni.length, fcf.length, eps.length));
       var labels = _adhocQuarterLabels(endEp, n);
-      function take(a){ return a.slice(0,n).reverse(); }               // -> oldest first
+      // Each *_fq_h array arrives newest-first, and they are not all the same
+      // length — n is the MAX of the four, so a series with fewer quarters than
+      // the longest used to reverse into the OLDEST label slots and plot the
+      // newest quarter under the oldest period. Pad the short ones on the left.
+      function take(a){
+        var out = a.slice(0,n).reverse();
+        while(out.length < n) out.unshift(null);
+        return out;
+      }
       return {
         short_pct: null, pe_forward: null, earnings: [], next_earnings: null, ratings: [],
         source: "scanner",
@@ -2283,8 +2312,14 @@ function statsOf(sym){
 function statsOfUncached(sym){
   var f = factsOf(sym) || {};
   var full = seriesFull(sym);
-  var q = liveBySym(sym);
-  var px = q && q.px!=null ? q.px : (full.length ? full[full.length-1] : null);
+  // The DISPLAY price, not the raw rtc. rangeBarHTML already draws the bar
+  // from dispQuote, so ranking on rtc had the 52-week sort and the shopping
+  // list answering the range question with a different price than the bar two
+  // inches away on the same row — after the close, rtc is the after-hours
+  // print while the bar is drawn on the settled close.
+  var dq = dispQuote(liveBySym(sym));
+  var full2 = full;
+  var px = dq.px!=null ? dq.px : (full2.length ? full2[full2.length-1] : null);
   var hi = num(f.hi52), lo = num(f.lo52);
   var pos = (hi!=null && lo!=null && px!=null) ? Math.min(1,Math.max(0,(px-lo)/((hi-lo)||1))) : null;
   var m50 = rollMA(full,50), m200 = rollMA(full,200);
@@ -2302,6 +2337,10 @@ function statsOfUncached(sym){
 // what the PRE tag next to it is there to say.
 function hotOf(sym){
   var d = dispQuote(liveBySym(sym)), f = factsOf(sym);
+  // A PREV reading is yesterday's move. Calling a name "2.5x its usual move"
+  // at 6:40 AM off yesterday's close put the previous day's biggest movers at
+  // the top of a box headed today's.
+  if(d.prev) return null;
   if(d.ch==null || !f || f.avg_move==null) return null;
   var am = num(f.avg_move);
   if(am===null || am===0) return null;
@@ -2399,12 +2438,15 @@ function railRowHTML(s, opts){
   var cls = sign1(d.ch);
   var h = hotOf(s);
   var isHot = h!=null && h>=HOT_AT;
-  var earnDays = f && f.earn_days!=null ? num(f.earn_days) : null;
+  var earnDays = earnDaysNow(f);
   // The name and the earnings countdown both fit now that meta owns its own
   // line — before, the countdown replaced the name and then got clipped to
   // "e…" by the hot badge and the edit ×.
   var metaHtml = esc(nameFor(s));
-  if(earnDays!=null) metaHtml += ' <span class="tn">· earn '+Math.round(earnDays)+'d</span>';
+  if(earnDays!=null && earnDays >= 0){
+    metaHtml += ' <span class="tn">· '
+      + (Math.round(earnDays)===0 ? "earn today" : ("earn "+Math.round(earnDays)+"d"))+'</span>';
+  }
   if(d.tag) metaHtml = sessTagHTML(d.tag) + " " + metaHtml;
   else if(d.ext) metaHtml = extChipHTML(d.ext).replace(/^ /,"") + " " + metaHtml;
   // A symbol the resolver cannot map will NEVER get a price, which is a
@@ -2497,14 +2539,33 @@ function renderWL(){
       }
       if(wlSort==="chg"){
         var ca=dispQuote(liveBySym(a)), cb=dispQuote(liveBySym(b));
+        // A PREV reading is yesterday's move; it does not belong anywhere in
+        // a list headed TODAY'S MOVE. Sink those to the bottom rather than
+        // ranking yesterday's leaders as this morning's.
+        if(!!ca.prev !== !!cb.prev) return ca.prev ? 1 : -1;
         var va=ca.ch!=null?ca.ch:-Infinity, vb=cb.ch!=null?cb.ch:-Infinity;
         return vb-va;
       }
       var ha=hotOf(a), hb=hotOf(b);
       return (hb==null?-Infinity:hb)-(ha==null?-Infinity:ha);
     });
-    var lab = wlSort==="range" ? "52W RANGE — LOWEST FIRST" : wlSort==="chg" ? "TODAY'S MOVE — BIGGEST FIRST" : "VS OWN AVERAGE — HOTTEST FIRST";
+    var lab = wlSort==="range" ? "52W RANGE — LOWEST FIRST"
+            : wlSort==="chg" ? ((priceSessionNow()==="premarket") ? "PRE-MARKET MOVE — BIGGEST FIRST" : "TODAY'S MOVE — BIGGEST FIRST")
+            : "VS OWN AVERAGE — HOTTEST FIRST";
     html += '<div class="wg">'+lab+'</div>'+sorted.map(function(x){ return railRowHTML(x); }).join("");
+    // The hidden-pinned "+ back" rows only existed in the grouped sort, so
+    // switching to hot or Delta% while three names were hidden left the
+    // "3 pinned hidden" line true and unactionable.
+    if(wlEdit){
+      var hiddenNow = RAIL_GROUPS.reduce(function(acc,g){
+        g.syms.forEach(function(x){ if(railSyms.indexOf(x)===-1) acc.push(x); });
+        return acc;
+      }, []);
+      if(hiddenNow.length){
+        html += '<div class="wg">HIDDEN — CLICK + BACK TO RESTORE</div>'
+              + hiddenNow.map(function(x){ return railRowHTML(x, {ghost:true}); }).join("");
+      }
+    }
   }
   $("#wl").innerHTML = html;
   $$("#wl [data-ws]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlSort=b.dataset.ws; renderWL(); applyFocus(); }); });
@@ -2558,7 +2619,17 @@ function renderWL(){
         var d=dispQuote(liveBySym(s)); var f=factsOf(s)||{};
         return '<span class="hm2">'+esc(s)+' '+hotOf(s).toFixed(1)+'×</span> <span class="m">('
           +(d.tag?esc(d.tag)+" ":"")+fm1(d.ch)+'% vs '+(f.avg_move!=null?f.avg_move:"—")+'% usual)</span>';
-      }).join(" · ") : "none yet"))
+      }).join(" · ") : (function(){
+        // In pre-market a name with no pre-market print carries yesterday's
+        // move, which this box refuses to rank. "none yet" would then be a
+        // claim about this morning built on names that have not traded.
+        if(priceSessionNow()==="premarket"){
+          var printed = railSyms.filter(function(s3){ return !dispQuote(liveBySym(s3)).prev; }).length;
+          if(printed===0) return '<span class="m">nothing has traded pre-market yet</span>';
+          return "none yet <span class=\"m\">(of the "+printed+" name"+(printed===1?"":"s")+" that have printed pre-market)</span>";
+        }
+        return "none yet";
+      })()))
     + '<div style="margin-top:6px"><b data-tip="Stocks and unlevered funds only — leveraged and inverse wrappers are excluded, because a reverse split can park one at 1% of its adjusted range while its price is unchanged.">NEAR 52-WEEK LOWS · SHOPPING LIST</b>'
     + (feedDead ? '<span class="m">price feed not answering — no readings</span>'
        : !canRange ? '<span class="m">no 52-week bounds — they come from the daily snapshot, which has not loaded</span>'
@@ -4138,6 +4209,26 @@ function ctTodayDate(){
     return isFinite(t) ? new Date(t) : null;
   }catch(e){ return null; }
 }
+/* data.json's earn_days is measured from the snapshot's session_date, and the
+   publisher only runs 08:00-15:20 CT — so before 8:00 on any weekday, and all
+   weekend, the newest snapshot is at least a day old and its countdown is
+   that many days long. "earn 1d" on a Saturday meant Friday. Age it against
+   today's CT date before printing. */
+function earnDaysNow(f){
+  if(!f || f.earn_days==null) return null;
+  var d = num(f.earn_days);
+  if(d==null) return null;
+  var sd = STATE.data && STATE.data.session_date;
+  var today = ctTodayDate();
+  if(sd && today){
+    var st = Date.parse(String(sd).slice(0,10)+"T12:00:00Z");
+    if(isFinite(st)){
+      var elapsed = Math.round((today.getTime() - st) / 86400000);
+      if(elapsed > 0) d -= elapsed;
+    }
+  }
+  return d;
+}
 /* ---- stage data builders ---- */
 // Daily rows for the stage: the FULL bars.json history (no window slicing —
 // the window buttons set the visible range instead, so zooming out reveals
@@ -4493,7 +4584,7 @@ function ratingPopoverHTML(rows){
   });
   html += '<div class="note" style="margin-top:6px">Rating changes only — initiations, reiterations and '
     + 'price-target-only moves are left off the chart.</div>';
-  return html;
+  return html + approxDateNoteHTML();
 }
 /* ---- crosshair readout + marker clicks ---- */
 function stageSetOhlc(param){
@@ -4690,18 +4781,31 @@ function revLineHTML(row){
   if(yoy!=null) out += ' · YoY <b class="'+(yoy>=0?"u":"d")+'">'+(yoy>=0?"+":"")+yoy.toFixed(1)+"%</b>";
   return out;
 }
+/* The chart snaps a marker to the nearest bar DATE, and when bars.json ships
+   no session calendar those dates are counted back weekday-by-weekday from
+   the session date — market holidays make that drift. The crosshair readout
+   says so with an "≈"; a popover opened from a marker said nothing, and the
+   reported date it prints is exact while the candle under it may not be. */
+function approxDateNoteHTML(){
+  if(!BAR_DATES_APPROX || STAGE.intraday) return "";
+  return '<div class="note" style="margin-top:5px">This bars file publishes no per-bar dates, so the candle '
+    + 'under this marker sits on a reconstructed date and can be a session or two off. The date printed above '
+    + 'is the reported one and is exact.</div>';
+}
 function earnPopoverHTML(row, nextRow, isNext){
   if(isNext){
     if(!nextRow) return '<span class="cl" id="popclose">×</span><div class="note">no upcoming estimate</div>';
     return '<span class="cl" id="popclose">×</span><b>Upcoming'+(nextRow.session?(" · "+esc(nextRow.session)):"")+'</b><br>'+esc(nextRow.date||"—")
       + '<div style="margin-top:4px">EPS est '+(nextRow.eps_estimate!=null?numStr(nextRow.eps_estimate):"—")+'</div>'
-      + '<div>Rev est '+(nextRow.rev_estimate!=null?fmtCapDollars(nextRow.rev_estimate):"—")+'</div>';
+      + '<div>Rev est '+(nextRow.rev_estimate!=null?fmtCapDollars(nextRow.rev_estimate):"—")+'</div>'
+      + approxDateNoteHTML();
   }
   if(!row) return '<span class="cl" id="popclose">×</span><div class="note">no data</div>';
   return '<span class="cl" id="popclose">×</span><b>'+esc(row.period||"—")+'</b><br>'
     + 'Reported '+esc(row.report_date||row.date||"—")+(row.session?(" · "+esc(row.session)):"")
     + '<div style="margin-top:4px">EPS '+surpriseSpan(row.eps_actual, row.eps_estimate, row.eps_surprise_pct, false)+'</div>'
-    + '<div>'+revLineHTML(row)+'</div>';
+    + '<div>'+revLineHTML(row)+'</div>'
+    + approxDateNoteHTML();
 }
 
 /* ---- catalyst jump (chart diamonds + mini-list -> the right-rail row) ---- */
@@ -5516,12 +5620,11 @@ function renderGrowth(sym, fund){
           + 'labels and fiscal years are not calendar years. Annual rows and earnings-surprise history need the sidecar and are not shown here. '
         : 'Reported figures from the daily fundamentals sidecar (stockanalysis.com income and cash-flow statements)'
           + (fund.built ? (', built '+esc(fund.built)) : '')
-          + '. Fiscal quarters are labeled on each axis. Annual rows sum complete 4-quarter years — including EPS, which the '
-          + 'company itself files on a weighted share count for the year, so the annual EPS bar can sit a few percent off its filed figure. ')
+          + '. Fiscal quarters are labeled on each axis. Annual rows sum complete 4-quarter years. ')
     + (cur
         ? (cur==="USD" ? 'Statements are filed in US dollars. '
                        : 'Statements are filed in '+esc(cur)+' and are NOT converted — the share price above is in dollars, these figures are not. ')
-        : 'The vendor did not name the reporting currency. A US-listed foreign company files in its home currency, so do not assume dollars. ')
+        : 'The source did not name the reporting currency for this company. A US-listed foreign company files in its home currency, so do not assume dollars. ')
     + (yearsDropped.length ? ('Annual charts show only the unbroken run of years ending at the newest one; '
         + esc(yearsDropped.join(", "))+' sat behind a gap in the vendor data and would have plotted as if adjacent. ') : '')
     + 'The year-over-year chart starts at the fifth quarter, because the first four have no prior-year quarter to compare against. '
@@ -5529,10 +5632,8 @@ function renderGrowth(sym, fund){
         ? ('Annual EPS is the four quarters added up, so it can differ by a couple of percent from the diluted EPS the company files, '
            + 'which uses a share count weighted across the year. ')
         : '')
-    + 'Annual EPS is the four quarters added up, so it can differ by a couple of percent from the diluted EPS the company files, '
-    + 'which uses a share count weighted across the year. '
-    + 'Margins are derived per quarter only where both legs reported. A missing quarter is marked with a dash at the baseline, never '
-    + 'drawn as a zero'
+    + 'Margins are derived per quarter only where both legs reported. A missing quarter is marked with a dash at the baseline on the '
+    + 'bar charts, and leaves a gap in the line charts, never drawn as a zero'
     + (hasAnnual
         ? (' — and an annual slot is blank when any quarter in that year is missing the figure, which is why a year can draw on one '
            + 'chart and not the one beside it')
