@@ -541,7 +541,29 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 .hm-tile:focus-visible{outline:2px solid var(--acc);outline-offset:-2px;z-index:5}
 .hm-sechead:focus-visible{outline:2px solid var(--acc);outline-offset:-2px;z-index:5}
 .hm-tile b{font-weight:700}
-.hm-tile span{font-weight:600;opacity:.92}
+/* NO opacity here. heatTextColor computes an ink that clears 4.5:1 against the
+   tile, and a 0.92 alpha composited that ink back toward the tile — the
+   percentage rendered at roughly 4.1:1 while the code above it certified 4.58.
+   A weight difference separates the two lines instead. */
+.hm-tile span{font-weight:600}
+/* A tile with no reading for the selected period carries a hatch as well as
+   its own duller fill, so it never rests on colour alone. */
+.hm-tile.nodata{
+  background-image:repeating-linear-gradient(45deg,
+    rgba(255,255,255,.14) 0 3px, transparent 3px 7px);
+}
+:root:not([data-theme="dark"]) .hm-tile.nodata{
+  background-image:repeating-linear-gradient(45deg,
+    rgba(0,0,0,.16) 0 3px, transparent 3px 7px);
+}
+:root[data-theme="dark"] .hm-tile.nodata{
+  background-image:repeating-linear-gradient(45deg,
+    rgba(255,255,255,.14) 0 3px, transparent 3px 7px);
+}
+/* .hm-tile carries data-tip, and [data-tip]{cursor:help} is declared later at
+   the same specificity — so every tile showed a question mark while the footer
+   said "click a tile to chart it". */
+.hm-tile[data-tip]{cursor:pointer}
 .heatfoot{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:0 14px 10px;font-size:10px;color:var(--ink3)}
 .heatscale{display:flex;align-items:center;gap:2px}
 .heatscale i{width:34px;height:14px;border-radius:2px;display:inline-block;text-align:center;font-size:10px;line-height:14px;font-style:normal}
@@ -586,6 +608,10 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 .gchart{min-width:0;max-width:420px}
 /* After .gchart, so the 420px cap does not win: this one spans the row. */
 .gwrap .gfull{grid-column:1/-1;max-width:none}
+.chartread{margin:0 14px 10px;padding:7px 10px;border:1px solid var(--edge);border-radius:6px;
+  background:var(--srf2);font-size:11.5px;color:var(--ink2);line-height:1.4}
+.chartread b{color:var(--ink)}
+.chartband{cursor:crosshair}
 .gchart h4{font-size:9.5px;letter-spacing:.09em;color:var(--ink3);text-transform:uppercase;margin-bottom:3px;font-weight:600}
 .gchart svg{width:100%;height:auto;display:block}
 .gcap{font-size:10px;color:var(--ink3);margin-top:2px}
@@ -816,6 +842,10 @@ footer b{color:var(--ink2)}
         <div class="leg" id="staget"></div>
         <div class="stagetabs" id="stagetabs"></div>
         <div class="stagetab" id="stagetabbody"></div>
+        <!-- Tap/click readout for the financial and peer charts. Their exact
+             figures live in SVG <title>, which no phone surfaces on tap, under
+             a caveat that tells the reader to hover for them. -->
+        <div class="chartread" id="chartread" hidden aria-live="polite"></div>
         <div id="heatbar"></div>
         <div id="stageheat">
           <div class="heatwrap" id="heatwrap"><div class="heatmsg" id="heatmsg">loading the map…</div></div>
@@ -2050,10 +2080,11 @@ function ensureFund(sym){
   if(isFundSym(sym)){
     return adhocEnsureFacts(sym).then(function(){
       return adhocEnsureFundamentals(sym).then(function(f){
-        // Always cache. A symbol that resolves to no exchange is a FINAL
-        // answer — "there is nothing here" — not a pending one. Caching only
-        // resolvable names left the Financials tab on "loading financials…"
-        // forever for a ticker the search could not map.
+        // Cache every FINAL answer — a symbol that resolves to no exchange is
+        // one ("there is nothing here"), and caching only resolvable names
+        // left the Financials tab on "loading financials…" forever. A failed
+        // request is not final: leave the cache empty so the next open retries.
+        if(f && f.failed) return null;
         FUND_CACHE[sym] = f || null;
         return f;
       });
@@ -2077,7 +2108,8 @@ function ensureFund(sym){
       // and the tab reported "no fundamentals" for a name that has them.
       return adhocEnsureFacts(sym).then(function(){
         return adhocEnsureFundamentals(sym).then(function(f){
-          FUND_CACHE[sym] = f || null;   // resolvable or not, this is the answer
+          if(f && f.failed) return null;   // a failed request retries next open
+          FUND_CACHE[sym] = f || null;     // resolvable or not, this is the answer
           return f;
         });
       });
@@ -2215,7 +2247,11 @@ function adhocEnsureFundamentals(sym){
                   annual: null }
       };
     })
-    .catch(function(){ return null; });
+    // A FAILED FETCH is not an answer about the company. It used to return
+    // null, which ensureFund cached, and the tab then said the scanner
+    // carries no statements for a name whose statements it had simply not
+    // been able to ask for — for the rest of the session.
+    .catch(function(){ return {failed:true}; });
 }
 
 // Scanner-snapshot fundamentals for any symbol — the same fields facts
@@ -5532,6 +5568,33 @@ function tickFormatter(ticks, kind){
     return m(((num(v)||0)/div).toFixed(dpm))+suf;
   };
 }
+/* How many reported periods make one fiscal year, read off the labels. Four is
+   right for a quarterly filer and wrong for everyone else: CBRS files
+   semiannually, so its sidecar carries ["Q1 23","Q2 23","Q1 24",…] and a
+   4-slot step compared H1 2026 against H1 2024 while the caption called it
+   "same period a year ago" — a two-year change reported as one. Returns null
+   when the labels do not resolve, and every caller then says so rather than
+   guessing. */
+function periodsPerYear(labels){
+  if(!Array.isArray(labels) || labels.length < 2) return null;
+  var counts = {};
+  for(var i=0;i<labels.length;i++){
+    var m = String(labels[i]).match(/(\d{2,4})\s*$/);
+    if(!m) return null;
+    counts[m[1]] = (counts[m[1]]||0) + 1;
+  }
+  var years = Object.keys(counts);
+  if(years.length < 2) return null;
+  // Drop the first and last years — they are usually partial.
+  years.sort();
+  var full = years.slice(1, -1).map(function(y){ return counts[y]; });
+  var use = full.length ? full : years.map(function(y){ return counts[y]; });
+  var tally = {};
+  use.forEach(function(c){ tally[c] = (tally[c]||0)+1; });
+  var best = null, bestN = 0;
+  Object.keys(tally).forEach(function(c){ if(tally[c] > bestN){ bestN = tally[c]; best = +c; } });
+  return (best >= 1 && best <= 12) ? best : null;
+}
 function yoyPct(arr, i, back){
   var a=num(arr[i]), b=num(arr[i-back]);
   if(a==null||b==null||b===0) return null;
@@ -5760,9 +5823,15 @@ function axisChartSVG(labels, defs, opts){
         // The bar branch marks a missing period with a dash at the baseline;
         // the line branch just broke the polyline and drew nothing, so the
         // caveat's promise of a dash was true of only half the charts.
-        var mx0 = X(j), by = Y(0);
+        // Offset by the series' own slot, the way the bar branch does. Three
+        // series missing the same quarter emitted three identical lines at the
+        // same pixel, so APLD's chart showed one dash where three were meant —
+        // and the caption said the gap belonged to all three.
+        var slot = live.indexOf(d);
+        var spread = (live.length > 1) ? (slot - (live.length-1)/2) * 5 : 0;
+        var mx0 = X(j) + spread, by = Y(0);
         var perN = own ? (own[j]||"") : (labels[j]||"");
-        dots += '<line x1="'+(mx0-4).toFixed(1)+'" x2="'+(mx0+4).toFixed(1)
+        dots += '<line x1="'+(mx0-3.5).toFixed(1)+'" x2="'+(mx0+3.5).toFixed(1)
           + '" y1="'+by.toFixed(1)+'" y2="'+by.toFixed(1)
           + '" stroke="'+d.color+'" stroke-width="1.6" opacity=".55">'
           + '<title>'+esc(d.name+(perN?(" · "+perN):"")+": not reported")+'</title></line>';
@@ -5830,8 +5899,13 @@ function axisChartSVG(labels, defs, opts){
       var vv2 = d.vals[bi2];
       blines.push(d.name + (per2?(" ("+per2+")"):"") + ": " + (vv2==null ? "not reported" : hfmt(vv2)));
     });
+    // data-chartread carries the same text the <title> does, because a phone
+    // never surfaces <title> on tap — and the caveat under the chart tells the
+    // reader to hover for the exact figure. A delegated handler reads it out
+    // into a readout line below the chart.
+    var readTxt = (labels[bi2]||("period "+(bi2+1))) + " \u00b7 " + blines.join(" \u00b7 ");
     bands += '<rect x="'+bx.toFixed(1)+'" y="'+padT+'" width="'+bw2.toFixed(1)+'" height="'+plotH.toFixed(1)
-      + '" fill="transparent" pointer-events="all"><title>'
+      + '" fill="transparent" pointer-events="all" class="chartband" data-chartread="'+esc(readTxt)+'"><title>'
       + esc((labels[bi2]||("period "+(bi2+1))) + "\n" + blines.join("\n")) + '</title></rect>';
   }
   return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img">'+out+bands+'</svg>';
@@ -6062,11 +6136,15 @@ function renderGrowth(sym, fund){
     // never have a bar. Drawing them empty under their own labels made them
     // look like four quarters of zero growth; start the chart where the
     // comparison starts.
-    var yoyAll = q.labels.map(function(_, i){ return yoyPct(q.revenue.map(num), i, 4); });
-    var yoy = yoyAll.slice(4), yoyLabels = q.labels.slice(4);
+    var ppy = periodsPerYear(q.labels) || 4;
+    var yoyAll = q.labels.map(function(_, i){ return yoyPct(q.revenue.map(num), i, ppy); });
+    var yoy = yoyAll.slice(ppy), yoyLabels = q.labels.slice(ppy);
     if(yoy.some(function(v){ return v!=null; })){
       var yoyDef = [{name:"Revenue YoY", color:seriesColor(0), values:yoy, type:"bar"}];
-      row2 += '<div class="gchart"><h4>Revenue growth, year over year</h4>'
+      var ppyWord = (ppy===4) ? "quarter" : (ppy===2) ? "half-year period" : (ppy===1) ? "year" : "period";
+      row2 += '<div class="gchart"><h4>Revenue growth, year over year'
+        + (ppy!==4 ? (' <span class="m" style="font-weight:400">· each '+esc(ppyWord)+' vs the same one a year earlier</span>') : '')
+        + '</h4>'
         + axisChartSVG(yoyLabels, yoyDef, {kind:"pct", W:SM.W, H:SM.H})
         + chartLegendHTML(yoyDef, fmtAxisPct, yoyLabels) + '</div>';
     }
@@ -6078,6 +6156,7 @@ function renderGrowth(sym, fund){
     }
     if(row2) out += '<div class="gwrap">'+row2+'</div>';
   }
+  var qPPY = (g.quarterly && Array.isArray(g.quarterly.labels)) ? periodsPerYear(g.quarterly.labels) : null;
   var a = g.annual;
   var yearsDropped = [];
   if(a && Array.isArray(a.labels) && a.labels.length){
@@ -6114,8 +6193,11 @@ function renderGrowth(sym, fund){
   if(!out) return '<div id="growthbox"></div>';
   out += '<div class="note">'
     + (fund.source==="scanner"
-        ? 'Reported figures from TradingView’s quarterly history for this symbol — the desk’s own daily sidecar covers its tracked '
-          + 'watchlist, and this name is not on it. Periods are labeled by the month the quarter ENDED, because the vendor supplies no fiscal '
+        ? 'Reported figures from TradingView’s quarterly history for this symbol — '
+          + (railHasSym(sym)
+              ? 'this name IS on the desk’s watchlist, but its daily sidecar did not answer this cycle, so the tab fell back to the scanner. '
+              : 'the desk’s own daily sidecar covers its tracked watchlist, and this name is not on it. ')
+          + 'Periods are labeled by the month the quarter ENDED, because the vendor supplies no fiscal '
           + 'labels and fiscal years are not calendar years. Annual rows and earnings-surprise history need the sidecar and are not shown here. '
         : 'Reported figures from the daily fundamentals sidecar (stockanalysis.com income and cash-flow statements)'
           + (fund.built ? (', built '+esc(fund.built)) : '')
@@ -6126,7 +6208,11 @@ function renderGrowth(sym, fund){
         : 'The source did not name the reporting currency for this company. A US-listed foreign company files in its home currency, so do not assume dollars. ')
     + (yearsDropped.length ? ('Annual charts show only the unbroken run of years ending at the newest one; '
         + esc(yearsDropped.join(", "))+' sat behind a gap in the vendor data and would have plotted as if adjacent. ') : '')
-    + 'The year-over-year chart starts at the fifth quarter, because the first four have no prior-year quarter to compare against. '
+    + (qPPY!=null
+        ? ('The year-over-year chart compares each '+(qPPY===4?"quarter":qPPY===2?"half-year period":qPPY===1?"year":"period")
+           + ' against the same one a year earlier — this company reports '+qPPY+' period'+(qPPY===1?"":"s")
+           + ' a year — so the first '+qPPY+' have nothing to compare against and the chart starts after them. ')
+        : 'The year-over-year chart starts once there is a prior-year period to compare against. ')
     + (hasAnnual
         ? ('Annual EPS is the four quarters added up, so it can differ by a couple of percent from the diluted EPS the company files, '
            + 'which uses a share count weighted across the year. ')
@@ -6137,7 +6223,7 @@ function renderGrowth(sym, fund){
         ? (' — and an annual slot is blank when any quarter in that year is missing the figure, which is why a year can draw on one '
            + 'chart and not the one beside it')
         : '')
-    + '. Hover any point or bar for its exact value.</div>';
+    + '. Hover any point or bar for its exact value, or tap a period on the chart to print that period\u2019s figures underneath it.</div>';
   return '<div class="dsec" id="growthbox"><h3>Financials</h3>'+out+'</div>';
 }
 
@@ -7324,6 +7410,7 @@ function heatFetchNow(univ){
     .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
     .then(function(json){
       HEAT.inflight[univ] = null;
+      HEAT.lastFetchFailed = false;
       var rows = (json && Array.isArray(json.data)) ? json.data : [];
       var out = [], dropped = [];
       rows.forEach(function(row){
@@ -7358,7 +7445,7 @@ function heatFetchNow(univ){
       HEAT.lastFetch = Date.now();
       return HEAT.data[univ];
     })
-    .catch(function(){ HEAT.inflight[univ] = null; return null; });
+    .catch(function(){ HEAT.inflight[univ] = null; HEAT.lastFetchFailed = true; return null; });
 }
 /* squarified treemap (Bruls et al.): items [{w:weight,...}] into rect -> adds x/y/wd/ht */
 function squarify(items, x, y, w, h){
@@ -7436,7 +7523,12 @@ function heatColor(v, clamp){
   // in March looked like a name that closed unchanged on the YTD map. Give the
   // unknown its own, plainly duller paint.
   if(v==null){
-    var dim = neutral.map(function(nc){ return Math.round(nc*0.72 + 128*0.28); });
+    // Pull it well clear of the neutral in BOTH themes. The first attempt used
+    // a 0.72 blend toward mid-grey, which in light theme landed 10 RGB units
+    // from a name up 5% of clamp — indistinguishable. A tile with no reading
+    // also carries a hatch (see heatRender) so it never rests on colour alone.
+    var isLight = neutral[0] > 128;
+    var dim = isLight ? [168,172,178] : [78,84,92];
     return "rgb("+dim.join(",")+")";
   }
   var t = Math.max(-1, Math.min(1, v/clamp));
@@ -7534,18 +7626,25 @@ function heatRender(refetch){
     if(STAGE.view!=="heat") return;
     if(HEAT.univ !== univAtCall) return;
     if(!data || !data.rows.length){
-      if(!cached) heatMsg("map unreachable — TradingView's scanner didn't answer; retrying with the next refresh");
+      // Fall back to the last good read rather than clearing the map. Click
+      // 1W while the scanner is failing and the old code returned here with
+      // the 1D tiles still painted under a 1W button — a period label that
+      // did not describe the colours under it.
+      if(cached && cached.rows && cached.rows.length){
+        data = cached;
+      } else {
+      heatMsg("map unreachable — TradingView's scanner didn't answer; retrying with the next refresh");
       var ef = document.getElementById("heatfoot");
       if(ef && ef.innerHTML){
         // The footer used to keep advertising a live count and as-of stamp
         // underneath the "unreachable" overlay.
-        ef.innerHTML = '<span>scanner unreachable — nothing on this map is current. '
-          + (cached ? ('Last good read '+esc(ctTimeShort(new Date(cached.fetchedAt).toISOString()))+' CT.') : '')
-          + '</span>';
+        ef.innerHTML = '<span>scanner unreachable — nothing on this map is current.</span>';
       }
       return;
+      }
     }
     heatMsg(null);
+    var staleRead = (data === cached && !!HEAT.lastFetchFailed);
     var tf = HEAT.tf;
     // Clamp from the WHOLE universe, then filter. Computing it after the
     // isolate filter meant clicking a three-name sector header rescaled the
@@ -7579,12 +7678,21 @@ function heatRender(refetch){
     // At 390px the full 502-name universe packed 378 tiles under 14px wide —
     // unlabeled, untappable, and not a map. Keep the biggest names and say how
     // many were left out.
+    // Cap by AREA, not by a 700px width switch. At 1440x900 with both rails
+    // showing, the map measures about 790x504 — over the old gate, so all 502
+    // names drew, and 355 of them landed under the 24x12 gate that lets a tile
+    // print its own ticker. Three quarters of the map was unlabelled colour.
+    // One tile needs roughly 2,500 square pixels to carry a ticker and a
+    // percentage, and the squarify weighting gives the smallest names far less
+    // than the average — measured, 4,200 square pixels per tile puts about 90%
+    // of them over the labelling gate.
     var heatDropped = 0;
-    var wrapW = wrap.clientWidth || 0;
-    if(wrapW && wrapW < 700 && rows.length > 130){
+    var wrapW = wrap.clientWidth || 0, wrapH = wrap.clientHeight || 0;
+    var maxTiles = (wrapW && wrapH) ? Math.max(40, Math.floor((wrapW*wrapH)/4200)) : 0;
+    if(maxTiles && rows.length > maxTiles){
       rows = rows.slice().sort(function(a,b){ return b.w-a.w; });
-      heatDropped = rows.length - 120;
-      rows = rows.slice(0,120);
+      heatDropped = rows.length - maxTiles;
+      rows = rows.slice(0, maxTiles);
     }
     // group by sector, keep Finviz's shape: sectors sized by summed weight
     var bySec = {};
@@ -7603,11 +7711,17 @@ function heatRender(refetch){
       // Communications (VZ, TMUS, T) read as part of the Health Services block
       // above it and could not be isolated. Height is the only real
       // constraint; a narrow header ellipsizes to its short form.
-      var headH = (sr.ht>30) ? 14 : 0;
+      // A 10px header on a short block still leaves its tiles clear of the
+      // 12px ticker gate, and a block with no header belongs to no visible
+      // sector and cannot be isolated: in expand mode "Miscellaneous" lays out
+      // 104x26 and its three tiles were orphans.
+      var headH = (sr.ht>30) ? 14 : (sr.ht>=16 ? 10 : 0);
       html += '<div class="hm-sec" data-hsecname="'+esc(sec.name)+'" title="'+esc(sec.name)+'" style="left:'+sr.x.toFixed(1)+'px;top:'+sr.y.toFixed(1)+'px;width:'+sr.wd.toFixed(1)+'px;height:'+sr.ht.toFixed(1)+'px">';
-      if(headH) html += '<div class="hm-sechead" data-hsec="'+esc(sec.name)+'" role="button" tabindex="0"'
-        + ' title="'+esc(sec.name)+' — click to isolate">'
-        + esc(heatSecLabel(sec.name, sr.wd))+'</div>';
+      if(headH) html += '<div class="hm-sechead'+(headH<14?" tiny":"")+'" data-hsec="'+esc(sec.name)+'" role="button" tabindex="0"'
+        + ' title="'+esc(sec.name)+' — click to isolate"'
+        + (headH<14 ? ' style="height:10px;line-height:10px;font-size:8px"' : '')+'>'
+        + esc(headH<14 ? (HEAT_SEC_TINY[sec.name] || HEAT_SEC_SHORT[sec.name] || heatSecLabel(sec.name, sr.wd))
+                       : heatSecLabel(sec.name, sr.wd))+'</div>';
       var tiles = squarify(sec.rows.map(function(r){ return {w:r.w, r:r}; }), 0, headH, sr.wd, sr.ht-headH);
       tiles.forEach(function(t){
         var r = t.it.r;
@@ -7631,7 +7745,7 @@ function heatRender(refetch){
         // 409 were under the 24px pointer-target minimum. They stay clickable
         // and keep their tooltip; they leave the tab order and the a11y tree.
         var reachable = showSym && t.wd>=24 && t.ht>=24;
-        html += '<div class="hm-tile" data-sym="'+esc(r.sym)+'" data-htv="'+esc(r.tv)+'" data-hname="'+esc(r.name||"")+'"'
+        html += '<div class="hm-tile'+(v==null?" nodata":"")+'" data-sym="'+esc(r.sym)+'" data-htv="'+esc(r.tv)+'" data-hname="'+esc(r.name||"")+'"'
           + (reachable ? (' role="button" tabindex="0" aria-label="'+esc(tip)+'"') : '')
           + ' data-tip="'+esc(tip)+'"'
           + ' style="left:'+t.x.toFixed(1)+'px;top:'+t.y.toFixed(1)+'px;width:'+t.wd.toFixed(1)+'px;height:'+t.ht.toFixed(1)+'px;background:'+bg+';color:'+fg+'">'
@@ -7949,18 +8063,28 @@ var PEER_METRICS = [
    reported quarters. Only when both TTM windows are complete and growth is
    positive; a negative or zero growth rate makes PEG meaningless, so it stays
    blank rather than printing a number nobody should read. */
-function derivedPeg(f, fund){
+/* PEG from P/E over trailing EPS growth. `why` (optional) receives the reason
+   the derivation could not run, because "no growth" was rendered as "the
+   vendor publishes no growth rate" for nine tracked names whose real reason
+   was that their own earnings shrank or went negative — the page telling the
+   reader a vendor gap where the truth was a fact about the company. */
+function derivedPeg(f, fund, why){
+  function no(code){ if(why) why.code = code; return null; }
   var pe = f ? num(f.pe) : null;
-  if(pe==null || pe<=0) return null;
+  if(pe==null || pe<=0) return no("no pe");
   var g = fund && fund.growth && fund.growth.quarterly;
   var eps = (g && Array.isArray(g.eps)) ? g.eps.map(num) : null;
-  if(!eps || eps.length < 8) return null;
+  if(!eps) return no("no eps series");
+  var n = periodsPerYear(g.labels) || 4;
+  if(eps.length < n*2) return no("short history");
   var ttm=0, prior=0, okT=0, okP=0;
-  for(var i=eps.length-4;i<eps.length;i++){ if(eps[i]!=null){ ttm+=eps[i]; okT++; } }
-  for(var j=eps.length-8;j<eps.length-4;j++){ if(eps[j]!=null){ prior+=eps[j]; okP++; } }
-  if(okT<4 || okP<4 || prior<=0 || ttm<=0) return null;
+  for(var i=eps.length-n;i<eps.length;i++){ if(eps[i]!=null){ ttm+=eps[i]; okT++; } }
+  for(var j=eps.length-n*2;j<eps.length-n;j++){ if(eps[j]!=null){ prior+=eps[j]; okP++; } }
+  if(okT<n || okP<n) return no("short history");
+  if(prior<=0) return no("prior loss");
+  if(ttm<=0) return no("ttm loss");
   var growth = (ttm/prior - 1) * 100;
-  if(growth <= 0) return null;
+  if(growth <= 0) return no("shrinking");
   return pe/growth;
 }
 // Trailing-twelve-month EPS straight from the sidecar's reported quarters —
@@ -7968,8 +8092,14 @@ function derivedPeg(f, fund){
 function ttmEpsOf(fund){
   var g = fund && fund.growth && fund.growth.quarterly;
   var eps = (g && Array.isArray(g.eps)) ? g.eps.map(num) : null;
-  if(!eps || eps.length < 4) return null;
-  var tail = eps.slice(-4);
+  if(!eps) return null;
+  // ONE FISCAL YEAR of slots, read off the labels — not four of them. A
+  // semiannual filer's last four slots are two years: CBRS summed H1 25 + H2
+  // 25 + H1 26 + H2 26 and called it trailing twelve months, then divided a
+  // price by it.
+  var n = periodsPerYear(g.labels) || 4;
+  if(eps.length < n) return null;
+  var tail = eps.slice(-n);
   if(tail.some(function(v){ return v==null; })) return null;
   return tail.reduce(function(a,b){ return a+b; }, 0);
 }
@@ -8012,6 +8142,10 @@ var METRIC_REASON_LONG = {
   "no EBITDA": "no positive EBITDA — the company is losing money at the operating line",
   "no EPS": "no trailing earnings to divide by",
   "no growth": "the vendor publishes no growth rate, so PEG cannot be derived",
+  "prior loss": "the prior year lost money, so there is no growth rate to divide by",
+  "ttm loss": "trailing earnings are negative, so there is no growth rate to divide by",
+  "shrinking": "trailing earnings SHRANK against the prior year — PEG needs positive growth",
+  "short history": "fewer than two full years of reported earnings, so growth cannot be measured",
   "negative": "the vendor's own figure is negative, which this ratio cannot express",
   "cash burn": "free cash flow is negative",
   "loading…": "this peer's figures are still loading",
@@ -8032,7 +8166,16 @@ function metricReason(sym, key){
      && num(f[key])!=null && num(f[key])<=0) return "negative";
   if(key==="pe" || key==="peg"){
     if(num(f.pe)==null && eps!=null && eps<=0) return "loss";
-    if(key==="peg" && num(f.pe)!=null) return "no growth";
+    if(key==="peg" && num(f.pe)!=null){
+      // Ask the derivation why it could not run instead of asserting a vendor
+      // gap. COHR, MU and seven others report growth the vendor publishes
+      // fine; what is missing is POSITIVE growth.
+      var why = {};
+      derivedPeg(f, FUND_CACHE[sym], why);
+      return { "prior loss":"prior loss", "ttm loss":"ttm loss",
+               "shrinking":"shrinking", "short history":"short history",
+               "no eps series":"no growth" }[why.code] || "no growth";
+    }
     if(key==="peg") return "no EPS";
   }
   // A missing EV/EBITDA on a company running negative operating margins is a
@@ -8899,6 +9042,26 @@ document.addEventListener("click", function(e){
   if(!e.target.closest(".tipb")) tipb.style.display = "none";
 });
 
+/* A tap or click anywhere in a financial chart's period column prints that
+   column's exact figures under the chart. The <title> tooltips stay for the
+   mouse; this is the path a phone has. */
+document.addEventListener("click", function(e){
+  var band = e.target && e.target.closest ? e.target.closest("[data-chartread]") : null;
+  var out = document.getElementById("chartread");
+  if(!out) return;
+  if(!band){
+    // Clicking away from the charts clears it, so a stale reading never sits
+    // under a chart the reader has since switched.
+    if(!e.target.closest || !e.target.closest("#stagetabbody")) { out.hidden = true; out.textContent = ""; }
+    return;
+  }
+  var txt = band.getAttribute("data-chartread") || "";
+  var i = txt.indexOf(" \u00b7 ");
+  out.innerHTML = (i > 0)
+    ? ('<b>'+esc(txt.slice(0, i))+'</b>'+esc(txt.slice(i)))
+    : esc(txt);
+  out.hidden = false;
+}, true);
 /* =================== global events =================== */
 document.addEventListener("click", function(e){
   var row = e.target.closest("[data-sym]");
