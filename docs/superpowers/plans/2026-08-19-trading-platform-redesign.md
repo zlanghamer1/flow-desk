@@ -351,3 +351,96 @@ pass of reviewers finds different defects, not the same ones twice.
   instead of leaving a four-pixel bar to look like a rendering fault.
 - **Contrast is picked, not assumed.** Tile ink falls back to pure black or
   white whenever both themed inks land under 4.5:1.
+
+---
+
+## Round 4 (2026-08-20) — nine sections, adversarially verified
+
+The same harness, run again after the round-3 fixes shipped. Nine reviewers,
+one per section, each finding checked by an independent agent told to refute it.
+
+| Section | R3 | R4 |
+|---|---|---|
+| Data honesty and failure modes | 72 | 81 |
+| Sector heatmap | 74 | 76 |
+| Flow boards | — | 74 |
+| vs Peers | 82 | 73 |
+| Left rail and search | 46 | 72 |
+| Right rail panels | 69 | 72 |
+| Financials | 85 | 71 |
+| Chart stage | 69 | 67 |
+| Auto-TA | 56 | 67 |
+
+Scores moving down while the page improves is expected here: each round's
+reviewer reads a page whose obvious faults are gone and goes looking harder.
+Round 4's findings are almost entirely things round 3 never reached.
+
+### The ones that mattered most
+
+**The page showed one company's name over another company's bar.** Click COHR,
+then click LLY: for the third of a second before Lilly's bars arrive, the header
+read "LLY · Eli Lilly · 1,280.34" over "O 309.11 H 312.00 L 284.75 C 287.47" —
+Coherent's bar. `stageShow` already cleared the TA legend for exactly this
+reason and left the bar arrays holding the previous name's data. On a cold
+sidecar the window is seconds, and it repeats on every click down a watchlist.
+Found by measurement, not by review: a probe that read `STAGE.rows` after
+`stageShow` returned four tickers carrying the previous ticker's closes.
+
+**Before the bell, every name drew yesterday's candle twice.** The scanner's
+`rtc`, `open`, `high` and `low` columns all still hold the previous regular
+session in pre-market. The chart appended them as a new candle labelled "today,
+still open". A pre-market bar can honestly show one thing — the range between
+yesterday's close and the pre-market print — and that is what it draws now.
+
+**A 200 with no rows counted as a successful price poll.** The TradingView
+scanner answers HTTP 200 with an empty `data` array on a malformed symbol list
+or a rate-limited window. The poll iterated zero rows and then cleared the
+failure flag and stamped the update time anyway, so every price froze at its
+last good value beside a live ticking clock, with no banner. The macro tape had
+the same hole with a comment claiming the opposite.
+
+**The trend-line verdict froze when the chart opened.** BREAKOUT, RETEST and
+FAILED are all decided by where the last close sits against the line, and so
+are "overhead", "below" and the distance. They were computed once; the
+30-second poke recomputed only RSI. A line broken at 10:05 still read "1.2%
+overhead" at 14:30 with price 4% through it.
+
+**"Price has stayed above it since" was never checked.** The grader compared
+one close to the line and the caption then stated a fact about every session
+since the break — false on 8 of ~50 fits in the published file.
+
+### Themes
+
+- **Statements the interface could not back up.** The four index tape tiles
+  said "Click to chart it" and were dead on click. The Fed card's countdown was
+  frozen at publish time while the catalyst row for the same meeting counted
+  down correctly three inches lower. RETREAT WATCH named "the week's biggest
+  inflows" from a list sorted by price relative strength. The conviction board's
+  contract column carried the swing board's selection rule and called a report a
+  suggestion.
+- **Time treated as a constant.** The earnings countdown was printed raw from a
+  snapshot that is a day or more old every morning before 8:00 CT. The intraday
+  file was fetched once per page load and never again. The volume bar froze at
+  whatever it was when the chart was drawn while the price bar above it kept
+  ticking.
+- **Encodings that carried two meanings.** A heatmap tile with no reading for the
+  period painted the same neutral as a flat one. The Desk map's tile areas mixed
+  10-day dollar volume with market cap and the footer named neither correctly.
+  A peer chart's two-value clamp drew a 106:1 gap as 1.6:1, then printed a
+  median no company was within 40x of.
+- **Race conditions in the async paths.** Switching heatmap universes twice in a
+  second rendered one universe's tiles under the other's name. A second caller
+  during an in-flight fetch got "scanner unreachable" printed over a healthy
+  request.
+- **The market calendar.** `priceSessionNow` tested weekday and clock only, so
+  at 10:00 CT on Thanksgiving the rail painted a green OPEN over prices frozen
+  since Wednesday.
+
+### One review finding was refuted
+
+The currency hedge on the financials note fires when a sidecar publishes no
+reporting currency, and the reviewer measured every sidecar in `data/fund/` as
+lacking the field. That directory is gitignored local test data and was months
+stale. The live `data` branch publishes MU as USD, TSM as TWD and SKHY as KRW —
+the feature works. The real problem it exposed was the stale local copy, now
+refreshed from the branch.
