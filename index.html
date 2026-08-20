@@ -5521,7 +5521,20 @@ function axisChartSVG(labels, defs, opts){
         pts = [];
         continue;
       }
-      if(vv==null){ if(pts.length>1) segs.push(pts); pts = []; continue; }
+      if(vv==null){
+        if(pts.length>1) segs.push(pts);
+        pts = [];
+        // The bar branch marks a missing period with a dash at the baseline;
+        // the line branch just broke the polyline and drew nothing, so the
+        // caveat's promise of a dash was true of only half the charts.
+        var mx0 = X(j), by = Y(0);
+        var perN = own ? (own[j]||"") : (labels[j]||"");
+        dots += '<line x1="'+(mx0-4).toFixed(1)+'" x2="'+(mx0+4).toFixed(1)
+          + '" y1="'+by.toFixed(1)+'" y2="'+by.toFixed(1)
+          + '" stroke="'+d.color+'" stroke-width="1.6" opacity=".55">'
+          + '<title>'+esc(d.name+(perN?(" · "+perN):"")+": not reported")+'</title></line>';
+        continue;
+      }
       var px = X(j), py = Y(vv);
       pts.push(px.toFixed(1)+","+py.toFixed(1));
       // A per-series label list wins over the shared axis: the axis counts
@@ -5565,7 +5578,30 @@ function axisChartSVG(labels, defs, opts){
         + (e2.off ? " \u2191" : "")+'</text>';
     });
   }
-  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img">'+out+'</svg>';
+  // One invisible full-height band per period, on top of everything, carrying
+  // every series' value for that period. The only <title> on these charts sat
+  // on 2.6-pixel circles and on the bars themselves — a target you cannot hit
+  // on a touch screen at all, and a fiddly one with a mouse. The band spans a
+  // whole period, so anywhere in that column reads out the column.
+  var bands = "";
+  for(var bi2=0; bi2<n; bi2++){
+    var cx = hasBar ? XB(bi2) : X(bi2);
+    var halfBand = (n<=1) ? plotW/2 : (plotW/(hasBar ? n : (n-1)))/2;
+    var bx = Math.max(padL, cx-halfBand);
+    var bw2 = Math.min(padL+plotW, cx+halfBand) - bx;
+    if(!(bw2 > 0)) continue;
+    var blines = [];
+    live.forEach(function(d){
+      var own2 = (opts.perLabels && opts.perLabels[d.name]) || null;
+      var per2 = own2 ? (own2[bi2]||"") : "";
+      var vv2 = d.vals[bi2];
+      blines.push(d.name + (per2?(" ("+per2+")"):"") + ": " + (vv2==null ? "not reported" : hfmt(vv2)));
+    });
+    bands += '<rect x="'+bx.toFixed(1)+'" y="'+padT+'" width="'+bw2.toFixed(1)+'" height="'+plotH.toFixed(1)
+      + '" fill="transparent" pointer-events="all"><title>'
+      + esc((labels[bi2]||("period "+(bi2+1))) + "\n" + blines.join("\n")) + '</title></rect>';
+  }
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img">'+out+bands+'</svg>';
 }
 /* Legend carries each series' latest value — that is where the end-of-line
    labels went, and why they no longer collide. */
@@ -6556,7 +6592,14 @@ function stageTA(){
       // Name the break date for the caption.
       if(fit.bo!=null){
         var bd = STAGE.dates[off+fit.bo];
-        fit.breakLabel = bd ? (MONTHS[bd.getUTCMonth()]+" "+bd.getUTCDate()) : null;
+        // The same "≈" the crosshair readout carries. This date is a BAR date,
+        // and when bars.json publishes no session calendar the page counted
+        // weekdays back to get it — "broke Aug 11" was stated as fact under a
+        // readout that admitted the date was reconstructed.
+        fit.breakLabel = bd
+          ? (MONTHS[bd.getUTCMonth()]+" "+bd.getUTCDate()
+             + ((BAR_DATES_APPROX && !STAGE.intraday) ? " (approx)" : ""))
+          : null;
       }
     });
   }
@@ -8625,6 +8668,24 @@ function onViewportChange(){
 window.addEventListener("resize", onViewportChange);
 if(window.ResizeObserver){
   try{ new ResizeObserver(measureRailHeight).observe(document.querySelector(".rail")); }catch(e){}
+  // The financials and peers charts bake their geometry into the SVG viewBox
+  // from the tab body's width at render time, then scale with width:100%.
+  // Only a 760px class flip re-rendered them, so dragging the window from
+  // 1440 to 900 — or the layout dropping to two columns at 1380 — left axis
+  // text authored for 856px rendering at 6px. Re-render on a real width
+  // change, debounced, and only for the two tabs that draw SVG this way.
+  try{
+    var _tabW = 0, _tabT = null;
+    new ResizeObserver(function(entries){
+      var w = entries[0] && entries[0].contentRect ? entries[0].contentRect.width : 0;
+      if(!w || !_tabW){ _tabW = w || _tabW; return; }
+      if(Math.abs(w - _tabW)/_tabW < 0.08) return;      // ignore scrollbar-sized jitter
+      _tabW = w;
+      if(STAGE.tab!=="fin" && STAGE.tab!=="peers") return;
+      if(_tabT) clearTimeout(_tabT);
+      _tabT = setTimeout(function(){ _tabT = null; if(STAGE.sym) renderStageTab(); }, 180);
+    }).observe(document.getElementById("stagetabbody"));
+  }catch(e){}
 }
 function start(){
   measureRailHeight();
