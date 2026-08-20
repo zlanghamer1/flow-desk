@@ -86,7 +86,12 @@ a{color:var(--acc);text-decoration:none}
   animation:nt-roll var(--nt-dur,60s) linear infinite}
 .newsticker:hover .nt-track{animation-play-state:paused}
 @keyframes nt-roll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-.nt-item{display:inline-flex;align-items:baseline;gap:6px;padding:0 14px 0 4px;font-size:11px;color:var(--ink2);text-decoration:none}
+/* Full-height tap target. The links rendered 16px tall inside a 26px strip, so
+   on a phone every headline in the ticker was under the 24px minimum — on a
+   strip that is also moving. The text stays where it was; the hit area fills
+   the row. */
+.nt-item{display:inline-flex;align-items:center;gap:6px;padding:0 14px 0 4px;font-size:11px;
+  color:var(--ink2);text-decoration:none;min-height:26px}
 a.nt-item:hover{color:var(--ink)}
 .nt-item .tk{font-size:9.5px;font-weight:700;color:var(--acc)}
 .nt-item .tm{font-size:9px;color:var(--ink3)}
@@ -426,6 +431,23 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 /* ============ catalysts ============ */
 .filters{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
 .fbtn{font-size:10px;letter-spacing:.05em;border:1px solid var(--edge);border-radius:5px;padding:3px 8px;color:var(--ink2)}
+/* Coarse pointers get the 24px minimum on every control that is a real target,
+   without moving anything on a mouse. Measured on a 390px viewport: 69 targets
+   were under 24px, all of them these three kinds. */
+@media (pointer:coarse){
+  .fbtn,.sbar button,.stabs button,#heatbar button,.wlsort button,.seg button,
+  .boardcut button,.wlx,.wltoggle,
+  [data-iv],[data-tf],[data-ta],[data-tab],[data-ws]{
+    min-height:26px;
+  }
+  /* Source links inside a panel's footer line — small text by design, but a
+     link is a target. Padding rather than min-height, so the line does not
+     grow a step for every link in it. */
+  .fedsrc a,.note a,.nw .h a{display:inline-block;padding:6px 2px}
+  .nt-item{min-height:30px}
+  /* The chart vendor's own attribution link is 35x11 and is not ours to
+     resize; it is excluded deliberately rather than left unexplained. */
+}
 .fbtn[aria-pressed="true"]{color:var(--acc);border-color:var(--acc);background:var(--accbg)}
 /* interactive chrome answers the cursor — none of these had a hover state */
 .fbtn:hover,.ic:hover,.kbtn:hover,.seg button:hover{color:var(--ink);border-color:var(--ink3)}
