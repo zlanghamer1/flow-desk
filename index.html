@@ -3644,13 +3644,26 @@ function resampleWeekly(quints, dates){
 function intervalDataFor(sym, iv){
   // -> same shape candleDataFor returns, plus dates + iv (MAs empty: a 20-BAR
   // average on a 15m chart is not the 20-DAY line the legend promises).
-  var rows, dates;
+  var rows, dates, weekOpen = false;
   if(iv==="1W"){
     var full=seriesQuads(sym); if(!full || full.length<4) return null;
     var endDateStr=(STATE.data && STATE.data.session_date)||(BARS_CACHE && BARS_CACHE.built)||null;
-    var ddates=weekdayDatesEndingAt(full.length, endDateStr);
+    // seriesQuads appends today's live bar, so ask for the stored rows' dates
+    // and stamp today onto the extra one.
+    weekOpen = (quadsRaw(sym) ? full.length > quadsRaw(sym).length : false);
+    var storedN = quadsRaw(sym) ? quadsRaw(sym).length : full.length;
+    var real = barSessionDates(sym, storedN);
+    var ddates;
+    if(real){
+      ddates = real.slice();
+      while(ddates.length < full.length) ddates.push(ctTodayDate() || new Date());
+      BAR_DATES_APPROX = false;
+    } else {
+      ddates = weekdayDatesEndingAt(full.length, endDateStr);
+      BAR_DATES_APPROX = true;
+    }
     var w=resampleWeekly(full, ddates);
-    rows=w.rows.slice(-104); dates=w.dates.slice(-104);
+    rows=w.rows; dates=w.dates;
   } else {
     var key = iv==="15m" ? "i15" : "i60";
     var raw = intraRaw(sym, key); if(!raw || raw.length<2) return null;
@@ -3665,7 +3678,7 @@ function intervalDataFor(sym, iv){
   var hasVolume=rows.some(function(r){ var v=(r.length>=5)?num(r[4]):null; return v!=null && v>0; });
   var empty=rows.map(function(){ return null; });
   return {slice:rows, m20:empty, m50:empty, m200:empty, pct:pct, n:rows.length,
-          hasVolume:hasVolume, dates:dates, iv:iv};
+          hasVolume:hasVolume, dates:dates, iv:iv, weekOpen:(iv==="1W" && weekOpen)};
 }
                                                               // bars, so 1D/1W are dropped (tail-slice note in
                                                               // the wave-2 spec) rather than faked from one point.
@@ -3688,6 +3701,23 @@ var MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","D
 // weekday per bar from the known end date. Ignores holidays; a deliberate
 // approximation (see report) that's still accurate to within a session or two,
 // plenty for "which month is this candle in".
+function barSessionDates(sym, n){
+  var b = BARS_CACHE;
+  if(!b) return null;
+  var own = (b.bar_dates && b.bar_dates[sym]) || null;
+  var list = own || (Array.isArray(b.sessions) ? b.sessions.slice(-n) : null);
+  if(!list || list.length !== n) return null;
+  var out = new Array(n);
+  for(var i=0;i<n;i++){
+    var t = Date.parse(String(list[i])+"T12:00:00Z");
+    if(!isFinite(t)) return null;
+    out[i] = new Date(t);
+  }
+  return out;
+}
+// True when the chart's dates are the reconstruction rather than the feed's
+// own. Read by the crosshair readout, which marks them "≈".
+var BAR_DATES_APPROX = false;
 function weekdayDatesEndingAt(n, endStr){
   var end = endStr ? new Date(endStr+"T12:00:00Z") : new Date();
   var out = new Array(n); var d = new Date(end.getTime());
@@ -3747,7 +3777,10 @@ function stageMsg(txt){
 function stageTickFmt(time, type){
   if(typeof time === "number"){
     var d = new Date(time*1000);
-    if(type >= 3) return CT_TIME_FMT.format(d);
+    if(type >= 3){
+      var t12 = CT_TIME_FMT.format(d);                     // "1:00 PM"
+      return t12.replace(/\s*([AP])M$/i, function(_m, ap){ return ap.toLowerCase(); });
+    }
     return CT_DAY_FMT.format(d);
   }
   if(time && typeof time === "object"){
@@ -3765,7 +3798,7 @@ function stageTickFmt(time, type){
     if(p2.length === 3){
       var mo = MONTHS[(+p2[1])-1] || p2[1];
       if(type === 0) return p2[0];
-      if(type === 1) return mo + " " + p2[0].slice(2);
+      if(type === 1) return mo + " \u2019" + p2[0].slice(2);
       return mo + " " + (+p2[2]);
     }
   }
@@ -3906,7 +3939,10 @@ function ctTodayDate(){
       year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
     var p = parts.split("-");
     if(p.length!==3) return null;
-    return new Date(+p[0], +p[1]-1, +p[2]);
+    // UTC noon, like every other date here: toISOString().slice(0,10) and
+    // getUTCDay() then mean the CT calendar day in any timezone.
+    var t = Date.parse(p[0]+"-"+p[1]+"-"+p[2]+"T12:00:00Z");
+    return isFinite(t) ? new Date(t) : null;
   }catch(e){ return null; }
 }
 /* ---- stage data builders ---- */
@@ -3941,7 +3977,16 @@ function stageDailyData(sym){
       }
     }
     var endDateStr = (STATE.data && STATE.data.session_date) || (BARS_CACHE && BARS_CACHE.built) || null;
-    dates = weekdayDatesEndingAt(rows.length, endDateStr);
+    var storedRows = rows.length - (synthetic ? 1 : 0);
+    var realD = barSessionDates(sym, storedRows);
+    if(realD){
+      dates = realD.slice();
+      if(synthetic) dates.push(ctTodayDate() || new Date());
+      BAR_DATES_APPROX = false;
+    } else {
+      dates = weekdayDatesEndingAt(rows.length, endDateStr);
+      BAR_DATES_APPROX = true;
+    }
   } else if(adhoc && adhoc.rows.length >= 2){
     // Searched/custom name: stockanalysis.com returns REAL per-bar dates, so
     // no weekday reconstruction. It also omits the partial session, so the
@@ -3952,6 +3997,7 @@ function stageDailyData(sym){
     // this path has not used since it was replaced the same day.)
     rows = adhoc.rows.slice();
     dates = adhoc.dates.slice();
+    BAR_DATES_APPROX = false;      // stockanalysis.com ships real per-bar dates
     var aliv = liveBySym(sym);
     if(aliv && aliv.px!=null && dates.length){
       var lastD = dates[dates.length-1];
@@ -3979,13 +4025,20 @@ function stageViewData(sym, iv){
     // Weekly resample prefers the pinned daily file, falls back to ad-hoc daily.
     var cd0 = intervalDataFor(sym, iv);
     if(cd0) return { rows:cd0.slice, dates:cd0.dates, m20:[], m50:[], m200:[],
-                     hasVolume:!!cd0.hasVolume, intraday:false, synthetic:false };
+                     // seriesQuads appends today's live bar, so the newest week
+                     // is partial by construction.
+                     hasVolume:!!cd0.hasVolume, intraday:false, synthetic:!!cd0.weekOpen };
     var ad = ADHOC_BARS[sym] && ADHOC_BARS[sym].D;
     if(ad && ad.rows.length>=6){
+      BAR_DATES_APPROX = false;    // same real dates, resampled
       var w = resampleWeekly(ad.rows, ad.dates);
-      return { rows:w.rows.slice(-104), dates:w.dates.slice(-104), m20:[], m50:[], m200:[],
+      var adLive = liveBySym(sym);
+      var wSynth = !!(adLive && adLive.px!=null && ad.dates.length
+                      && ctTodayDate() && ad.dates[ad.dates.length-1]
+                      && ctTodayDate().getTime() <= ad.dates[ad.dates.length-1].getTime());
+      return { rows:w.rows, dates:w.dates, m20:[], m50:[], m200:[],
                hasVolume: w.rows.some(function(r){ return r.length>=5 && r[4]!=null && r[4]>0; }),
-               intraday:false, synthetic:false };
+               intraday:false, synthetic:wSynth };
     }
     return null;
   }
@@ -4112,7 +4165,10 @@ function stageRender(){
   STAGE.log = (STAGE.logManual!=null) ? STAGE.logManual : stageLogAuto(rows);
   STAGE.chart.priceScale("right").applyOptions({
     mode: STAGE.log ? window.LightweightCharts.PriceScaleMode.Logarithmic
-                    : window.LightweightCharts.PriceScaleMode.Normal });
+                    : window.LightweightCharts.PriceScaleMode.Normal,
+    // 0.12 clears the top tick's label and gives the candles more of the pane
+    // than the library's own 0.2 default.
+    scaleMargins: { top: 0.12, bottom: 0.1 } });
 
   stageApplyWindow(candles.length);
   stageMarkers();
@@ -4192,7 +4248,7 @@ function stageMarkers(){
     for(var k=0;k<STAGE.dates.length;k++){ var d2=Math.abs(STAGE.dates[k]-rd); if(d2<bestDiff){ bestDiff=d2; bestI=k; } }
     var t = STAGE.times[bestI];
     var up = r.dir==="up";
-    markers.push({ time:t, position: up?"belowBar":"aboveBar", color: up?ups:dns,
+    markers.push({ time:t, position: "aboveBar", color: up?ups:dns,
                    shape: up?"arrowUp":"arrowDown", text:"", id:"r:"+ri });
     (STAGE.ratingByTime[String(t)] = STAGE.ratingByTime[String(t)] || []).push(ri);
   });
@@ -4238,9 +4294,14 @@ function stageSetOhlc(param){
   // source simply does not publish extended-hours volume, and on every VIX,
   // US10Y and DXY bar. No number is better than a wrong one.
   var volPart = (r.length>=5 && r[4]!=null && num(r[4])>0) ? (' V <b>'+fmtVolShort(r[4])+'</b>') : '';
+  var sess = priceSessionNow();
   var todayTag = (STAGE.synthetic && i===STAGE.rows.length-1)
-    ? ' <span class="m">· today, still open</span>' : '';
-  el.innerHTML = esc(stageTimeLabel(STAGE.times[i]))
+    ? (' <span class="m">· '+(STAGE.iv==="1W" ? "this week" : "today")+', '
+       + ((sess==="open"||sess==="premarket") ? "still open" : "closed")+'</span>') : '';
+  // A reconstructed date is not a date. Say so where the date is printed.
+  var approxTag = (BAR_DATES_APPROX && !STAGE.intraday)
+    ? ' <span class="m" data-tip="This bars file publishes no per-bar dates, so the page counted weekdays back from the session date. Market holidays make that drift — read the date as approximate.">≈</span>' : '';
+  el.innerHTML = esc(stageTimeLabel(STAGE.times[i])) + approxTag
     + ' · O <b>'+fmtpx(r[0])+'</b> H <b>'+fmtpx(r[1])+'</b> L <b>'+fmtpx(r[2])+'</b> C <b>'+fmtpx(r[3])+'</b>'+volPart+todayTag;
 }
 function stageOnCrosshair(param){
@@ -4270,8 +4331,8 @@ function stageOnClick(param){
     : ((hit.type==="next")
         ? earnPopoverHTML(null, fund && fund.next_earnings, true)
         : earnPopoverHTML(fund && Array.isArray(fund.earnings) ? fund.earnings[hit.idx] : null, null, false));
-  var x = (param.point && param.point.x!=null) ? param.point.x : 40;
-  var y = (param.point && param.point.y!=null) ? param.point.y : 40;
+  var x = STAGE_CLICK_PT ? STAGE_CLICK_PT.x : ((param.point && param.point.x!=null) ? param.point.x : 40);
+  var y = STAGE_CLICK_PT ? STAGE_CLICK_PT.y : ((param.point && param.point.y!=null) ? param.point.y : 40);
   showEarnPopover(x, y, html);
 }
 /* ---- visible-range % chip: reads the ZOOMED window, whatever it is ---- */
@@ -4304,6 +4365,18 @@ function stageOnVisRange(range){
 }
 
 /* ---- earnings popover ---- */
+// Pointer position of the last click inside the chart, in #stagechart
+// coordinates. param.point is pane-relative, which put the earnings card 400px
+// from a click made in the RSI pane.
+var STAGE_CLICK_PT = null;
+(function(){
+  var host = document.getElementById("stagechart");
+  if(!host) return;
+  host.addEventListener("click", function(e){
+    var r = host.getBoundingClientRect();
+    STAGE_CLICK_PT = {x: e.clientX - r.left, y: e.clientY - r.top};
+  }, true);
+})();
 function showEarnPopover(x, y, html){
   var pop = document.getElementById("earnpop");
   if(!pop) return;
@@ -4311,9 +4384,15 @@ function showEarnPopover(x, y, html){
   // Stamped so the click that OPENED it cannot also close it, while any later
   // click outside can — including a click on the chart itself.
   pop.dataset.openedAt = String(Date.now());
-  pop.style.left = Math.max(0, x-80)+"px";
-  pop.style.top = y+"px";
+  pop.style.left = "0px"; pop.style.top = "0px";
   pop.style.display = "block";
+  // Measured after it is displayed, then clamped inside the chart box: the
+  // card used to hang off the bottom and the right on a click near an edge.
+  var host = pop.offsetParent || pop.parentNode;
+  var hw = (host && host.clientWidth) || 0, hh = (host && host.clientHeight) || 0;
+  var pw = pop.offsetWidth, ph = pop.offsetHeight;
+  pop.style.left = Math.max(0, Math.min(x-80, Math.max(0, hw-pw-4)))+"px";
+  pop.style.top  = Math.max(0, Math.min(y+8, Math.max(0, hh-ph-4)))+"px";
   var cl = document.getElementById("popclose");
   if(cl) cl.addEventListener("click", function(e){ e.stopPropagation(); pop.style.display="none"; });
 }
@@ -6421,8 +6500,11 @@ function stageHeader(){
   var ne = document.getElementById("stagenextearn");
   if(ne) ne.addEventListener("click", function(e){
     e.stopPropagation();
+    // Viewport coordinates into the chart box the card lives in.
     var r = ne.getBoundingClientRect();
-    showEarnPopover(r.left, r.bottom, earnPopoverHTML(null, STAGE.nextEarn, true));
+    var hostEl = document.getElementById("stagechart");
+    var hr = hostEl ? hostEl.getBoundingClientRect() : {left:0, top:0};
+    showEarnPopover(r.left - hr.left + 80, r.bottom - hr.top, earnPopoverHTML(null, STAGE.nextEarn, true));
   });
   if(wasFocused){
     var again = document.getElementById(wasFocused);
@@ -6457,6 +6539,14 @@ function stageBar(){
       + "are quote artifacts tens of percent from their own open and close — one of them flattened this chart to a hairline. Those "
       + nrep + " bar" + (nrep===1?"":"s") + " had their high and low clamped back to the body. Open, close and volume are untouched, and "
       + "no bar that reported volume was changed.")+'">'+nrep+' bad tick'+(nrep===1?"":"s")+' repaired</span>';
+  }
+  if(STAGE.sym && STAGE.intraday && STAGE.dates && STAGE.dates.length){
+    var lastBar = STAGE.dates[STAGE.dates.length-1];
+    if(lastBar && !isNaN(lastBar.getTime())){
+      chips += '<span class="pchip tn m" data-tip="'+esc("These bars come from the desk's own intraday file, rebuilt about every 7 minutes. "
+        + "The price in the header is the 15-minute-delayed quote from the 30-second poll, so it runs ahead of the last bar drawn here.")
+        + '">bars through '+esc(ctTimeShort(lastBar.toISOString()))+' CT</span>';
+    }
   }
   // A window button that changes nothing should say so.
   if(STAGE.sym && STAGE.iv==="1D" && STAGE.rows.length){
