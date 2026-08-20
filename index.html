@@ -1063,6 +1063,15 @@ function wlAdd(sym, tv, name){
   // countdown, no 52-week bar — until the reader happened to open its chart,
   // at which point it silently gained both.
   if(!factsOf(sym)) adhocEnsureFacts(sym).then(function(f){ if(f) renderWL(); });
+  // ...and its own AVERAGE DAY. adhocEnsureFacts writes avg_move as null, and
+  // only adhocEnsureDaily computes it — from the chart path, which a searched
+  // name reaches only when someone clicks it. So a name that opened −7.2%
+  // against a 1.4% average day showed no hot badge, never reached the MOVERS
+  // box, and sorted below every pinned row until its chart was opened, at
+  // which point the 5.1x badge silently appeared.
+  if(typeof adhocEnsureDaily === "function"){
+    adhocEnsureDaily(sym).then(function(){ bumpStatsMemo(); renderWL(); }, function(){});
+  }
 }
 function wlRemove(sym){
   if(railHasSym(sym)){
@@ -1084,6 +1093,17 @@ setTimeout(function(){
   Promise.all(customs.map(function(r){
     try{ return adhocEnsureFacts(r.sym); }catch(e){ return null; }
   })).then(function(){ if(typeof renderWL === "function") renderWL(); });
+  // Same at boot: without the daily history a reloaded custom name is invisible
+  // to the hot test until it is clicked. Sequential and fail-soft — this is a
+  // background warm-up, not a blocking dependency.
+  customs.reduce(function(chain, r){
+    return chain.then(function(){
+      try{ return adhocEnsureDaily(r.sym); }catch(e){ return null; }
+    }, function(){ return null; });
+  }, Promise.resolve()).then(function(){
+    if(typeof bumpStatsMemo === "function") bumpStatsMemo();
+    if(typeof renderWL === "function") renderWL();
+  }, function(){});
 }, 0);
 
 /* =================== utils =================== */
@@ -2520,6 +2540,18 @@ var LEV_SYMS = (function(){
   RAIL_GROUPS.forEach(function(g){ if(g.g==="LEVERAGED") g.syms.forEach(function(x){ m[x]=true; }); });
   return m;
 })();
+/* The shopping list's tooltip promises leveraged and inverse wrappers are
+   excluded, and the exclusion set was built ONLY from the LEVERAGED rail
+   group. Search "SQQQ" and add it: its split-adjusted 52-week high sits far
+   above its price, so it lands near the bottom of its own range and takes a
+   slot under the word "shopping" — a wrapper the tooltip said would not be
+   there. Decide per symbol from what the vendor calls it. */
+var LEV_NAME_RE = /\b(2x|3x|-?1x|ultra|ultrashort|ultrapro|inverse|leverag|bear|bull\s*\d|daily\s+\w+\s+(bull|bear))\b/i;
+function isLeveraged(sym){
+  if(LEV_SYMS[sym]) return true;
+  var n = (ADHOC_NAMES[sym] || nameFor(sym) || "");
+  return LEV_NAME_RE.test(n);
+}
 // Draft state for the comma-list box, so the 30-second poll's full rebuild of
 // #wl cannot swallow what is being typed.
 var WLIO_DRAFT = null, WLIO_MSG = "", WLIO_FOCUS = false, WLIO_SEL = [0,0];
@@ -2670,7 +2702,7 @@ function renderWL(){
         // leveraged wrapper's "1% of range" is a reverse-split artifact, not a
         // discount. Two controls asking the same question must not answer it
         // with different universes.
-        var la = !!LEV_SYMS[a], lb = !!LEV_SYMS[b];
+        var la = isLeveraged(a), lb = isLeveraged(b);
         if(la !== lb) return la ? 1 : -1;
         var pa=statsOf(a).pos, pb=statsOf(b).pos;
         if(pa==null && pb==null) return 0; if(pa==null) return 1; if(pb==null) return -1;
@@ -2738,7 +2770,7 @@ function renderWL(){
   // 52-week range only because a 200x reverse split puts its adjusted high at
   // $1,556 against a $46 price — that is a split artifact, not a discount, and
   // it has no business sitting next to a stock under the word "shopping".
-  var withPos = railSyms.filter(function(s){ return statsOf(s).pos!=null && !LEV_SYMS[s]; });
+  var withPos = railSyms.filter(function(s){ return statsOf(s).pos!=null && !isLeveraged(s); });
   var lows = withPos.slice().sort(function(a,b){ return statsOf(a).pos-statsOf(b).pos; }).slice(0,3);
   // With the price feed down every row reads "—", so "none yet" and "not
   // enough range data yet" were statements about the market the page could
@@ -2817,7 +2849,13 @@ function _tsShortName(s){
 }
 function _tsQuery(q, nameOnly){
   var body = JSON.stringify({
-    columns:["name","description","rtc","close","change","market_cap_basic","exchange","sector","industry"],
+    columns:["name","description","rtc","close","change","market_cap_basic","exchange","sector","industry",
+             // Extended-hours columns so the dropdown can run its row through
+             // dispQuote like every other price on the page. Without them it
+             // took rtc — the after-hours print once the session ends — and
+             // paired it with `change`, which is measured on the regular
+             // close: 58.40 next to "+1.2%", where the +1.2% belongs to 64.10.
+             "premarket_close","premarket_change","postmarket_close","postmarket_change"],
     filter:[{left: nameOnly ? "name" : "name,description", operation:"match", right:q}],
     options:{lang:"en"}, range:[0, nameOnly?6:8],
     sort:{sortBy:"market_cap_basic",sortOrder:"desc"},
@@ -2829,12 +2867,15 @@ function _tsQuery(q, nameOnly){
       return rows.map(function(row){
         if(!row || !row.s || !Array.isArray(row.d)) return null;
         if(typeof row.d[0]!=="string" || !row.d[0]) return null;
-        // rtc is the same real-time column the 30s rail poll reads; close is
-        // the delayed print. Taking rtc first stops the dropdown and the rail
-        // disagreeing by a few cents with nothing to explain it.
-        var px = num(row.d[2]); if(px===null) px = num(row.d[3]);
+        // One rule for every price on the page: dispQuote decides which
+        // session's number to show and tags it. The dropdown used to reach
+        // past it for rtc and pair that with the regular-session change.
+        var dq = dispQuote({ px:num(row.d[2]), c:num(row.d[3]), ch:num(row.d[4]),
+                             prepx:num(row.d[9]), prech:num(row.d[10]),
+                             postpx:num(row.d[11]), postch:num(row.d[12]) });
+        var px = (dq.px!=null) ? dq.px : (num(row.d[2])!=null ? num(row.d[2]) : num(row.d[3]));
         return { sym:row.d[0], name:_tsShortName((typeof row.d[1]==="string")?row.d[1]:""),
-                 px:px, ch:num(row.d[4]), cap:num(row.d[5]),
+                 px:px, ch:dq.ch, tag:dq.tag, ext:dq.ext, cap:num(row.d[5]),
                  exch:(typeof row.d[6]==="string" && row.d[6])?row.d[6]:row.s.split(":")[0],
                  tv:row.s, nameHit:!!nameOnly };
       }).filter(Boolean);
@@ -2899,7 +2940,8 @@ function tsRender(){
       + '<span class="px tn">'+(it.px!=null?fmtpx(it.px):"—")+'</span>'
       // The price used to be coloured by today's change without ever printing
       // it — an unlabelled colour.
-      + '<span class="ch tn '+sign1(it.ch)+'">'+(it.ch!=null?(fm1(it.ch)+"%"):"")+'</span>'
+      + '<span class="ch tn '+sign1(it.ch)+'">'+(it.ch!=null?(fm1(it.ch)+"%"):"")
+      + (it.tag ? sessTagHTML(it.tag) : (it.ext ? extChipHTML(it.ext) : ""))+'</span>'
       + '<button class="add'+(on?" off":"")+'" data-add="'+i+'" data-tip="'+esc(tip)+'">'+lab+'</button></div>'
       + '<div class="r2"><span class="nm">'+esc(it.name)+'</span><span class="ex">'+esc(it.exch)+'</span></div></div>';
   }).join("")
