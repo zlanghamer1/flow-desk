@@ -173,5 +173,54 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   snapshot, searched peers from the scanner seconds ago. `vintageNote` says
   which rows are which.
 
+## Guardrails added by the 2026-08-20 review round
+
+- **A view that changes symbol clears its data first.** `stageShow` empties
+  `STAGE.rows`, `dates`, `times` and the marker maps before it repaints, so a
+  header can never sit over the previous name's bar. Any panel that paints
+  from cached arrays and refills them asynchronously owes the same reset.
+- **Pre-market, the regular-session columns are yesterday's.** `rtc`, `open`,
+  `high`, `low` and `change` all still describe the previous session before
+  the bell. Only `premarket_close` and `premarket_change` describe the new
+  day. A name with no pre-market print carries a PREV tag, drops out of the
+  hot test, and sorts to the bottom of a list headed by today's move.
+- **A 200 that updated nothing is a failed request.** The scanner answers 200
+  with an empty `data` array under rate limiting. Both polls count that as a
+  miss rather than stamping a fresh timestamp over frozen prices.
+- **Every feed needs its own staleness signal.** The page banner watches the
+  equity poll only; the macro tape keeps its own miss count and prints FROZEN
+  on its tiles. A second feed is a second thing that can die quietly.
+- **A verdict computed from price is recomputed when price moves.** Trend-line
+  status, distance and side are re-derived on every caption draw, and the drawn
+  lines are recoloured to match. A conclusion cached at open is a conclusion
+  about a market that has moved.
+- **A claim about a stretch of bars is checked against those bars.** "Price has
+  stayed above it since" counts the closes after the break, and says what it
+  counted, rather than testing the last one and generalising.
+- **A flag that marks fabricated data must be read.** `syntheticReal` existed
+  for three rounds before anything consumed it. A bracketed today candle now
+  prints CLOSE ONLY.
+- **The market calendar is not a weekday test.** `isTradingDay` consults the
+  holiday and half-day tables, preferring bars.json v4's session list where it
+  is published. A green OPEN lamp on Thanksgiving is worse than no lamp.
+- **A countdown is aged against the snapshot it came from.** `earnDaysNow`
+  subtracts the sessions elapsed since `session_date`; a countdown measured
+  live carries `earn_live` and is left alone.
+- **One rule, one helper, every surface.** The $100K flow-% floor lived inline
+  in the board and was missing from the chart tab. Any rule stated in a
+  tooltip has to be enforced everywhere the number appears.
+- **A resample buckets by session, never by counting bars.** `slot4H` keys on
+  pre-market / 08:30-12:30 / 12:30-15:00 / post, so the opening auction is
+  never folded into a pre-market bucket and dimmed.
+- **An async render captures the state it was called for.** The heatmap
+  captures its universe and drops if the map has moved on; in-flight callers
+  share one promise instead of being told the scanner is unreachable.
+- **A clamp anchored on "the second largest" needs three values.** With two,
+  the second largest is the smaller one — a 106:1 gap drew as 1.6:1.
+- **A hover target has to be hittable.** Chart values live on full-height
+  bands per period, not on 2.6-pixel circles: a circle is not a touch target.
+- **A network failure is never cached as a fact about the world.** A failed
+  peer scan says the scan did not answer, and is not written to the cache.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
