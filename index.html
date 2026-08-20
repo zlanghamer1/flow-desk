@@ -7442,6 +7442,14 @@ function stageShow(sym, opts){
   try{ store("desk.stage.sym", JSON.stringify({sym:sym, tv:symbolForTicker(sym)||null, name:ADHOC_NAMES[sym]||null})); }catch(e){}
   var _st = document.getElementById("staget");
   if(_st) _st.innerHTML = "";      // never carry the last symbol's TA reading
+  // Nor the last symbol's BARS. stageHeader() below repaints the OHLC readout
+  // from STAGE.rows, and the bars for the new name are still in flight — so
+  // clicking COHR then LLY put "Eli Lilly 1,280.34" in the header over
+  // "O 309.11 H 312.00 L 284.75 C 287.47", which is Coherent's bar. Every
+  // reader of these arrays is guarded for the empty case and prints nothing.
+  STAGE.rows = []; STAGE.dates = []; STAGE.times = [];
+  STAGE.taSummary = null; STAGE.markerByTime = {}; STAGE.ratingByTime = {};
+  STAGE.synthetic = false; STAGE.hasVolume = false; STAGE.nextEarn = null;
   stageHeader(); stageBar(); stageTabsRender(); renderStageTab();
   stageMsg("loading chart…");
   Promise.all([ensureBars(), ensureFund(sym)]).then(function(vals){
