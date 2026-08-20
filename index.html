@@ -518,7 +518,11 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 body.heatwide:has(#s-stage.heatmode) .cols{grid-template-columns:minmax(0,1fr)}
 body.heatwide:has(#s-stage.heatmode) .wl,
 body.heatwide:has(#s-stage.heatmode) .rr{display:none}
-body.heatwide #s-stage.heatmode .heatwrap{height:calc(100vh - 210px - var(--heatfoot-h, 30px));min-height:420px}
+/* min-height used to win on a short window and push the legend, the clamp
+   and the as-of stamp back under the fold — in the one mode built for
+   studying the map. The floor now yields to the viewport. */
+body.heatwide #s-stage.heatmode .heatwrap{height:calc(100vh - 210px - var(--heatfoot-h, 30px));
+  min-height:min(420px, calc(100vh - 210px - var(--heatfoot-h, 30px)))}
 body.heatwide:has(#s-stage.heatmode) .mid>*:not(#s-stage){display:none}
 body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){display:none}
 .hm-sec{position:absolute;overflow:hidden}
@@ -529,6 +533,13 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 .hm-tile{position:absolute;overflow:hidden;cursor:pointer;border:1px solid var(--bg);border-radius:2px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.15}
 .hm-tile:hover{filter:brightness(1.18);z-index:3}
+/* Tiles are absolutely positioned inside a sector block with overflow:hidden,
+   so the global focus ring — drawn OUTSIDE the element with a 1px offset —
+   was clipped away on every edge tile and painted over by the neighbour that
+   drew next. Keyboard focus on the map was invisible. Draw it inside, and
+   lift the focused tile above its neighbours. */
+.hm-tile:focus-visible{outline:2px solid var(--acc);outline-offset:-2px;z-index:5}
+.hm-sechead:focus-visible{outline:2px solid var(--acc);outline-offset:-2px;z-index:5}
 .hm-tile b{font-weight:700}
 .hm-tile span{font-weight:600;opacity:.92}
 .heatfoot{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:0 14px 10px;font-size:10px;color:var(--ink3)}
@@ -785,7 +796,7 @@ footer b{color:var(--ink2)}
       <section id="s-stage">
         <div class="viewseg"><div class="seg" role="group" aria-label="Stage view">
           <button id="view-chart" aria-pressed="true">CHART</button>
-          <button id="view-heat" aria-pressed="false" data-tiphold="0" data-tip="Finviz-style sector map: tile size = market cap, color = the move over the selected period. The same TradingView scanner request the watchlist prices come from — 15-minute delayed, refreshed every ~2 minutes while the map is open. Click a tile to chart it.">HEATMAP</button>
+          <button id="view-heat" aria-pressed="false" data-tiphold="0" data-tip="Finviz-style sector map: tile size = market cap (the Desk map sizes by dollar volume instead, because its funds have no market cap), color = the move over the selected period. The same TradingView scanner request the watchlist prices come from — 15-minute delayed, refreshed every ~2 minutes while the map is open. Click a tile to chart it.">HEATMAP</button>
         </div></div>
         <div class="stagehead" id="stagehead"></div>
         <div class="stagebar" id="stagebar"></div>
@@ -6631,8 +6642,16 @@ function heatFetch(force){
   var cached = HEAT.data[univ];
   var now = Date.now();
   if(!force && cached && now - cached.fetchedAt < 110000) return Promise.resolve(cached);
-  if(HEAT.inflight[univ]) return Promise.resolve(cached||null);
-  HEAT.inflight[univ] = true;
+  // A second caller used to get `cached || null`, and a null answer paints
+  // "scanner unreachable — nothing on this map is current". Clicking expand
+  // one second after switching universes printed that over a request that was
+  // simply still in the air. Hand back the SAME promise instead.
+  if(HEAT.inflight[univ]) return HEAT.inflight[univ];
+  var p = heatFetchNow(univ);
+  HEAT.inflight[univ] = p;
+  return p;
+}
+function heatFetchNow(univ){
   var cfg = HEAT_UNIVERSES[univ];
   var body = cfg.symbolset
     ? {columns:HEAT_COLS, options:{lang:"en"}, range:[0,600],
@@ -6641,7 +6660,7 @@ function heatFetch(force){
   return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:JSON.stringify(body)})
     .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
     .then(function(json){
-      HEAT.inflight[univ] = false;
+      HEAT.inflight[univ] = null;
       var rows = (json && Array.isArray(json.data)) ? json.data : [];
       var out = [], dropped = [];
       rows.forEach(function(row){
@@ -6676,7 +6695,7 @@ function heatFetch(force){
       HEAT.lastFetch = Date.now();
       return HEAT.data[univ];
     })
-    .catch(function(){ HEAT.inflight[univ] = false; return null; });
+    .catch(function(){ HEAT.inflight[univ] = null; return null; });
 }
 /* squarified treemap (Bruls et al.): items [{w:weight,...}] into rect -> adds x/y/wd/ht */
 function squarify(items, x, y, w, h){
@@ -6749,7 +6768,14 @@ function heatColor(v, clamp){
   // diverging: --dn pole … neutral gray midpoint … --up pole (never a hue at 0)
   var neutral = document.documentElement.dataset.theme==="light" || (matchMedia("(prefers-color-scheme: light)").matches && document.documentElement.dataset.theme!=="dark")
     ? [225,229,234] : [42,48,56];
-  if(v==null) return "rgb("+neutral.join(",")+")";
+  // "No reading for this period" painted the byte-identical neutral a genuinely
+  // flat name gets, and the tile prints no number either — so a name that IPO'd
+  // in March looked like a name that closed unchanged on the YTD map. Give the
+  // unknown its own, plainly duller paint.
+  if(v==null){
+    var dim = neutral.map(function(nc){ return Math.round(nc*0.72 + 128*0.28); });
+    return "rgb("+dim.join(",")+")";
+  }
   var t = Math.max(-1, Math.min(1, v/clamp));
   var pole = heatParseColor(t>=0 ? "--up" : "--dn");
   // Gamma instead of the old 0.15 floor: a small move still reads off-neutral,
@@ -6835,9 +6861,15 @@ function heatRender(refetch){
   var wrap = document.getElementById("heatwrap");
   if(!wrap) return;
   var cached = HEAT.data[HEAT.univ];
+  // Which universe THIS render is for. Click DESK then NASDAQ 100 a second
+  // later and the fast Desk request resolved into a render that read
+  // HEAT.univ fresh — drawing 50 desk tickers under the heading "NASDAQ 100",
+  // with the NDX clamp and the NDX count in the footer.
+  var univAtCall = HEAT.univ;
   if(!cached) heatMsg("loading the map…");
   heatFetch(refetch).then(function(data){
     if(STAGE.view!=="heat") return;
+    if(HEAT.univ !== univAtCall) return;
     if(!data || !data.rows.length){
       if(!cached) heatMsg("map unreachable — TradingView's scanner didn't answer; retrying with the next refresh");
       var ef = document.getElementById("heatfoot");
@@ -6852,8 +6884,12 @@ function heatRender(refetch){
     }
     heatMsg(null);
     var tf = HEAT.tf;
+    // Clamp from the WHOLE universe, then filter. Computing it after the
+    // isolate filter meant clicking a three-name sector header rescaled the
+    // colour: the same tile, on data that had not changed, went from pale to
+    // saturated because the clamp collapsed to that sector's own spread.
+    var clamp = heatClampFrom(data.rows, tf);
     var rows = data.rows.filter(function(r){ return !HEAT.isolate || r.sector===HEAT.isolate; });
-    var clamp = heatClampFrom(rows, tf);
     // WEIGHT first, because everything below sizes on it. The index maps size
     // by market cap, Finviz-style. The DESK map sizes by dollar volume traded,
     // because it is the one measure every name on the desk has — the funds
@@ -6861,8 +6897,17 @@ function heatRender(refetch){
     // different quantities. Before this the whole "Funds & wrappers" block was
     // a 6px strip with six tiles rendering 2x2px.
     var byDollarVol = (HEAT.univ === "DESK");
+    // A name with no volume figure silently borrowed its market cap, so one
+    // encoding carried two quantities with nothing on screen saying which
+    // tiles were which. It still falls back — a missing tile is worse — but
+    // the footer now says how many.
+    var nCapFall = 0;
     rows = rows.map(function(r){
-      var w = byDollarVol ? (r.dvol!=null ? r.dvol : r.cap) : r.cap;
+      var w = r.cap;
+      if(byDollarVol){
+        if(r.dvol!=null) w = r.dvol;
+        else { w = r.cap; if(r.cap!=null && r.cap>0) nCapFall++; }
+      }
       var c2 = {}; for(var k2 in r) if(Object.prototype.hasOwnProperty.call(r,k2)) c2[k2]=r[k2];
       c2.w = (w!=null && w>0) ? w : 0;
       return c2;
@@ -6970,8 +7015,9 @@ function heatRender(refetch){
         + 'full color = \u00b1'+clamp+'% over '+esc(tf)+' · '+rows.length+' names · '+esc(HEAT_UNIVERSES[HEAT.univ].label)
         + (HEAT.isolate?(' · '+esc(HEAT.isolate)+' only'):'')
         + (byDollarVol
-            ? ' · size = dollar volume traded today (the one measure every desk name has — the funds have no market cap)'
-            : ' · size = market cap'+(nFund?(', '+nFund+' fund'+(nFund===1?'':'s')+' sized by dollar volume'):''))
+            ? (' · size = dollar volume, price \u00d7 10-day average volume (the one measure every desk name has — the funds have no market cap)'
+               + (nCapFall ? (' \u00b7 '+nCapFall+' name'+(nCapFall===1?'':'s')+' had no volume figure and fall back to market cap') : ''))
+            : ' · size = market cap'+(nFund?(', '+nFund+' fund'+(nFund===1?'':'s')+' sized by 10-day dollar volume'):''))
         + ((data.dropped && data.dropped.length && !HEAT.isolate)
             ? (' · not on the map: '+esc(data.dropped.join(", "))+' (no market cap and no traded volume to size '
                + (data.dropped.length===1?'it':'them')+' by)') : '')
