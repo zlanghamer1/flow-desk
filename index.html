@@ -13,6 +13,12 @@
   --up:#3ECF8E; --dn:#F06A5D; --upbg:rgba(62,207,142,.16); --dnbg:rgba(240,106,93,.16);
   --acc:#5E9FD8; --accbg:rgba(94,159,216,.12);
   --hi:#D9A845; --hibg:rgba(217,168,69,.16);
+  /* Purple — added 2026-08-21 for Bollinger Bands and the HEDGING activity
+     tag, a color slot free since EMA (the only prior purple use) was
+     removed the same day. Contrast-checked against --srf: 5.94:1 (dark),
+     7.38:1 (light) — same bar the other meaningful tokens above were held
+     to on 2026-08-19. */
+  --bb:#B07CD6; --bbbg:rgba(176,124,214,.14);
   --sel:rgba(94,159,216,.07);
   --spark-up:#3ECF8E; --spark-dn:#F06A5D; --spark-n:#5C6B7A;
   /* Chart gridlines. --edge2 is a table hairline at 1.05:1 against --srf,
@@ -31,6 +37,7 @@
     --up:#126541; --dn:#B02F2F; --upbg:rgba(18,101,65,.13); --dnbg:rgba(176,47,47,.12);
     --acc:#2F6FAE; --accbg:rgba(47,111,174,.10);
     --hi:#7A5408; --hibg:rgba(122,84,8,.13);
+    --bb:#6B3FA0; --bbbg:rgba(107,63,160,.10);
     --sel:rgba(47,111,174,.06);
     --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   --grid:#D3DBE4; --gridzero:#B4C0CD;
@@ -42,6 +49,7 @@
   --up:#126541; --dn:#B02F2F; --upbg:rgba(18,101,65,.13); --dnbg:rgba(176,47,47,.12);
   --acc:#2F6FAE; --accbg:rgba(47,111,174,.10);
   --hi:#7A5408; --hibg:rgba(122,84,8,.13);
+  --bb:#6B3FA0; --bbbg:rgba(107,63,160,.10);
   --sel:rgba(47,111,174,.06);
   --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   --grid:#D3DBE4; --gridzero:#B4C0CD;
@@ -52,6 +60,7 @@
   --up:#3ECF8E; --dn:#F06A5D; --upbg:rgba(62,207,142,.16); --dnbg:rgba(240,106,93,.16);
   --acc:#5E9FD8; --accbg:rgba(94,159,216,.12);
   --hi:#D9A845; --hibg:rgba(217,168,69,.16);
+  --bb:#B07CD6; --bbbg:rgba(176,124,214,.14);
   --sel:rgba(94,159,216,.07);
   --spark-up:#3ECF8E; --spark-dn:#F06A5D; --spark-n:#5C6B7A;
   /* Chart gridlines. --edge2 is a table hairline at 1.05:1 against --srf,
@@ -376,6 +385,7 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .pill{font-size:9px;font-weight:700;letter-spacing:.07em;border-radius:3px;padding:1.5px 5px}
 .pill.b{color:var(--up);background:var(--upbg)} .pill.s{color:var(--dn);background:var(--dnbg)}
 .pill.f{color:var(--hi);background:var(--hibg)} .pill.n{color:var(--ink2);background:var(--srf2);border:1px solid var(--edge)}
+.pill.h{color:var(--bb);background:var(--bbbg)}
 /* IN/OUT as a dot on the ticker: the pill needed a column the 372px rail does
    not have. Color is not the only channel — the dot's tooltip says it, and the
    $1w figure it reads from is two cells away. */
@@ -847,6 +857,7 @@ footer b{color:var(--ink2)}
          phones the row list collapses behind a toggle. -->
     <aside class="wl" id="wlrail" role="region" aria-label="Watchlist">
       <div class="alertbox" id="alerts"></div>
+      <div class="alertbox" id="bbcrosses" hidden></div>
       <div class="searchbox">
         <input id="tksearch" placeholder="Search any US ticker…" autocomplete="off" spellcheck="false" aria-label="Search tickers">
         <div class="tsdrop" id="tsdrop"></div>
@@ -1294,9 +1305,11 @@ var TIPS = {
   framework:"Five filters testing one repricing cycle in order: is forward EPS being revised up (6mo), is NTM revenue growth above 20%, is that revision accelerating (3mo), is operating margin expanding faster than 50bps year over year, and is free cash flow growing faster than revenue. 5/5 = BUY, 4/5 = BUY with one gap, 3/5 = ADD, 2/5 = HOLD, under 2 = AVOID. Computed once a day server-side from TradingView consensus and reported quarterly financials — never guessed: a filter with no data reads 'building' rather than pass or fail, and the verdict itself reads BUILDING HISTORY until at least 3 of the 5 have resolved. The two consensus-trend filters need 3-6 months of accumulated weekly snapshots after a fresh deployment. Display-only: it never feeds the conviction or swing score above, and works best on growth names — mature dividend payers score lower by design, not by error.",
   range:"Position in the 52-week range. Near the low = shopping territory, near the high = hot runner. The diamond is today.",
   hot:"Today's move divided by this name's own average daily move — Micron swinging 2% is normal, Google swinging 2% is not. Highlights at 1.8× and up.",
+  "tip-unusual-activity": "Today's 0-7 day options contract volume divided by this ticker's own trailing 20-session average — the same “relative to its own normal” idea as RVOL and the hot-move tag above, applied to options volume. Flags at 3× and up. Needs 20 sessions of history first; until then this ticker just isn't flagged. The BULLISH/BEARISH/HEDGING/MIXED word is a heuristic on top of that, from which side (call or put) holds the bigger near-money premium share vs. today's actual price move: put-heavy flow while the stock is NOT falling reads HEDGING (the one signature free data can honestly call protective), put-heavy while it IS falling reads BEARISH, call-heavy agreeing with an up move reads BULLISH, and call-heavy disagreeing reads MIXED rather than a mirrored “hedging” claim this data can't support (covered-call writing looks identical to bought calls here). Sampled, aggregated, free data — this cannot see who initiated a trade or why. Display only; it never moves the conviction or swing score.",
   stale:"This section is older than expected for its usual refresh cadence — showing the last good read.",
   ta_trend:"Auto trend lines, fit on the selected window: swing highs and lows (4 bars each side, 2 on short windows), then the best line through two or more pivots that price respected. On the intraday views a pivot counts as a touch within 1% of the line and a wick poking 1.2% through kills the fit — the vault scanner's own numbers. On the daily view both scale with what the name actually moves in a day (touch up to 3%, poke up to 4%) and the poke is judged on CLOSES rather than wicks, because the flat intraday numbers drew nothing on three quarters of daily charts. The anchor, containment and break rules come from that scanner, generalized to the support side; its rising-lows condition is not applied here. A line whose break is more than 12 bars old is not drawn, one price has traded back through and walked away from is captioned as failed, and one price closed through and stayed through has FLIPPED — broken support is drawn and captioned as overhead resistance. Windows under 40 bars draw no trend line. The dashed part is the line projected forward, and a failed line gets no projection. When BOTH a resistance and a support line fit, the caption also names the shape the pair draws — ascending/descending/symmetrical triangle, rising/falling wedge, ascending/descending channel, trading range, broadening formation, or bull/bear flag when a fast prior move preceded a tight channel — read off the same two lines' slopes and convergence, never a separate detector. Said only when the geometry clearly matches one of those names; otherwise nothing is claimed. Display only — never a signal, never in any score.",
   ta_sr:"Horizontal support/resistance: swing-point prices clustered inside half a 60-bar ATR (floored at 1%, capped at 5%, so a $900 stock and a $12 one both cluster sensibly); a level needs 2+ touches, strongest three drawn. A level that held as a floor often matters again as a ceiling, so highs and lows cluster together. Colored by where price sits against each level: red overhead (resistance ahead), green underneath (support below), blue when price is inside the band itself — the same three words the caption under the chart uses. Every level's price and touch count is named there too; only the one nearest price takes an axis badge, and even that is dropped when it would land on a moving-average badge. Display only.",
+  ta_bb:"Bollinger Bands: a 20-period simple moving average plus/minus 2 standard deviations of the same 20 closes, in purple. Computed on the full price history (like the always-on 20/50/200-day lines), not the window selector — switching from 1M to 1Y does not change the band's shape. The caption under the chart says whether price is currently above the upper band, below the lower band, or inside them. Display only — never a signal, never in any score. The watchlist rail's Band crosses panel flags any rail ticker whose price just crossed a band, from the same daily bars, whether or not this toggle is on or its chart is even open.",
 };
 
 /* =================== state =================== */
@@ -2581,6 +2594,22 @@ function rollMA(a,n){
   for(var i=0;i<a.length;i++){ s+=a[i]; if(i>=n) s-=a[i-n]; if(i>=n-1) o[i]=s/n; }
   return o;
 }
+// Rolling population stdev over the SAME trailing window rollMA(a,n) already
+// gives a mean for — sibling function, added 2026-08-21 for Bollinger Bands.
+// O(n*period), not a running sum-of-squares trick: this codebase's own other
+// rolling stats (rollMA) already assume every element is a real number, and
+// this one inherits that same assumption rather than adding null-handling
+// rollMA itself doesn't have.
+function rollStd(a, ma, n){
+  var o = new Array(a.length).fill(null);
+  for(var i=0;i<a.length;i++){
+    if(ma[i]==null) continue;
+    var sum2 = 0, m = ma[i];
+    for(var k=i-n+1; k<=i; k++){ var d=a[k]-m; sum2 += d*d; }
+    o[i] = Math.sqrt(sum2/n);
+  }
+  return o;
+}
 // Per-render-pass memo (2026-08-18): once bars are loaded, renderWL calls
 // statsOf ~350 times per 30s poll — once per row, again in filters, again
 // INSIDE sort comparators — each doing two 500-element rolling-MA passes.
@@ -2631,6 +2660,46 @@ function hotOf(sym){
   var am = num(f.avg_move);
   if(am===null || am===0) return null;
   return Math.abs(d.ch)/am;
+}
+// Bollinger Bands (20, 2) — watchlist-wide, added 2026-08-21 for the "alert
+// if a stock crosses" ask. Bands are computed from COMPLETED daily closes
+// only (barsOf, never today's live price) so they don't shift with every
+// 30-second poll the way a band recomputed on live data would; the LIVE
+// price is then checked against yesterday's band, same convention real
+// Bollinger indicators use (the band updates once a day, at the close).
+// "Crossed today" compares that check against the SAME check run one day
+// earlier (yesterday's close vs the band as of the day before) — the two
+// checks only disagree on the day price actually moved from inside to
+// outside, which is the one-shot "alert" moment rather than a stale ongoing
+// state. Works for ANY rail ticker without opening its chart, the same way
+// hotOf/statsOf already do.
+var BB_PERIOD = 20, BB_MULT = 2;
+function bbSide(px, upper, lower){
+  if(px==null || upper==null || lower==null) return null;
+  return px > upper ? "over" : px < lower ? "under" : "in";
+}
+function bollingerOf(sym){
+  var hist = barsOf(sym);
+  if(!hist.length && ADHOC_BARS[sym] && ADHOC_BARS[sym].D){
+    hist = ADHOC_BARS[sym].D.rows.map(function(r){ return num(r[3]); });
+  }
+  // Need two full trailing windows: one to grade "now", one to grade
+  // "yesterday", so a cross can be told apart from an old, settled state.
+  if(hist.length < BB_PERIOD + 1) return null;
+  var ma = rollMA(hist, BB_PERIOD), sd = rollStd(hist, ma, BB_PERIOD);
+  var n = hist.length, lastIdx = n-1, prevIdx = n-2;
+  if(ma[lastIdx]==null) return null;
+  var upperNow = ma[lastIdx] + BB_MULT*sd[lastIdx], lowerNow = ma[lastIdx] - BB_MULT*sd[lastIdx];
+  var q = liveBySym(sym);
+  var live = (q && q.px!=null) ? q.px : hist[lastIdx];
+  var sideNow = bbSide(live, upperNow, lowerNow);
+  var crossed = false;
+  if(ma[prevIdx]!=null){
+    var upperPrev = ma[prevIdx] + BB_MULT*sd[prevIdx], lowerPrev = ma[prevIdx] - BB_MULT*sd[prevIdx];
+    var sidePrev = bbSide(hist[prevIdx], upperPrev, lowerPrev);
+    crossed = (sideNow==="over" && sidePrev!=="over") || (sideNow==="under" && sidePrev!=="under");
+  }
+  return {mid:ma[lastIdx], upper:upperNow, lower:lowerNow, price:live, side:sideNow, crossed:crossed};
 }
 /* build_snapshot.TRACK_ONLY — full members of the pinned universe that
    select_candidates() deliberately excludes from CBOE chain fetches, because
@@ -2992,6 +3061,53 @@ function renderWL(){
     + '<div class="note" style="margin-top:6px">the (n) in the tab title = names moving ≥1.8× their own average day</div>';
   $("#alerts").innerHTML = alertsHtml;
   document.title = hot.length ? ("("+hot.length+") The Desk") : "The Desk";
+  renderBBCrosses(railSyms);
+}
+// Band-cross panel (added 2026-08-21, Zach's ask: "alert/flag if a stock
+// crosses" a Bollinger Band). Unlike MOVERS above, this box HIDES entirely
+// when nothing has crossed — a band cross is a genuinely occasional event,
+// not a daily reading, so an empty "none yet" box every day would be
+// clutter the MOVERS box's always-present "none yet" isn't. First-ever
+// client-side alerting mechanism in this file; see TIPS.ta_bb for what a
+// cross does and doesn't mean.
+function bbDistPct(bb){
+  var width = (bb.upper!=null && bb.lower!=null) ? (bb.upper-bb.lower) : null;
+  if(!width) return 0;
+  if(bb.side==="over") return (bb.price-bb.upper)/width;
+  if(bb.side==="under") return (bb.lower-bb.price)/width;
+  return 0;
+}
+function renderBBCrosses(syms){
+  var el = document.getElementById("bbcrosses");
+  if(!el) return;
+  if((typeof tvPollFailed !== "undefined") && tvPollFailed){ el.hidden = true; return; }
+  var rows = [];
+  syms.forEach(function(s){
+    var bb = bollingerOf(s);
+    if(bb && bb.side && bb.side!=="in") rows.push({sym:s, bb:bb});
+  });
+  if(!rows.length){ el.hidden = true; el.innerHTML=""; return; }
+  // A fresh cross (the actual alert moment) before an already-settled one;
+  // within each group, furthest outside the band first.
+  rows.sort(function(a,b){
+    if(a.bb.crossed !== b.bb.crossed) return a.bb.crossed ? -1 : 1;
+    return bbDistPct(b.bb) - bbDistPct(a.bb);
+  });
+  el.hidden = false;
+  el.innerHTML = '<b data-tip="'+esc(TIPS.ta_bb)+'">BAND CROSSES · BOLLINGER(20,2)</b>'
+    + rows.slice(0, MOVERS_CAP).map(function(r){
+        var word = r.bb.side==="over" ? "above upper" : "below lower";
+        // Deliberately ONE color for both directions — a band cross describes
+        // volatility (an outsized move either way), not a bullish or bearish
+        // verdict, so painting "above" green and "below" red would claim a
+        // directional read this indicator does not support.
+        return '<span style="color:var(--bb)">'+esc(r.sym)+' '+word+'</span>'
+          + (r.bb.crossed ? ' <span class="pill h">NEW</span>' : '');
+      }).join(" · ")
+    + (rows.length > MOVERS_CAP
+        ? (' <span class="m">+'+(rows.length-MOVERS_CAP)+' more</span>') : "")
+    + '<div class="note" style="margin-top:6px">price vs. a 20-day mean ± 2 standard deviations, from settled daily '
+      + 'closes. NEW = crossed since yesterday’s close; the rest were already outside. Not a signal.</div>';
 }
 
 /* =================== ticker search (TV scanner name-match, CORS-open) =================== */
@@ -3708,6 +3824,19 @@ function wireBoardCut(el, key, rerender){
 // "since flagged" — spot_at_alert has shipped on every card since the history
 // enrichment landed and was rendered nowhere. It answers the one question a
 // sorted flow list can't: has the move this flow pointed at already happened?
+// Unusual options activity badge (added 2026-08-21) — shared by both boards
+// and the per-ticker flow tab, so the pill and its color never drift between
+// the three places this reads. Only rendered when the fetcher actually
+// flagged the ticker (c.unusual_activity) — a quiet, normal-volume day shows
+// nothing here rather than a "1.0×" badge nobody asked to see.
+var ACTIVITY_TAG_CLS = {BULLISH:"b", BEARISH:"s", HEDGING:"h", MIXED:"n"};
+function activityBadgeHTML(c){
+  if(!c || !c.unusual_activity || !c.activity_tag) return "";
+  var cls = ACTIVITY_TAG_CLS[c.activity_tag] || "n";
+  var rv = num(c.opt_rvol);
+  return ' <span class="pill '+cls+'" data-tip="'+esc(TIPS["tip-unusual-activity"])+'">'
+    + (rv!=null?rv.toFixed(1)+"× ":"")+esc(c.activity_tag)+'</span>';
+}
 function chaseChipHTML(c, px){
   var sa = num(c.spot_at_alert);
   if(sa===null || sa===0 || px==null) return "";
@@ -3798,7 +3927,7 @@ function renderConv(data){
     return '<tr class="rw" data-sym="'+esc(c.ticker||"")+'">'
       +'<td><span class="sy2">'+esc(c.ticker||"?")+'</span> <span class="pill '+(c.direction==="BULL"?"b":"s")+'">'+(c.direction==="BULL"?"BULL":"BEAR")+'</span>'
       +(c.firing?' <span class="pill f" data-tip="'+esc(TIPS["tip-firing-badge"])+'">FIRING</span>':'')
-      + eHtml + chaseChipHTML(c, px)
+      + activityBadgeHTML(c) + eHtml + chaseChipHTML(c, px)
       +'<span class="nm">'+(px!=null?px.toFixed(2):"—")+' · <span class="'+sign1(ch)+'"'
       + (chTip?(' data-tip="'+esc(chTip)+'"'):'')+'>'+fm1(ch)+'%</span>'
       + sessTagHTML(dq.tag) + (dq.ext?extChipHTML(dq.ext):"") + '</span></td>'
@@ -3858,7 +3987,7 @@ function renderSwing(data){
       ? ' <span class="pill f" data-tip="An earnings report lands '+(ed!=null?("in "+Math.round(ed)+" day"+(Math.round(ed)===1?"":"s")+" "):"")+'inside this contract’s life. Earnings gap straight through option positions — a flow signal that spans a report is a bet on the report.">E'+(ed!=null?(" "+Math.round(ed)+"d"):"")+'</span>' : "";
     return '<tr class="rw" data-sym="'+esc(c.ticker||"")+'">'
       +'<td><span class="sy2">'+esc(c.ticker||"?")+'</span> <span class="pill '+(c.direction==="BULL"?"b":"s")+'">'+(c.direction==="BULL"?"BULL":"BEAR")+'</span>'
-      + eHtml + chaseChipHTML(c, px) + '</td>'
+      + activityBadgeHTML(c) + eHtml + chaseChipHTML(c, px) + '</td>'
       +'<td><b>'+(num(c.score)!=null?Math.round(c.score):"—")+'</b></td>'
       +'<td>'+(persist!=null?Math.round(persist):"—")+'/'+(persistMax!=null?Math.round(persistMax):"5")+'</td>'
       +'<td class="'+sign(c.flow_5d)+'">'+f5Str+'</td>'
@@ -6797,11 +6926,11 @@ var TA_SR_TOL = 0.02;      // fallback level-cluster half-width; volatility-scal
 var TA_MIN_ANCHOR_POS = 0.45;  // the newer anchor must sit in the recent 55% of the window
 var TA_MAX_DIST = 0.12;        // a line further than this from price describes nothing (see taMaxDist)
 var TA_SR_MAX_DIST = 0.20;     // same idea for horizontal levels
-function taDefaults(){ return {trend:true, sr:true}; }
+function taDefaults(){ return {trend:true, sr:true, bb:false}; }
 function taPrefs(){
   try{
     var v = JSON.parse(read("desk.stage.ta")||"null");
-    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr};
+    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr, bb:!!v.bb};
   }catch(e){}
   return taDefaults();
 }
@@ -7217,7 +7346,7 @@ function stageKeepView(fn){
 }
 function stageTAClear(){
   var S = STAGE.s;
-  ["tRes","tResProj","tSup","tSupProj"].forEach(function(k){
+  ["tRes","tResProj","tSup","tSupProj","bbMid","bbUpper","bbLower"].forEach(function(k){
     if(S[k]){ try{ STAGE.chart.removeSeries(S[k]); }catch(e){} S[k]=null; }
   });
   (STAGE.srLines||[]).forEach(function(h){ try{ STAGE.s.candle.removePriceLine(h); }catch(e){} });
@@ -7375,6 +7504,35 @@ function stageTA(){
         title:"S/R "+fmtpx(l.price)+" \u00d7"+l.touches }));
     });
   }
+  if(prefs.bb){
+    // Computed on the FULL series (rows), same as the always-on SMA20/50/200
+    // lines — not the windowed `win` the trend/S-R fitters use, since a band
+    // that silently changes shape when you switch to a shorter window is not
+    // what a trader expects from Bollinger Bands.
+    var closesBB = rows.map(function(r){ return num(r[3]); });
+    var maBB = rollMA(closesBB, BB_PERIOD), sdBB = rollStd(closesBB, maBB, BB_PERIOD);
+    var midData=[], upData=[], loData=[];
+    for(var bi=0; bi<n; bi++){
+      if(maBB[bi]==null || sdBB[bi]==null) continue;
+      midData.push({time:times[bi], value:maBB[bi]});
+      upData.push({time:times[bi], value:maBB[bi]+BB_MULT*sdBB[bi]});
+      loData.push({time:times[bi], value:maBB[bi]-BB_MULT*sdBB[bi]});
+    }
+    if(midData.length){
+      var bbLineOpts = {color:cssVar("--bb"), lineWidth:1, priceLineVisible:false,
+        crosshairMarkerVisible:false, lastValueVisible:false, autoscaleInfoProvider:function(){ return null; }};
+      STAGE.s.bbMid = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({lineStyle:LWC.LineStyle.Dotted, title:"BB mid"}, bbLineOpts));
+      STAGE.s.bbUpper = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({title:"BB upper"}, bbLineOpts));
+      STAGE.s.bbLower = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({title:"BB lower"}, bbLineOpts));
+      STAGE.s.bbMid.setData(midData);
+      STAGE.s.bbUpper.setData(upData);
+      STAGE.s.bbLower.setData(loData);
+      var lastUp = upData[upData.length-1].value, lastLo = loData[loData.length-1].value;
+      var lastClose2 = num(rows[n-1][3]);
+      summary.bb = {mid:midData[midData.length-1].value, upper:lastUp, lower:lastLo,
+                    side: bbSide(lastClose2, lastUp, lastLo)};
+    }
+  }
   STAGE.taSummary = summary;
   stageTALegend(prefs);
 }
@@ -7404,6 +7562,11 @@ function stageTAPoke(){
     STAGE.taGraded = STAGE.taGraded || {};
     STAGE.taGraded[cfg[0]] = g.status;
   });
+  // The bands themselves don't move between polls (computed on settled
+  // bars); only where the live close sits against them can change.
+  if(STAGE.taSummary && STAGE.taSummary.bb){
+    STAGE.taSummary.bb.side = bbSide(lastC, STAGE.taSummary.bb.upper, STAGE.taSummary.bb.lower);
+  }
   // Redraw the caption every poke — it carries the trend-line verdict, which
   // is what the re-grade above just changed.
   if(STAGE.taSummary) stageTALegend(taPrefs());
@@ -7585,7 +7748,22 @@ function stageTALegend(prefs){
     }
     else empty.push("no horizontal level with 2+ touches near price");
   }
-  if(!prefs.trend && !prefs.sr){ el.innerHTML = ""; return; }
+  if(prefs.bb){
+    if(sm && sm.bb){
+      var bbWord = sm.bb.side==="over" ? "above the upper band"
+                 : sm.bb.side==="under" ? "below the lower band"
+                 : sm.bb.side==="in" ? "inside the bands" : null;
+      if(bbWord){
+        on.push('<span class="m">Bollinger(20,2): </span>'
+          + '<span style="color:var(--bb)">'+esc(bbWord)+'</span>'
+          + (sm.bb.upper!=null && sm.bb.lower!=null
+              ? (' <span class="m">('+fmtpx(sm.bb.lower)+'–'+fmtpx(sm.bb.upper)+')</span>') : ''));
+      }
+    } else {
+      empty.push("not enough bars for a 20-period Bollinger band on this window");
+    }
+  }
+  if(!prefs.trend && !prefs.sr && !prefs.bb){ el.innerHTML = ""; return; }
   var tail = ' <span class="m">(fit on this window — display only, never a signal)</span>';
   if(on.length){
     el.innerHTML = 'auto-TA: '+on.join(" · ")+(empty.length ? (' <span class="m">· '+esc(empty.join("; "))+'</span>') : "")+tail;
@@ -8273,7 +8451,7 @@ function stageBar(){
   var prefs = taPrefs();
   // EMA and RSI overlays were removed 2026-08-21 (Zach's call): only trend
   // lines and horizontal S/R remain as toggles.
-  var taBtns = [["trend","trend",TIPS.ta_trend],["sr","S/R",TIPS.ta_sr]]
+  var taBtns = [["trend","trend",TIPS.ta_trend],["sr","S/R",TIPS.ta_sr],["bb","BB",TIPS.ta_bb]]
     .map(function(t){ return '<button data-ta="'+t[0]+'" aria-pressed="'+!!prefs[t[0]]+'" data-tip="'+esc(t[2])+'">'+t[1]+'</button>'; }).join("");
   el.innerHTML = '<div class="seg" role="group" aria-label="Chart interval">'+ivBtns+'</div>'
     + '<div class="seg" role="group" aria-label="Chart range">'+tfBtns+'</div>'
@@ -8759,6 +8937,18 @@ function stageTabsRender(){
     b.addEventListener("click", function(){ STAGE.tab = b.dataset.tab; stageTabsRender(); renderStageTab(); });
   });
 }
+// Full-detail row for the per-ticker flow tab — unlike activityBadgeHTML
+// (board rows, only shown when flagged), this always shows the reading so
+// the detail page can say "1.1x, nothing unusual" rather than going silent.
+function activityKvRowHTML(c){
+  var rv = num(c.opt_rvol);
+  var valHtml = c.vol_collecting
+    ? '<span class="m" data-tip="Needs 20 sessions of this ticker’s own options-volume history and is still collecting.">collecting history</span>'
+    : (rv!=null
+        ? (rv.toFixed(1)+'× normal'+(c.activity_tag?(' · '+(c.unusual_activity?'<b class="'+(ACTIVITY_TAG_CLS[c.activity_tag]||"n")+'">':'<span class="m">')+esc(c.activity_tag)+(c.unusual_activity?'</b>':'</span>')):''))
+        : '<span class="m">no baseline yet</span>');
+  return '<div class="kvrow"><span data-tip="'+esc(TIPS["tip-unusual-activity"])+'">Options activity vs. normal</span><b>'+valHtml+'</b></div>';
+}
 function stageFlowSecHTML(sym){
   // With no snapshot the boards have not loaded, so "scored onto neither flow
   // board this cycle: its options activity was ordinary" is a claim the page
@@ -8779,11 +8969,13 @@ function stageFlowSecHTML(sym){
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-flowpct"])+'">Flow %</span></span><b>'+flowPctHTML(num(conv.flow_pct), conv.flow_side, num(conv.flow_pct_basis))+'</b></div>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-cpratio"])+'">C/P by contract count</span></span><b>'+(num(conv.cp_ratio)!=null?conv.cp_ratio.toFixed(2)+"×":"—")+'</b></div>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-tilt"])+'">Aggressor tilt</span></span><b>'+esc(tiltStr)+'</b></div>'
+    + activityKvRowHTML(conv)
     + '<div class="kvrow"><span>Loudest contract</span><b style="font-size:10.5px">'+contractLine(conv.popular_contract)+'</b></div></div>') : "";
   var swSec = sw ? ('<div class="dsec"><h3>Swing board</h3>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-persist"])+'">Persistence</span></span><b>'+(num(sw.persist)!=null?Math.round(sw.persist):"—")+'/'+(num(sw.persist_max)!=null?Math.round(sw.persist_max):"5")+'</b></div>'
     + '<div class="kvrow"><span>5-day flow</span><b class="'+sign(sw.flow_5d)+'">'+fmM(sw.flow_5d)+'</b></div>'
     + '<div class="kvrow"><span><span data-tip="'+esc(TIPS["tip-oiconfirm"])+'">OI-confirm</span></span><b>'+(sw.oi_confirm||"—")+'</b></div>'
+    + activityKvRowHTML(sw)
     + '<div class="kvrow"><span>Suggested</span><b style="font-size:10.5px">'+suggestedContractLine(sw.suggested_contract, num(sw.spot))+'</b></div></div>') : "";
   if(!convSec && !swSec){
     // THREE states, not two. The middle one is a TRACK_ONLY name: a full
