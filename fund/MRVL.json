@@ -1,0 +1,339 @@
+{
+  "built": "2026-08-21",
+  "sym": "MRVL",
+  "short_pct_float": 4.105,
+  "pe_forward": 52.06,
+  "earnings": [
+    {
+      "period": "Q2 2026",
+      "date": "2025-07-31",
+      "report_date": "2025-08-28",
+      "session": "afterhours",
+      "eps": 0.67,
+      "eps_est": 0.67343,
+      "eps_surprise_pct": -0.51,
+      "rev": 2006100000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q3 2026",
+      "date": "2025-10-31",
+      "report_date": "2025-12-02",
+      "session": "afterhours",
+      "eps": 0.76,
+      "eps_est": 0.73778,
+      "eps_surprise_pct": 3.01,
+      "rev": 2074500000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q4 2026",
+      "date": "2026-01-31",
+      "report_date": "2026-03-05",
+      "session": "afterhours",
+      "eps": 0.8,
+      "eps_est": 0.79165,
+      "eps_surprise_pct": 1.05,
+      "rev": 2218700000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q1 2027",
+      "date": "2026-04-30",
+      "report_date": "2026-05-27",
+      "session": "afterhours",
+      "eps": 0.8,
+      "eps_est": 0.79495,
+      "eps_surprise_pct": 0.64,
+      "rev": 2417800000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    }
+  ],
+  "next_earnings": {
+    "date": "2026-08-27",
+    "session": "afterhours",
+    "eps_est": 0.92894,
+    "rev_est": 2706834300.0
+  },
+  "quarterly": {
+    "periods": [
+      "Q2 24",
+      "Q3 24",
+      "Q4 24",
+      "Q1 25",
+      "Q2 25",
+      "Q3 25",
+      "Q4 25",
+      "Q1 26",
+      "Q2 26",
+      "Q3 26",
+      "Q4 26",
+      "Q1 27"
+    ],
+    "revenue": [
+      1340900000,
+      1418600000,
+      1426500000,
+      1160900000,
+      1272900000,
+      1516100000,
+      1817400000,
+      1895300000,
+      2006100000,
+      2074500000,
+      2218700000,
+      2417800000
+    ],
+    "eps": [
+      -0.241026,
+      -0.19047,
+      -0.454145,
+      -0.25,
+      -0.223287,
+      -0.781217,
+      0.226235,
+      0.2,
+      0.22,
+      2.2,
+      0.466643,
+      0.039115
+    ],
+    "ni": [
+      -207500000,
+      -164300000,
+      -392700000,
+      -215600000,
+      -193300000,
+      -676300000,
+      200200000,
+      177900000,
+      194800000,
+      1901300000,
+      396100000,
+      34500000
+    ],
+    "fcf": [
+      1400000,
+      448600000,
+      475600000,
+      233000000,
+      258200000,
+      461299999.99999994,
+      444100000,
+      214100000,
+      414100000,
+      508800000,
+      259400000,
+      483100000
+    ],
+    "opinc": [
+      -163700000,
+      -142900000,
+      -7500000,
+      -148200000,
+      -96400000,
+      12300000,
+      223800000,
+      258300000,
+      298800000,
+      367900000,
+      413900000,
+      350100000
+    ]
+  },
+  "annual": {
+    "periods": [
+      "FY23",
+      "FY24",
+      "FY25",
+      "FY26"
+    ],
+    "revenue": [
+      5919600000,
+      5507700000,
+      5767300000,
+      8194600000
+    ],
+    "eps": [
+      -0.19946,
+      -1.08564,
+      -1.02827,
+      3.08664
+    ],
+    "ni": [
+      -163500000,
+      -933400000,
+      -885000000,
+      2670100000
+    ],
+    "fcf": [
+      1082600000,
+      1034200000,
+      1396600000.0,
+      1396400000
+    ],
+    "opinc": [
+      366600000,
+      -436600000,
+      -8500000,
+      1338900000
+    ]
+  },
+  "ratings": [
+    {
+      "date": "2026-05-26",
+      "ts": 1779814450,
+      "dir": "up",
+      "firm": "HSBC",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 300.0,
+      "pt_prior": 85.0
+    },
+    {
+      "date": "2026-04-09",
+      "ts": 1775736682,
+      "dir": "up",
+      "firm": "Barclays",
+      "from": "Equal-Weight",
+      "to": "Overweight",
+      "pt": 150.0,
+      "pt_prior": 105.0
+    },
+    {
+      "date": "2026-03-06",
+      "ts": 1772804386,
+      "dir": "up",
+      "firm": "KGI Securities",
+      "from": "Neutral",
+      "to": "Outperform",
+      "pt": 110.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2026-03-06",
+      "ts": 1772797983,
+      "dir": "up",
+      "firm": "Benchmark",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 130.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2026-03-06",
+      "ts": 1772797063,
+      "dir": "up",
+      "firm": "B of A Securities",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 110.0,
+      "pt_prior": 90.0
+    },
+    {
+      "date": "2026-01-05",
+      "ts": 1767614230,
+      "dir": "up",
+      "firm": "Melius Research",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 135.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2025-12-08",
+      "ts": 1765193477,
+      "dir": "down",
+      "firm": "Benchmark",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": null,
+      "pt_prior": null
+    },
+    {
+      "date": "2025-10-20",
+      "ts": 1760958425,
+      "dir": "down",
+      "firm": "Barclays",
+      "from": "Overweight",
+      "to": "Equal-Weight",
+      "pt": 80.0,
+      "pt_prior": 80.0
+    },
+    {
+      "date": "2025-10-01",
+      "ts": 1759340719,
+      "dir": "down",
+      "firm": "TD Cowen",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": 85.0,
+      "pt_prior": 90.0
+    },
+    {
+      "date": "2025-08-29",
+      "ts": 1756469740,
+      "dir": "down",
+      "firm": "B of A Securities",
+      "from": "Buy",
+      "to": "Neutral",
+      "pt": 78.0,
+      "pt_prior": 90.0
+    },
+    {
+      "date": "2025-05-22",
+      "ts": 1747932958,
+      "dir": "down",
+      "firm": "Melius Research",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": 66.0,
+      "pt_prior": 66.0
+    },
+    {
+      "date": "2025-05-07",
+      "ts": 1746625980,
+      "dir": "down",
+      "firm": "Cantor Fitzgerald",
+      "from": "Overweight",
+      "to": "Neutral",
+      "pt": 60.0,
+      "pt_prior": 125.0
+    },
+    {
+      "date": "2025-03-06",
+      "ts": 1741272549,
+      "dir": "up",
+      "firm": "Loop Capital",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 110.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2024-03-08",
+      "ts": 1709888989,
+      "dir": "up",
+      "firm": "Summit Insights Group",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": null,
+      "pt_prior": null
+    },
+    {
+      "date": "2023-08-18",
+      "ts": 1692350566,
+      "dir": "up",
+      "firm": "B. Riley Securities",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 75.0,
+      "pt_prior": 60.0
+    }
+  ],
+  "currency": "USD"
+}

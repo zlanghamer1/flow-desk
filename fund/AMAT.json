@@ -1,0 +1,409 @@
+{
+  "built": "2026-08-21",
+  "sym": "AMAT",
+  "short_pct_float": 1.799,
+  "pe_forward": 28.129,
+  "earnings": [
+    {
+      "period": "Q4 2025",
+      "date": "2025-10-31",
+      "report_date": "2025-11-13",
+      "session": "afterhours",
+      "eps": 2.17,
+      "eps_est": 2.09366,
+      "eps_surprise_pct": 3.65,
+      "rev": 6800000000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q1 2026",
+      "date": "2026-01-31",
+      "report_date": "2026-02-12",
+      "session": "afterhours",
+      "eps": 2.38,
+      "eps_est": 2.206,
+      "eps_surprise_pct": 7.89,
+      "rev": 7012000000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q2 2026",
+      "date": "2026-04-30",
+      "report_date": "2026-05-14",
+      "session": "afterhours",
+      "eps": 2.86,
+      "eps_est": 2.68545,
+      "eps_surprise_pct": 6.5,
+      "rev": 7910000000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q3 2026",
+      "date": "2026-07-31",
+      "report_date": "2026-08-13",
+      "session": "afterhours",
+      "eps": 3.5,
+      "eps_est": 3.3944,
+      "eps_surprise_pct": 3.11,
+      "rev": 9115000000,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    }
+  ],
+  "next_earnings": {
+    "date": "2026-11-12",
+    "session": "afterhours",
+    "eps_est": 4.06075,
+    "rev_est": 10306145750.0
+  },
+  "quarterly": {
+    "periods": [
+      "Q4 23",
+      "Q1 24",
+      "Q2 24",
+      "Q3 24",
+      "Q4 24",
+      "Q1 25",
+      "Q2 25",
+      "Q3 25",
+      "Q4 25",
+      "Q1 26",
+      "Q2 26",
+      "Q3 26"
+    ],
+    "revenue": [
+      6723000000,
+      6707000000,
+      6646000000,
+      6778000000,
+      7045000000,
+      7166000000,
+      7100000000,
+      7302000000,
+      6800000000,
+      7012000000,
+      7910000000,
+      9115000000
+    ],
+    "eps": [
+      2.381674,
+      2.41,
+      2.06,
+      2.05,
+      2.09727,
+      1.45,
+      2.63,
+      2.22,
+      2.376052,
+      2.54,
+      3.51,
+      3.17
+    ],
+    "ni": [
+      2004000000,
+      2019000000,
+      1722000000,
+      1705000000,
+      1731000000,
+      1185000000,
+      2137000000,
+      1779000000,
+      1897000000,
+      2026000000,
+      2806000000,
+      2538000000
+    ],
+    "fcf": [
+      1246000000,
+      2096000000,
+      1135000000,
+      2088000000,
+      2168000000,
+      544000000,
+      1061000000,
+      2050000000,
+      2043000000,
+      1040000000,
+      210000000,
+      2330000000
+    ],
+    "opinc": [
+      1971000000,
+      1967000000,
+      1912000000,
+      1942000000,
+      2046000000,
+      2175000000,
+      2169000000,
+      2233000000,
+      1934000000,
+      2096000000,
+      2523000000,
+      3075000000
+    ]
+  },
+  "annual": {
+    "periods": [
+      "FY22",
+      "FY23",
+      "FY24",
+      "FY25"
+    ],
+    "revenue": [
+      25785000000,
+      26517000000,
+      27176000000,
+      28368000000
+    ],
+    "eps": [
+      7.43972,
+      8.11167,
+      8.61727,
+      8.67605
+    ],
+    "ni": [
+      6525000000,
+      6856000000,
+      7177000000,
+      6998000000
+    ],
+    "fcf": [
+      4612000000,
+      7594000000,
+      7487000000,
+      5698000000
+    ],
+    "opinc": [
+      7784000000,
+      7654000000,
+      7867000000,
+      8511000000
+    ]
+  },
+  "ratings": [
+    {
+      "date": "2026-05-18",
+      "ts": 1779102043,
+      "dir": "down",
+      "firm": "Morgan Stanley",
+      "from": "Overweight",
+      "to": "Equal-Weight",
+      "pt": 502.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2026-01-28",
+      "ts": 1769623147,
+      "dir": "up",
+      "firm": "Mizuho",
+      "from": "Neutral",
+      "to": "Outperform",
+      "pt": 370.0,
+      "pt_prior": 275.0
+    },
+    {
+      "date": "2026-01-23",
+      "ts": 1769165819,
+      "dir": "up",
+      "firm": "Deutsche Bank",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 390.0,
+      "pt_prior": 275.0
+    },
+    {
+      "date": "2026-01-15",
+      "ts": 1768481200,
+      "dir": "up",
+      "firm": "Barclays",
+      "from": "Equal-Weight",
+      "to": "Overweight",
+      "pt": 360.0,
+      "pt_prior": 250.0
+    },
+    {
+      "date": "2026-01-12",
+      "ts": 1768224259,
+      "dir": "up",
+      "firm": "Susquehanna",
+      "from": "Neutral",
+      "to": "Positive",
+      "pt": 400.0,
+      "pt_prior": 180.0
+    },
+    {
+      "date": "2025-11-25",
+      "ts": 1764080229,
+      "dir": "up",
+      "firm": "UBS",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 285.0,
+      "pt_prior": 250.0
+    },
+    {
+      "date": "2025-11-14",
+      "ts": 1763123880,
+      "dir": "down",
+      "firm": "Craig-Hallum",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": 190.0,
+      "pt_prior": 190.0
+    },
+    {
+      "date": "2025-10-13",
+      "ts": 1760379764,
+      "dir": "up",
+      "firm": "B of A Securities",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 250.0,
+      "pt_prior": 180.0
+    },
+    {
+      "date": "2025-09-22",
+      "ts": 1758549790,
+      "dir": "up",
+      "firm": "Morgan Stanley",
+      "from": "Equal-Weight",
+      "to": "Overweight",
+      "pt": 209.0,
+      "pt_prior": 172.0
+    },
+    {
+      "date": "2025-09-12",
+      "ts": 1757668446,
+      "dir": "down",
+      "firm": "Mizuho",
+      "from": "Outperform",
+      "to": "Neutral",
+      "pt": 175.0,
+      "pt_prior": 200.0
+    },
+    {
+      "date": "2025-08-20",
+      "ts": 1755688870,
+      "dir": "down",
+      "firm": "Daiwa Capital",
+      "from": "Outperform",
+      "to": "Neutral",
+      "pt": 170.0,
+      "pt_prior": 185.0
+    },
+    {
+      "date": "2025-08-15",
+      "ts": 1755256328,
+      "dir": "down",
+      "firm": "B of A Securities",
+      "from": "Buy",
+      "to": "Neutral",
+      "pt": 180.0,
+      "pt_prior": 190.0
+    },
+    {
+      "date": "2025-07-07",
+      "ts": 1751922590,
+      "dir": "down",
+      "firm": "Redburn Atlantic",
+      "from": "Buy",
+      "to": "Neutral",
+      "pt": 200.0,
+      "pt_prior": 225.0
+    },
+    {
+      "date": "2025-06-06",
+      "ts": 1749227843,
+      "dir": "up",
+      "firm": "Morgan Stanley",
+      "from": "Underweight",
+      "to": "Equal-Weight",
+      "pt": 158.0,
+      "pt_prior": 162.0
+    },
+    {
+      "date": "2025-03-28",
+      "ts": 1743161562,
+      "dir": "up",
+      "firm": "Jefferies",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 195.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2025-01-17",
+      "ts": 1737128109,
+      "dir": "up",
+      "firm": "Keybanc",
+      "from": "Sector Weight",
+      "to": "Overweight",
+      "pt": 225.0,
+      "pt_prior": 225.0
+    },
+    {
+      "date": "2024-12-05",
+      "ts": 1733400972,
+      "dir": "down",
+      "firm": "Morgan Stanley",
+      "from": "Equal-Weight",
+      "to": "Underweight",
+      "pt": 164.0,
+      "pt_prior": 179.0
+    },
+    {
+      "date": "2024-06-05",
+      "ts": 1717596334,
+      "dir": "up",
+      "firm": "Barclays",
+      "from": "Underweight",
+      "to": "Equal-Weight",
+      "pt": 225.0,
+      "pt_prior": 165.0
+    },
+    {
+      "date": "2024-05-13",
+      "ts": 1715601729,
+      "dir": "down",
+      "firm": "Jefferies",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": 210.0,
+      "pt_prior": 215.0
+    },
+    {
+      "date": "2024-04-08",
+      "ts": 1712594448,
+      "dir": "up",
+      "firm": "Cantor Fitzgerald",
+      "from": "Neutral",
+      "to": "Overweight",
+      "pt": 260.0,
+      "pt_prior": 220.0
+    },
+    {
+      "date": "2023-11-22",
+      "ts": 1700648925,
+      "dir": "up",
+      "firm": "Redburn Atlantic",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 175.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2023-10-13",
+      "ts": 1697191358,
+      "dir": "up",
+      "firm": "Needham",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 180.0,
+      "pt_prior": null
+    }
+  ],
+  "currency": "USD"
+}

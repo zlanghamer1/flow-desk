@@ -1,0 +1,349 @@
+{
+  "built": "2026-08-21",
+  "sym": "XOM",
+  "short_pct_float": 1.032,
+  "pe_forward": 13.763,
+  "earnings": [
+    {
+      "period": "Q3 2025",
+      "date": "2025-09-30",
+      "report_date": "2025-10-31",
+      "session": "premarket",
+      "eps": 1.88,
+      "eps_est": 1.82466,
+      "eps_surprise_pct": 3.03,
+      "rev": 83331000000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q4 2025",
+      "date": "2025-12-31",
+      "report_date": "2026-01-30",
+      "session": "premarket",
+      "eps": 1.71,
+      "eps_est": 1.69102,
+      "eps_surprise_pct": 1.12,
+      "rev": 80039000000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q1 2026",
+      "date": "2026-03-31",
+      "report_date": "2026-05-01",
+      "session": "premarket",
+      "eps": 1.16,
+      "eps_est": 1.00743,
+      "eps_surprise_pct": 15.14,
+      "rev": 83161000000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q2 2026",
+      "date": "2026-06-30",
+      "report_date": "2026-07-31",
+      "session": "premarket",
+      "eps": 4.11,
+      "eps_est": 3.62887,
+      "eps_surprise_pct": 13.26,
+      "rev": 114529000000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    }
+  ],
+  "next_earnings": {
+    "date": "2026-10-30",
+    "session": "premarket",
+    "eps_est": 3.58576,
+    "rev_est": 97097176380.0
+  },
+  "quarterly": {
+    "periods": [
+      "Q3 23",
+      "Q4 23",
+      "Q1 24",
+      "Q2 24",
+      "Q3 24",
+      "Q4 24",
+      "Q1 25",
+      "Q2 25",
+      "Q3 25",
+      "Q4 25",
+      "Q1 26",
+      "Q2 26"
+    ],
+    "revenue": [
+      88570000000,
+      81688000000,
+      80411000000,
+      89986000000,
+      87792000000,
+      81058000000,
+      81058000000,
+      79477000000,
+      83331000000,
+      80039000000,
+      83161000000,
+      114529000000
+    ],
+    "eps": [
+      2.25,
+      1.909117,
+      2.056028,
+      2.14,
+      1.92,
+      1.72,
+      1.76,
+      1.635188,
+      1.76,
+      1.53,
+      0.995478,
+      3.479875
+    ],
+    "ni": [
+      9070000000,
+      7630000000,
+      8220000000,
+      9240000000,
+      8610000000,
+      7610000000,
+      7713000000,
+      7082000000,
+      7548000000,
+      6501000000,
+      4183000000,
+      14525000000
+    ],
+    "fcf": [
+      11043000000,
+      7454000000,
+      9590000000,
+      4325000000,
+      11409000000,
+      5392000000,
+      7055000000,
+      5267000000,
+      6061000000,
+      5229000000,
+      2235000000,
+      17028000000
+    ],
+    "opinc": [
+      11678000000,
+      11541000000,
+      9918000000,
+      10862000000,
+      11009000000,
+      8350000000,
+      9733000000,
+      8821000000,
+      9214000000,
+      7625000000,
+      5285000000,
+      18163000000
+    ]
+  },
+  "annual": {
+    "periods": [
+      "FY22",
+      "FY23",
+      "FY24",
+      "FY25"
+    ],
+    "revenue": [
+      401183000000,
+      334697000000,
+      339247000000,
+      323905000000
+    ],
+    "eps": [
+      13.25596,
+      8.88011,
+      7.83603,
+      6.68519
+    ],
+    "ni": [
+      55740000000,
+      36010000000,
+      33680000000,
+      28844000000
+    ],
+    "fcf": [
+      58390000000,
+      33450000000,
+      30716000000,
+      23612000000
+    ],
+    "opinc": [
+      66054000000,
+      47047000000,
+      40139000000,
+      35393000000
+    ]
+  },
+  "ratings": [
+    {
+      "date": "2026-08-04",
+      "ts": 1785860387,
+      "dir": "up",
+      "firm": "Freedom Broker",
+      "from": "Sell",
+      "to": "Hold",
+      "pt": 142.0,
+      "pt_prior": 130.0
+    },
+    {
+      "date": "2026-07-28",
+      "ts": 1785261280,
+      "dir": "down",
+      "firm": "B of A Securities",
+      "from": "Buy",
+      "to": "Neutral",
+      "pt": 158.0,
+      "pt_prior": 154.0
+    },
+    {
+      "date": "2026-06-16",
+      "ts": 1781601028,
+      "dir": "up",
+      "firm": "B of A Securities",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 154.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2026-04-21",
+      "ts": 1776782398,
+      "dir": "down",
+      "firm": "Wolfe Research",
+      "from": "Outperform",
+      "to": "Peer Perform",
+      "pt": null,
+      "pt_prior": null
+    },
+    {
+      "date": "2026-04-17",
+      "ts": 1776448777,
+      "dir": "up",
+      "firm": "BNP Paribas",
+      "from": "Underperform",
+      "to": "Neutral",
+      "pt": 165.0,
+      "pt_prior": 125.0
+    },
+    {
+      "date": "2026-01-06",
+      "ts": 1767705104,
+      "dir": "down",
+      "firm": "Freedom Broker",
+      "from": "Hold",
+      "to": "Sell",
+      "pt": 123.0,
+      "pt_prior": 123.0
+    },
+    {
+      "date": "2024-10-10",
+      "ts": 1728564748,
+      "dir": "up",
+      "firm": "Scotiabank",
+      "from": "Sector Perform",
+      "to": "Sector Outperform",
+      "pt": 145.0,
+      "pt_prior": 129.0
+    },
+    {
+      "date": "2024-10-09",
+      "ts": 1728496508,
+      "dir": "down",
+      "firm": "Exane BNP Paribas",
+      "from": "Neutral",
+      "to": "Underperform",
+      "pt": 105.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2024-09-24",
+      "ts": 1727173227,
+      "dir": "down",
+      "firm": "Redburn Atlantic",
+      "from": "Buy",
+      "to": "Neutral",
+      "pt": 120.0,
+      "pt_prior": 119.0
+    },
+    {
+      "date": "2024-06-07",
+      "ts": 1717756971,
+      "dir": "down",
+      "firm": "Truist Securities",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": 124.0,
+      "pt_prior": 146.0
+    },
+    {
+      "date": "2024-01-23",
+      "ts": 1706007666,
+      "dir": "up",
+      "firm": "TD Cowen",
+      "from": "Market Perform",
+      "to": "Outperform",
+      "pt": 115.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2024-01-09",
+      "ts": 1704795302,
+      "dir": "up",
+      "firm": "Redburn Atlantic",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 119.0,
+      "pt_prior": 116.0
+    },
+    {
+      "date": "2024-01-03",
+      "ts": 1704289236,
+      "dir": "down",
+      "firm": "Mizuho",
+      "from": "Buy",
+      "to": "Neutral",
+      "pt": 117.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2023-12-22",
+      "ts": 1703255148,
+      "dir": "down",
+      "firm": "Erste Group",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": null,
+      "pt_prior": null
+    },
+    {
+      "date": "2023-10-12",
+      "ts": 1697110378,
+      "dir": "up",
+      "firm": "Truist Securities",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 131.0,
+      "pt_prior": 110.0
+    },
+    {
+      "date": "2023-08-31",
+      "ts": 1693473739,
+      "dir": "up",
+      "firm": "Redburn Partners",
+      "from": "Sell",
+      "to": "Neutral",
+      "pt": 105.0,
+      "pt_prior": null
+    }
+  ],
+  "currency": "USD"
+}

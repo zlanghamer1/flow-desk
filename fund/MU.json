@@ -1,0 +1,329 @@
+{
+  "built": "2026-08-21",
+  "sym": "MU",
+  "short_pct_float": 2.656,
+  "pe_forward": 6.777,
+  "earnings": [
+    {
+      "period": "Q4 2025",
+      "date": "2025-08-31",
+      "report_date": "2025-09-23",
+      "session": "afterhours",
+      "eps": 3.03,
+      "eps_est": 2.86023,
+      "eps_surprise_pct": 5.94,
+      "rev": 11315000000,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q1 2026",
+      "date": "2025-11-30",
+      "report_date": "2025-12-17",
+      "session": "afterhours",
+      "eps": 4.78,
+      "eps_est": 3.96409,
+      "eps_surprise_pct": 20.58,
+      "rev": 13643000000,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q2 2026",
+      "date": "2026-02-28",
+      "report_date": "2026-03-18",
+      "session": "afterhours",
+      "eps": 12.2,
+      "eps_est": 9.15866,
+      "eps_surprise_pct": 33.21,
+      "rev": 23860000000,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q3 2026",
+      "date": "2026-05-31",
+      "report_date": "2026-06-24",
+      "session": "afterhours",
+      "eps": 25.11,
+      "eps_est": 20.68603,
+      "eps_surprise_pct": 21.39,
+      "rev": 41456000000,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    }
+  ],
+  "next_earnings": {
+    "date": "2026-09-23",
+    "session": "premarket",
+    "eps_est": 31.29821,
+    "rev_est": 50805073160.0
+  },
+  "quarterly": {
+    "periods": [
+      "Q4 23",
+      "Q1 24",
+      "Q2 24",
+      "Q3 24",
+      "Q4 24",
+      "Q1 25",
+      "Q2 25",
+      "Q3 25",
+      "Q4 25",
+      "Q1 26",
+      "Q2 26",
+      "Q3 26"
+    ],
+    "revenue": [
+      4010000000,
+      4726000000,
+      5824000000,
+      6811000000,
+      7750000000,
+      8709000000,
+      8053000000,
+      9301000000,
+      11315000000,
+      13643000000,
+      23860000000,
+      41456000000
+    ],
+    "eps": [
+      -1.311287,
+      -1.121818,
+      0.71,
+      0.299909,
+      0.793777,
+      1.67,
+      1.41,
+      1.68,
+      2.833333,
+      4.6,
+      12.07,
+      24.67
+    ],
+    "ni": [
+      -1430000000,
+      -1234000000,
+      793000000,
+      332000000,
+      887000000,
+      1870000000,
+      1583000000,
+      1885000000,
+      3201000000,
+      5240000000,
+      13785000000,
+      28243000000
+    ],
+    "fcf": [
+      -1212000000,
+      -395000000,
+      -165000000,
+      396000000,
+      285000000,
+      38000000,
+      -113000000,
+      1671000000,
+      72000000,
+      3022000000,
+      5516000000,
+      17562000000
+    ],
+    "opinc": [
+      456000000,
+      -1128000000,
+      191000000,
+      719000000,
+      1523000000,
+      2174000000,
+      1773000000,
+      2169000000,
+      3693000000,
+      6136000000,
+      16135000000,
+      33318000000
+    ]
+  },
+  "annual": {
+    "periods": [
+      "FY22",
+      "FY23",
+      "FY24",
+      "FY25"
+    ],
+    "revenue": [
+      30758000000,
+      15540000000,
+      25111000000,
+      37378000000
+    ],
+    "eps": [
+      7.74007,
+      -5.34438,
+      0.68187,
+      7.59333
+    ],
+    "ni": [
+      8687000000,
+      -5833000000,
+      778000000,
+      8539000000
+    ],
+    "fcf": [
+      3114000000,
+      -6117000000,
+      121000000,
+      1668000000
+    ],
+    "opinc": [
+      9725000000,
+      -3606000000,
+      1305000000,
+      9809000000
+    ]
+  },
+  "ratings": [
+    {
+      "date": "2026-08-14",
+      "ts": 1786724833,
+      "dir": "up",
+      "firm": "New Street Research",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 1250.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2025-12-18",
+      "ts": 1766058113,
+      "dir": "up",
+      "firm": "B of A Securities",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 300.0,
+      "pt_prior": 250.0
+    },
+    {
+      "date": "2025-10-14",
+      "ts": 1760440053,
+      "dir": "down",
+      "firm": "New Street Research",
+      "from": "Buy",
+      "to": "Neutral",
+      "pt": null,
+      "pt_prior": null
+    },
+    {
+      "date": "2025-10-06",
+      "ts": 1759745394,
+      "dir": "up",
+      "firm": "Morgan Stanley",
+      "from": "Equal-Weight",
+      "to": "Overweight",
+      "pt": 220.0,
+      "pt_prior": 160.0
+    },
+    {
+      "date": "2025-03-26",
+      "ts": 1742988793,
+      "dir": "down",
+      "firm": "China Renaissance",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": 84.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2024-12-19",
+      "ts": 1734617436,
+      "dir": "down",
+      "firm": "B of A Securities",
+      "from": "Buy",
+      "to": "Neutral",
+      "pt": 110.0,
+      "pt_prior": 125.0
+    },
+    {
+      "date": "2024-09-12",
+      "ts": 1726161437,
+      "dir": "down",
+      "firm": "Exane BNP Paribas",
+      "from": "Outperform",
+      "to": "Underperform",
+      "pt": 67.0,
+      "pt_prior": 140.0
+    },
+    {
+      "date": "2024-05-20",
+      "ts": 1716196956,
+      "dir": "up",
+      "firm": "Morgan Stanley",
+      "from": "Underweight",
+      "to": "Equal-Weight",
+      "pt": 130.0,
+      "pt_prior": 98.0
+    },
+    {
+      "date": "2024-05-06",
+      "ts": 1714987458,
+      "dir": "up",
+      "firm": "Baird",
+      "from": "Neutral",
+      "to": "Outperform",
+      "pt": 150.0,
+      "pt_prior": 115.0
+    },
+    {
+      "date": "2024-03-21",
+      "ts": 1711021497,
+      "dir": "up",
+      "firm": "Argus Research",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": null,
+      "pt_prior": null
+    },
+    {
+      "date": "2024-03-07",
+      "ts": 1709805328,
+      "dir": "up",
+      "firm": "Stifel",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 120.0,
+      "pt_prior": 80.0
+    },
+    {
+      "date": "2024-01-04",
+      "ts": 1704363836,
+      "dir": "up",
+      "firm": "Piper Sandler",
+      "from": "Neutral",
+      "to": "Overweight",
+      "pt": 95.0,
+      "pt_prior": 70.0
+    },
+    {
+      "date": "2023-12-15",
+      "ts": 1702642123,
+      "dir": "up",
+      "firm": "B of A Securities",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 95.0,
+      "pt_prior": 77.0
+    },
+    {
+      "date": "2023-09-18",
+      "ts": 1695027238,
+      "dir": "up",
+      "firm": "Deutsche Bank",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 85.0,
+      "pt_prior": 65.0
+    }
+  ],
+  "currency": "USD"
+}

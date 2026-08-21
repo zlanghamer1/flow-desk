@@ -1,0 +1,123 @@
+{
+  "v": 1,
+  "weekly": {
+    "2026-W34": {
+      "MU": {
+        "eps_ntm": 73.232152
+      },
+      "CRWD": {
+        "eps_ntm": 1.231135
+      },
+      "AXTI": {
+        "eps_ntm": 0.856
+      },
+      "TSEM": {
+        "eps_ntm": 3.855746
+      },
+      "SKHY": {
+        "eps_ntm": 24.521931
+      },
+      "SNDK": {
+        "eps_ntm": 210.183629
+      },
+      "AVGO": {
+        "eps_ntm": 11.593573
+      },
+      "NVDA": {
+        "eps_ntm": 9.018274
+      },
+      "MRVL": {
+        "eps_ntm": 4.064331
+      },
+      "LITE": {
+        "eps_ntm": 21.415009
+      },
+      "CAMT": {
+        "eps_ntm": 3.612417
+      },
+      "KLAC": {
+        "eps_ntm": 5.482843
+      },
+      "AMAT": {
+        "eps_ntm": 12.814877
+      },
+      "AEHR": {
+        "eps_ntm": 0.758
+      },
+      "AMKR": {
+        "eps_ntm": 2.524304
+      },
+      "SMCI": {
+        "eps_ntm": 4.338365
+      },
+      "AAOI": {
+        "eps_ntm": 0.74
+      },
+      "GOOGL": {
+        "eps_ntm": 20.571085
+      },
+      "MSFT": {
+        "eps_ntm": 19.723861
+      },
+      "AMZN": {
+        "eps_ntm": 12.643603
+      },
+      "NBIS": {
+        "eps_ntm": -1.962732
+      },
+      "STRL": {
+        "eps_ntm": 19.799
+      },
+      "APLD": {
+        "eps_ntm": -0.77
+      },
+      "CORZ": {
+        "eps_ntm": -4.220134
+      },
+      "CIFR": {
+        "eps_ntm": -1.311867
+      },
+      "RIOT": {
+        "eps_ntm": -2.546693
+      },
+      "CLSK": {
+        "eps_ntm": -3.588808
+      },
+      "COHR": {
+        "eps_ntm": 9.436669
+      },
+      "LLY": {
+        "eps_ntm": 36.394832
+      },
+      "V": {
+        "eps_ntm": 13.221566
+      },
+      "XOM": {
+        "eps_ntm": 11.522854
+      },
+      "ONTO": {
+        "eps_ntm": 8.102727
+      },
+      "TSM": {
+        "eps_ntm": 16.691322
+      },
+      "VSH": {
+        "eps_ntm": 0.848333
+      },
+      "STM": {
+        "eps_ntm": 1.362261
+      },
+      "MOD": {
+        "eps_ntm": 7.644098
+      },
+      "BE": {
+        "eps_ntm": 2.65741
+      },
+      "WTI": {
+        "eps_ntm": -0.0753
+      }
+    }
+  },
+  "last_snapshot_week": "2026-W34",
+  "last_snapshot_date": "2026-08-21"
+}
