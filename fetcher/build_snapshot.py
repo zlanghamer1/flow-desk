@@ -1800,14 +1800,6 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
 
     # ── biggest-orders board: merge every ticker's shortlist, re-rank, cap ───
     big_orders_pool.sort(key=lambda r: r["premium"], reverse=True)
-    # The uncapped board is computed FIRST and is what the disclosure is measured
-    # against: "earned" means a row ranked inside the top BIG_ORDERS_CAP on
-    # dollars alone. Counting a ticker's whole shortlist instead would overstate
-    # what the cap held back (a 13th-place row was never going to show anyway).
-    uncapped = big_orders_pool[:BIG_ORDERS_CAP]
-    earned: dict[str, int] = {}
-    for row in uncapped:
-        earned[row["ticker"]] = earned.get(row["ticker"], 0) + 1
     # Greedy fill in premium order, skipping a ticker once it hits its quota, so
     # the rows a crowded name gives up go to the next-loudest OTHER contracts
     # rather than shortening the board.
@@ -1821,10 +1813,29 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
             continue
         big_orders.append(row)
         shown[t] = shown.get(t, 0) + 1
+    # "earned" has to count a ticker's rows across the WHOLE pool, not just
+    # the naive top-BIG_ORDERS_CAP slice by raw premium. The greedy walk above
+    # backfills PAST that slice whenever an earlier ticker gets skipped for
+    # hitting its per-ticker quota, so a ticker with zero rows in the naive
+    # top-12 can still earn a seat on the board a few ranks later — and the
+    # old earned[] (built from big_orders_pool[:BIG_ORDERS_CAP] alone) missed
+    # every one of those, silently excluding that ticker from the disclosure
+    # even though it lost rows to the very same per-ticker cap (2026-08-21
+    # review, flow boards finding #2).
+    #
+    # The disclosure gate is deliberately "hit its OWN per-ticker quota AND
+    # has more rows beyond it" (shown==BIG_ORDERS_PER_TICKER, earned>shown) —
+    # not just "earned more than shown". A ticker with a single quiet row
+    # that never ranked into the board at all has shown=0 and earned=1, and
+    # that is an ordinary "did not make the cut on dollars" outcome, not the
+    # per-ticker cap this disclosure exists to confess.
+    earned: dict[str, int] = {}
+    for row in big_orders_pool:
+        earned[row["ticker"]] = earned.get(row["ticker"], 0) + 1
     big_orders_capped = [
-        {"ticker": t, "shown": min(n, BIG_ORDERS_PER_TICKER), "earned": n}
+        {"ticker": t, "shown": shown.get(t, 0), "earned": n}
         for t, n in sorted(earned.items(), key=lambda kv: -kv[1])
-        if n > BIG_ORDERS_PER_TICKER
+        if shown.get(t, 0) >= BIG_ORDERS_PER_TICKER and n > shown.get(t, 0)
     ]
     if big_orders_capped:
         log("big-orders per-ticker cap applied: "

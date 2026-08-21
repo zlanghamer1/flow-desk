@@ -224,10 +224,6 @@ def _merge(pool_rows):
     """Mirror of run_cycle's merge/cap/disclose block."""
     from build_snapshot import BIG_ORDERS_CAP as CAP, BIG_ORDERS_PER_TICKER as PER
     pool = sorted(pool_rows, key=lambda r: r["premium"], reverse=True)
-    uncapped = pool[:CAP]
-    earned = {}
-    for r in uncapped:
-        earned[r["ticker"]] = earned.get(r["ticker"], 0) + 1
     board, shown = [], {}
     for r in pool:
         if len(board) >= CAP:
@@ -236,8 +232,20 @@ def _merge(pool_rows):
             continue
         board.append(r)
         shown[r["ticker"]] = shown.get(r["ticker"], 0) + 1
-    capped = [{"ticker": t, "shown": min(n, PER), "earned": n}
-              for t, n in sorted(earned.items(), key=lambda kv: -kv[1]) if n > PER]
+    # earned counts a ticker's rows across the WHOLE pool, not a naive top-CAP
+    # slice by raw premium — the walk above backfills PAST that slice, so a
+    # ticker with zero rows in the naive top-12 can still earn (and lose) a
+    # seat further down (2026-08-21 review, flow boards finding #2). The
+    # disclosure gate requires the ticker to have hit its OWN per-ticker
+    # quota (shown==PER) as well as earned>shown — a single quiet row that
+    # never ranked onto the board at all (shown=0, earned=1) is an ordinary
+    # miss on dollars, not a per-ticker cap to confess.
+    earned = {}
+    for r in pool:
+        earned[r["ticker"]] = earned.get(r["ticker"], 0) + 1
+    capped = [{"ticker": t, "shown": shown.get(t, 0), "earned": n}
+              for t, n in sorted(earned.items(), key=lambda kv: -kv[1])
+              if shown.get(t, 0) >= PER and n > shown.get(t, 0)]
     return board, capped
 
 
@@ -275,17 +283,30 @@ def test_no_disclosure_when_the_cap_binds_nothing():
     assert len(board) == 12
 
 
-def test_disclosure_counts_only_rows_that_would_have_made_the_board():
-    """'earned' is measured against the UNCAPPED top-12, not the ticker's whole
-    shortlist. A 13th-place row was never going to show, so counting it would
-    overstate what the cap cost and make the note untrustworthy."""
-    # QQQ has 6 rows, but only 4 of them out-rank the field into the top 12.
-    pool = [_row("QQQ", 50e6 - i, 683.0 + i) for i in range(4)]     # top-12 material
-    pool += [_row("QQQ", 1e5 + i, 700.0 + i) for i in range(2)]     # far down the pool
-    pool += [_row(f"N{i}", 40e6 - i * 1e6) for i in range(11)]
+def test_disclosure_counts_a_tickers_whole_pool_not_the_naive_top_cap_slice():
+    """A ticker whose qualifying rows sit ENTIRELY below the naive top-12 by
+    raw premium can still earn — and lose — rows via the greedy walk's
+    backfill, once enough higher-ranked tickers ahead of it get capped at 3
+    each. The old disclosure measured 'earned' from pool[:BIG_ORDERS_CAP]
+    alone, so a ticker like Z below never appeared in earned{} at all and
+    silently vanished from the disclosure despite genuinely losing a row to
+    the per-ticker cap (2026-08-21 review, flow boards finding #2)."""
+    # QQQ, AMZN and MSFT each contribute 5 rows ranked ahead of Z's — 15 raw
+    # rows, 9 of them kept (3 each), 6 skipped for hitting the per-ticker cap.
+    pool = [_row("QQQ", 90e6 - i, 683.0 + i) for i in range(5)]
+    pool += [_row("AMZN", 80e6 - i, 250.0 + i) for i in range(5)]
+    pool += [_row("MSFT", 70e6 - i, 410.0 + i) for i in range(5)]
+    # Z's 4 rows rank 16th-19th overall — entirely outside pool[:12] — but
+    # the board still has 3 slots open (9 kept so far, cap is 12), so the
+    # walk reaches past rank 12 and gives Z 3 of its 4 rows before the board
+    # fills.
+    pool += [_row("Z", 5e6 - i, 50.0 + i) for i in range(4)]
+    pool += [_row(f"N{i}", 1e6 - i) for i in range(20)]   # filler, ranked last
     board, capped = _merge(pool)
-    assert capped == [{"ticker": "QQQ", "shown": 3, "earned": 4}]    # 4, not 6
-    assert sum(1 for r in board if r["ticker"] == "QQQ") == 3
+    assert sum(1 for r in board if r["ticker"] == "Z") == 3
+    by_ticker = {c["ticker"]: c for c in capped}
+    assert by_ticker["Z"] == {"ticker": "Z", "shown": 3, "earned": 4}
+    assert by_ticker["QQQ"] == {"ticker": "QQQ", "shown": 3, "earned": 5}
 
 
 def test_two_crowded_names_are_both_disclosed_worst_first():

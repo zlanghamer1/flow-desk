@@ -76,11 +76,19 @@ values are `null` (never a string sentinel). All strings are already plain
                                               // most BIG_ORDERS_PER_TICKER rows per ticker.
                                               // Empty array (never null) when nothing clears the floor.
   "big_orders_capped": [                      // per-ticker cap disclosure; [] when the cap bound nothing.
-    {"ticker": "QQQ", "shown": 3, "earned": 5}  // "earned" = rows this ticker held in the UNCAPPED top
-                                              // BIG_ORDERS_CAP on dollars alone; "shown" = rows published.
-                                              // Sorted by earned desc. The frontend MUST render this —
-                                              // a bounded board that doesn't say what it dropped reads
-                                              // as "this is everything".
+    {"ticker": "QQQ", "shown": 3, "earned": 5}  // "earned" = rows this ticker holds across the WHOLE
+                                              // pool (not just the naive top-BIG_ORDERS_CAP slice by
+                                              // dollars — the greedy merge backfills past that slice
+                                              // whenever another ticker gets skipped for hitting its own
+                                              // quota, so a ticker with zero rows in that naive slice can
+                                              // still earn, and lose, a seat further down). "shown" = rows
+                                              // actually published. Listed only when the ticker hit its
+                                              // own BIG_ORDERS_PER_TICKER quota AND has more rows beyond
+                                              // it — a quiet ticker that simply never ranked onto the
+                                              // board (shown 0) is an ordinary miss on dollars, not a cap
+                                              // to confess. Sorted by earned desc. The frontend MUST
+                                              // render this — a bounded board that doesn't say what it
+                                              // dropped reads as "this is everything".
   ],
   "conviction": [ <ConvictionCard>, ... ],   // 0-7 DTE board, sorted score desc
   "swing": [ <SwingCard>, ... ],              // 14d-6mo board, sorted score desc

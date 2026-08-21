@@ -8,7 +8,60 @@ work a later session can pick up. Nothing here blocks using the page.
 
 ## Open — in the order they are worth doing
 
-### 1. Round 6 findings — confirmed, not yet fixed
+### 1. The passing bar is now 80, not 90 (Zach's ruling, 2026-08-21)
+
+Round 6 (below) found and fixed 26 confirmed problems, all of them scoring
+under the old 90 bar. Zach's follow-up ruling lowers the bar to 80 for a
+section to "pass." Round 7 — a fresh nine-section review of the now-fixed
+page — is the next session's first job, to check every section against that
+new number. Until it runs, no section has a post-fix score on record; the R6
+column in the score trajectory table below is the LAST score before this
+round's fixes landed, not a current reading.
+
+### 2. Score trajectory, and what "80" would take
+
+| Section | R3 | R4 | R5 | R6 (pre-fix) |
+|---|---|---|---|---|
+| Right rail panels | 69 | 72 | 78 | 72 |
+| Data honesty | 72 | 81 | 78 | 58 |
+| Sector heatmap | 74 | 76 | 74 | 48 |
+| Flow boards | — | 74 | 73 | 72 |
+| Left rail | 46 | 72 | 72 | 64 |
+| vs Peers | 82 | 73 | 71 | 55 |
+| Financials | 85 | 71 | 64 | 48 |
+| Auto-TA | 56 | 67 | 58 | 48 |
+| Chart stage | 69 | 67 | 55 | 42 |
+
+The scores are not tracking quality in the way the numbers suggest. Every
+round's reviewer opens a page whose previous faults are gone and goes deeper,
+so a section that improved can score lower — round 6 dug the deepest yet into
+poke-path staleness (three of the nine sections' blockers are "the live poll
+never re-checks a value the full render already computed"), which no earlier
+round singled out as a pattern. The finding LISTS are the useful output, not
+the number — and as of this write-up, every round-6 finding is fixed (see
+"Shipped 2026-08-21, round 6" below). Round 7's numbers, once run, are the
+first to actually measure this pass's work.
+
+### 3. Deferred by judgement, not by omission
+
+- **The chart's own attribution link** is 35x11 on a phone, under the 24px
+  touch minimum. Lightweight Charts injects and sizes it; restyling a vendor's
+  attribution is not ours to do. It is the only remaining under-minimum target.
+- **Net flow and the BULL/BEAR pill count every strike; Flow % counts only
+  strikes within 20% of spot.** They can point opposite ways on one row. Both
+  tooltips now say so. Making them agree means changing what the publisher
+  computes (`build_snapshot.py`, net_flow and direction), which is a data
+  decision, not a display one.
+- **The biggest-orders board ranks gross premium**, so deep in-the-money paper
+  can lead on money already in the strike. Those rows are badged MOSTLY
+  INTRINSIC rather than re-ranked, because the gross figure is the honest
+  answer to "what traded"; ranking on extrinsic value would answer a different
+  question. If that other question is the one worth answering, the change is
+  one sort key.
+
+---
+
+## Shipped 2026-08-21, round 6 (26 findings, all fixed and verified live)
 
 Round 6 ran 2026-08-21 (script: `docs/review/nine-section-review.js`, ~75
 agents). All nine sections were scored and every finding went through
@@ -16,13 +69,18 @@ adversarial verification. **26 findings confirmed, 2 refuted** (both in the
 heatmap section — a font-measurement claim and a tile-count-floor claim,
 neither held up).
 
-None of the 26 below are fixed yet. They are ordered by section in review
-order; within each section, blocker first, then major, then minor. "Fix" is
-the reviewer's proposed change; "note" is what the adversarial verifier added
-or corrected — read the note before implementing, several change what the fix
-should actually do.
+All 26 confirmed findings below are now FIXED, committed, and verified —
+against the real live TradingView scanner via a rebuilt Playwright harness
+(not just a code read) for the JS-side fixes, and against the full
+`fetcher/` pytest suite (266 passing) for the fetcher-side one. The full
+mechanism, the reviewer's original "Fix" text, and the adversarial verifier's
+"Note" corrections are kept below as the historical record of what was wrong
+and why the fix takes the shape it does; `CLAUDE.md`'s "Guardrails added
+2026-08-21, round-6 fix pass" section has the condensed version of each
+decision. They are ordered by section in review order; within each section,
+blocker first, then major, then minor.
 
-#### Chart Stage — score 42
+#### Chart Stage — scored 42 pre-fix
 
 - **[blocker] Today's candle freezes at the pre-market bracket after the
   market opens.** Lines 9199-9243, 9211-9214, 5062-5068 & 5245, 1541-1546.
@@ -72,7 +130,7 @@ should actually do.
   ceilings need to collapse to the half day's actual close (720), not just the
   900 one.
 
-#### Automatic Technical Analysis — score 48
+#### Automatic Technical Analysis — scored 48 pre-fix
 
 - **[blocker] Horizontal S/R price-line color freezes at chart-open price
   while its caption keeps re-grading against the live price.** Lines
@@ -97,7 +155,7 @@ should actually do.
   `stageTAPoke()` — or at minimum blank it whenever either line regrades to
   `FAILED`, `BREAKOUT`, or `EXTENDED`.
 
-#### Left watchlist rail — score 64
+#### Left watchlist rail — scored 64 pre-fix
 
 - **[major] The paste-list "apply" box tells you a hidden pinned ticker is
   fine when it is invisible.** Lines 1132-1134, 2771-2822 (esp. 2784, 2817).
@@ -126,7 +184,7 @@ should actually do.
   this file's `RAIL_GROUPS` array — a different list, though the same
   "ticker lists churn" premise still holds for `RAIL_GROUPS`.
 
-#### Financials tab — score 48
+#### Financials tab — scored 48 pre-fix
 
 - **[blocker] Margins chart has no outlier clamp, so a stub-era ratio hides
   the current quarter.** Lines 6483-6491, 6052-6063, 6062. `axisChartSVG`'s
@@ -161,7 +219,7 @@ should actually do.
   (line 6249) goes through the same broken `hoverFormatter` path too, not just
   the point tooltip; only the axis gridlines themselves are unaffected.
 
-#### Sector Heatmap — score 48 (2 findings confirmed, 2 refuted)
+#### Sector Heatmap — scored 48 pre-fix (2 findings confirmed, 2 refuted)
 
 - **[blocker] Pre-market 1D tiles show yesterday's move mislabeled as
   today's, with no PREV flag.** Lines 7787, 7799, 7912, cf. 2392-2397 and
@@ -184,7 +242,7 @@ should actually do.
   "tile-count floor overrides the area-based labelling target" — neither held
   up under adversarial check.
 
-#### vs PEERS tab — score 55
+#### vs PEERS tab — scored 55 pre-fix
 
 - **[blocker] A single failed scanner request permanently mislabels a real
   ticker as unresolved.** Lines 6700-6718, 2331-2374. `adhocEnsureFacts`'s
@@ -218,7 +276,7 @@ should actually do.
   settles — the underlying cause is "the display is never revisited," not
   "the fetch only tries once."
 
-#### Right rail panels — score 72
+#### Right rail panels — scored 72 pre-fix
 
 - **[major] Weekly options expiration permanently leaks into the curated
   catalysts default view.** Lines 4190-4206 (index.html), fetcher/context.py
@@ -244,7 +302,7 @@ should actually do.
   "bright red" suggests, but the three-way disagreement and its root cause are
   accurate.
 
-#### Flow boards — score 72
+#### Flow boards — scored 72 pre-fix
 
 - **[major] Biggest Orders board reports a total chain-vendor outage as a
   quiet market.** index.html 4002-4013 vs. 3786-3799. When
@@ -286,7 +344,7 @@ should actually do.
   between the two boards actually exists in the file — the fix should extend
   the hide list, not delete a comment that isn't there.
 
-#### Data honesty — score 58
+#### Data honesty — scored 58 pre-fix
 
 - **[blocker] SPY/QQQ/DIA/IWM top tape never shows a stale/frozen indicator,
   unlike the macro tiles beside it.** Lines 1081-1086, 2518-2533, contrast
@@ -332,51 +390,6 @@ The committed copy carries two lessons the earlier runs paid for: it tells the
 reviewer that `data/` is gitignored and can be stale (a round-4 reviewer called
 a working feature broken because the local sidecars were months old), and it
 tells the verifier to check the live payload with `git show origin/data:...`.
-
-### 2. Score trajectory, and what "90" would take
-
-| Section | R3 | R4 | R5 | R6 |
-|---|---|---|---|---|
-| Right rail panels | 69 | 72 | 78 | 72 |
-| Data honesty | 72 | 81 | 78 | 58 |
-| Sector heatmap | 74 | 76 | 74 | 48 |
-| Flow boards | — | 74 | 73 | 72 |
-| Left rail | 46 | 72 | 72 | 64 |
-| vs Peers | 82 | 73 | 71 | 55 |
-| Financials | 85 | 71 | 64 | 48 |
-| Auto-TA | 56 | 67 | 58 | 48 |
-| Chart stage | 69 | 67 | 55 | 42 |
-
-The scores are not tracking quality in the way the numbers suggest. Every
-round's reviewer opens a page whose previous faults are gone and goes deeper,
-so a section that improved can score lower — round 6 dug the deepest yet into
-poke-path staleness (three of the nine sections' blockers are "the live poll
-never re-checks a value the full render already computed"), which no earlier
-round singled out as a pattern. The finding LISTS are the useful output, not
-the number.
-
-If a later session wants the number itself to move, the lever is the review
-prompt, not the page: score against a fixed rubric carried between rounds
-rather than against each reviewer's fresh read.
-
-### 3. Deferred by judgement, not by omission
-
-- **The chart's own attribution link** is 35x11 on a phone, under the 24px
-  touch minimum. Lightweight Charts injects and sizes it; restyling a vendor's
-  attribution is not ours to do. It is the only remaining under-minimum target.
-- **Net flow and the BULL/BEAR pill count every strike; Flow % counts only
-  strikes within 20% of spot.** They can point opposite ways on one row. Both
-  tooltips now say so. Making them agree means changing what the publisher
-  computes (`build_snapshot.py`, net_flow and direction), which is a data
-  decision, not a display one.
-- **The biggest-orders board ranks gross premium**, so deep in-the-money paper
-  can lead on money already in the strike. Those rows are badged MOSTLY
-  INTRINSIC rather than re-ranked, because the gross figure is the honest
-  answer to "what traded"; ranking on extrinsic value would answer a different
-  question. If that other question is the one worth answering, the change is
-  one sort key.
-
----
 
 ## Shipped 2026-08-21
 
@@ -426,6 +439,15 @@ Rebuild recipe, which took a few tries to get right:
 - Set `timezone_id="America/Chicago"`. Half the page's logic is CT-clock-driven.
 - Expect 404s in the console for `data/fund/*.json` — the local sidecar set is
   small. Filter them out; anything else is a real error.
+- To exercise a session-dependent code path (pre-market swap, STALE badges,
+  half-day boundaries) outside market hours, monkey-patch `priceSessionNow`
+  in-page (`window.priceSessionNow = () => 'premarket'`) rather than trying to
+  fake the system clock — round 6's verification did this to confirm the
+  heatmap's PRE/PREV tagging end-to-end against the real scanner.
+- The heatmap needs `HEAT.univ` set and `renderHeatBar(); heatRender(true);`
+  called explicitly if the view was never switched to "heat" through the UI —
+  calling `heatFetchNow(univ)` directly is the fastest way to check the data
+  side without fighting DOM layout timing.
 
 Useful element ids and selectors, since they are not guessable: `#stagetabbody`
 (tab body), `#staget` (TA caption), `#stageohlc` (crosshair readout), `#heatwrap`,
@@ -440,4 +462,4 @@ What the probes measured, all currently clean:
 - 166 keyboard stops, all named; no duplicate ids; no unnamed pressed controls
 - Prices agreeing across the rail, the chart header and the boards
 - The "% shown" chip matching the visible window exactly on every name
-- 150 fetcher tests passing
+- 266 fetcher tests passing

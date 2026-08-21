@@ -338,5 +338,94 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   any persisted alert state later, read this note: that would be new
   architecture, not an extension of what exists.
 
+## Guardrails added 2026-08-21, round-6 fix pass (26 findings, all 9 sections)
+
+Round 6 of the nine-section review confirmed 26 findings (see
+`docs/OPEN_ITEMS.md`'s history for the full list); this pass fixed all 26.
+The non-obvious decisions from that pass:
+
+- **A cached session-derived flag has to track the session, not just the
+  moment it was set.** `STAGE.premarketBar` was set once at full render and
+  never revisited — `stageLivePoke` now flips it off the moment
+  `priceSessionNow()` leaves premarket, which also fixes the "pre-market"
+  caption that read the same flag. The daily bars cache got the same
+  treatment: `BARS_FETCHED_KEY` (a CT calendar-day string, not a millisecond
+  TTL — `bars.json` only changes once a day) drives both `ensureBars()`'s
+  memoization and a `tick()`-driven re-fetch, so a tab left open across
+  midnight picks up the new day without the user touching anything.
+- **A log-scale axis floor of exactly 0 is not "safe" — it's a squashing
+  bug.** `log10(price+1e-4)` gives the 0-to-1 span as much room as four full
+  decades above 1, so `autoscaleInfoProvider`'s floor is `pr.minValue/2`
+  when `STAGE.log` is true, never a hardcoded epsilon or 0. Linear scale
+  keeps the old 0 floor — the squashing problem is log-specific.
+- **S/R price lines carry their own level object now**
+  (`STAGE.srLines = [{level, line}, ...]`, not bare price-line handles), so
+  `stageTAPoke()` can re-derive each line's color from `taSrSide` on every
+  poll, the same live re-grade the caption already got. `taShapeLabel`'s
+  pattern-name guard now excludes `BREAKOUT` and `EXTENDED`, not just
+  `FAILED` — a status frozen at fit time is not the same claim as "this
+  pattern's boundary still holds" — and `stageTAPoke` blanks `summary.shape`
+  the moment either line's live regrade stops holding.
+- **Two matched "attempted and failed" trackers, same shape, same reason:**
+  `ADHOC_FACTS_FAILED` (peers, `adhocEnsureFacts`) and `FUND_CACHE_FAILED`
+  (financials/peers, `ensureFund`) both distinguish "this fetch genuinely
+  failed" from "never attempted" — the two read identically before, so a
+  transient scanner or sidecar hiccup looked exactly like "still loading"
+  forever. Cleared on any attempt that resolves, success or a genuine empty
+  answer; never cleared on a thrown HTTP status or a rejected fetch.
+- **`axisChartSVG` clamps both directions now** (`opts.clamp` for the
+  ceiling, `opts.clampLo` for the floor), with a matching `↓` clip arrow next
+  to the existing `↑`. `robustClampMag()` picks the clamp magnitude from the
+  MEDIAN magnitude of the series (robust to the one runaway period), floored
+  so an ordinary wide-swinging name never gets clipped. Bars get the same
+  edge-pin-and-arrow treatment lines already had — a value outside the
+  domain used to just draw past the plot into the axis padding.
+- **One `loud` boolean for the Fed-hike card, computed once in
+  `normalizeFedOdds`** (`alarm===true || grade==="HOSTILE"`), used by the
+  rail chip's `bad` class, `fedAlarmHTML`'s banner gate, and
+  `fedOddsHTML`'s card/numeral classes alike. Three separate call sites each
+  deriving their own version of "is this loud" is exactly how the header
+  chip, the banner and the numeral ended up disagreeing about one reading.
+- **`big_orders_capped`'s "earned" now counts a ticker's rows across the
+  WHOLE pool**, not a naive top-`BIG_ORDERS_CAP` slice by raw premium — the
+  greedy per-ticker-capped merge backfills past that slice whenever an
+  earlier ticker gets skipped for hitting its quota, so a ticker with zero
+  rows in the naive slice could still lose a row to the cap and never appear
+  in the disclosure. The gate is `shown==BIG_ORDERS_PER_TICKER AND
+  earned>shown` — a ticker that simply never ranked onto the board at all
+  (shown 0) is an ordinary miss on dollars, not a per-ticker cap to confess;
+  `fetcher/test_big_orders.py`'s `_merge()` mirror was carrying the old,
+  buggy logic and had to be fixed in step, or the test would keep passing
+  against a copy of the bug instead of the fetcher's real code.
+- **`liveStale(sym)`/the rail's STALE convention now covers three more
+  surfaces**: the main tape (SPY/QQQ/DIA/IWM, via a small inline `frozen`
+  check in `mainTileHTML` mirroring `macroTileHTML`'s existing FROZEN
+  badge), the open chart's header price (`stageHeaderHTML`), and the
+  fundamentals grid's Fwd P/E / Next earnings cells (`fundBuiltStaleDays()`,
+  a DAY-based comparison of `fund.built` against `data.session_date` —
+  deliberately not a reuse of `isStaleFlow`/`isStaleContext`, which compare
+  a millisecond timestamp against `Date.now()` and are gated to trading
+  hours, the wrong shape for a once-a-day sidecar build date).
+- **The heatmap's 1D reading is now session-aware.** `HEAT_COLS` carries
+  `premarket_change`/`postmarket_change`; pre-market, a tile's `chg["1D"]`
+  swaps to the live pre-market print when one exists (tagged `PRE`) or keeps
+  the prior day's figure explicitly tagged `PREV` (a new `.hm-tile.prev1d`
+  hatch, vertical stripes to stay visually distinct from `.nodata`'s
+  diagonal one) — mirroring the rail's own PRE/PREV convention, which the
+  map had no equivalent of before. Separately, the no-data hatch itself was
+  dead: the tile's inline style used the `background` shorthand, which resets
+  `background-image` to `none` and silently defeated the `.nodata` CSS —
+  fixed by switching the inline style to `background-color` (longhand).
+- **`isLeveraged()`'s bare `bear` match needed the same digit guard `bull`
+  already had** (`bear\s*\d`, not a bare `\bbear\b`) — Build-A-Bear
+  Workshop (BBW) is a real toy retailer, not a leveraged wrapper.
+- **`catIsAnchorByName`'s options-expiration exception is monthly/quarterly
+  only now** — the separate bare `/options expiration/` catch-all matched
+  `fetcher/context.py`'s literal "Weekly options expiration" (LOW
+  importance) exactly as it matched the monthly/quarterly titles, so every
+  weekly OpEx row bypassed the curation floor. Removed outright; the
+  monthly/quarterly/quad/triple regex above it already covers both titles
+  this exception exists for.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
