@@ -330,6 +330,43 @@ values are `null` (never a string sentinel). All strings are already plain
 >   "yld": 0.124,            // TV dividends_yield_current, percent (0.124 == 0.124%)
 >   "target": 314.29,        // TV price_target_average (analyst 12-mo price target, $)
 >   "rec_mark": 1.115,       // TV recommendation_mark, 1.0 (strong buy) .. 5.0 (sell)
+>   // ── NTM consensus (added 2026-08-21, 5-metric scoring framework) — rides
+>   // the same scanner batch-quote call. Forward estimates for the NEXT
+>   // fiscal year, not the current one. null if TV omits it for this ticker.
+>   "eps_ntm": 12.34,         // TV earnings_per_share_forecast_next_fy
+>   "rev_ntm": 42500000000.0, // TV revenue_forecast_next_fy ($)
+>   // ── 5-metric scoring framework (added 2026-08-21) — see
+>   // fetcher/context.py's score_framework. OMITTED (not present, not null)
+>   // for a ticker the once-daily rebuild hasn't scored yet, same convention
+>   // as the top-level optional keys below. Display-only reference for
+>   // theses; independent of the conviction/swing board scores — it never
+>   // moves either one.
+>   "framework": {
+>     "filters": {              // true=PASS, false=FAIL, null=UNKNOWN (not guessed)
+>       "forward_eps_revision": true,   // NTM EPS higher than ~6mo ago
+>       "revenue_growth": true,         // NTM revenue growth > 20%
+>       "analyst_velocity": null,       // NTM EPS higher than ~3mo ago — UNKNOWN
+>                                       // until enough weekly history exists
+>       "opmargin_expansion": true,     // latest reported quarter's op margin
+>                                       // > 50bps above the same quarter a year ago
+>       "fcf_growth": true              // TTM FCF positive AND growing faster
+>                                       // than TTM revenue
+>     },
+>     "filters_passed": 4,      // count of true
+>     "filters_failed": 0,      // count of false
+>     "filters_unknown": 1,     // count of null — NEVER counted as a fail
+>     "verdict": "BUY_4",       // "BUY_5" | "BUY_4" | "ADD" | "HOLD" | "AVOID" |
+>                               // "BUILDING" (fewer than 3 of 5 filters have
+>                               // resolved yet — never a confident tier on a
+>                               // minority of the filters)
+>     "metrics": {              // only the metrics whose filter resolved; a
+>                               // key is simply absent when its filter is null
+>       "revenue_growth_ntm_pct": 24.3,
+>       "opmargin_expansion_bps": 230.0,
+>       "fcf_growth_ttm_pct": 18.5,
+>       "revenue_growth_ttm_pct": 12.1
+>     }
+>   },
 >   // ── Classification (added 2026-08-19, trading-platform redesign) — rides
 >   // the same scanner call. TradingView's OWN taxonomy, not GICS: MU reads
 >   // "Electronic Technology" / "Semiconductors", NKE reads "Consumer
@@ -345,6 +382,29 @@ values are `null` (never a string sentinel). All strings are already plain
 > and BOTH returned null for every ticker tried — this scanner simply does
 > not carry a forward multiple. Forward P/E is instead `pe_forward` in
 > `fund/{SYM}.json` (see below), sourced from stockanalysis.com/Yahoo.
+>
+> **`facts.eps_ntm`/`.rev_ntm` column names were live-verified 2026-08-21**,
+> not assumed: `eps_growth_next_5y` and `revenue_growth_next_year` both came
+> back null on a live probe (they are not real scanner columns), while
+> `earnings_per_share_forecast_next_fy`/`revenue_forecast_next_fy` returned
+> internally-consistent values — the FY estimate divided by the FQ estimate
+> lands near 4x for both NVDA (4.29x/4.32x) and MU (2.57x/2.35x), the ratio a
+> genuine annual-vs-quarterly consensus pair should have.
+>
+> **The 5-metric framework's methodology comes from ClaudeVault's
+> `market-data/results/financial_metrics_backtest_extended_2026-08-21.md`,
+> but its per-ticker NUMBERS do not** — that repo also carries
+> `desk_universe_framework_analysis_2026-08-21.md` and
+> `watchlist_framework_analysis_2026-08-21.md`, which misidentify at least two
+> tickers (NBIS as "NBT Bancorp / Specialty Biotech" — it is Nebius Group, an
+> AI infrastructure company; CORZ as "Corzine / Specialized Mining" — it is
+> Core Scientific, an AI-datacenter/bitcoin operator) and score filters
+> inconsistently against their own stated thresholds (MU's "+2.3 bps YoY"
+> OpMargin marked PASS against a stated >50bps PASS threshold). They read as
+> generated illustrative content, not a verified data pull, and none of
+> their numbers appear anywhere in this implementation — every value in
+> `facts.<TICKER>.framework` comes from a live vendor at fetch time, or the
+> filter is null.
 > **`desk_private`** — omitted, same as the other five keys, whenever the
 > vault fetch has nothing to report (no token, 404, bad JSON); present as
 > `{"v": 1, ...}` — an encrypted blob passed through **verbatim** from the
@@ -616,14 +676,16 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
     "revenue": [26044000000.0, "...", 81615000000.0],   // reported, not estimated
     "eps": [0.2895, "...", 2.39],            // reported diluted EPS
     "ni": [14881000000.0, "...", 26422000000.0],   // reported net income ($, common) — added 2026-08-19
-    "fcf": [15052000000.0, "...", 17562000000.0]   // reported free cash flow ($) — added 2026-08-19
+    "fcf": [15052000000.0, "...", 17562000000.0],  // reported free cash flow ($) — added 2026-08-19
+    "opinc": [8802000000.0, "...", 33318000000.0]  // reported operating income ($) — added 2026-08-21
   },
   "annual": {                        // up to 6 years, OLDEST FIRST — DERIVED, see note
     "periods": ["FY23", "...", "FY26"],
     "revenue": [26974000000.0, "...", 215938000000.0],
     "eps": [0.83, "...", 5.84],
     "ni": [4368000000.0, "...", 97255000000.0],    // summed like revenue/eps — added 2026-08-19
-    "fcf": [3808000000.0, "...", 60853000000.0]    // summed like revenue/eps — added 2026-08-19
+    "fcf": [3808000000.0, "...", 60853000000.0],   // summed like revenue/eps — added 2026-08-19
+    "opinc": [5312000000.0, "...", 82000000000.0]  // summed like revenue/eps — added 2026-08-21
   },
   "ratings": [                       // analyst rating CHANGES, newest first — added 2026-08-19
     {"date": "2025-12-18",           // America/New_York calendar date: the trading day the marker belongs on
@@ -679,8 +741,19 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
   cash-flow page reads null, never 0. A total cash-flow-page failure
   yields all-null `fcf` while revenue/eps/ni survive — per-leg fail-soft,
   same as everything else here.
-- `annual.ni` / `annual.fcf` — summed like revenue/eps, only for fiscal
-  years where all 4 quarters carry the field; else null.
+- `quarterly.opinc` — reported operating income (`financialData.opinc`),
+  from the SAME income-statement payload as revenue/eps/ni above — no extra
+  request. Added 2026-08-21 for the 5-metric scoring framework's OpMargin-
+  expansion filter (`facts.<TICKER>.framework`, see above). Live-verified on
+  MU the same day: `opinc / revenue` reproduces the page's own
+  `operatingMargin` column exactly for every quarter checked (0.8037,
+  0.67624, 0.44975, ...), confirming this is the real operating-income row
+  rather than a mismatched column. Margin is derived from this raw dollar
+  figure at scoring time rather than trusting the vendor's own
+  `operatingMargin` field, the same "derive it ourselves" posture `annual`
+  already takes for revenue/eps.
+- `annual.ni` / `annual.fcf` / `annual.opinc` — summed like revenue/eps, only
+  for fiscal years where all 4 quarters carry the field; else null.
 - `annual` — **a DERIVED aggregate, not a separately-fetched or separately-
   reported figure.** Summed from the SAME quarterly rows above, only for
   fiscal years where all 4 quarters are present (a partial year yields no
@@ -987,6 +1060,45 @@ aggressor-tilt volume deltas (same session only — after a workflow restart the
 first cycle contributes no tilt, by design). Legacy flat {ticker: net_flow}
 files are still readable.
 
+## consensus_history.json (published beside data.json on the `data` branch,
+added 2026-08-21, 5-metric scoring framework)
+
+```json
+{
+  "v": 1,
+  "last_snapshot_week": "2026-W33",
+  "last_snapshot_date": "2026-08-14",
+  "weekly": {
+    "2026-W33": { "MU": {"eps_ntm": 40.5}, "NVDA": {"eps_ntm": 9.01} }
+  }
+}
+```
+One row per ISO week (`%G-W%V`), one snapshot of `facts.<TICKER>.eps_ntm` per
+ticker, taken AT MOST ONCE PER WEEK — piggybacked on the same once-daily gate
+bars.json/fund/{SYM}.json already use, not its own separate fetch. Weekly
+(not daily) sampling is deliberate: forward-EPS consensus moves on a
+quarterly cadence, so a snapshot on every daily rebuild would bloat this file
+for months with rows differing from the prior day's by noise. Kept
+`MAX_CONSENSUS_WEEKS` (40) weeks, oldest pruned first — long enough to cover
+the framework's 26-week (~6 month) lookback with room for the tolerance
+search either side.
+
+**Why this lives on the `data` branch and not `fetcher/.context_cache.json`:**
+the job-local cache is gitignored and does not survive a mid-day redispatch
+or a new day's job (each one re-clones the `data` branch fresh — see
+DEPLOY.md); this file needs to survive MONTHS of those. Same publish
+mechanism as history.json: `build_snapshot.save_consensus_history` writes it
+with the tmp-file-then-replace pattern, and `loop.py`'s `git add -A` over
+`OUT_DIR` picks it up with no `loop.py` change. Guarded by the same
+`write_history` flag as history.json — a forced off-hours test cycle must
+not fabricate a phantom weekly snapshot either.
+
+A ticker missing from a given week's row (no `eps_ntm` that week, or the
+ticker wasn't pinned yet) is simply absent from that week's dict — the
+lookback in `fetcher/context.py`'s `_consensus_lookback` searches ±1 week
+before giving up and reading the filter as UNKNOWN, never a fabricated
+number.
+
 `fetcher/.context_cache.json` (job-local, gitignored, NOT part of the data
 branch — same pattern as `.prev_cycle.json` above, deliberately kept as a
 SEPARATE file so the context layer's read/write lifecycle inside one
@@ -998,6 +1110,7 @@ versa):
   "bars_built_date": "2026-08-15",
   "bars_sig": "v4-2y-vol-tape-splitfix-sessions",
   "avg_move": {"MU": 3.45},
+  "framework": {"MU": {"filters_passed": 4, "...": "..."}},
   "brief": {"...": "..."},
   "fed_odds": {"...": "..."},
   "catalysts": [ "..." ],

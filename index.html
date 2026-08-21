@@ -743,13 +743,16 @@ footer b{color:var(--ink2)}
   .rail .grow{display:none}
   .kbtn{margin-left:auto}
   .cols{grid-template-columns:1fr}
-  /* Mobile reading order (2026-08-18): the day's takeaway first. DOM order put
-     the ~50-row watchlist rail on top, so the Morning Brief verdict — the one
-     line the page exists for — sat ~1,800px below the fold on a phone. */
-  .mid{order:1}
-  .rr{order:2}
-  .wl{order:3}
-  .wl{border-right:none;border-top:1px solid var(--edge)}
+  /* Mobile reading order (revised 2026-08-21, Zach's call): watchlist first.
+     The 2026-08-18 ruling put the Morning Brief verdict on top instead, on the
+     theory that the takeaway line mattered more than the ~50-row rail below
+     it. Zach's follow-up ask reverses that: on a phone he reaches for a
+     ticker before he reaches for the verdict, so the watchlist now opens the
+     page and the chart/boards and the right rail follow it. */
+  .wl{order:1}
+  .mid{order:2}
+  .rr{order:3}
+  .wl{border-right:none;border-bottom:1px solid var(--edge)}
   .wl .wrs{display:grid;grid-template-columns:1fr 1fr;column-gap:8px}
   /* Group headers and the sort strip are grid CHILDREN here — without an
      explicit span they became half-width cells sitting beside ticker rows. */
@@ -1287,14 +1290,13 @@ var TIPS = {
   "tip-etfflows": "Real invested money entering or leaving each semiconductor ETF, estimated as the day-over-day change in the fund's shares outstanding times its NAV (ETFs create and destroy shares as money moves in and out). One reading per session — slower than the options boards, and it mixes retail and institutional money. The 1M figure is the fund's trailing one-month net flow. Shows 'split — n/a' when a fund split that day: a split changes the share count without any money moving, so the day's flow is unknowable rather than zero. Context only; it doesn't affect any score.",
   netflow:"Call premium traded minus put premium traded (volume × last × 100). Free data can't see buy vs sell side — this is premium changing hands, not directional order flow.",
   flows:"Fund flows = change in shares outstanding × NAV (creations/redemptions). Flows chase returns — context, never a signal.",
-  fund:"Colored from a buyer's lens against rough thresholds: short % of float green under 2% / red over 5%; RSI green at 30 or under (washed out) / red at 70+ (hot) — the same boundaries the chart’s RSI pane draws; PEG green at 1 or under / red at 2+; net margin green at 20%+ / red below 0%; Debt/Eq green at 0.5 or under / red at 2+; analyst target green when 15%+ above price. A gauge, not a rating.",
+  fund:"Colored from a buyer's lens against rough thresholds: short % of float green under 2% / red over 5%; RSI green at 30 or under (washed out) / red at 70+ (hot); PEG green at 1 or under / red at 2+; net margin green at 20%+ / red below 0%; Debt/Eq green at 0.5 or under / red at 2+; analyst target green when 15%+ above price. A gauge, not a rating.",
+  framework:"Five filters testing one repricing cycle in order: is forward EPS being revised up (6mo), is NTM revenue growth above 20%, is that revision accelerating (3mo), is operating margin expanding faster than 50bps year over year, and is free cash flow growing faster than revenue. 5/5 = BUY, 4/5 = BUY with one gap, 3/5 = ADD, 2/5 = HOLD, under 2 = AVOID. Computed once a day server-side from TradingView consensus and reported quarterly financials — never guessed: a filter with no data reads 'building' rather than pass or fail, and the verdict itself reads BUILDING HISTORY until at least 3 of the 5 have resolved. The two consensus-trend filters need 3-6 months of accumulated weekly snapshots after a fresh deployment. Display-only: it never feeds the conviction or swing score above, and works best on growth names — mature dividend payers score lower by design, not by error.",
   range:"Position in the 52-week range. Near the low = shopping territory, near the high = hot runner. The diamond is today.",
   hot:"Today's move divided by this name's own average daily move — Micron swinging 2% is normal, Google swinging 2% is not. Highlights at 1.8× and up.",
   stale:"This section is older than expected for its usual refresh cadence — showing the last good read.",
-  ta_trend:"Auto trend lines, fit on the selected window: swing highs and lows (4 bars each side, 2 on short windows), then the best line through two or more pivots that price respected. On the intraday views a pivot counts as a touch within 1% of the line and a wick poking 1.2% through kills the fit — the vault scanner's own numbers. On the daily view both scale with what the name actually moves in a day (touch up to 3%, poke up to 4%) and the poke is judged on CLOSES rather than wicks, because the flat intraday numbers drew nothing on three quarters of daily charts. The anchor, containment and break rules come from that scanner, generalized to the support side; its rising-lows condition is not applied here. A line whose break is more than 12 bars old is not drawn, one price has traded back through and walked away from is captioned as failed, and one price closed through and stayed through has FLIPPED — broken support is drawn and captioned as overhead resistance. Windows under 40 bars draw no trend line. The dashed part is the line projected forward, and a failed line gets no projection. Display only — never a signal, never in any score.",
-  ta_sr:"Horizontal support/resistance: swing-point prices clustered inside half a 60-bar ATR (floored at 1%, capped at 5%, so a $900 stock and a $12 one both cluster sensibly); a level needs 2+ touches, strongest three drawn. A level that held as a floor often matters again as a ceiling, so highs and lows cluster together. Every level's price and touch count is named in the caption under the chart; only the one nearest price takes an axis badge, and even that is dropped when it would land on a moving-average badge. Display only.",
-  ta_rsi:"RSI(14), Wilder smoothing, in its own pane, on a fixed 0-100 scale. 70+ = hot, 30 or under = washed out (dotted guides). IT FOLLOWS THE INTERVAL YOU ARE ON — the pane title and the caption say which (daily, weekly, 15m, 1H, 4H), because a 40 on an hourly chart is not a 40 on the daily one. Against the fundamentals grid's daily figure it usually lands within a few points and occasionally 5 or more: both come off the same 15-minute-delayed feed but cover different bars, and the pane includes today's partial candle.",
-  ta_ema:"Exponential moving average, dashed purple — weights recent bars more than the simple moving averages the chart already draws. It is computed on whatever bars are showing, so the span shortens on the intraday views (a third of the visible bars, floor 20, cap 200) rather than drawing nothing there. The caption under the chart carries the span it actually used.",
+  ta_trend:"Auto trend lines, fit on the selected window: swing highs and lows (4 bars each side, 2 on short windows), then the best line through two or more pivots that price respected. On the intraday views a pivot counts as a touch within 1% of the line and a wick poking 1.2% through kills the fit — the vault scanner's own numbers. On the daily view both scale with what the name actually moves in a day (touch up to 3%, poke up to 4%) and the poke is judged on CLOSES rather than wicks, because the flat intraday numbers drew nothing on three quarters of daily charts. The anchor, containment and break rules come from that scanner, generalized to the support side; its rising-lows condition is not applied here. A line whose break is more than 12 bars old is not drawn, one price has traded back through and walked away from is captioned as failed, and one price closed through and stayed through has FLIPPED — broken support is drawn and captioned as overhead resistance. Windows under 40 bars draw no trend line. The dashed part is the line projected forward, and a failed line gets no projection. When BOTH a resistance and a support line fit, the caption also names the shape the pair draws — ascending/descending/symmetrical triangle, rising/falling wedge, ascending/descending channel, trading range, broadening formation, or bull/bear flag when a fast prior move preceded a tight channel — read off the same two lines' slopes and convergence, never a separate detector. Said only when the geometry clearly matches one of those names; otherwise nothing is claimed. Display only — never a signal, never in any score.",
+  ta_sr:"Horizontal support/resistance: swing-point prices clustered inside half a 60-bar ATR (floored at 1%, capped at 5%, so a $900 stock and a $12 one both cluster sensibly); a level needs 2+ touches, strongest three drawn. A level that held as a floor often matters again as a ceiling, so highs and lows cluster together. Colored by where price sits against each level: red overhead (resistance ahead), green underneath (support below), blue when price is inside the band itself — the same three words the caption under the chart uses. Every level's price and touch count is named there too; only the one nearest price takes an axis badge, and even that is dropped when it would land on a moving-average badge. Display only.",
 };
 
 /* =================== state =================== */
@@ -5697,7 +5699,7 @@ function renderFundamentals(sym, fund){
       : "\u2014"),
     fcell("Avg volume", f.avol!=null?fmtShareCount(f.avol):"—"),
     fcell("RVOL today", q.rvol!=null?q.rvol.toFixed(1)+"×":"—"),
-    fcell("RSI (14)", f.rsi!=null?('<span data-tip="'+esc("TradingView's RSI(14) for this name, on 15-minute-delayed data. The RSI pane under the chart recomputes it from the bars on screen including today's partial candle, so the two can differ by a point or two.")+'">'+Math.round(f.rsi)+'</span>'):"—", fundCls("rsi",f), "delayed"),
+    fcell("RSI (14)", f.rsi!=null?('<span data-tip="'+esc("TradingView's RSI(14) for this name, on 15-minute-delayed data — a scanner snapshot, recomputed once per cycle. The Trading Analysis chart no longer draws its own RSI pane (removed 2026-08-21), so this cell is the only RSI reading on the page.")+'">'+Math.round(f.rsi)+'</span>'):"—", fundCls("rsi",f), "delayed"),
     fcell("Avg daily move", f.avg_move!=null?f.avg_move+"%":"—"),
     fcell("52w position", posPct!=null?posPct+"%":"—"),
     fcell("Analyst target", targetTxt, targetCls),
@@ -6701,6 +6703,69 @@ function rangeSecHTML(sym){
     + '<div class="kvrow"><span>Position in range</span><b>'+(st.pos!=null?Math.round(st.pos*100):"—")+'%'
     + (st.pos!=null && st.pos>0.85?" · hot runner":st.pos!=null && st.pos<0.25?" · near lows":"")+'</b></div></div>';
 }
+/* =================== 5-metric scoring framework (added 2026-08-21) ========
+   Repricing -> validation -> sustainability filters, computed server-side
+   in fetcher/context.py's score_framework and published on data.json's
+   facts.<TICKER>.framework — see DATA_CONTRACT.md. This page only renders
+   what the fetcher already decided; it never scores anything itself, same
+   posture as auto-TA. Two of the five filters (forward EPS revision,
+   analyst velocity) read UNKNOWN for months after a fresh deployment — they
+   need 3-6 months of weekly consensus snapshots the fetcher has not
+   collected yet — so the verdict reads "BUILDING" until enough of the five
+   have real data, never a confident tier on a minority of them. */
+var FRAMEWORK_VERDICT_LABEL = {
+  BUY_5:"BUY ★★★", BUY_4:"BUY ★★", ADD:"ADD", HOLD:"HOLD",
+  AVOID:"AVOID", BUILDING:"BUILDING HISTORY"
+};
+var FRAMEWORK_VERDICT_CLS = {BUY_5:"u", BUY_4:"u", ADD:"", HOLD:"m", AVOID:"d", BUILDING:"m"};
+var FRAMEWORK_FILTER_ROWS = [
+  {key:"forward_eps_revision", label:"Forward EPS revision (6mo)", metric:"eps_revision_6m_pct",
+   fmt:function(v){ return (v>=0?"+":"")+v.toFixed(1)+"% vs. 6mo ago"; }},
+  {key:"revenue_growth", label:"NTM revenue growth", metric:"revenue_growth_ntm_pct",
+   fmt:function(v){ return (v>=0?"+":"")+v.toFixed(1)+"% (needs >20%)"; }},
+  {key:"analyst_velocity", label:"Analyst revision velocity (3mo)", metric:"eps_velocity_3m_pct",
+   fmt:function(v){ return (v>=0?"+":"")+v.toFixed(1)+"% vs. 3mo ago"; }},
+  {key:"opmargin_expansion", label:"OpMargin expansion (YoY)", metric:"opmargin_expansion_bps",
+   fmt:function(v){ return (v>=0?"+":"")+v.toFixed(0)+" bps (needs >50)"; }},
+  {key:"fcf_growth", label:"FCF growth vs. revenue growth", metric:"fcf_growth_ttm_pct",
+   fmt:function(v, m){ var rg = m.revenue_growth_ttm_pct;
+     return v.toFixed(1)+"% FCF"+(rg!=null?(" vs. "+rg.toFixed(1)+"% revenue"):""); }}
+];
+function stageFrameworkHTML(sym){
+  var f = factsOf(sym);
+  var fw = f && f.framework;
+  var pinned = railHasSym(sym) || !!(STATE.data && STATE.data.facts && STATE.data.facts[sym]);
+  if(!fw){
+    return '<div class="dsec note">'
+      + (pinned
+          ? "The 5-metric framework hasn’t scored "+esc(sym)+" yet this build cycle — it recomputes once a day alongside the "
+            + "quarterly financials above."
+          : esc(sym)+" is outside the desk’s tracked universe, so there is no framework score here: it needs the same "
+            + "server-side quarterly financials fund/{SYM}.json only carries for pinned names.")
+      + '</div>';
+  }
+  var metrics = fw.metrics || {};
+  var filters = fw.filters || {};
+  var rows = FRAMEWORK_FILTER_ROWS.map(function(r){
+    var v = filters[r.key];
+    var word = v===true ? "PASS" : v===false ? "FAIL" : "building…";
+    var cls = v===true ? "u" : v===false ? "d" : "m";
+    var mv = metrics[r.metric];
+    var detail = (v!=null && mv!=null) ? (' <span class="m">'+esc(r.fmt(mv, metrics))+'</span>') : '';
+    return '<div class="kvrow"><span>'+esc(r.label)+'</span><b class="'+cls+'">'+word+'</b></div>'
+      + (detail ? ('<div class="kvrow" style="margin-top:-4px"><span></span>'+detail+'</div>') : '');
+  }).join("");
+  var vcls = FRAMEWORK_VERDICT_CLS[fw.verdict] || "";
+  var vlabel = FRAMEWORK_VERDICT_LABEL[fw.verdict] || fw.verdict;
+  return '<div class="dsec"><h3><span data-tip="'+esc(TIPS.framework)+'">5-metric framework</span></h3>'
+    + '<div class="kvrow"><span>Verdict</span><b class="'+vcls+'">'+esc(vlabel)+'</b></div>'
+    + '<div class="kvrow"><span>Filters</span><b>'+fw.filters_passed+' pass · '+fw.filters_failed+' fail · '
+      + fw.filters_unknown+' building</b></div>'
+    + rows
+    + '<div class="note">Display-only reference for theses, independent of the conviction/swing scores above — it never '
+      + 'moves either board. Two filters need 3-6 months of accumulated weekly history before they can resolve; until then '
+      + 'the verdict says BUILDING HISTORY rather than guessing.</div></div>';
+}
 /* =================== auto technical analysis (display-only) ===================
    The pivot/trendline geometry is a JS port of the vault's tuned research
    scanner (market-data/scripts/trendline_break_scan.py — PIVOT_K, MIN_SPAN,
@@ -6732,12 +6797,11 @@ var TA_SR_TOL = 0.02;      // fallback level-cluster half-width; volatility-scal
 var TA_MIN_ANCHOR_POS = 0.45;  // the newer anchor must sit in the recent 55% of the window
 var TA_MAX_DIST = 0.12;        // a line further than this from price describes nothing (see taMaxDist)
 var TA_SR_MAX_DIST = 0.20;     // same idea for horizontal levels
-var TA_EMA_COLOR = "#B07CD6";  // its own colour — it used to share the 200-day SMA's amber
-function taDefaults(){ return {trend:true, sr:true, rsi:true, ema:false}; }
+function taDefaults(){ return {trend:true, sr:true}; }
 function taPrefs(){
   try{
     var v = JSON.parse(read("desk.stage.ta")||"null");
-    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr, rsi:!!v.rsi, ema:!!v.ema};
+    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr};
   }catch(e){}
   return taDefaults();
 }
@@ -7068,30 +7132,81 @@ function taLevels(rows, pivH, pivL){
     // the whole cluster sits on one price.
     .map(function(c){ return {price:c.mean, touches:c.visits, lo:c.lo, hi:c.hi}; });
 }
-function taRSI(closes, period){
-  period = period||14;
-  var out = new Array(closes.length).fill(null);
-  var gain=0, loss=0, prev=null, count=0;
-  for(var i=0;i<closes.length;i++){
-    var c=closes[i];
-    if(c==null){ continue; }
-    if(prev==null){ prev=c; continue; }
-    var d=c-prev; prev=c; count++;
-    var g=d>0?d:0, l=d<0?-d:0;
-    if(count<=period){ gain+=g; loss+=l; if(count===period){ gain/=period; loss/=period; out[i]= loss===0?100:100-100/(1+gain/loss); } }
-    else { gain=(gain*(period-1)+g)/period; loss=(loss*(period-1)+l)/period; out[i]= loss===0?100:100-100/(1+gain/loss); }
-  }
-  return out;
+// Where price sits against one S/R level — ONE function the drawing code and
+// the caption both call, so the line color on the chart and the word in the
+// text under it can never disagree (a "support" band drawn red while the
+// caption calls it "under" would be exactly the kind of contradiction this
+// codebase's other guardrails exist to prevent).
+function taSrSide(l, lastPx){
+  if(lastPx==null) return null;
+  var inBand = (l.lo!=null && l.hi!=null && lastPx>=l.lo && lastPx<=l.hi);
+  if(inBand) return "in";
+  return (l.price>lastPx) ? "over" : "under";
 }
-function taEMA(closes, n){
-  var out=new Array(closes.length).fill(null), k=2/(n+1), ema=null, seen=0;
-  for(var i=0;i<closes.length;i++){
-    var c=closes[i]; if(c==null) continue;
-    seen++;
-    ema = (ema==null)? c : c*k + ema*(1-k);
-    if(seen>=n) out[i]=ema;
+function taSrColorVar(side){
+  return side==="over" ? "--dn" : side==="under" ? "--up" : "--acc";
+}
+/* Two-line SHAPE classification (added 2026-08-21, Zach's ask for a
+   trendline-pattern description). This does NOT add a new detector: it reads
+   the slope and span already computed for the fitted resistance/support pair
+   and names the classic chart-pattern shape those two lines draw, the same
+   way the caption already says "broke" or "retesting" about ONE line. Still
+   display-only — it never scores or feeds anything, same as every other
+   auto-TA output.
+   The flag-pole check below is a first-pass heuristic, not measured against
+   the live universe the way TA_TOUCH_TOL/TA_CONTAIN_TOL/etc. above were —
+   those constants carry live-measured comments; this one does not, and
+   should get the same scrutiny before its thresholds are trusted. */
+var TA_SHAPE_MIN_MOVE = 0.02;   // net |change| over a line's own anchor span below this reads "flat"
+var TA_SHAPE_CONVERGE = 0.15;   // the pair's gap narrowing (or widening) by this much reads converging/diverging
+var TA_FLAG_MIN_BARS = 5;       // fewer bars than this before the channel starts isn't enough to hold a pole
+function taLineValAt(fit, x){ return fit.ya + fit.slope*(x-fit.xa); }
+function taShapeLabel(fitRes, fitSup, win, sym){
+  if(!fitRes || !fitSup) return null;
+  if(fitRes.status==="FAILED" || fitSup.status==="FAILED") return null;
+  var resPct = (fitRes.ya>0) ? (fitRes.yb-fitRes.ya)/fitRes.ya : 0;
+  var supPct = (fitSup.ya>0) ? (fitSup.yb-fitSup.ya)/fitSup.ya : 0;
+  var resDir = Math.abs(resPct) < TA_SHAPE_MIN_MOVE ? "flat" : (resPct>0 ? "rising" : "falling");
+  var supDir = Math.abs(supPct) < TA_SHAPE_MIN_MOVE ? "flat" : (supPct>0 ? "rising" : "falling");
+  var x0 = Math.max(fitRes.xa, fitSup.xa), x1 = win.length-1;
+  var w0 = taLineValAt(fitRes,x0) - taLineValAt(fitSup,x0);
+  var w1 = taLineValAt(fitRes,x1) - taLineValAt(fitSup,x1);
+  var conv = null;
+  if(w0>0 && w1>0){
+    conv = (w1 < w0*(1-TA_SHAPE_CONVERGE)) ? "converging" : (w1 > w0*(1+TA_SHAPE_CONVERGE)) ? "diverging" : "parallel";
   }
-  return out;
+  var label = null, detail = null;
+  if(resDir==="falling" && supDir==="rising" && conv==="converging"){ label="symmetrical triangle"; detail="resistance falling, support rising, the range narrowing"; }
+  else if(resDir==="flat" && supDir==="rising"){ label="ascending triangle"; detail="resistance flat, support rising"; }
+  else if(resDir==="falling" && supDir==="flat"){ label="descending triangle"; detail="resistance falling, support flat"; }
+  else if(resDir==="rising" && supDir==="rising"){
+    label = (conv==="converging") ? "rising wedge" : "ascending channel";
+    detail = (conv==="converging") ? "both rising, support closing the gap" : "both rising, roughly parallel";
+  } else if(resDir==="falling" && supDir==="falling"){
+    label = (conv==="converging") ? "falling wedge" : "descending channel";
+    detail = (conv==="converging") ? "both falling, resistance closing the gap" : "both falling, roughly parallel";
+  } else if(resDir==="flat" && supDir==="flat"){ label="trading range"; detail="both lines flat"; }
+  else if(resDir==="rising" && supDir==="falling"){ label="broadening formation"; detail="resistance rising, support falling — the range widening"; }
+  else return null;  // a mix the classification above doesn't name — say nothing rather than force one
+
+  // Flag override: a fast prior move into a tight, non-opposing channel reads
+  // as a flag rather than a plain channel/range.
+  if(label==="ascending channel" || label==="descending channel" || label==="trading range"){
+    var flagX = Math.min(fitRes.xa, fitSup.xa);
+    var amv = num((factsOf(sym)||{}).avg_move);
+    if(flagX >= TA_FLAG_MIN_BARS && amv!=null && amv>0){
+      var poleStart = num(win[0][3]), poleEnd = num(win[flagX][3]);
+      if(poleStart!=null && poleEnd!=null && poleStart>0){
+        var polePct = (poleEnd-poleStart)/poleStart*100;
+        var poleThresh = Math.max(amv*3, amv*Math.min(flagX,15)*0.4);
+        if(Math.abs(polePct) >= poleThresh){
+          if(polePct>0 && resDir!=="rising"){ label="bull flag"; detail="a "+polePct.toFixed(1)+"% run over "+flagX+" bars into a tight channel since"; }
+          else if(polePct<0 && supDir!=="falling"){ label="bear flag"; detail="a "+polePct.toFixed(1)+"% drop over "+flagX+" bars into a tight channel since"; }
+        }
+      }
+    }
+  }
+  return {label:label, detail:detail};
 }
 /* apply/clear the TA overlays on the stage */
 function stageKeepView(fn){
@@ -7102,7 +7217,7 @@ function stageKeepView(fn){
 }
 function stageTAClear(){
   var S = STAGE.s;
-  ["tRes","tResProj","tSup","tSupProj","ema200","rsi"].forEach(function(k){
+  ["tRes","tResProj","tSup","tSupProj"].forEach(function(k){
     if(S[k]){ try{ STAGE.chart.removeSeries(S[k]); }catch(e){} S[k]=null; }
   });
   (STAGE.srLines||[]).forEach(function(h){ try{ STAGE.s.candle.removePriceLine(h); }catch(e){} });
@@ -7202,10 +7317,10 @@ function stageTA(){
           : null;
       }
     });
+    summary.shape = taShapeLabel(summary.res, summary.sup, win, STAGE.sym);
   }
   if(prefs.sr){
     summary.srTried = true;
-    var edge = cssVar("--ink3");
     var lvls = taLevels(win, pivH, pivL);
     var lastPx = num(rows[n-1][3]);
     // Only the level NEAREST price keeps an axis badge. Six badges stacked
@@ -7229,6 +7344,12 @@ function stageTA(){
     });
     lvls.forEach(function(l, i){
       summary.levels.push(l);
+      // Colored by where price sits against THIS level: red overhead
+      // (resistance ahead), green underneath (support below), blue when
+      // price is inside the band. taSrSide is the same function the caption
+      // below calls, so the line color and the caption word can never
+      // disagree.
+      var edge = cssVar(taSrColorVar(taSrSide(l, lastPx)));
       var collides = maNow.some(function(v){ return v>0 && Math.abs(l.price-v)/v < 0.012; });
       var wideBand = (l.lo!=null && l.hi!=null && l.price>0 && (l.hi-l.lo)/l.price > 0.02);
       if(wideBand){
@@ -7254,79 +7375,11 @@ function stageTA(){
         title:"S/R "+fmtpx(l.price)+" \u00d7"+l.touches }));
     });
   }
-  if(prefs.ema){
-    // Computed on whatever bars are showing. Gating it to the daily view left
-    // the button pressed and nothing drawn on every intraday chart.
-    var closes = rows.map(function(r){ return num(r[3]); });
-    var span = STAGE.iv==="1D" ? 200 : Math.min(200, Math.max(20, Math.floor(n/3)));
-    var ema = taEMA(closes, span);
-    var data = [];
-    for(var i=0;i<n;i++){ if(ema[i]!=null) data.push({time:times[i], value:ema[i]}); }
-    if(data.length){
-      STAGE.s.ema200 = STAGE.chart.addSeries(LWC.LineSeries, {color:TA_EMA_COLOR, lineWidth:1,
-        lineStyle:LWC.LineStyle.Dashed, title:"EMA"+span, priceLineVisible:false, crosshairMarkerVisible:false,
-        autoscaleInfoProvider: function(){ return null; }});
-      STAGE.s.ema200.setData(data);
-      summary.emaSpan = span;
-    }
-  }
-  if(prefs.rsi){
-    var closes2 = rows.map(function(r){ return num(r[3]); });
-    var rsi = taRSI(closes2, 14);
-    var rdata = [];
-    for(var j=0;j<n;j++){ if(rsi[j]!=null) rdata.push({time:times[j], value:rsi[j]}); }
-    if(rdata.length){
-      STAGE.s.rsi = STAGE.chart.addSeries(LWC.LineSeries, {color:cssVar("--acc"), lineWidth:1,
-        priceLineVisible:false, lastValueVisible:true, title:"RSI 14 · "+taTfLabel(),
-        // One decimal, matching the caption. At precision 0 the badge FLOORED
-        // (29.65 -> "29") while the caption rounded ("30").
-        priceFormat:{type:"price", precision:1, minMove:0.1},
-        // Pinned 0-100. On an autoscaled pane the 30 guide fell off screen and
-        // the pane floor read as oversold when RSI never went below 44.
-        autoscaleInfoProvider: function(){ return {priceRange:{minValue:0, maxValue:100}}; }}, 1);
-      STAGE.s.rsi.setData(rdata);
-      var rsiNow = rdata[rdata.length-1].value;
-      STAGE.rsiGuides = [
-        {at:70, line:STAGE.s.rsi.createPriceLine({price:70, color:cssVar("--dn"), lineWidth:1, lineStyle:LWC.LineStyle.Dotted,
-          axisLabelVisible:(rsiNow==null || Math.abs(rsiNow-70) > 6), title:""})},
-        {at:30, line:STAGE.s.rsi.createPriceLine({price:30, color:cssVar("--up"), lineWidth:1, lineStyle:LWC.LineStyle.Dotted,
-          axisLabelVisible:(rsiNow==null || Math.abs(rsiNow-30) > 6), title:""})}
-      ];
-      // Room for the topmost gridline label, which the pane edge cut in half.
-      try{ STAGE.s.rsi.priceScale().applyOptions({scaleMargins:{top:0.12, bottom:0.08}}); }catch(e){}
-      summary.rsiLast = rdata.length ? rdata[rdata.length-1].value : null;
-      summary.rsiTf = taTfLabel();
-      // setHeight before the chart has laid out is dropped, so the pane only
-      // took its size after the first toggle. Apply on the next frame.
-      var applyPane = function(){
-        try{ var panes = STAGE.chart.panes(); if(panes[1]) panes[1].setHeight(86); }catch(e){}
-      };
-      applyPane();
-      requestAnimationFrame(applyPane);
-    }
-  }
   STAGE.taSummary = summary;
   stageTALegend(prefs);
 }
 function stageTAPoke(){
   if(!STAGE.chart || !STAGE.rows.length) return;
-  if(STAGE.s.rsi){
-    var closes = STAGE.rows.map(function(r){ return num(r[3]); });
-    var rsi = taRSI(closes, 14), rdata = [];
-    for(var j=0;j<STAGE.rows.length;j++){ if(rsi[j]!=null) rdata.push({time:STAGE.times[j], value:rsi[j]}); }
-    if(rdata.length){
-      try{
-        STAGE.s.rsi.setData(rdata);
-        // The guide labels hide when the live value lands on them; that test
-        // ran once, at creation.
-        var rNow = rdata[rdata.length-1].value;
-        (STAGE.rsiGuides||[]).forEach(function(g){
-          try{ g.line.applyOptions({axisLabelVisible: Math.abs(rNow-g.at) > 6}); }catch(e){}
-        });
-        if(STAGE.taSummary) STAGE.taSummary.rsiLast = rNow;
-      }catch(e){}
-    }
-  }
   // The trend lines are drawn in the colour of their verdict, and the verdict
   // moves with price. Re-colour them from the same re-grade the caption uses,
   // or a line the caption calls broken resistance stays drawn support-green.
@@ -7351,17 +7404,18 @@ function stageTAPoke(){
     STAGE.taGraded = STAGE.taGraded || {};
     STAGE.taGraded[cfg[0]] = g.status;
   });
-  // Draw the caption whether or not RSI produced anything — it carries the
-  // trend-line verdict, which is what the re-grade above just changed.
+  // Redraw the caption every poke — it carries the trend-line verdict, which
+  // is what the re-grade above just changed.
   if(STAGE.taSummary) stageTALegend(taPrefs());
 }
 /* The line's GEOMETRY comes from settled bars and does not move during the
    session. Its VERDICT does: RETEST, FAILED and BREAKOUT are all decided by
    where the last close sits against the line, and so are "overhead", "below"
-   and the distance. Those were computed once, when the chart opened, and the
-   30-second poke only recomputed RSI — so a line MU broke at 10:05 still read
-   "1.2% overhead" at 14:30 with price 4% through it. Re-grade against the
-   close the chart is currently showing, every time the caption is drawn. */
+   and the distance. Those were computed once, when the chart opened, and
+   nothing else recomputed them on the 30-second poke — so a line MU broke at
+   10:05 still read "1.2% overhead" at 14:30 with price 4% through it.
+   Re-grade against the close the chart is currently showing, every time the
+   caption is drawn. */
 function taRegrade(fit, lastClose){
   if(!fit || lastClose==null || !(fit.lineNow>0)) return fit;
   var side = (fit.side!=null) ? fit.side : 1;
@@ -7503,6 +7557,11 @@ function stageTALegend(prefs){
       if(!r && !u){
         empty.push("no trend line fits this window" + (sm && sm.gate ? (": "+sm.gate) : ""));
       }
+      // Named only when BOTH lines fit — one line alone doesn't draw a shape.
+      if(sm && sm.shape && sm.shape.label){
+        on.push('<span class="m">shape: </span>'+esc(sm.shape.label)
+          + (sm.shape.detail ? ' <span class="m">('+esc(sm.shape.detail)+')</span>' : ''));
+      }
     }
   }
   if(prefs.sr){
@@ -7511,20 +7570,22 @@ function stageTALegend(prefs){
     if(sm && sm.levels.length){
       var sorted = sm.levels.slice().sort(function(a,b){ return b.price-a.price; });
       on.push('levels ' + sorted.map(function(l){
-        var inBand = (last!=null && l.lo!=null && l.hi!=null && last>=l.lo && last<=l.hi);
-        var side = (last==null) ? "" : (inBand ? "price is inside " : ((l.price>last) ? "overhead " : "under "));
+        // taSrSide is the SAME function the drawing code calls for the price
+        // line's color, so a level painted red on the chart is never called
+        // "under" in the words beneath it.
+        var srSide = taSrSide(l, last);
+        var label = srSide==="in" ? "price is inside " : srSide==="over" ? "overhead " : srSide==="under" ? "under " : "";
         // A cluster wider than a tick is a BAND. Printing its mean to the
         // penny claimed a precision the pivots do not have.
         var wide = (l.lo!=null && l.hi!=null && l.price>0 && (l.hi-l.lo)/l.price > 0.004);
         var px = wide ? (fmtpx(l.lo)+'–'+fmtpx(l.hi)) : fmtpx(l.price);
-        return side+px+' ×'+l.touches;
+        var txt = label+px+' ×'+l.touches;
+        return srSide ? ('<span style="color:var('+taSrColorVar(srSide)+')">'+esc(txt)+'</span>') : esc(txt);
       }).join(" · "));
     }
     else empty.push("no horizontal level with 2+ touches near price");
   }
-  if(prefs.ema && sm && sm.emaSpan) on.push('<span style="color:'+TA_EMA_COLOR+'">EMA'+sm.emaSpan+'</span>');
-  if(prefs.rsi && sm && sm.rsiLast!=null) on.push('RSI '+sm.rsiLast.toFixed(1)+' <span class="m">'+esc(sm.rsiTf||taTfLabel())+'</span>');
-  if(!prefs.trend && !prefs.sr && !prefs.rsi && !prefs.ema){ el.innerHTML = ""; return; }
+  if(!prefs.trend && !prefs.sr){ el.innerHTML = ""; return; }
   var tail = ' <span class="m">(fit on this window — display only, never a signal)</span>';
   if(on.length){
     el.innerHTML = 'auto-TA: '+on.join(" · ")+(empty.length ? (' <span class="m">· '+esc(empty.join("; "))+'</span>') : "")+tail;
@@ -8210,9 +8271,9 @@ function stageBar(){
     }
   }
   var prefs = taPrefs();
-  // "EMA200" was a lie on every intraday chart, where the span is a third of
-  // the visible bars — the button read EMA200 while the caption read EMA53.
-  var taBtns = [["trend","trend",TIPS.ta_trend],["sr","S/R",TIPS.ta_sr],["rsi","RSI",TIPS.ta_rsi],["ema","EMA",TIPS.ta_ema]]
+  // EMA and RSI overlays were removed 2026-08-21 (Zach's call): only trend
+  // lines and horizontal S/R remain as toggles.
+  var taBtns = [["trend","trend",TIPS.ta_trend],["sr","S/R",TIPS.ta_sr]]
     .map(function(t){ return '<button data-ta="'+t[0]+'" aria-pressed="'+!!prefs[t[0]]+'" data-tip="'+esc(t[2])+'">'+t[1]+'</button>'; }).join("");
   el.innerHTML = '<div class="seg" role="group" aria-label="Chart interval">'+ivBtns+'</div>'
     + '<div class="seg" role="group" aria-label="Chart range">'+tfBtns+'</div>'
@@ -8776,6 +8837,7 @@ function renderStageTab(){
     body.innerHTML = stageFlowSecHTML(sym);
   } else {
     body.innerHTML = '<div id="rangesec">'+rangeSecHTML(sym)+'</div>'
+      + stageFrameworkHTML(sym)
       + renderFundamentals(sym, fund)
       + '<div id="catlist"></div>'
       + '<div class="dsec note" id="dfoot">'
@@ -9248,8 +9310,12 @@ $$("section[id^=s-]").forEach(function(s){
 // The restore above runs after the headers were wired, so re-sync aria-expanded.
 $$(".sh").forEach(function(sh){ if(sh.dataset.collapse) shSetExpanded(sh); });
 
-// Mobile watchlist toggle: the ~50 rows default to collapsed on phones (the
-// CSS only applies <=900px, so the class is inert on desktop).
+// Mobile watchlist toggle (the CSS only applies <=900px, so the class is
+// inert on desktop). Default CHANGED 2026-08-21: the rail now opens the
+// mobile page (see the .cols order rule above), so defaulting it collapsed
+// would have moved it to the top only to hide it behind a tap — "toward the
+// top for easier functionality" means visible, not just first in the DOM.
+// Expanded by default; "1" is the one persisted opt-back-into-collapsed.
 var wlToggleLabel = null;
 (function(){
   var rail = document.getElementById("wlrail");
@@ -9260,7 +9326,7 @@ var wlToggleLabel = null;
   // renderWL calls this with the count it actually rendered, so custom adds
   // and hidden pinned names move the number instead of it reading 50 forever.
   wlToggleLabel = function(count){ if(typeof count==="number") n = count; label(); };
-  if(read("desk.wl")!=="0") rail.classList.add("collapsed");
+  if(read("desk.wl")==="1") rail.classList.add("collapsed");
   label();
   btn.addEventListener("click", function(){
     rail.classList.toggle("collapsed");

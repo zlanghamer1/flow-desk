@@ -28,9 +28,24 @@ The page used to open charts in a popup. Now the chart is the page:
   universe (boards, daily bars, financial sidecars) never changes from the
   page.
 - **Auto technical analysis.** Selecting a stock fits trend lines through
-  its swing highs and lows, draws horizontal support/resistance levels, and
-  opens an RSI pane. Toggles above the chart turn each overlay off. All of
-  it is display-only. Nothing here scores or signals.
+  its swing highs and lows, and draws horizontal support/resistance levels
+  color-coded to where price sits against them (red overhead, green
+  underneath, blue when price is inside the band). When both a resistance
+  and a support line fit, the caption under the chart also names the shape
+  the pair draws — ascending/descending/symmetrical triangle, rising/falling
+  wedge, ascending/descending channel, trading range, or bull/bear flag.
+  Toggles above the chart turn either overlay off. RSI and EMA panes were
+  removed 2026-08-21 (the fundamentals grid still carries a daily RSI(14)
+  reading). All of this is display-only. Nothing here scores or signals.
+- **A 5-metric scoring framework.** Below the chart, a filter panel checks
+  each name against five repricing/validation/sustainability tests (forward
+  EPS revisions, NTM revenue growth, analyst revision velocity, operating
+  margin expansion, FCF growth) and rolls them into a verdict — BUY, ADD,
+  HOLD, or AVOID. It is a reference for theses, not a signal: it never moves
+  the conviction or swing score, and two of the five filters read "building"
+  for months after a fresh deployment while enough weekly history
+  accumulates. Works best on growth names; mature dividend payers score
+  lower by design.
 - **Financials and peers.** Tabs under the chart chart quarterly revenue,
   net income, free cash flow, margins, and growth, and compare the focused
   name against its peers (curated sets where the vendor taxonomy lies, for

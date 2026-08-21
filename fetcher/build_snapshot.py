@@ -196,6 +196,11 @@ BOARD_CAP = 80  # raised 2026-08-15 with the 52-name universe (was 50/38);
                 # actually wider than the raw count suggests.
 MAX_HISTORY_SESSIONS = 60
 MAX_IV_HISTORY = 60
+# consensus_history.json's weekly rows (added 2026-08-21, 5-metric scoring
+# framework) — kept much longer than the daily caps above: the framework's
+# Filter 1 looks back ~26 weeks (context.FRAMEWORK_WEEKS_6M), so this must
+# outlast that lookback with room for the tolerance search either side.
+MAX_CONSENSUS_WEEKS = 40
 
 ACCEL_MULT = 1.5             # net_flow acceleration threshold for "firing"
 MONEYNESS_BAND = 0.20        # +/-20% of spot for 0-7DTE popular_contract
@@ -450,6 +455,17 @@ TV_COLUMNS = [
     # (MU: "Electronic Technology"/"Semiconductors"), verified live the same
     # day. The page builds peer groups from these; facts passes them through.
     "sector", "industry",
+    # NTM consensus (added 2026-08-21, 5-metric scoring framework) — forward
+    # EPS/revenue estimates for the NEXT fiscal year. Live-verified on NVDA
+    # and MU the same day via the FY/FQ internal-consistency check (the FY
+    # estimate divided by the FQ estimate lands near 4x for both names —
+    # NVDA 4.29x/4.32x, MU 2.57x/2.35x — consistent with a fiscal year built
+    # from four quarters rather than a scanner alias returning something
+    # else). `earnings_per_share_forecast_next_fy`/`revenue_forecast_next_fy`
+    # are fetched here; the corresponding `_fq` columns are deliberately NOT
+    # fetched — see context.py's facts.eps_ntm comment for why the framework
+    # uses the annual estimate for both its 6-month AND 3-month lookbacks.
+    "earnings_per_share_forecast_next_fy", "revenue_forecast_next_fy",
 ]
 # index positions into the "d" row, named for readability
 _COL = {name: i for i, name in enumerate(TV_COLUMNS)}
@@ -553,6 +569,9 @@ def _row_to_quote(sym_field: str, d: list) -> dict | None:
         "rec_mark": _num(_COL["recommendation_mark"]),
         "sector": _txt(_COL["sector"]),
         "industry": _txt(_COL["industry"]),
+        # NTM consensus (added 2026-08-21) — see TV_COLUMNS above.
+        "eps_ntm": _num(_COL["earnings_per_share_forecast_next_fy"]),
+        "rev_ntm": _num(_COL["revenue_forecast_next_fy"]),
     }
 
 
@@ -1199,6 +1218,37 @@ def save_history(out_dir: Path, history: dict) -> None:
     tmp.replace(path)
 
 
+def load_consensus_history(out_dir: Path) -> dict:
+    """consensus_history.json — weekly forward-EPS snapshots for the
+    5-metric scoring framework (added 2026-08-21). Published to the `data`
+    branch the same way history.json is (NOT the job-local
+    fetcher/.context_cache.json): it needs to survive months of daily
+    redeploys and mid-day redispatches, which a gitignored cache does not.
+    """
+    path = out_dir / "consensus_history.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("not a dict")
+        raw.setdefault("weekly", {})
+        return raw
+    except Exception:
+        return {"v": 1, "weekly": {}}
+
+
+def save_consensus_history(out_dir: Path, consensus_history: dict) -> None:
+    weekly = consensus_history.get("weekly", {})
+    if isinstance(weekly, dict) and len(weekly) > MAX_CONSENSUS_WEEKS:
+        for k in sorted(weekly.keys())[:-MAX_CONSENSUS_WEEKS]:
+            del weekly[k]
+    consensus_history["v"] = 1
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "consensus_history.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(consensus_history, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
 def load_prev_cycle() -> dict:
     """Load the prior cycle's cache: {"session", "flows", "vols"}.
 
@@ -1336,6 +1386,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     history = load_history(out_dir)
     today_sessions = history["sessions"].setdefault(session_str, {})
     iv_history = history["iv_history"]
+    consensus_history = load_consensus_history(out_dir)
     prev_cycle = load_prev_cycle()
     same_session = prev_cycle["session"] == session_str
     new_prev_cycle: dict = {"session": session_str, "flows": {}, "vols": {}}
@@ -1711,8 +1762,9 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     fund_payload = None
     intraday_payload = None
     try:
-        context_fields, bars_payload, fund_payload, intraday_payload = \
-            context.build_context(quotes, PINNED, session_date, now_utc)
+        context_fields, bars_payload, fund_payload, intraday_payload, consensus_history = \
+            context.build_context(quotes, PINNED, session_date, now_utc,
+                                   consensus_history=consensus_history)
     except Exception as e:
         log(f"WARN context build failed: {e}")
 
@@ -1841,6 +1893,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
 
     if write_history:
         save_history(out_dir, history)
+        save_consensus_history(out_dir, consensus_history)
     save_prev_cycle(new_prev_cycle)
 
     log(f"wrote {data_path} ({data_path.stat().st_size} bytes)")

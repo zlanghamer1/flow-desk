@@ -8,34 +8,7 @@ work a later session can pick up. Nothing here blocks using the page.
 
 ## Open — in the order they are worth doing
 
-### 1. Publish bars.json v4 (biggest real-world gap)
-
-**What:** `fetcher/context.py` has emitted `BARS_VERSION = 4` since
-2026-08-19 — a `sessions` calendar plus a `bar_dates` map of per-ticker
-exceptions. The live `data` branch still serves v3, which carries no dates at
-all.
-
-**Why it matters:** with no calendar, the page reconstructs every daily and
-weekly date by walking back one trading day per bar. That is why the crosshair
-carries an "≈", why earnings and rating popovers warn about the candle they sit
-on, and why a trend line's break date reads "broke Aug 11 (approx)". The
-reconstruction now skips weekends and a hard-coded holiday table (back-filled
-through 2024), so the drift is small — but it is still a reconstruction.
-
-**How:** the daily rebuild is signature-gated on `BARS_BUILD_SIG`, so the next
-full rebuild publishes v4 on its own. Confirm with:
-
-    git show origin/data:bars.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('v'), 'sessions' in d)"
-
-When it reads `4 True`, `barSessionDates` takes over, `BAR_DATES_APPROX` goes
-false, every "≈" and every approximation note disappears on its own, and
-`isTradingDay` starts preferring the published calendar over the hard-coded
-table. No page change is needed.
-
-**Until then:** `MARKET_HOLIDAYS` in index.html has to be extended each
-December. It currently runs 2024 through 2027.
-
-### 2. Round 6 of the review was never scored
+### 1. Round 6 of the review was never scored
 
 Round 5's adversarial verification finished after the fixes: of 72 findings it
 checked, **70 were refuted because they were already fixed**, and the two it
@@ -63,7 +36,7 @@ reviewer that `data/` is gitignored and can be stale (a round-4 reviewer called
 a working feature broken because the local sidecars were months old), and it
 tells the verifier to check the live payload with `git show origin/data:...`.
 
-### 3. Score trajectory, and what "90" would take
+### 2. Score trajectory, and what "90" would take
 
 | Section | R3 | R4 | R5 |
 |---|---|---|---|
@@ -88,7 +61,7 @@ If a later session wants the number itself to move, the lever is the review
 prompt, not the page: score against a fixed rubric carried between rounds
 rather than against each reviewer's fresh read.
 
-### 4. Deferred by judgement, not by omission
+### 3. Deferred by judgement, not by omission
 
 - **The chart's own attribution link** is 35x11 on a phone, under the 24px
   touch minimum. Lightweight Charts injects and sizes it; restyling a vendor's
@@ -106,6 +79,18 @@ rather than against each reviewer's fresh read.
   one sort key.
 
 ---
+
+## Shipped 2026-08-21
+
+**bars.json v4 is live.** `git show origin/data:bars.json` now reads `4 True`
+(version 4, `sessions` calendar present) — the daily rebuild published it on
+its own, signature-gated on `BARS_BUILD_SIG` as designed. `barSessionDates`
+takes over from the walk-back reconstruction, `BAR_DATES_APPROX` is false, and
+`isTradingDay` now prefers the published calendar over the hard-coded table.
+No page change was needed — the page was already written to prefer v4's
+calendar once it showed up. `MARKET_HOLIDAYS` in index.html still needs
+extending each December as its own maintenance item — that did not go away
+with v4.
 
 ## Shipped in rounds 4 and 5 (28 commits, all browser-verified)
 

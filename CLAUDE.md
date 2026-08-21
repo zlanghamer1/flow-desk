@@ -222,5 +222,69 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
 - **A network failure is never cached as a fact about the world.** A failed
   peer scan says the scan did not answer, and is not written to the cache.
 
+## Guardrails added 2026-08-21 (5-metric framework, Auto-TA, mobile watchlist)
+
+- **The 5-metric scoring framework never uses ClaudeVault's per-ticker
+  analysis numbers.** `market-data/results/desk_universe_framework_analysis_
+  2026-08-21.md` and `watchlist_framework_analysis_2026-08-21.md` misidentify
+  at least two tickers (NBIS as "NBT Bancorp / Specialty Biotech" — it is
+  Nebius Group, an AI infrastructure company; CORZ as "Corzine / Specialized
+  Mining" — it is Core Scientific) and score filters inconsistently against
+  their own stated thresholds. They read as generated illustrative content,
+  not a verified pull. Only the METHODOLOGY from
+  `financial_metrics_backtest_extended_2026-08-21.md` is implemented, in
+  `fetcher/context.py`'s `score_framework` — every number comes from a live
+  vendor at fetch time, or the filter reads null. Never hardcode a specific
+  ticker's verdict from either analysis file.
+- **A filter with no data is null, never a guessed pass or fail — and the
+  verdict says so.** Two of the five filters (forward EPS revision, analyst
+  velocity) need 3-6 months of accumulated weekly consensus history that
+  does not exist on a fresh deployment. The verdict reads `"BUILDING"`
+  (`FRAMEWORK_MIN_EVALUATED` = 3) rather than a confident tier computed from
+  a minority of the five.
+- **The weekly consensus snapshot lives on the `data` branch
+  (`consensus_history.json`), never in `fetcher/.context_cache.json`.** The
+  job-local cache is gitignored and does not survive a redispatch or a new
+  day's job (each re-clones `data` fresh — see DEPLOY.md); this needs to
+  survive months of those. Same publish mechanism as `history.json`, same
+  `write_history` guard against phantom weekend snapshots.
+- **The framework verdict is display-only and never feeds a board score.**
+  `facts.<TICKER>.framework` rides the same "reference data" posture as
+  `facts.op_margin`/`facts.short_pct` — it does not touch
+  `conviction_score`/`swing_score`, per the framework doc's own explicit
+  instruction not to feed it into scoring without separate testing.
+- **`facts.eps_ntm`/`.rev_ntm`'s TV scanner column names were live-verified,
+  not assumed.** `eps_growth_next_5y` and `revenue_growth_next_year` both
+  return null (not real columns);
+  `earnings_per_share_forecast_next_fy`/`revenue_forecast_next_fy` are real —
+  confirmed by the FY/FQ ratio landing near 4x, the shape a genuine annual
+  vs. quarterly consensus pair should have. Deliberately the ANNUAL estimate
+  for both the 6-month and 3-month lookback filters, never the quarterly
+  one — the quarterly estimate rolls over to a new quarter every time one
+  reports, which would compare two different quarters under one "velocity"
+  label.
+- **EMA and RSI overlays were removed from the chart** (Zach's call). The
+  Fundamentals grid still shows a daily RSI(14) snapshot from the scanner —
+  a different, unrelated reading; do not conflate the two when touching
+  either.
+- **A two-line shape label is read off the SAME fitted geometry, never a
+  separate pattern detector.** `taShapeLabel` classifies slope and
+  convergence from the resistance/support pair `taFitLine` already
+  produced. Its flag-pole threshold (`TA_FLAG_MIN_BARS`) is a first-pass
+  heuristic, unlike the ported `TA_TOUCH_TOL`/`TA_CONTAIN_TOL`-class
+  constants above, which carry live-measurement comments — treat it with the
+  same scrutiny before trusting its exact numbers.
+- **S/R line color and the caption's position word are computed by ONE
+  function (`taSrSide`), never two.** A level can never be drawn red on the
+  chart while the sentence under it says "under" — the class of bug several
+  earlier rounds' guardrails exist to prevent.
+- **The mobile watchlist order was reversed.** The 2026-08-18 ruling put the
+  Morning Brief verdict first on a phone; Zach's follow-up puts the
+  watchlist first instead (`.wl{order:1}`), and defaults it EXPANDED rather
+  than collapsed behind a tap — "toward the top for easier functionality"
+  meant visible, not just first in the DOM. If a future ruling reverses this
+  again, update the dated CSS comment in the `@media (max-width:900px)`
+  block, not just the `order` values.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

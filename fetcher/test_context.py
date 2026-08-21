@@ -728,7 +728,7 @@ def test_hourly_gate_fresh_timestamp_skips_network_and_carries_cache_forward(tmp
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None,
                      "lo52": None, "market_cap": None, "beta": None, "avol": None, "rsi": None}}
-    fields, bars_payload, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=_boom)
+    fields, bars_payload, fund_payload, _intra, _cons = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=_boom)
     assert bars_payload is None
     assert fund_payload is None   # same gate as bars — both fresh, neither rebuilds
     assert fields["brief"] == {"date": "2026-08-15", "stale": False}
@@ -771,7 +771,7 @@ def test_stale_context_triggers_full_refetch_and_updates_cache(tmp_path, monkeyp
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": 1.0, "lo52": 1.0,
                      "market_cap": 1.0, "beta": 1.0, "avol": 1.0, "rsi": 50.0}}
-    fields, bars_payload, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
+    fields, bars_payload, fund_payload, _intra, _cons = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert fields["brief"]["date"] == "2026-08-15" and fields["brief"]["stale"] is False
     assert fields["desk_private"] == {"v": 1, "blob": "abc"}
     assert fields["context_updated_at"] == "2026-08-15T14:00:00Z"
@@ -807,7 +807,7 @@ def test_build_context_without_token_still_gets_tv_and_opex_but_not_vault(tmp_pa
         raise AssertionError(f"unexpected URL: {url}")
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None}}
-    fields, _, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
+    fields, _, fund_payload, _intra, _cons = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert "brief" not in fields
     assert "desk_private" not in fields
     assert "catalysts" in fields
@@ -842,7 +842,7 @@ def test_bars_only_gate_rebuilds_bars_without_refetching_context(tmp_path, monke
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
                      "market_cap": None, "beta": None, "avol": None, "rsi": None}}
-    fields, bars_payload, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
+    fields, bars_payload, fund_payload, _intra, _cons = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert bars_payload is not None and bars_payload["built"] == "2026-08-15"
     assert bars_payload["v"] == 4
     assert fields["brief"] == {"date": "2026-08-15", "stale": False}   # carried from cache
@@ -872,7 +872,7 @@ def test_bars_gate_same_day_same_sig_is_cached_no_rebuild(tmp_path, monkeypatch)
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
                      "market_cap": None, "beta": None, "avol": None, "rsi": None}}
-    fields, bars_payload, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=_boom)
+    fields, bars_payload, fund_payload, _intra, _cons = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=_boom)
     assert bars_payload is None
     assert fund_payload is None
 
@@ -906,7 +906,7 @@ def test_bars_gate_same_day_different_sig_forces_rebuild(tmp_path, monkeypatch):
 
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
                      "market_cap": None, "beta": None, "avol": None, "rsi": None}}
-    fields, bars_payload, fund_payload, _intra = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
+    fields, bars_payload, fund_payload, _intra, _cons = context.build_context(quotes, ["MU"], date(2026, 8, 15), now, _get=fake_get)
     assert bars_payload is not None and bars_payload["v"] == context.BARS_VERSION
     assert fund_payload is not None and "MU" in fund_payload
 
@@ -1377,7 +1377,7 @@ def test_fund_sig_mismatch_forces_same_day_rebuild(tmp_path, monkeypatch):
         raise urllib.error.URLError("offline")   # every leg fails soft; the gate is what's under test
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None, "lo52": None,
                      "market_cap": None, "beta": None, "avol": None, "rsi": None}}
-    fields, bars_payload, fund_payload, _intra = context.build_context(
+    fields, bars_payload, fund_payload, _intra, _cons = context.build_context(
         quotes, ["MU"], date(2026, 8, 19), now, _get=fake_get)
     assert fund_payload is not None                       # rebuild ran
     assert "MU" in fund_payload
@@ -1606,7 +1606,7 @@ def test_build_fund_sidecar_revenue_stays_null_when_no_quarterly_series_to_backf
         raise AssertionError(url)
     payload = context.build_fund_sidecar("AXTI", date(2026, 8, 15), "crumbtoken", None, _get=fake_get)
     assert payload["earnings"][0]["rev"] is None
-    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []}
+    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": [], "opinc": []}
 
 
 def test_build_fund_sidecar_yahoo_next_earnings_session_falls_back_to_stockanalysis_text():
@@ -1642,7 +1642,7 @@ def test_build_fund_sidecar_yahoo_next_earnings_session_falls_back_to_stockanaly
     assert payload["sym"] == "MRVL" and payload["built"] == "2026-08-15"
     assert payload["short_pct_float"] == pytest.approx(4.103)
     assert payload["pe_forward"] == pytest.approx(48.83)
-    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []}   # that leg failed, stays scaffolded
+    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": [], "opinc": []}   # that leg failed, stays scaffolded
     assert payload["next_earnings"] == {
         "date": "2026-08-27", "session": "AMC",   # from stockanalysis.com's text, not TV
         "eps_est": pytest.approx(2.01), "rev_est": pytest.approx(92100000000.0),
@@ -1672,7 +1672,7 @@ def test_build_fund_sidecar_yahoo_leg_skipped_entirely_when_crumb_is_none():
     assert payload["pe_forward"] == pytest.approx(10.0)
     assert payload["earnings"] == []
     assert payload["next_earnings"] == {"date": "2026-09-01", "session": "BMO", "eps_est": None, "rev_est": None}
-    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []}
+    assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": [], "opinc": []}
 
 
 def test_build_fund_universe_fetches_crumb_exactly_once_across_symbols():
@@ -2084,7 +2084,7 @@ def test_fed_odds_land_in_the_data_json_fields(tmp_path, monkeypatch):
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None,
                      "lo52": None, "market_cap": None, "beta": None,
                      "avol": None, "rsi": None}}
-    fields, _, _, _ = context.build_context(quotes, ["MU"], SESSION, now, _get=fake_get)
+    fields, _, _, _, _cons = context.build_context(quotes, ["MU"], SESSION, now, _get=fake_get)
     assert fields["fed_odds"]["hike_pct"] == pytest.approx(28.4, abs=0.1)
 
 
@@ -2104,7 +2104,7 @@ def test_fed_odds_survive_the_cache_round_trip_between_hourly_refreshes(tmp_path
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None,
                      "lo52": None, "market_cap": None, "beta": None,
                      "avol": None, "rsi": None}}
-    fields, _, _, _ = context.build_context(quotes, ["MU"], SESSION, now, _get=_boom)
+    fields, _, _, _, _cons = context.build_context(quotes, ["MU"], SESSION, now, _get=_boom)
     assert fields["fed_odds"] == {"hike_pct": 28.4, "grade": "HOSTILE"}
 
 
@@ -2119,7 +2119,7 @@ def test_absent_fed_odds_omit_the_key_entirely(tmp_path, monkeypatch):
     quotes = {"MU": {"tv_symbol": "NASDAQ:MU", "earnings_ts": None, "hi52": None,
                      "lo52": None, "market_cap": None, "beta": None,
                      "avol": None, "rsi": None}}
-    fields, _, _, _ = context.build_context(quotes, ["MU"], SESSION, now, _get=_boom)
+    fields, _, _, _, _cons = context.build_context(quotes, ["MU"], SESSION, now, _get=_boom)
     assert "fed_odds" not in fields
 
 def test_intraday_gate_fresh_timestamp_skips_rebuild(tmp_path, monkeypatch):

@@ -109,6 +109,12 @@ run_cycle can't clobber each other)
                                                     // serving the old shape until midnight
   "avg_move": {"MU": 3.45, ...},                   // carried forward on cycles that
                                                     // don't rebuild bars
+  "framework": {"MU": {...}, ...},                 // 5-metric scoring framework verdicts
+                                                    // (added 2026-08-21) — same once-a-day-
+                                                    // then-carry-forward pattern as avg_move,
+                                                    // since it depends on fund/{SYM}.json,
+                                                    // which is itself only rebuilt on this
+                                                    // same gate. See score_framework below.
   "brief": {...} | null,                           // last-fetched values, carried
   "catalysts": [...],                              // forward on cycles that don't
   "news": {...} | null,                            // refetch, so data.json's fields
@@ -952,6 +958,20 @@ def fetch_earnings_days(tv_rows: dict[str, dict], session_date: date) -> dict[st
             "yld": q.get("yld"),
             "target": q.get("target"),
             "rec_mark": q.get("rec_mark"),
+            # NTM consensus (added 2026-08-21, 5-metric scoring framework) —
+            # forward EPS/revenue estimates for the NEXT fiscal year. See
+            # build_snapshot.py's TV_COLUMNS comment for how these column
+            # names were live-verified real rather than a scanner alias
+            # returning something else. Deliberately the annual (not
+            # quarterly) estimate for BOTH the 6-month and 3-month lookback
+            # filters below — the next-quarter estimate rolls over to a new
+            # quarter each time one reports, which would compare two
+            # different quarters' numbers under one "velocity" label; the
+            # annual estimate only rolls over once a year, so a 3- or
+            # 6-month-old snapshot is still describing the same forecast
+            # period as today's.
+            "eps_ntm": q.get("eps_ntm"),
+            "rev_ntm": q.get("rev_ntm"),
             # Classification (added 2026-08-19) — TV's own taxonomy, strings
             # or None, straight off the same scanner row. The page derives
             # peer groups from `industry`; see DATA_CONTRACT.md.
@@ -2056,12 +2076,24 @@ def fetch_sa_quarterly(sym: str, _get: Optional[Callable] = None) -> Optional[li
     revs, epss = fd.get("revenue"), fd.get("epsdil")
     if not all(isinstance(x, list) for x in (datekeys, fys, fqs, revs, epss)):
         return None
-    # Net income to common (`netinccmn`) rides the SAME payload — optional
-    # (an index/fund page may omit it), so it degrades to per-row None
-    # rather than failing the whole parse like the required arrays above.
+    # Net income to common (`netinccmn`) and operating income (`opinc`) both
+    # ride the SAME payload — optional (an index/fund page may omit either),
+    # so each degrades to per-row None rather than failing the whole parse
+    # like the required arrays above. `opinc` added 2026-08-21 for the
+    # 5-metric scoring framework's OpMargin-expansion filter — verified live
+    # on MU the same day: opinc/revenue reproduces the page's own
+    # `operatingMargin` column exactly for every quarter checked (0.8037,
+    # 0.67624, 0.44975, ... — see the framework's implementation note),
+    # confirming this is the real operating-income row and not a mismatched
+    # column. Margin is derived here (opinc/revenue) rather than trusting the
+    # vendor's own `operatingMargin` field, the same "derive it ourselves"
+    # posture `annual` below already takes for revenue/eps.
     nis = fd.get("netinccmn")
     if not isinstance(nis, list):
         nis = []
+    opincs = fd.get("opinc")
+    if not isinstance(opincs, list):
+        opincs = []
 
     def _fnum(v):
         return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
@@ -2078,6 +2110,7 @@ def fetch_sa_quarterly(sym: str, _get: Optional[Callable] = None) -> Optional[li
             "revenue": _fnum(revs[i]),
             "eps": _fnum(epss[i]),
             "ni": _fnum(nis[i]) if i < len(nis) else None,
+            "opinc": _fnum(opincs[i]) if i < len(opincs) else None,
         })
     return rows or None
 
@@ -2124,7 +2157,7 @@ def _build_quarterly_series(rows: list[dict]) -> dict:
     convention as bars.json), capped at FUND_MAX_QUARTERLY quarters.
     """
     capped = list(reversed(rows[:FUND_MAX_QUARTERLY]))
-    periods, revenue, eps, ni, fcf = [], [], [], [], []
+    periods, revenue, eps, ni, fcf, opinc = [], [], [], [], [], []
     for r in capped:
         fy, fq = r.get("fiscal_year"), r.get("fiscal_quarter")
         yy = fy[-2:] if isinstance(fy, str) and len(fy) >= 2 else None
@@ -2133,7 +2166,8 @@ def _build_quarterly_series(rows: list[dict]) -> dict:
         eps.append(r.get("eps"))
         ni.append(r.get("ni"))
         fcf.append(r.get("fcf"))
-    return {"periods": periods, "revenue": revenue, "eps": eps, "ni": ni, "fcf": fcf}
+        opinc.append(r.get("opinc"))
+    return {"periods": periods, "revenue": revenue, "eps": eps, "ni": ni, "fcf": fcf, "opinc": opinc}
 
 
 def _build_annual_series(rows: list[dict]) -> dict:
@@ -2153,7 +2187,7 @@ def _build_annual_series(rows: list[dict]) -> dict:
             by_year.setdefault(fy, []).append(r)
     complete_years = sorted(y for y, qs in by_year.items() if len(qs) == 4)
     complete_years = complete_years[-FUND_MAX_ANNUAL:]
-    periods, revenue, eps, ni, fcf = [], [], [], [], []
+    periods, revenue, eps, ni, fcf, opinc = [], [], [], [], [], []
 
     def _sum4(qs, key, dp):
         vals = [q[key] for q in qs
@@ -2167,7 +2201,8 @@ def _build_annual_series(rows: list[dict]) -> dict:
         eps.append(_sum4(qs, "eps", 5))
         ni.append(_sum4(qs, "ni", 2))
         fcf.append(_sum4(qs, "fcf", 2))
-    return {"periods": periods, "revenue": revenue, "eps": eps, "ni": ni, "fcf": fcf}
+        opinc.append(_sum4(qs, "opinc", 2))
+    return {"periods": periods, "revenue": revenue, "eps": eps, "ni": ni, "fcf": fcf, "opinc": opinc}
 
 
 def _default_yahoo_get(url: str, headers: dict) -> bytes:
@@ -2455,8 +2490,8 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
         "built": session_date.isoformat(), "sym": sym,
         "short_pct_float": None, "pe_forward": None,
         "earnings": [], "next_earnings": None,
-        "quarterly": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []},
-        "annual": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": []},
+        "quarterly": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": [], "opinc": []},
+        "annual": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": [], "opinc": []},
         "ratings": [],
         # The currency the statements are REPORTED in. None means unknown, and
         # the page says "as reported" rather than naming a currency it is
@@ -2566,6 +2601,12 @@ def load_context_cache() -> dict:
         "bars_sig": raw.get("bars_sig") if isinstance(raw.get("bars_sig"), str) else None,
         "fund_sig": raw.get("fund_sig") if isinstance(raw.get("fund_sig"), str) else None,
         "avg_move": raw.get("avg_move") if isinstance(raw.get("avg_move"), dict) else {},
+        # 5-metric scoring framework verdicts (added 2026-08-21) — same
+        # once-daily-rebuild-then-cache-for-the-rest-of-the-day pattern as
+        # avg_move above, since it depends on fund/{SYM}.json quarterly data
+        # which is itself only rebuilt once a day. Must be listed here or it
+        # is silently dropped every reload, same warning as fed_odds below.
+        "framework": raw.get("framework") if isinstance(raw.get("framework"), dict) else {},
         "brief": raw.get("brief") if isinstance(raw.get("brief"), dict) else None,
         "catalysts": raw.get("catalysts") if isinstance(raw.get("catalysts"), list) else [],
         "news": raw.get("news") if isinstance(raw.get("news"), dict) else None,
@@ -2599,14 +2640,208 @@ def _is_context_stale(cache: dict, now_utc: datetime) -> bool:
     return (now_utc - prev).total_seconds() > FETCH_STALE_SEC
 
 
+# ── 5-metric scoring framework (added 2026-08-21, Zach's ask) ───────────────
+# Repricing -> validation -> sustainability filters, methodology from
+# ClaudeVault's market-data/results/financial_metrics_backtest_extended_
+# 2026-08-21.md. Display-only, same posture as everything else in this file:
+# a filter with no real data reads UNKNOWN, never a guessed pass or fail.
+#
+# This implementation deliberately does NOT use the specific per-ticker
+# numbers in ClaudeVault's desk_universe_framework_analysis_2026-08-21.md or
+# watchlist_framework_analysis_2026-08-21.md. Those files misidentify at
+# least two tickers — NBIS as "NBT Bancorp / Specialty Biotech" (it is Nebius
+# Group, an AI infrastructure company) and CORZ as "Corzine / Specialized
+# Mining" (it is Core Scientific, an AI-datacenter/bitcoin operator) — and
+# score filters inconsistently against their own stated thresholds (MU's
+# "+2.3 bps YoY" OpMargin is marked PASS against a stated >50bps threshold).
+# They read as generated illustrative content, not a verified data pull, so
+# only the METHODOLOGY below is implemented — every number a live vendor
+# supplies at fetch time, or the filter reads None.
+FRAMEWORK_REV_GROWTH_MIN = 0.20         # Filter 2 PASS threshold: NTM revenue growth
+FRAMEWORK_OPMARGIN_MIN_BPS = 50.0       # Filter 4 PASS threshold: YoY opmargin expansion
+FRAMEWORK_WEEKS_6M = 26                 # Filter 1 lookback: ~6 months of ISO weeks
+FRAMEWORK_WEEKS_3M = 13                 # Filter 3 lookback: ~3 months of ISO weeks
+FRAMEWORK_WEEK_TOLERANCE = 1            # nearest-available-snapshot search radius
+FRAMEWORK_MIN_EVALUATED = 3             # filters needed before a verdict is given at all
+_FRAMEWORK_VERDICTS = {5: "BUY_5", 4: "BUY_4", 3: "ADD", 2: "HOLD", 1: "AVOID", 0: "AVOID"}
+
+
+def _iso_week_key(d: date) -> str:
+    y, w, _ = d.isocalendar()
+    return f"{y:04d}-W{w:02d}"
+
+
+def _snapshot_consensus(consensus_history: dict, facts: dict, session_date: date) -> dict:
+    """Append this ISO week's forward-EPS consensus per ticker, ONCE per
+    week (not every cycle, not even every day) — consensus estimates move on
+    a quarterly cadence, and a snapshot on every once-daily rebuild would
+    bloat this file for months with rows that only differ from last week's
+    by noise. `consensus_history` is the payload persisted to the `data`
+    branch as consensus_history.json (see build_snapshot.py's load/save
+    pair) — a job-local cache cannot hold this: it needs to survive months
+    of daily redeploys and redispatches, which a gitignored cache does not.
+    """
+    consensus_history.setdefault("weekly", {})
+    wk = _iso_week_key(session_date)
+    if consensus_history.get("last_snapshot_week") == wk:
+        return consensus_history
+    row: dict[str, dict] = {}
+    for ticker, f in facts.items():
+        eps_ntm = f.get("eps_ntm") if isinstance(f, dict) else None
+        if isinstance(eps_ntm, (int, float)) and not isinstance(eps_ntm, bool):
+            row[ticker] = {"eps_ntm": eps_ntm}
+    if row:
+        consensus_history["weekly"][wk] = row
+        consensus_history["last_snapshot_week"] = wk
+        consensus_history["last_snapshot_date"] = session_date.isoformat()
+    return consensus_history
+
+
+def _consensus_lookback(consensus_history: dict, ticker: str, session_date: date,
+                         weeks_ago: int, tolerance: int = FRAMEWORK_WEEK_TOLERANCE) -> Optional[float]:
+    """This ticker's eps_ntm snapshot from `weeks_ago` ISO weeks back, or the
+    nearest week within `tolerance` either side if that exact week is
+    missing (a loop outage or a holiday-shortened week). None if nothing in
+    range has this ticker — the filter reads UNKNOWN, never a guess.
+    """
+    weekly = consensus_history.get("weekly", {})
+    if not isinstance(weekly, dict):
+        return None
+    target = session_date - timedelta(weeks=weeks_ago)
+    for delta in range(0, tolerance + 1):
+        offsets = (0,) if delta == 0 else (-delta, delta)
+        for off in offsets:
+            wk = _iso_week_key(target + timedelta(weeks=off))
+            row = weekly.get(wk)
+            if isinstance(row, dict) and ticker in row:
+                v = row[ticker].get("eps_ntm")
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    return v
+    return None
+
+
+def _framework_verdict(passed: int, evaluated: int) -> str:
+    """Map filters-passed to a verdict word on the framework's own 0-5 tier
+    scale. "BUILDING" while fewer than FRAMEWORK_MIN_EVALUATED filters have
+    real data — the two consensus-history filters (forward EPS revision,
+    analyst velocity) read UNKNOWN until weekly snapshots accumulate the
+    needed 3-6 months, so a fresh deployment starts here and fills in on its
+    own; never upgraded to a confident tier on a minority of the filters.
+    """
+    if evaluated < FRAMEWORK_MIN_EVALUATED:
+        return "BUILDING"
+    return _FRAMEWORK_VERDICTS.get(passed, "BUILDING")
+
+
+def score_framework(ticker: str, f: dict, fund: Optional[dict],
+                     consensus_history: dict, session_date: date) -> dict:
+    """One ticker's 5-metric filter result. `f` is this ticker's facts dict
+    (carries eps_ntm/rev_ntm off the scanner batch call); `fund` is this
+    ticker's fund/{SYM}.json payload (quarterly revenue/fcf/opinc — None if
+    the sidecar build failed for this name). Every filter is True/False/None
+    independently; a missing input never gets guessed into a pass or a fail.
+    """
+    filters: dict[str, Optional[bool]] = {}
+    metrics: dict[str, float] = {}
+
+    eps_ntm = f.get("eps_ntm") if isinstance(f, dict) else None
+    rev_ntm = f.get("rev_ntm") if isinstance(f, dict) else None
+    quarterly = (fund or {}).get("quarterly") or {}
+    annual = (fund or {}).get("annual") or {}
+    q_rev = quarterly.get("revenue") or []
+    q_fcf = quarterly.get("fcf") or []
+    q_opinc = quarterly.get("opinc") or []
+    a_rev = annual.get("revenue") or []
+
+    def _isnum(v) -> bool:
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+    # Filter 1: forward EPS revision — is the NTM consensus higher than it
+    # was ~6 months ago?
+    eps_6m_ago = _consensus_lookback(consensus_history, ticker, session_date, FRAMEWORK_WEEKS_6M)
+    if _isnum(eps_ntm) and _isnum(eps_6m_ago) and eps_6m_ago != 0:
+        metrics["eps_revision_6m_pct"] = round((eps_ntm - eps_6m_ago) / abs(eps_6m_ago) * 100, 2)
+        filters["forward_eps_revision"] = eps_ntm > eps_6m_ago
+    else:
+        filters["forward_eps_revision"] = None
+
+    # Filter 2: NTM revenue growth > 20% — next fiscal year's consensus
+    # revenue vs the last COMPLETE reported fiscal year (fund/{SYM}.json's
+    # own derived annual series).
+    last_annual_rev = next((v for v in reversed(a_rev) if _isnum(v)), None)
+    if _isnum(rev_ntm) and _isnum(last_annual_rev) and last_annual_rev > 0:
+        rev_growth = (rev_ntm - last_annual_rev) / last_annual_rev
+        metrics["revenue_growth_ntm_pct"] = round(rev_growth * 100, 2)
+        filters["revenue_growth"] = rev_growth > FRAMEWORK_REV_GROWTH_MIN
+    else:
+        filters["revenue_growth"] = None
+
+    # Filter 3: analyst revision velocity — same eps_ntm series as filter 1,
+    # a shorter ~3-month lookback (momentum vs. the 6-month magnitude above).
+    eps_3m_ago = _consensus_lookback(consensus_history, ticker, session_date, FRAMEWORK_WEEKS_3M)
+    if _isnum(eps_ntm) and _isnum(eps_3m_ago) and eps_3m_ago != 0:
+        metrics["eps_velocity_3m_pct"] = round((eps_ntm - eps_3m_ago) / abs(eps_3m_ago) * 100, 2)
+        filters["analyst_velocity"] = eps_ntm > eps_3m_ago
+    else:
+        filters["analyst_velocity"] = None
+
+    # Filter 4: operating-margin expansion — latest REPORTED quarter vs the
+    # same quarter a year ago (4 quarters back in the oldest-first series).
+    if len(q_rev) >= 5 and len(q_opinc) >= 5:
+        rev_now, rev_prior, oi_now, oi_prior = q_rev[-1], q_rev[-5], q_opinc[-1], q_opinc[-5]
+        if all(_isnum(x) for x in (rev_now, rev_prior, oi_now, oi_prior)) and rev_now > 0 and rev_prior > 0:
+            bps = (oi_now / rev_now - oi_prior / rev_prior) * 10000
+            metrics["opmargin_expansion_bps"] = round(bps, 1)
+            filters["opmargin_expansion"] = bps > FRAMEWORK_OPMARGIN_MIN_BPS
+        else:
+            filters["opmargin_expansion"] = None
+    else:
+        filters["opmargin_expansion"] = None
+
+    # Filter 5: FCF growth — TTM free cash flow growing, and growing faster
+    # than TTM revenue (self-funded growth, not just growth).
+    if len(q_fcf) >= 8 and len(q_rev) >= 8:
+        fcf_recent, fcf_prior = q_fcf[-4:], q_fcf[-8:-4]
+        rev_recent, rev_prior4 = q_rev[-4:], q_rev[-8:-4]
+        if all(_isnum(v) for v in fcf_recent + fcf_prior + rev_recent + rev_prior4):
+            ttm_fcf_now, ttm_fcf_prior = sum(fcf_recent), sum(fcf_prior)
+            ttm_rev_now, ttm_rev_prior = sum(rev_recent), sum(rev_prior4)
+            if ttm_fcf_prior != 0 and ttm_rev_prior > 0:
+                fcf_growth = (ttm_fcf_now - ttm_fcf_prior) / abs(ttm_fcf_prior)
+                rev_growth_ttm = (ttm_rev_now - ttm_rev_prior) / ttm_rev_prior
+                metrics["fcf_growth_ttm_pct"] = round(fcf_growth * 100, 2)
+                metrics["revenue_growth_ttm_pct"] = round(rev_growth_ttm * 100, 2)
+                filters["fcf_growth"] = (ttm_fcf_now > 0) and (fcf_growth > rev_growth_ttm)
+            else:
+                filters["fcf_growth"] = None
+        else:
+            filters["fcf_growth"] = None
+    else:
+        filters["fcf_growth"] = None
+
+    passed = sum(1 for v in filters.values() if v is True)
+    failed = sum(1 for v in filters.values() if v is False)
+    unknown = sum(1 for v in filters.values() if v is None)
+
+    return {
+        "filters": filters,
+        "filters_passed": passed,
+        "filters_failed": failed,
+        "filters_unknown": unknown,
+        "verdict": _framework_verdict(passed, passed + failed),
+        "metrics": metrics,
+    }
+
+
 # ── Orchestrator ─────────────────────────────────────────────────────────────
 
 def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date,
-                   now_utc: datetime, _get: Optional[Callable] = None,
-                   ) -> tuple[dict, Optional[dict], Optional[dict]]:
+                   now_utc: datetime, consensus_history: Optional[dict] = None,
+                   _get: Optional[Callable] = None,
+                   ) -> tuple[dict, Optional[dict], Optional[dict], Optional[dict], dict]:
     """Run the whole context layer for one build_snapshot.run_cycle call.
 
-    Returns (fields, bars_payload, fund_payload):
+    Returns (fields, bars_payload, fund_payload, intraday_payload, consensus_history):
       fields       — ONLY the keys that belong in data.json this cycle
                      (brief/catalysts/news/facts/desk_private/
                      context_updated_at), each omitted entirely when there is
@@ -2624,6 +2859,15 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
                      below. The caller writes one file per ticker to
                      OUT_DIR/fund/{ticker}.json, same tmp-then-replace
                      pattern.
+      intraday_payload — the bars_intraday.json body when it was (re)built
+                     this cycle, else None (its own separate gate).
+      consensus_history — the (possibly updated) weekly consensus-snapshot
+                     payload for the 5-metric scoring framework (added
+                     2026-08-21) — see score_framework above. The caller
+                     persists it to OUT_DIR/consensus_history.json the same
+                     way it persists history.json, so this MUST always be
+                     returned even when nothing changed this cycle (the
+                     input dict, untouched, is a valid return).
 
     quotes  — {ticker: quote} from build_snapshot.build_universe(), with this
               build's extended TV_COLUMNS (hi52/lo52/beta/avol/rsi/
@@ -2631,9 +2875,14 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
     pinned  — build_snapshot.PINNED (the bars universe, also the fund
               sidecar universe — TRACK_ONLY names are tracked here same as
               everything else; only the CBOE chain fetch skips them).
+    consensus_history — the caller's loaded consensus_history.json (see
+              build_snapshot.load_consensus_history), or None on a standalone
+              call (tests, `compute-only` mode) — treated as empty.
     """
     token = os.environ.get("VAULT_READ_TOKEN")
     cache = load_context_cache()
+    if not isinstance(consensus_history, dict):
+        consensus_history = {"weekly": {}}
 
     # facts: rides the existing per-cycle scanner call, no gate.
     facts = fetch_earnings_days(quotes, session_date)
@@ -2641,6 +2890,13 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         cached_mv = cache["avg_move"].get(ticker)
         if isinstance(cached_mv, (int, float)):
             f["avg_move"] = cached_mv
+        # 5-metric framework verdict, cached the same way avg_move is: it
+        # depends on fund/{SYM}.json, which only rebuilds once a day (see the
+        # gated block below), so every OTHER cycle that day reads back
+        # whatever the day's one rebuild computed rather than going stale.
+        cached_fw = cache["framework"].get(ticker)
+        if isinstance(cached_fw, dict):
+            f["framework"] = cached_fw
 
     # ── hourly-gated vault/econ/news fetch ──────────────────────────────
     if _is_context_stale(cache, now_utc):
@@ -2716,6 +2972,25 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         fund_payload = build_fund_universe(pinned, session_date, earn_ts_map=earn_ts_map, _get=_get)
         cache["fund_sig"] = FUND_BUILD_SIG
 
+        # 5-metric scoring framework (added 2026-08-21) — same gate as the
+        # fund sidecars above, since every filter but #2 needs them. The
+        # weekly consensus snapshot piggybacks on this same once-daily rebuild
+        # rather than getting its own gate: it only needs to fire once a
+        # week, and this block already fires at most once a day.
+        consensus_history = _snapshot_consensus(consensus_history, facts, session_date)
+        framework_cache: dict = {}
+        for ticker in pinned:
+            fund = fund_payload.get(ticker) if fund_payload else None
+            try:
+                fw = score_framework(ticker, facts.get(ticker, {}), fund, consensus_history, session_date)
+            except Exception as e:
+                log(f"WARN framework score failed for {ticker}: {type(e).__name__}")
+                continue
+            framework_cache[ticker] = fw
+            if ticker in facts:
+                facts[ticker]["framework"] = fw
+        cache["framework"] = framework_cache
+
     # ── intraday bars rebuild (own gate — see build_intraday_bars) ────────
     intraday_payload = None
     _intra_at = cache.get("intraday_built_at")
@@ -2751,4 +3026,4 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
     if isinstance(cache.get("context_fetched_at"), str):
         fields["context_updated_at"] = cache["context_fetched_at"]
 
-    return fields, bars_payload, fund_payload, intraday_payload
+    return fields, bars_payload, fund_payload, intraday_payload, consensus_history
