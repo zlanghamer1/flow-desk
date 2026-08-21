@@ -8,39 +8,372 @@ work a later session can pick up. Nothing here blocks using the page.
 
 ## Open — in the order they are worth doing
 
-### 1. The passing bar is now 80, not 90 (Zach's ruling, 2026-08-21)
+### 1. Round 7 findings — confirmed, not yet fixed (none of the 9 sections reach 80 yet)
 
-Round 6 (below) found and fixed 26 confirmed problems, all of them scoring
-under the old 90 bar. Zach's follow-up ruling lowers the bar to 80 for a
-section to "pass." Round 7 — a fresh nine-section review of the now-fixed
-page — is the next session's first job, to check every section against that
-new number. Until it runs, no section has a post-fix score on record; the R6
-column in the score trajectory table below is the LAST score before this
-round's fixes landed, not a current reading.
+Round 7 checked the now-fixed page against Zach's 2026-08-21 ruling that the
+passing bar is 80, not 90. **No section reached 80.** Highest was Chart Stage
+at 79 — one point short. Full scores:
+
+| Section | R7 |
+|---|---|
+| Chart Stage | 79 |
+| Financials | 65 |
+| Sector Heatmap | 64 |
+| Flow boards | 62 |
+| Data honesty | 62 |
+| Left watchlist rail | 60 |
+| vs Peers | 58 |
+| Right rail panels | 52 |
+| Auto-TA | 47 |
+
+**27 findings confirmed, 1 refuted** (a Biggest Orders IV-ceiling finding in
+Flow boards — real defect, fabricated example ticker; see that section). None
+of the 26 round-6 fixes broke or regressed; every round-7 finding is new
+ground the deeper pass reached, same pattern as every prior round.
+
+**A methodology note worth keeping**: this round's raw run produced two unusable
+section results that a later session should watch for. The Financials
+reviewer hit the StructuredOutput retry cap (5 failed calls, no valid output)
+and was silently dropped by `results.filter(Boolean)` — the section was simply
+absent from the report, not scored low. Separately, the Auto-TA reviewer
+returned schema-VALID placeholder garbage (`section:"test"`, `summary:"test
+summary sentence one. test summary sentence two."`, a finding with fields
+`"t"`/`"1"`/`"f"`/`"x"`) that passed structural validation because it had the
+right shape, not real content — the adversarial verifier caught and refuted
+the fake finding, but the section score itself was worthless. Both were
+caught by reading `journal.jsonl` directly rather than trusting the workflow's
+summary, then fixed with a small targeted re-run script that adds a
+content-sanity check (short summary, or any finding field ≤2 chars) and
+retries before accepting a review. **Read the journal, not just the returned
+report, before treating any round's scores as real** — a schema pass is not
+a content pass.
+
+They are ordered by section in review order; within each section, blocker
+first, then major, then minor.
+
+#### Chart Stage — 79
+
+- **[blocker] The one disclosure that a candle is fabricated/pre-market-only
+  can be silently truncated away.** index.html:515-522 (CSS), 5601-5644
+  (stageSetOhlc). The fabricated/pre-market tag ("CLOSE ONLY" / "· pre-market")
+  is concatenated LAST in the OHLC readout string. At ≤640px the container
+  switches to `white-space:normal; max-height:30px` with `overflow:hidden`
+  and no ellipsis, so a 3rd wrapped line is hard-clipped — and the disclosure
+  tag, always last, is always the first thing lost. Fix: put the tag FIRST,
+  or render it as its own non-truncatable badge outside the clipped line.
+  Note: accurate on the mechanics; the certainty of "runs past two lines on
+  every phone" should be read as "on narrow phones combined with the
+  extended-hours date suffix," not universal — but the tag is always the
+  part that would be lost first, since it's always last in the string.
+- **[major] Daily/weekly chart gives a fabricated or pre-market-only "today"
+  candle zero visual distinction, unlike intraday.** Lines 5449-5461 (ext
+  dimming gated on `STAGE.intraday`), 5233-5357 (`STAGE.intraday` hardcoded
+  false for 1D/1W). Intraday extended-hours bars dim to 50%/20% opacity; the
+  daily/weekly view's live "today" candle — fabricated bracket or
+  pre-market-only — draws at full opacity, visually identical to a settled
+  day. Fix: apply the same dimming whenever `STAGE.synthetic` is true on the
+  1D/1W views, so the visual channel (not just a truncatable text tag) tells
+  the reader this bar isn't settled.
+- **[minor] Chart's Bollinger Bands include the live/synthetic price,
+  contradicting the codebase's own no-live-contamination rule for the same
+  indicator.** Lines 7816-7843 (`stageTA`'s BB block uses `STAGE.rows`,
+  which includes the live-appended candle) vs. 2774-2799 (`bollingerOf`'s
+  documented completed-closes-only design). A full `stageTA()` recompute
+  (window/interval click, overlay toggle, reopening the symbol — not the
+  30-second poke itself) folds in whatever live price is current at that
+  click, shifting the caption's band numbers with no new completed bar, and
+  can disagree with what `bollingerOf()` reports for the same ticker at the
+  same instant. Fix: compute the chart's BB from completed closes only, same
+  convention as `bollingerOf`, optionally plotting the live close as a point
+  against the frozen band.
+
+#### Automatic Technical Analysis — 47
+
+- **[blocker] An EXTENDED trend line is colored as if it never broke,
+  directly contradicting its own caption.** Lines 7714-7718 (fit-time
+  color), 7855-7863 (`stageTAPoke` live recolor), 7999-8006 (EXTENDED
+  caption). Only `status==="BREAKOUT"` flips the color; RETEST, FAILED and
+  EXTENDED all keep the pre-break color. EXTENDED can only occur on a
+  confirmed, matured break (price ran >12% past the line, or the break is
+  >12 sessions old) — never a false positive. A resistance line that broke
+  out and ran 14% past is still drawn red ("resistance") while its own
+  caption reads "...price has run 14.2% past it — the move is already
+  made." Persists on every 30-second poke. Fix: treat any non-INTACT status
+  as needing the flipped color once a break is confirmed (or at minimum add
+  EXTENDED to the flip condition) — mirrors the `taSrSide` fix already
+  applied to the horizontal S/R lines for this exact bug class.
+- **[major] On-chart Bollinger Band dollar levels freeze shortly after the
+  chart opens and never update all session, despite the code's own comment
+  claiming otherwise.** Lines 7816-7843, 7893-7897 (comment says "computed
+  on settled bars," only `.side` is actually re-derived), 8079-8093. Unlike
+  the rail's `bollingerOf(sym)`, the on-chart band is computed over
+  `STAGE.rows` including today's live-appended candle, baked in once at the
+  boot-race full render and never recomputed. Verified against real
+  bars.json: MU's upper/lower band shifts by $2.04/$5.97 depending on
+  whether the render-time price snapshot or the day's actual close is used.
+  Fix: recompute mid/upper/lower on every `stageTAPoke` (cheap — rerun
+  `rollMA`/`rollStd`), or switch to the settled-bars-only convention
+  `bollingerOf` already uses.
+- **[major] The drawn SMA20/50/200 lines freeze at the same open-time
+  snapshot while the adjacent legend text recomputes live.** Lines
+  5469-5471 (MA `setData` only in full `stageRender`), 2737-2755
+  (`statsOf`/`seriesFull` recompute fresh every call), 8888-8889 (legend
+  prints "X-day · +Y% vs it" from the fresh call). The legend's stated
+  percentage and the true visual gap to the drawn MA line can describe two
+  different underlying values for any name that moved since the chart's
+  last full render. Fix: recompute and re-set the last point of each MA on
+  every live poke, or make the legend read the same frozen last-MA value the
+  lines use.
+- **[minor] The lone S/R axis price badge is assigned once and can end up on
+  the wrong level as price moves.** Lines 7766-7771 (`nearestIdx` picked
+  once at full render), 7803-7813, 7889-7892 (poke recolors every S/R line
+  but never revisits which one gets the axis badge). If a different level
+  becomes the genuinely closest intraday, the axis badge stays on the
+  now-farther level until the next full re-render. The text caption stays
+  correct (`taSrSide` re-runs live); only the one number on the price axis
+  can point at the wrong line. Fix: recompute `nearestIdx` from the live
+  price inside `stageTAPoke` and toggle `axisLabelVisible` in the same pass
+  that already recolors the lines.
+
+#### Left watchlist rail — 60
+
+- **[blocker] Pasting a custom watchlist string never fetches facts or
+  daily bars for the new names — the multi-device sync feature silently
+  ships incomplete rows.** Lines 2885-2951 (`wlIoApply`) vs. 1178-1200
+  (`wlAdd`). `wlAdd` (single search-add) explicitly calls
+  `adhocEnsureFacts`/`adhocEnsureDaily`; `wlIoApply` (bulk paste) never does.
+  Paste "PLTR,SNOW,DDOG" and apply: rows appear with price/name, but no
+  52-week range bar, no earnings countdown, and they can never trigger the
+  hot badge or appear in MOVERS/shopping-list — no matter how big a move —
+  until the page is fully reloaded or each chart is opened individually.
+  Fix: call both enrichment functions for every newly added symbol in
+  `wlIoApply`'s success branch, same as `wlAdd`.
+- **[major] `adhocEnsureFacts` and `adhocEnsureDaily` run as two unchained,
+  racing fetches — losing the race permanently kills a searched ticker's
+  hot-mover detection for the session.** Lines 1191/1198-1200, 1219-1233,
+  2300-2339 (guard at 2331), 2420-2469. `adhocEnsureDaily` only writes
+  `avg_move` if `adhocEnsureFacts` already populated `ADHOC_FACTS[sym]` —
+  an ambient existence check, not a chained `.then()`. If the plain GET to
+  stockanalysis.com wins the race against the TV scanner POST, the write is
+  silently skipped, and every later call short-circuits on the now-existing
+  `ADHOC_BARS[sym].D` without retrying. Fix: chain the two calls, or gate
+  the `avg_move` write on an explicit `.then()` instead of an ambient check.
+
+#### Financials tab — 65
+
+- **[major] CBRS's live sidecar has byte-identical duplicate quarters and
+  nothing in `renderGrowth` catches it.** Lines 6718-6880; no plausibility
+  check exists in the function. Live `fund/CBRS.json`: Q1 23/Q2 23 both
+  carry revenue exactly 4,332,000 and EPS exactly -0.907903 to six decimals;
+  Q1 24/Q2 24 both carry revenue exactly 68,201,000 and EPS exactly
+  -0.709393 — almost certainly a duplicated row from the semiannual-filer
+  fetch. Plotted as fact on every chart with no caveat. Fix: add a
+  duplicate-adjacent-period check (two consecutive periods both non-null and
+  exactly equal) alongside the existing missing-data/outlier checks.
+- **[minor] The tap-to-read band prints its answer below the entire
+  Financials tab, not near the chart the reader tapped.** Lines 925-929
+  (single shared `#chartread` div placed AFTER `#stagetabbody`), 6503-6531,
+  9995-10011. On a 390px phone, tapping the first chart's answer appears
+  after every other chart and the full caveat note — the reader has to
+  scroll past everything on the exact device class this mechanism ("a
+  phone never surfaces `<title>` on tap") was built to serve. Fix: give each
+  chart its own inline readout directly beneath it, or reposition the single
+  readout under whichever chart was tapped.
+- Refuted: "`axisChartSVG` only ever draws one clip-arrow per series per
+  direction, so an earlier clipped point vanishes with no marker at all."
+
+#### Sector Heatmap — 64
+
+- **[blocker] Ticker label can clip to a different real ticker with no
+  ellipsis.** Lines 570-585, 8555-8589. `.hm-tile b`/`span` have no
+  `white-space:nowrap`/`text-overflow:ellipsis` — unlike every other
+  truncatable label in the file. A 5-letter ticker at the minimum
+  label-showing tile size can clip to a different, real, currently-listed
+  symbol (e.g. a clipped GOOGL reading as GOOG, both present on the same
+  S&P 500 map). Fix: give `.hm-tile b`/`span` the same nowrap/ellipsis
+  treatment plus `max-width:100%` (needed because column-direction
+  `align-items:center` doesn't stretch the child).
+- **[major] "Desk" heatmap universe includes names the user explicitly hid
+  from the watchlist.** Lines 8189-8194 (`heatDeskTickers`), 1164-1210
+  (`wlHidden`/`wlRemove`). Hiding a pinned name pushes it onto
+  `desk.wl.hidden` without removing it from `RAIL_GROUPS`; `heatDeskTickers`
+  never consults `wlHidden()`. A hidden name's tile still renders on the
+  "Desk" map, sized and colored normally, with no note that it's not
+  actually on the visible watchlist. Fix: filter `heatDeskTickers()` by
+  `wlHidden()` the same way the rail itself does.
+- **[minor] Heatmap pole colors go stale on an OS-driven theme change (no
+  in-app toggle).** Lines 8331-8338, 9925-9939; no `prefers-color-scheme`
+  change listener anywhere in the file. `_heatRGB` only invalidates on the
+  in-app theme button click. Leave the tab open across an OS-scheduled
+  light/dark switch with the heatmap open: tiles keep mixing the OLD
+  theme's `--up`/`--dn` hex with the NEW theme's neutral midpoint. Fix: add
+  a `matchMedia('(prefers-color-scheme: light)')` change listener that
+  clears `_heatRGB` and re-renders, alongside the existing explicit toggle.
+
+#### vs PEERS tab — 58
+
+- **[blocker] Ranking captions go blank ("too few peers reported to rank")
+  even when the chart above draws a full multi-peer comparison, whenever a
+  curated set only partially resolves.** Lines 6968-6993 (`peersFor` only
+  caches `if(live.length === syms.length)`), 9053-9071 (`peerStat` reads
+  only the global `PEERS_CACHE`, never the `res` object already in hand),
+  9188-9214. If any one of a curated 4-peer set fails to resolve on a given
+  cycle, the chart draws correctly but the cache never populates, so every
+  caption reads "too few peers to rank" directly under a chart with 4 real
+  bars. Fix: pass the resolved `res.peers` into `peerStat` instead of
+  re-reading a module-global cache. Note: the bug doesn't persist for the
+  whole session as stated — reopening the tab retries the fetch and can
+  self-heal — but it reliably breaks the caption on any render where the
+  curated set only partially resolves.
+- **[major] A peer chart can assert every peer is "more than 5× from SYM in
+  size" when SYM's own market cap is simply unknown, not actually 5×
+  off.** Lines 7022-7054, 9108-9123. `inBand()` treats a null `myCap` as
+  "not in band" rather than "unknown" — common for foreign issuers/thin OTC
+  names the scanner hasn't backfilled. The footer then names all four
+  peers as size-mismatched with a specific, false numeric claim. Fix:
+  distinguish "not in band" from "can't tell" — skip the ✳ marking (or
+  name the real reason: no market cap for SYM) when `myCap` is null.
+- **[minor] The indexed-revenue-growth chart disappears with zero
+  explanation whenever fewer than 2 qualifying series clear the 5-quarter
+  minimum**, breaking the file's own "a failed feed keeps its slot" rule.
+  Lines 9235-9263. No fallback branch, no note — unlike every other
+  empty/partial state in the file. Fix: append a one-line reason naming
+  which names lacked enough revenue history, instead of omitting the
+  section outright.
+
+#### Right rail panels + top rail — 52
+
+- **[blocker] FED HIKE RISK banner calls a 32% hike chance "near a coin
+  flip" and fires below the documented 40% threshold.** index.html:3646-3651
+  (`fedAlarmHTML`), 1826 (`loud` = `alarm===true || grade==="HOSTILE"`);
+  fetcher/context.py `FED_HIKE_HOSTILE_PCT=25.0`; README.md:327. Live
+  payload today: `{hike_pct:31.7, hold_pct:67.0, chg_1d_pp:4.1,
+  grade:'HOSTILE', alarm:false}`. `loud` is true purely from the 25% grade
+  floor, but `fedAlarmHTML` only has two phrasings ("jumped hard today" or
+  "near a coin flip"), so a 2-to-1-against-a-hike reading with no daily
+  jump prints "near a coin flip" — while README.md tells Zach the banner
+  only appears above 40% or on a 10pp move, neither true here. Fix: add a
+  third "why" branch for the HOSTILE-but-not-alarm case, and reconcile
+  README.md's stated threshold with the actual 25% grade floor.
+- **[major] 21 of 22 memory-market catalysts (SK Hynix, Samsung,
+  hyperscaler AI-capex earnings, DRAM/NAND settles) never appear in the
+  default catalysts view.** index.html:4364-4369 (`catPassesCurated`
+  requires `c.ticker && desk[c.ticker]` for `kind==='memory'`); most memory
+  events carry `ticker:null` by design (non-US-ticker companies, index-wide
+  events — documented normal in DATA_CONTRACT.md). Only the "Memory" filter
+  tab surfaces them, with no on-screen count or note that anything was
+  dropped. Fix: drop the ticker-match requirement for `kind==='memory'`
+  (mirror the anchor exception, or gate on importance like the econ branch
+  does).
+- **[minor] Reduced-motion users see every headline in the news ticker
+  twice, back-to-back.** Lines 4632-4642, CSS 108-111. With OS reduce-motion
+  on, the animation disables and the strip switches to manual scroll, but
+  the track still contains the full item list twice (the duplicate is only
+  `aria-hidden`, not invisible to scrolling). Fix: build the track from a
+  single non-duplicated copy of `items` when reduced-motion is active.
+
+#### Flow boards — 62
+
+- **[blocker] "MOSTLY INTRINSIC" badge on the Biggest Orders board mixes a
+  live spot price with a stale contract "last" price.** index.html
+  4184-4198. `spotNow` is the 30-second live poll; `lastPx` is the option's
+  frozen ~7-minute-old fetcher snapshot. If live price moves before the next
+  publish, intrinsic value can recompute above the stale premium, driving
+  extrinsic share negative (clamped to 0) and firing the badge purely from
+  the timing mismatch, not because the contract actually lost extrinsic
+  value — flickering on and off every 30 seconds with no indication the two
+  numbers are from different moments. Fix: compute intrinsic against the
+  snapshot's own spot, or detect impossible negative extrinsic and suppress
+  the badge with a staleness tooltip instead.
+- **[major] `contractLine` prints an unbounded, sometimes-nonsensical IV
+  reading with no sanity ceiling.** index.html 3849-3866; only guard is
+  `iv>0`. Live examples today: XLF (iv=8.4748 → "IV 847%"), AAOI (757%), XLV
+  (559%), CORZ (511%) — all 0DTE, delta≈±1.0 deep-ITM pricing artifacts, not
+  real implied vol. Fix: cap displayed IV (e.g. ~300%) and fall back to a
+  dash with a tooltip noting a 0DTE/deep-ITM contract's quoted IV isn't
+  reliable. Note: the finding's own XLY example was fabricated/stale (its
+  live `iv` is actually 0.0, already suppressed by the existing guard) —
+  the underlying code flaw is real, but cite XLF/AAOI/XLV/CORZ instead.
+- **[major] Swing board never shows today's price or % change, though the
+  row code already computes it.** index.html 4132-4140. `dq =
+  dispQuote(liveBySym(c.ticker))` is computed but `dq.ch` is never rendered
+  — the same field Conviction shows one section above using the identical
+  live-poll mechanism. A trader has to open each ticker's chart just to see
+  whether the name is up or down today. Fix: render the same
+  price/±change block Conviction already builds, using the `dq` object
+  already in scope.
+- **[minor] DATA_CONTRACT.md's `etf_flows` note contradicts `renderETF`'s
+  actual, intentional behavior.** DATA_CONTRACT.md 833-834 vs. index.html
+  4285-4295. The doc says the frontend renders nothing when `etf_flows` is
+  null/empty; the code deliberately keeps the card visible with an
+  explanatory note instead (matching the "a feed that fails keeps its slot"
+  convention elsewhere). The doc was never updated when that behavior
+  changed. Fix: rewrite the `etf_flows` note to describe the current
+  always-show-a-reason behavior.
+
+#### Data honesty — 62
+
+- **[blocker] "Short % float" reads from the same daily sidecar as "Fwd
+  P/E", but only Fwd P/E and Next earnings get the STALE badge — and the
+  chart tab's own source line contradicts itself about it.** Lines
+  5954-6031, 9482-9484; DATA_CONTRACT.md:653-715. `fund.short_pct_float`
+  never gets `fundStaleSub` appended, unlike the two sibling fields sourced
+  from the identical `fund` object and build date. The source-line sentence
+  names short interest as sidecar-sourced, then its own STALE tooltip in the
+  same sentence omits it from the warning about that very sidecar. Fix:
+  compute Short % float's own staleness sub-label the same way Fwd P/E's is
+  computed, and rewrite the tooltip to name every field it claims comes from
+  the sidecar.
+- **[major] The framework's forward-EPS filters diff consensus `eps_ntm`
+  across weeks/months with no split adjustment, unlike price bars which have
+  one.** fetcher/context.py:2759-2786 vs. 1256-1351 (`_repair_split_breaks`).
+  `consensus_history.json` snapshots raw `eps_ntm` weekly with no
+  split-ratio check; a 2-for-1 split between two snapshots would halve
+  `eps_ntm` mechanically and fail the Forward EPS revision filter for a
+  company whose outlook didn't move at all. Not yet observed live (only one
+  week of history exists since the feature shipped), but the misfiring path
+  is already live and will start firing once 12-26 week lookbacks have data
+  to compare. Fix: check for a split-sized break in price/share-count
+  history between snapshot dates before diffing `eps_ntm`; skip (UNKNOWN)
+  or rescale if one is found.
+- **[minor] The framework verdict word collapses "clean record, still
+  gathering data" and "mixed record, already failing" into the same
+  label.** fetcher/context.py:2666, 2723-2733. `_FRAMEWORK_VERDICTS` maps
+  `passed=3` to "ADD" whether the other 2 filters are UNKNOWN or FAILED —
+  both render an identical chip. Not yet reachable live (today's data only
+  has the 3-pass/2-unknown case), but will start mattering once the
+  consensus-history filters resolve over the coming months. Fix: fold
+  `filters_unknown` into the verdict word once some filters have resolved.
+
+The review script is unchanged at `docs/review/nine-section-review.js`. The
+two-section content-sanity re-run used for the Financials/Auto-TA redo is not
+separately committed (it was a throwaway variant of the same COMMON/SCHEMA);
+a future session hitting the same "schema-valid but empty content" failure
+mode should add the `looksLikePlaceholder`-style check directly into the
+main script rather than re-deriving it.
 
 ### 2. Score trajectory, and what "80" would take
 
-| Section | R3 | R4 | R5 | R6 (pre-fix) |
-|---|---|---|---|---|
-| Right rail panels | 69 | 72 | 78 | 72 |
-| Data honesty | 72 | 81 | 78 | 58 |
-| Sector heatmap | 74 | 76 | 74 | 48 |
-| Flow boards | — | 74 | 73 | 72 |
-| Left rail | 46 | 72 | 72 | 64 |
-| vs Peers | 82 | 73 | 71 | 55 |
-| Financials | 85 | 71 | 64 | 48 |
-| Auto-TA | 56 | 67 | 58 | 48 |
-| Chart stage | 69 | 67 | 55 | 42 |
+| Section | R3 | R4 | R5 | R6 (pre-fix) | R7 |
+|---|---|---|---|---|---|
+| Right rail panels | 69 | 72 | 78 | 72 | 52 |
+| Data honesty | 72 | 81 | 78 | 58 | 62 |
+| Sector heatmap | 74 | 76 | 74 | 48 | 64 |
+| Flow boards | — | 74 | 73 | 72 | 62 |
+| Left rail | 46 | 72 | 72 | 64 | 60 |
+| vs Peers | 82 | 73 | 71 | 55 | 58 |
+| Financials | 85 | 71 | 64 | 48 | 65 |
+| Auto-TA | 56 | 67 | 58 | 48 | 47 |
+| Chart stage | 69 | 67 | 55 | 42 | 79 |
 
 The scores are not tracking quality in the way the numbers suggest. Every
 round's reviewer opens a page whose previous faults are gone and goes deeper,
-so a section that improved can score lower — round 6 dug the deepest yet into
-poke-path staleness (three of the nine sections' blockers are "the live poll
-never re-checks a value the full render already computed"), which no earlier
-round singled out as a pattern. The finding LISTS are the useful output, not
-the number — and as of this write-up, every round-6 finding is fixed (see
-"Shipped 2026-08-21, round 6" below). Round 7's numbers, once run, are the
-first to actually measure this pass's work.
+so a section that improved can score lower. Round 6's 26 fixes all held —
+round 7 refuted 0 of them and found entirely new ground instead (Right rail
+panels' drop from 72 to 52, for instance, is a live, currently-wrong Fed-odds
+banner and a memory-catalysts filter gap, neither related to anything round 6
+touched). The finding LISTS are the useful output, not the number. None of
+the nine sections has reached 80 yet; Chart Stage's 79 is the closest.
 
 ### 3. Deferred by judgement, not by omission
 
