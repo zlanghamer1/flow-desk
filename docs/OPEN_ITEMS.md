@@ -49,13 +49,19 @@ Rounds 4 and 5 each ran nine section reviewers with adversarial verification;
 every confirmed finding from both is fixed. Round 6 was launched and stopped
 before it scored anything, so there is no round-6 finding list.
 
-Re-run round 6 with:
+The review script is committed at **`docs/review/nine-section-review.js`** so it
+does not depend on a session directory. Re-run it with:
 
-    Workflow({scriptPath: ".../flow-desk-review-r4-wf_9e7063ce-dfb.js"})
+    Workflow({scriptPath: "docs/review/nine-section-review.js"})
 
-Expect it to take roughly 45 minutes and to find things — that has been true
+Roughly 75 agents and 45 minutes. Expect it to find things — that has been true
 every round. Round 5's findings were almost all things rounds 3 and 4 never
 reached, and several were holes in round 4's own fixes.
+
+The committed copy carries two lessons the earlier runs paid for: it tells the
+reviewer that `data/` is gitignored and can be stale (a round-4 reviewer called
+a working feature broken because the local sidecars were months old), and it
+tells the verifier to check the live payload with `git show origin/data:...`.
 
 ### 3. Score trajectory, and what "90" would take
 
@@ -121,12 +127,30 @@ rounds 4 and 5. The rules those rounds added are in `CLAUDE.md`.
 
 ## Verification harness
 
-The Playwright harness and probes live in the session scratchpad, which does
-not survive. To rebuild: serve the repo on 127.0.0.1:8899, launch Chromium at
-`/opt/pw-browsers/chromium`, and route every external host through a
-server-side fetch (the sandbox proxy resets the browser's TLS, so the page
-cannot reach TradingView directly). What the probes measured, all currently
-clean:
+The Playwright harness lives in the session scratchpad and does not survive.
+Rebuild recipe, which took a few tries to get right:
+
+- Serve the repo root over plain HTTP on 127.0.0.1 (any free port). The page
+  keys off `location.hostname` being localhost to read `./data/` instead of the
+  raw GitHub URLs, so file:// will not work.
+- Launch Chromium with `executable_path="/opt/pw-browsers/chromium"`. Playwright
+  in this image looks for a headless-shell build that is not installed, so the
+  default launch fails; the symlink above is the browser that exists.
+- Route **every** request through a `page.route` bridge that fetches external
+  hosts server-side with `urllib` and fulfils them with
+  `access-control-allow-origin: *`. The sandbox proxy resets the browser's TLS,
+  so the page cannot reach TradingView or Yahoo directly.
+- Set `timezone_id="America/Chicago"`. Half the page's logic is CT-clock-driven.
+- Expect 404s in the console for `data/fund/*.json` — the local sidecar set is
+  small. Filter them out; anything else is a real error.
+
+Useful element ids and selectors, since they are not guessable: `#stagetabbody`
+(tab body), `#staget` (TA caption), `#stageohlc` (crosshair readout), `#heatwrap`,
+`#chartread` (tap readout), `[data-iv]` / `[data-tf]` / `[data-ta]` / `[data-tab]`
+(chart controls), `.wr[data-sym]` (rail rows). `renderAll(data)` takes the
+payload; calling it bare throws.
+
+What the probes measured, all currently clean:
 
 - Zero JS errors across every ticker x interval x tab x TA toggle x width x theme
 - Zero sub-4.5:1 text in either theme, on the boards and on the heatmap
