@@ -933,6 +933,32 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
                                    // (+1 = all classified premium leaned bullish); null until
                                    // anything classifies ("sampling"). Both DTE buckets.
   "tilt_prem": 1250000.0,          // $ premium classified into the tilt today (both sides summed)
+  // ── Unusual options activity (added 2026-08-21, Zach's ask: "flag heavy
+  // options relative to normal, not just highest volume") — see
+  // build_snapshot.compute_opt_rvol / options_activity_tag. Display only;
+  // does NOT feed conv_score or sw_score, same posture as flow_pct/tilt above.
+  "opt_rvol": 3.4,                 // today's 0-7DTE contract volume / this ticker's own
+                                   // trailing 20-session average (baseline EXCLUDES today).
+                                   // null while vol_collecting is true, or if the baseline
+                                   // computes to zero.
+  "vol_collecting": false,        // true until 20 sessions of this ticker's own volume
+                                   // history exist — same minimum-history gate as iv_rank.
+  "unusual_activity": true,       // opt_rvol >= 3.0 (UOA_HOT_MULT) and not collecting.
+                                   // First-pass heuristic threshold, not backtested.
+  "activity_tag": "BULLISH",      // "BULLISH" | "BEARISH" | "HEDGING" | "MIXED" — from
+                                   // which side (flow_side, falling back to direction)
+                                   // holds the bigger near-money premium share, vs.
+                                   // today's actual price direction. PUT-heavy while the
+                                   // stock is NOT falling reads HEDGING (the one signature
+                                   // free, sampled, aggregated data can honestly call
+                                   // protective); PUT-heavy while it IS falling reads
+                                   // BEARISH. CALL-heavy agreeing with an up move reads
+                                   // BULLISH; disagreeing reads MIXED rather than a
+                                   // mirrored "hedging" claim this data can't support
+                                   // (covered-call writing looks identical to bought calls
+                                   // here). Always present once flow_side or direction
+                                   // resolves — it is a display label, not gated on
+                                   // unusual_activity being true.
   "popular_contract": {            // max-premium contract within +/-20% moneyness, 0-7 DTE; null if none
     "side": "CALL",                // "CALL" | "PUT"
     "strike": 860.0,
@@ -975,6 +1001,14 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
   "cp_skew": 1.85,                 // call prem / put prem, 14d-6mo; null if no put prem
   "earnings_in_window": true,      // TV earnings date falls inside suggested-contract expiry
   "earnings_days": 12,             // days to earnings; null if none/out of window
+  // Unusual options activity — SAME shape and meaning as ConvictionCard's
+  // fields above (see there for the full description); repeated here rather
+  // than factored out because the two boards' rows are independent JSON
+  // objects with no shared reference.
+  "opt_rvol": 3.4,
+  "vol_collecting": false,
+  "unusual_activity": true,
+  "activity_tag": "BULLISH",
   "suggested_contract": {          // highest-premium 0.30-0.60 |delta|, 14d-6mo; null if none
     "side": "CALL",
     "strike": 900.0,
@@ -1024,6 +1058,10 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
     }
   },
   "iv_history": { "MU": [0.91, 0.88, 0.98, ...] },  // per-name daily iv30, most-recent last, for IV rank
+  "vol_history": { "MU": [385000, 401500, ...] },   // per-name daily sum_vol_0_7, most-recent last,
+                                                    // for opt_rvol (added 2026-08-21) — kept
+                                                    // MAX_VOL_HISTORY (60) sessions, same cap class
+                                                    // as iv_history above
   "etf_so": {                                        // semi ETF shares-outstanding snapshots (etf_flows inputs)
     "SMH": { "2026-07-17": {"so": 120391874, "nav": 568.67}, ... }
   },

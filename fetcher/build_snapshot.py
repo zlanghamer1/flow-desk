@@ -196,6 +196,21 @@ BOARD_CAP = 80  # raised 2026-08-15 with the 52-name universe (was 50/38);
                 # actually wider than the raw count suggests.
 MAX_HISTORY_SESSIONS = 60
 MAX_IV_HISTORY = 60
+# Unusual-options-activity (added 2026-08-21, Zach's ask: "flag heavy options
+# relative to normal, not just highest volume"). Same shape as iv_history —
+# a flat trailing list per ticker — but read as a RATIO against the trailing
+# baseline rather than a percentile: see options_activity_tag/the run_cycle
+# block below for why (a ratio reads immediately as "3.2x normal", legible
+# the same way the frontend's existing "hot" tag is, where iv_rank's
+# percentile is the right shape for a slow-moving series like IV but a
+# blunter one for a same-day volume spike).
+MAX_VOL_HISTORY = 60
+UOA_MIN_SESSIONS = 20       # same minimum history bar as iv_rank, for consistency
+UOA_HOT_MULT = 3.0          # first-pass heuristic, NOT backtested — matches the
+                             # existing RVOL scoring cap (conviction_score above
+                             # also treats 3x as "maxed out"), not independently tuned
+ACTIVITY_FLAT_PCT = 0.3      # deadband around 0% price change, in percentage points —
+                             # a judgment call, not measured against the live universe
 # consensus_history.json's weekly rows (added 2026-08-21, 5-metric scoring
 # framework) — kept much longer than the daily caps above: the framework's
 # Filter 1 looks back ~26 weeks (context.FRAMEWORK_WEEKS_6M), so this must
@@ -1188,11 +1203,12 @@ def load_history(out_dir: Path) -> dict:
             raise ValueError("not a dict")
         raw.setdefault("sessions", {})
         raw.setdefault("iv_history", {})
+        raw.setdefault("vol_history", {})
         raw.setdefault("etf_so", {})
         raw.setdefault("big_orders", {})
         return raw
     except Exception:
-        return {"sessions": {}, "iv_history": {}, "etf_so": {}, "big_orders": {}}
+        return {"sessions": {}, "iv_history": {}, "vol_history": {}, "etf_so": {}, "big_orders": {}}
 
 
 def save_history(out_dir: Path, history: dict) -> None:
@@ -1203,6 +1219,9 @@ def save_history(out_dir: Path, history: dict) -> None:
     for t, vals in history.get("iv_history", {}).items():
         if isinstance(vals, list) and len(vals) > MAX_IV_HISTORY:
             history["iv_history"][t] = vals[-MAX_IV_HISTORY:]
+    for t, vals in history.get("vol_history", {}).items():
+        if isinstance(vals, list) and len(vals) > MAX_VOL_HISTORY:
+            history["vol_history"][t] = vals[-MAX_VOL_HISTORY:]
     for t, rows in history.get("etf_so", {}).items():
         if isinstance(rows, dict) and len(rows) > MAX_ETF_SO_SESSIONS:
             for k in sorted(rows.keys())[:-MAX_ETF_SO_SESSIONS]:
@@ -1278,6 +1297,64 @@ def save_prev_cycle(data: dict) -> None:
         PREV_CYCLE_FILE.write_text(json.dumps(data), encoding="utf-8")
     except Exception as e:
         log(f"WARN could not write prev-cycle cache: {e}")
+
+
+# ── Unusual options activity (added 2026-08-21) ─────────────────────────────
+# "Flag heavy options relative to normal, not just highest volume" (Zach).
+# opt_rvol below is that ratio; activity_tag is a BULLISH/BEARISH/HEDGING/
+# MIXED heuristic label on top of it. Both are DISPLAY ONLY — like flow_pct
+# and the aggressor tilt above, they never move conv_score/sw_score. This
+# codebase's other directional heuristics (aggressor tilt, flow_side) are
+# built from real but LIMITED signals — a sampled last-trade classification,
+# a near-money premium split — never a confirmed trade-level tape. This one
+# is no different: it cannot see who initiated a trade or why.
+
+def compute_opt_rvol(sum_vol_0_7: float, vol_hist_prior: list) -> tuple[float | None, bool]:
+    """(opt_rvol, vol_collecting) from today's 0-7DTE contract volume and the
+    ticker's PRIOR sessions only (today must not be in `vol_hist_prior` —
+    the caller snapshots history.json's vol_history BEFORE appending today's
+    reading, so a genuine outlier can't dilute its own baseline). Mirrors
+    iv_rank's 20-session minimum-history gate, but as a ratio-to-average
+    rather than a percentile — see the module note above for why.
+    """
+    if len(vol_hist_prior) < UOA_MIN_SESSIONS:
+        return None, True
+    baseline = sum(vol_hist_prior[-UOA_MIN_SESSIONS:]) / UOA_MIN_SESSIONS
+    if baseline <= 0:
+        return None, False
+    return round(sum_vol_0_7 / baseline, 2), False
+
+
+def options_activity_tag(flow_side: str | None, direction: str, change_pct: float | None) -> str:
+    """BULLISH/BEARISH/HEDGING/MIXED from side-dominant options flow vs.
+    today's actual price direction. The one well-established real-world
+    signature this can honestly claim: heavy PUT flow while the stock is
+    NOT falling reads as protective positioning (a hedge), not a bearish bet
+    — a true bearish bet's flow and price direction usually agree the same
+    day. Heavy CALL flow while the stock is flat or down doesn't get the
+    mirror-image "hedging" label: covered-call writing is an income
+    strategy, not protection, and this data cannot tell a bought call from a
+    written one — that case reads MIXED (signal disagreement) rather than
+    forcing a claim this data doesn't support.
+
+    flow_side: "CALL" | "PUT" | None (near-money premium share; analyze_ticker).
+    direction: "BULL" | "BEAR" (whole-bucket net_flow sign; analyze_ticker) —
+      used only as a fallback when flow_side is None (no near-money premium
+      traded this cycle), same fallback order the board cards already use.
+    change_pct: today's %, quote["change_pct"]; None reads as FLAT.
+    """
+    lean = flow_side if flow_side in ("CALL", "PUT") else ("CALL" if direction == "BULL" else "PUT")
+    if change_pct is None:
+        price_dir = "FLAT"
+    elif change_pct > ACTIVITY_FLAT_PCT:
+        price_dir = "UP"
+    elif change_pct < -ACTIVITY_FLAT_PCT:
+        price_dir = "DOWN"
+    else:
+        price_dir = "FLAT"
+    if lean == "CALL":
+        return "BULLISH" if price_dir == "UP" else "MIXED"
+    return "BEARISH" if price_dir == "DOWN" else "HEDGING"
 
 
 # ── Scoring ──────────────────────────────────────────────────────────────────
@@ -1386,6 +1463,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     history = load_history(out_dir)
     today_sessions = history["sessions"].setdefault(session_str, {})
     iv_history = history["iv_history"]
+    vol_history = history["vol_history"]
     consensus_history = load_consensus_history(out_dir)
     prev_cycle = load_prev_cycle()
     same_session = prev_cycle["session"] == session_str
@@ -1565,6 +1643,20 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
             rank_pos = sum(1 for v in sorted_ivs if v <= analysis["iv30"])
             iv_rank = round(100 * rank_pos / len(sorted_ivs))
 
+        # unusual options activity: today's 0-7DTE contract volume against a
+        # TRAILING (prior-sessions-only, never including today) baseline —
+        # deliberately snapshotted BEFORE today's value is appended below, so
+        # a genuine outlier session cannot dilute its own baseline the way
+        # iv_rank's include-today percentile does (fine for IV's slower-
+        # moving series, wrong for a same-day volume spike).
+        vol_hist_prior = vol_history.get(ticker, [])
+        sum_vol_0_7 = analysis["sum_vol_0_7"]
+        opt_rvol, vol_collecting = compute_opt_rvol(sum_vol_0_7, vol_hist_prior)
+        unusual_activity = bool(opt_rvol is not None and opt_rvol >= UOA_HOT_MULT)
+        activity_tag = options_activity_tag(analysis["flow_side"], direction, quote["change_pct"])
+        if write_history:
+            vol_history.setdefault(ticker, []).append(sum_vol_0_7)
+
         # earnings in window (needs suggested_contract expiry)
         suggested = analysis["suggested_contract"]
         earnings_ts = quote.get("earnings_ts")
@@ -1626,6 +1718,10 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
                 "tilt": round(tilt, 3) if tilt is not None else None,
                 "tilt_prem": tilt_prem_total,
                 "popular_contract": analysis["popular_contract"],
+                "opt_rvol": opt_rvol,
+                "vol_collecting": vol_collecting,
+                "unusual_activity": unusual_activity,
+                "activity_tag": activity_tag,
             })
 
         if suggested is not None:
@@ -1660,6 +1756,10 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
                 "earnings_in_window": earnings_in_window,
                 "earnings_days": earnings_days,
                 "suggested_contract": suggested,
+                "opt_rvol": opt_rvol,
+                "vol_collecting": vol_collecting,
+                "unusual_activity": unusual_activity,
+                "activity_tag": activity_tag,
             })
 
     conviction_cards.sort(key=lambda c: c["score"], reverse=True)

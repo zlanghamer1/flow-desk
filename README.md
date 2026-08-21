@@ -34,9 +34,21 @@ The page used to open charts in a popup. Now the chart is the page:
   and a support line fit, the caption under the chart also names the shape
   the pair draws — ascending/descending/symmetrical triangle, rising/falling
   wedge, ascending/descending channel, trading range, or bull/bear flag.
-  Toggles above the chart turn either overlay off. RSI and EMA panes were
-  removed 2026-08-21 (the fundamentals grid still carries a daily RSI(14)
-  reading). All of this is display-only. Nothing here scores or signals.
+  A third toggle draws Bollinger Bands (20-period average, ±2 standard
+  deviations). The watchlist rail's **Band crosses** box separately flags
+  any rail ticker whose price just crossed its own band — checked from the
+  daily bars every poll, whether or not that ticker's chart is open. RSI and
+  EMA panes were removed 2026-08-21 (the fundamentals grid still carries a
+  daily RSI(14) reading). All of this is display-only. Nothing here scores
+  or signals.
+- **Unusual options activity.** Both flow boards flag a name whose 0-7 day
+  options volume is running well above its OWN normal level (3× its trailing
+  20-session average, not just whichever name traded the most), and label
+  the lean BULLISH, BEARISH, HEDGING, or MIXED. HEDGING fires on the one
+  signature free data can honestly call protective: heavy put activity while
+  the stock is NOT falling. Needs 20 sessions of history to activate on a
+  ticker; until then it's silently absent, never guessed. Display-only —
+  it never moves either board's score.
 - **A 5-metric scoring framework.** Below the chart, a filter panel checks
   each name against five repricing/validation/sustainability tests (forward
   EPS revisions, NTM revenue growth, analyst revision velocity, operating

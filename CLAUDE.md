@@ -286,5 +286,57 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   again, update the dated CSS comment in the `@media (max-width:900px)`
   block, not just the `order` values.
 
+## Guardrails added 2026-08-21, second round (unusual options activity, Bollinger Bands)
+
+- **`opt_rvol`'s baseline must never include today's own reading.**
+  `compute_opt_rvol` is called with `vol_history.get(ticker, [])` snapshotted
+  BEFORE today's `sum_vol_0_7` is appended — appending first would let a
+  genuine outlier dilute the very average it's being measured against.
+  `UOA_HOT_MULT` (3.0) and `ACTIVITY_FLAT_PCT` (0.3) are first-pass
+  heuristics, not backtested, same disclosure class as the shape-detector's
+  flag-pole threshold above.
+- **HEDGING is a heuristic label with one honest use, not a catch-all.** It
+  fires ONLY for put-heavy flow while the stock is not falling — the one
+  signature free, sampled, aggregated CBOE data can support (see
+  `options_activity_tag`'s docstring). A put-heavy day where the stock IS
+  falling is BEARISH. Call-heavy flow disagreeing with price reads MIXED,
+  never a mirrored "hedging" claim — this data cannot distinguish a bought
+  call from a written one (covered-call income vs. a directional bet), so
+  don't add that mirror later without a real basis for it.
+- **`opt_rvol`/`activity_tag`/`unusual_activity` are display-only**, same
+  posture as `flow_pct` and the aggressor tilt — they must never be wired
+  into `conviction_score`/`swing_score` without the same backtesting rigor
+  this file demands everywhere else scoring is discussed.
+- **Bollinger Bands are computed on the FULL price series (`rows`), not the
+  trend/S-R fitters' windowed `win`.** Matches the always-on SMA20/50/200
+  lines' behavior (and the old EMA's, before it was removed) — a band that
+  changes shape when you switch from 1M to 1Y would contradict what a trader
+  expects from Bollinger Bands specifically.
+- **The on-chart bands and the rail-wide `bollingerOf(sym)` scanner are two
+  separate call sites, not one shared function** — the chart overlay reads
+  `STAGE.rows` (the open chart's data), the rail scanner reads `barsOf(sym)`/
+  `ADHOC_BARS` (works for any rail ticker without opening its chart, mirror
+  of how `hotOf`/`statsOf` already work). Both share the same underlying
+  `rollMA`/`rollStd` math and the same `BB_PERIOD`/`BB_MULT` constants — if
+  either ever needs to change, change it once for both, or the chart and the
+  rail panel will disagree about the same ticker.
+- **A Bollinger cross reads "volatility," never "bullish" or "bearish."**
+  `renderBBCrosses` deliberately colors both "above upper" and "below lower"
+  the same (`--bb` purple) — a band cross can mean continuation or reversion
+  depending on the reader's own view, and painting one direction green and
+  the other red would claim a directional verdict this indicator does not
+  support. Don't add that coloring later without a real basis for it.
+- **The Band crosses panel hides entirely when nothing has crossed**, unlike
+  the MOVERS panel above it which always shows and says "none yet." A cross
+  is a genuinely occasional event; an empty box every single day would be
+  clutter MOVERS' near-daily "something is hot" reading isn't. This is a
+  deliberate asymmetry with MOVERS, not an inconsistency to "fix."
+- **This is the first client-side alerting/notification mechanism in this
+  codebase.** No browser Notification API, no permission flow, no
+  persistence — it is a stateless, recomputed-every-poll panel, the same
+  posture as the existing MOVERS box. Before adding push notifications or
+  any persisted alert state later, read this note: that would be new
+  architecture, not an extension of what exists.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
