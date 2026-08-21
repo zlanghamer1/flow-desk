@@ -30,15 +30,20 @@ export const meta = {
   ],
 }
 
-const FILE = '/workspace/flow-desk/index.html'
+// REPO's absolute path varies by environment/session — this script does not
+// hardcode one. Pass it via Workflow's `args.repoRoot`; falls back to this
+// session's known checkout if the caller omits it (a later session on a
+// different workspace path MUST pass args.repoRoot rather than edit this).
+const REPO = (args && args.repoRoot) || '/home/user/flow-desk'
+const FILE = REPO + '/index.html'
 
 const COMMON = `
 You are reviewing a single-file trading dashboard at ${FILE} (about 8,700 lines: CSS in a
-<style> block, all JS in one inline <script>). Supporting files: /workspace/flow-desk/DATA_CONTRACT.md
-(the payload contract), /workspace/flow-desk/fetcher/context.py (the publisher), and
-/workspace/flow-desk/data/*.json (real published payloads you can read to see actual shapes and values).
+<style> block, all JS in one inline <script>). Supporting files: ${REPO}/DATA_CONTRACT.md
+(the payload contract), ${REPO}/fetcher/context.py (the publisher), and
+${REPO}/data/*.json (real published payloads you can read to see actual shapes and values).
 
-NOTE on /workspace/flow-desk/data/: it is gitignored local test data and can be stale. Before you
+NOTE on ${REPO}/data/: it is gitignored local test data and can be stale. Before you
 build a finding on what a payload does or does not contain, check the live copy:
   git show origin/data:fund/MU.json   (or data.json, bars.json, bars_intraday.json)
 A round-4 reviewer reported a real feature as broken because the local sidecars were months old.
