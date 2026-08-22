@@ -390,6 +390,46 @@ def test_merge_econ_aliases_ignores_non_csv_rows():
     assert out[0]["forecast"] is None
 
 
+def test_merge_econ_aliases_cpi_picks_headline_yoy_not_core_or_monthly():
+    # Live TV feed order (2026-09-11): Core MoM, headline YoY, headline MoM,
+    # Core YoY, all on the same date/slot. A bare "inflation rate" substring
+    # match with no Core exclusion or YoY preference took whichever came
+    # first — here that would silently merge Core MoM's numbers under the
+    # CPI anchor (2026-08-22 review round 11, panels finding #1).
+    out = [_econ_row("2026-09-11", "CPI (August)", "HIGH", source="econ_calendar")]
+    core_mom = _econ_row("2026-09-11", "Core Inflation Rate MoM", "HIGH")
+    core_mom["forecast"], core_mom["prior"] = 0.3, 0.2
+    headline_yoy = _econ_row("2026-09-11", "Inflation Rate YoY", "HIGH")
+    headline_yoy["forecast"], headline_yoy["prior"] = 2.9, 2.7
+    headline_mom = _econ_row("2026-09-11", "Inflation Rate MoM", "HIGH")
+    headline_mom["forecast"], headline_mom["prior"] = 0.2, 0.1
+    core_yoy = _econ_row("2026-09-11", "Core Inflation Rate YoY", "HIGH")
+    core_yoy["forecast"], core_yoy["prior"] = 3.1, 3.0
+    tv_rows = [core_mom, headline_yoy, headline_mom, core_yoy]
+    context._merge_econ_aliases(out, tv_rows)
+    assert out[0]["forecast"] == 2.9
+    assert out[0]["prior"] == 2.7
+
+
+def test_merge_econ_aliases_pce_excludes_core_and_prefers_yoy():
+    out = [_econ_row("2026-09-26", "PCE (August)", "HIGH", source="econ_calendar")]
+    core = _econ_row("2026-09-26", "Core PCE Price Index YoY", "HIGH")
+    core["forecast"] = 2.8
+    headline = _econ_row("2026-09-26", "PCE Price Index YoY", "HIGH")
+    headline["forecast"] = 2.6
+    tv_rows = [core, headline]
+    context._merge_econ_aliases(out, tv_rows)
+    assert out[0]["forecast"] == 2.6
+
+
+def test_merge_econ_aliases_falls_back_to_mom_when_no_yoy_row_exists():
+    out = [_econ_row("2026-09-11", "CPI (August)", "HIGH", source="econ_calendar")]
+    mom_only = _econ_row("2026-09-11", "Inflation Rate MoM", "HIGH")
+    mom_only["forecast"] = 0.2
+    context._merge_econ_aliases(out, [mom_only])
+    assert out[0]["forecast"] == 0.2
+
+
 # ── MU-style memory+earnings same-day double-print (2026-08-22, round 10) ────
 
 def test_build_catalysts_folds_same_day_memory_row_into_earnings_row():
@@ -487,6 +527,19 @@ def test_opex_third_friday_across_a_month_boundary():
     assert by_date["2026-08-14"]["title"] == "Weekly options expiration"
     for r in by_date.values():
         assert r["kind"] == "market" and r["source"] == "market_calendar"
+    # Monthly rows are anchors; weekly rows are not (2026-08-22 review round
+    # 11, panels finding #3) — catIsAnchorByName's title regex already
+    # filtered monthly/quarterly rows as curated anchors, but catMetaLine's
+    # badge reads the `anchor` field directly, which stayed False for every
+    # market_calendar row regardless.
+    assert by_date["2026-07-17"]["anchor"] is True
+    assert by_date["2026-07-10"]["anchor"] is False
+
+
+def test_opex_quarterly_row_is_also_an_anchor():
+    rows = context._build_opex_rows(date(2026, 9, 1), days=28)
+    by_date = {r["date"]: r for r in rows}
+    assert by_date["2026-09-18"]["anchor"] is True
 
 
 def test_opex_quarter_end_month_gets_quadruple_witching_title():

@@ -126,6 +126,12 @@ def test_opmargin_expansion_unknown_on_an_implausible_yoy_swing():
     out = context.score_framework("X", {}, fund, {"weekly": {}}, SESSION)
     assert out["filters"]["opmargin_expansion"] is None
     assert "opmargin_expansion_bps" not in out["metrics"]
+    # A ceiling rejection is a PERMANENT data-quality flag, not a "still
+    # building" gap that will resolve by waiting — the two must be
+    # distinguishable so the frontend never tells the reader a flagged
+    # reading might arrive next week (2026-08-22 review round 11, data
+    # honesty finding #1).
+    assert out["filter_flags"]["opmargin_expansion"] == "implausible_swing"
 
 
 def test_opmargin_expansion_still_resolves_just_inside_the_plausible_ceiling():
@@ -192,6 +198,18 @@ def test_fcf_growth_unknown_on_an_implausible_ttm_swing():
     out = context.score_framework("X", {}, fund, {"weekly": {}}, SESSION)
     assert out["filters"]["fcf_growth"] is None
     assert "fcf_growth_ttm_pct" not in out["metrics"]
+    assert out["filter_flags"]["fcf_growth"] == "implausible_swing"
+
+
+def test_filter_flags_empty_when_nothing_is_flagged():
+    hist = {"weekly": {}}
+    fund = _fund(
+        revenue=[100.0] * 8, opinc=[20.0, 20.0, 20.0, 20.0, 22.0, 22.0, 22.0, 22.0],
+        fcf=[10.0, 10.0, 10.0, 10.0, 15.0, 15.0, 15.0, 15.0],
+        annual_revenue=[100.0],
+    )
+    out = context.score_framework("X", {"eps_ntm": None, "rev_ntm": 130.0}, fund, hist, SESSION)
+    assert out["filter_flags"] == {}
 
 
 def test_fcf_growth_still_resolves_just_inside_the_plausible_ceiling():

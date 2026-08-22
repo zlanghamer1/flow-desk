@@ -372,6 +372,18 @@ values are `null` (never a string sentinel). All strings are already plain
 >     "filters_passed": 4,      // count of true
 >     "filters_failed": 0,      // count of false
 >     "filters_unknown": 1,     // count of null — NEVER counted as a fail
+>     "filter_flags": {         // (added 2026-08-22, round 11) keys of any
+>                               // filter whose null came from a PERMANENT
+>                               // implausibility-ceiling rejection (Filter
+>                               // 4/5 only), not a temporary "still
+>                               // gathering data" gap — e.g.
+>                               // {"opmargin_expansion": "implausible_swing"}.
+>                               // Distinguishes a reading that will never
+>                               // resolve by waiting from one that genuinely
+>                               // will; the frontend renders "DATA FLAGGED"
+>                               // instead of "building…" for a flagged key.
+>                               // Omitted key = not flagged. {} when nothing
+>                               // was flagged this cycle.
 >     "verdict": "BUY_4",       // "BUY_5" | "BUY_4" | "ADD" | "HOLD" | "AVOID" |
 >                               // "BUILDING" (fewer than 3 of 5 filters have
 >                               // resolved yet — never a confident tier on a

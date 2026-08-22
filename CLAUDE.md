@@ -1024,5 +1024,185 @@ pass:
   the framework panel at all, so a stockanalysis.com outage kept printing a
   confident verdict off a days-old filing with nothing on screen saying so.
 
+## Guardrails added 2026-08-22, round-11 fix pass (25 findings, all 9 sections)
+
+Round 11 of the nine-section review confirmed 25 findings (see
+`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
+this pass fixed all 25 the same day. The non-obvious decisions from this
+pass:
+
+- **A new shared `weekKeyOf(d)` function (hoisted out of `intervalDataFor`'s
+  own local copy) is now the ONE place that computes "the Monday of a bar's
+  UTC week."** The ad-hoc 1W branch's `wSynth` flag was inverted (`<=`
+  instead of `>`) — during ordinary market hours the condition was always
+  false, so a searched/off-desk ticker's weekly chart froze at its last
+  settled close and never disclosed it. A bare flip to `>` (mirroring the
+  1D check) was considered and rejected: the ad-hoc 1W branch never appends
+  a new row the way 1D does, so a bare "today after last stored day" would
+  also fire across a full week boundary and let `stageLivePoke`'s patch
+  overwrite an already-settled PRIOR week's OHLC with today's live price.
+  The fix needs a week-boundary comparison specifically, which is why the
+  helper had to be shared rather than reused as a private closure.
+- **The ad-hoc weekly branch now computes `weekRealDays`/`premarketBar` the
+  same way `intervalDataFor` already does for pinned names**, so a searched
+  ticker's weekly caption can say "this week already has N real trading
+  days in it" instead of always printing a false "CLOSE ONLY" once the
+  `wSynth` fix above let `STAGE.synthetic` go true for an off-desk name.
+- **`taShapeLabel`'s "ascending/descending channel" branch now has THREE
+  outcomes, not two.** `conv` was already computed as converging/diverging/
+  parallel, but the label/detail assignment only ever checked
+  `conv==="converging"` — diverging silently fell into the same text as
+  parallel, captioning a visibly widening channel "roughly parallel"
+  (verified live on DIA). New labels ("broadening ascending/descending
+  channel") mirror the existing "broadening formation" case for the
+  opposite-slope pattern.
+- **`adhocEnsureFacts`'s permanent cache now self-invalidates once its own
+  cached earnings countdown has gone negative**, re-fetching rather than
+  freezing forever — a searched ticker's countdown correctly disappeared
+  when it hit zero (per `earnDaysNow`'s own `>=0` guard) but then NEVER
+  came back, even months later when the next real earnings date was days
+  out, because nothing ever re-fetched a symbol once it was in the map.
+- **`_tsVariants` strips a leading `$` before building search variants.**
+  "$MU" — how traders paste a ticker from Twitter/StockTwits — read as
+  "nothing matched, not a real listed ticker" to TradingView's substring
+  matcher, the same class of fix already applied to company-suffix
+  stopwords for the identical underlying reason.
+- **Boot-time warm-up of the custom watchlist's daily bars switched from a
+  sequential `.reduce` chain to a parallel `Promise.all`**, matching the
+  facts warm-up immediately above it — a browser with N custom tickers left
+  later entries with no hot badge or 52-week bar for N-1 sequential
+  stockanalysis.com round-trips.
+- **A new `pegGrowthPctFor(fund)` helper factors the growth-rate
+  computation out of `derivedPeg`, so `metricValue` can gate a
+  VENDOR-supplied PEG against the same implausibility ceiling
+  (`DERIVED_PEG_MAX_GROWTH_PCT`, 500%) `derivedPeg`'s own fallback already
+  gets.** BE's vendor PEG (0.0178, rendering as a green "bargain" pill) is
+  built from the identical near-zero-denominator EPS base — a $0.0047
+  prior-year TTM figure, a rounding error from zero — that would make
+  `derivedPeg` itself reject the reading; gating only the derived fallback
+  left the vendor's own equally-unreliable number through with no caveat.
+- **`periodsPerYear`'s exactly-2-distinct-years fallback now has a floor
+  (fewer than 8 total labels returns null) and its tally tie-break now
+  prefers the LARGER quarter-count, not the smaller one.** `Object.keys` on
+  numeric-string keys iterates ascending, and the old strict `>` comparison
+  let a 1-vs-1 tally tie (e.g. a 3-quarter year vs. a 2-quarter year)
+  resolve to the smaller value — corrupting the YoY window and TTM EPS/PEG
+  math downstream, not just a label. The floor is scoped to the two-year
+  fallback path only (`!full.length`) — a 3+-year series with one clean
+  middle year is already unambiguous regardless of its total label count
+  and must not be nulled out by it.
+- **`robustClampMag` now isolation-tests EVERY value the ceiling would
+  actually clip, not just the single globally-largest pooled value.** With
+  revenue+ni+fcf sharing one pooled magnitude, an isolated spike in one
+  series could set a ceiling that also clipped a different series' point
+  that was never itself checked against its own neighbors — latent on
+  today's data (the value that gets clipped happens to also be a genuine
+  outlier) but a real, reachable path once a smaller-scale series' own
+  ordinary values exceed a structurally-larger series' outlier-driven
+  ceiling.
+- **The Sector Heatmap's isolate-empty branch now blanks `#heatfoot`
+  before returning**, instead of leaving the previous cycle's "N names ·
+  Sector only" text standing under a message that says zero names are
+  usable — the footer-rebuild code lower in the function never runs on
+  this early-return path.
+- **`prev1d` and `capfall` are two INDEPENDENT hatch facts a tile can carry
+  at once now, via a combined `.hm-tile.prev1d.capfall` CSS rule stacking
+  both background-image layers** — the single-class rules' cascade let
+  whichever class came second silently overwrite the first's pattern, even
+  though both facts (no pre-market print yet, AND no dollar-volume reading
+  today) can genuinely be true for the same tile. `nodata` still wins
+  outright over either, unchanged from round 9.
+- **A sector block under 16px tall now gets a real, if invisible, click/tab
+  target** (a 1px-tall strip carrying the sector name in its title/
+  aria-label) instead of no header at all — before this, a block too short
+  to visually carry a label also could not be isolated by any means, since
+  isolation only works by clicking a header.
+- **The heatmap's tile-count-cap note now names whichever dimension is
+  actually the smaller of `wrapW`/`wrapH`**, since `maxTiles` is driven by
+  AREA — a wide-but-short window (1600x600 in expanded mode) hits the cap
+  from its height, and the old fixed "widen the window" wording told the
+  reader to change the dimension that would not help.
+- **The indexed-revenue-growth chart's `skipped` disclosure array is now
+  read in BOTH render branches, not just the `lines.length<2` one** — once
+  2+ series cleared the 5-quarter minimum, a dropped name (including the
+  focused symbol itself) simply vanished from the chart with zero
+  explanation, even though the disclosure text already existed and was
+  simply never appended to the surviving chart's own caption.
+- **The vs-Peers PEG chart's shared `.note` clip-mark sentence is now
+  patched in after the async fund load, not just computed once
+  synchronously before `FUND_CACHE` resolves** — if PEG's own async-patched
+  chart was the only one that ended up clipped, the page-wide sentence
+  explaining what a clip mark means never got written (each bar's own hover
+  tooltip still discloses it independently either way).
+- **`peerStat`'s better/worse verdict now has a THIRD, neutral state for an
+  exact tie with the peer median** (`better: null`), read by both
+  `peerAnnotate` and the vs-Peers rank badge — strict inequalities both
+  ways previously folded a genuine tie into "worse," asserting a false
+  verdict for a company tied with the field.
+- **`_ECON_ALIASES` now carries ORDERED (include-all, exclude-any) match
+  attempts per event, not a single loose substring pattern.**
+  TradingView's econ feed carries four distinct Inflation Rate rows on the
+  same date/slot (headline YoY, headline MoM, Core YoY, Core MoM); a bare
+  `inflation rate` match with no Core exclusion or YoY preference took
+  whichever came first in the feed's own row order, which live data showed
+  could silently merge Core MoM's numbers under the CPI anchor. The second
+  attempt (Core excluded, no YoY requirement) is a deliberate fallback so a
+  feed that only publishes MoM for a release still merges something.
+- **`nextWeekdayName`/`prevWeekdayName` now walk real calendar days via
+  `isTradingDay`**, not a bare Monday-Friday weekday-index table — a
+  half-day (a real trading day, just an early close) let the walk land on
+  a genuine holiday as "the next session" with nothing checking that day
+  against `MARKET_HOLIDAYS`.
+- **`_build_opex_rows` sets `anchor:True` for the monthly/quarterly
+  branches, not just LOW-importance weekly rows.** The frontend's own
+  title-regex curation (`catIsAnchorByName`) already treated these rows as
+  anchors, but `catMetaLine`'s badge reads the `anchor` field directly —
+  which the fetcher set `False` unconditionally for every market_calendar
+  row — so the badge never fired for a row the curation logic had already
+  decided was an anchor.
+- **Conviction's `#convstat` header build now runs BEFORE its own
+  `arr.length===0` early return**, matching the order Swing and Big Orders
+  already use — a total CBOE chain outage blanked Conviction's age/stale
+  stamp entirely while the other two boards kept showing "as of ..." in
+  the identical empty state.
+- **`table()` gained an `opts.liveKeys`/`opts.freeze` mechanism so a
+  live-poll redraw can reuse the last REAL sort's row order (by ticker
+  identity) instead of re-sorting on a value that ticks every 30 seconds.**
+  Conviction's RVOL column is the one sort key that updates between
+  data.json fetches (`c.rvol_shown`, refreshed from the live price poll);
+  resorting on every poll moved rows out from under the reader's cursor
+  purely because the number they were watching changed. An explicit header
+  click never sets `freeze`, so a real user re-sort still resorts for real.
+- **The Biggest Orders/Conviction "counts ≠ $" mismatch pill now reuses
+  `tip-flowpct`'s own scope-difference language** instead of asserting only
+  a price-weighting explanation — `cp_ratio` is accumulated over every
+  strike in the 0-7 DTE bucket while Flow %'s premium is accumulated only
+  inside the near-money band, two different POPULATIONS of contracts, not
+  just two weightings of the same ones.
+- **`score_framework` now returns a `filter_flags` dict distinguishing a
+  PERMANENT implausibility-ceiling rejection (Filter 4/5 only) from a
+  genuine "still gathering data" gap** — both used to collapse into the
+  same `null`/"building…" word, telling the reader a flagged reading might
+  arrive next week when it structurally cannot (the underlying financials
+  are what's wrong, not the elapsed time). `stageFrameworkHTML` renders
+  "DATA FLAGGED" for a flagged key instead, with its own explanatory
+  tooltip; the passed/failed/unknown counting a flagged filter still
+  correctly behaves as unknown for is unchanged.
+- **`cache["fed_odds"]` is only overwritten when the fresh hourly fetch
+  actually returns a dict**, mirroring avg_move's own merge-not-replace
+  pattern just above this block in the same function — `fetch_fed_odds`
+  returns `None` on any ordinary transient condition (an HTTP error, thin
+  volume, a bad book-sum read), and the old unconditional overwrite wiped a
+  genuinely good prior-hour reading for the rest of the hourly gate. The
+  compound failure case (this AND `brief.fed_hike` both empty that day) now
+  also gets a visible "No Fed-odds reading this cycle" note instead of the
+  card silently vanishing.
+- **`gammaStaleDays()` now computes "today" via `ctDateKey`, the same CT
+  calendar-day convention every other day-based staleness check on the
+  page already follows**, instead of `new Date().toISOString()`'s UTC day
+  — between roughly 19:00 and 00:00-06:00 CT the UTC date has already
+  rolled to tomorrow while it is still today in CT, producing an
+  off-by-one-day STALE count in the evening.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

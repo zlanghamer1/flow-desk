@@ -250,16 +250,54 @@ _CPI_RE = re.compile(r"\bcpi\b", re.IGNORECASE)
 # CSV-sourced anchor everyone actually sees, carrying no numbers, and a
 # same-day TV row with the real forecast/prior sitting one line away with
 # nothing tying the two together (2026-08-22 review, panels finding #1).
-# (csv-side pattern, tv-side pattern) — matched against each row's own title.
+# (csv-side pattern, [attempts]) — matched against each row's own title.
+# Each attempt is (include_all, exclude_any): every include pattern must
+# match and no exclude pattern may. Attempts are tried in order, first match
+# wins — CPI and PCE both need this because TradingView's econ feed carries
+# FOUR distinct Inflation Rate rows on the same date/slot (headline YoY,
+# headline MoM, Core YoY, Core MoM); the CSV anchor conventionally means the
+# headline YoY figure, and a bare "inflation rate" substring match (no Core
+# exclusion, no YoY preference) took whichever of the four came first in the
+# TV feed's own row order — verified live: the feed's actual 2026-09-11
+# order put "Core Inflation Rate MoM" first, so CPI's merged forecast/prior
+# would have silently been the wrong sub-metric entirely (2026-08-22 review
+# round 11, panels finding #1). The second attempt (Core-excluded, no YoY
+# requirement) is a fallback so a feed that only publishes MoM for a given
+# release still merges something rather than nothing.
 _ECON_ALIASES = [
-    (re.compile(r"\bcpi\b", re.IGNORECASE), re.compile(r"inflation rate", re.IGNORECASE)),
-    (re.compile(r"jobs report|non[\s-]*farm[\s-]*payrolls", re.IGNORECASE),
-     re.compile(r"non[\s-]*farm[\s-]*payrolls|unemployment rate", re.IGNORECASE)),
-    (re.compile(r"retail sales", re.IGNORECASE), re.compile(r"retail sales", re.IGNORECASE)),
-    (re.compile(r"fomc.*rate decision", re.IGNORECASE),
-     re.compile(r"fed interest rate decision|fomc", re.IGNORECASE)),
-    (re.compile(r"\bpce\b", re.IGNORECASE), re.compile(r"pce price index", re.IGNORECASE)),
+    (re.compile(r"\bcpi\b", re.IGNORECASE), [
+        ([re.compile(r"inflation rate", re.IGNORECASE), re.compile(r"\byoy\b", re.IGNORECASE)],
+         [re.compile(r"\bcore\b", re.IGNORECASE)]),
+        ([re.compile(r"inflation rate", re.IGNORECASE)], [re.compile(r"\bcore\b", re.IGNORECASE)]),
+    ]),
+    (re.compile(r"jobs report|non[\s-]*farm[\s-]*payrolls", re.IGNORECASE), [
+        ([re.compile(r"non[\s-]*farm[\s-]*payrolls|unemployment rate", re.IGNORECASE)], []),
+    ]),
+    (re.compile(r"retail sales", re.IGNORECASE), [
+        ([re.compile(r"retail sales", re.IGNORECASE)], []),
+    ]),
+    (re.compile(r"fomc.*rate decision", re.IGNORECASE), [
+        ([re.compile(r"fed interest rate decision|fomc", re.IGNORECASE)], []),
+    ]),
+    (re.compile(r"\bpce\b", re.IGNORECASE), [
+        ([re.compile(r"pce price index", re.IGNORECASE), re.compile(r"\byoy\b", re.IGNORECASE)],
+         [re.compile(r"\bcore\b", re.IGNORECASE)]),
+        ([re.compile(r"pce price index", re.IGNORECASE)], [re.compile(r"\bcore\b", re.IGNORECASE)]),
+    ]),
 ]
+
+
+def _find_econ_alias_match(tv_rows: list[dict], date_str, attempts) -> Optional[dict]:
+    for include_all, exclude_any in attempts:
+        for t in tv_rows:
+            if t.get("date") != date_str:
+                continue
+            title = t.get("title") or ""
+            if any(ex.search(title) for ex in exclude_any):
+                continue
+            if all(inc.search(title) for inc in include_all):
+                return t
+    return None
 
 
 def _merge_econ_aliases(out: list[dict], tv_rows: list[dict]) -> None:
@@ -277,17 +315,14 @@ def _merge_econ_aliases(out: list[dict], tv_rows: list[dict]) -> None:
         if row.get("forecast") is not None or row.get("prior") is not None:
             continue
         title = row.get("title") or ""
-        tv_pattern = None
-        for csv_re, tv_re in _ECON_ALIASES:
+        attempts = None
+        for csv_re, alias_attempts in _ECON_ALIASES:
             if csv_re.search(title):
-                tv_pattern = tv_re
+                attempts = alias_attempts
                 break
-        if tv_pattern is None:
+        if attempts is None:
             continue
-        match = next(
-            (t for t in tv_rows if t.get("date") == row.get("date") and tv_pattern.search(t.get("title") or "")),
-            None,
-        )
+        match = _find_econ_alias_match(tv_rows, row.get("date"), attempts)
         if match is None:
             continue
         for field in _ECON_MERGE_FIELDS:
@@ -1150,11 +1185,11 @@ def _build_opex_rows(session_date: date, days: int = ECON_WINDOW_DAYS) -> list[d
     for fri in _fridays_in_range(session_date, end):
         is_third = fri == _third_friday(fri.year, fri.month)
         if is_third and fri.month in (3, 6, 9, 12):
-            title, importance = "Quarterly options expiration (quadruple witching)", "MEDIUM"
+            title, importance, anchor = "Quarterly options expiration (quadruple witching)", "MEDIUM", True
         elif is_third:
-            title, importance = "Monthly options expiration", "MEDIUM"
+            title, importance, anchor = "Monthly options expiration", "MEDIUM", True
         else:
-            title, importance = "Weekly options expiration", "LOW"
+            title, importance, anchor = "Weekly options expiration", "LOW", False
         out.append({
             "date": fri.isoformat(),
             "time_ct": None,
@@ -1166,7 +1201,15 @@ def _build_opex_rows(session_date: date, days: int = ECON_WINDOW_DAYS) -> list[d
             "forecast": None,
             "prior": None,
             "actual": None,
-            "anchor": False,
+            # Monthly/quarterly rows were already filtered as curated anchors
+            # on the frontend (catIsAnchorByName's title regex), but the
+            # `anchor` field itself stayed False for every market_calendar
+            # row unconditionally — so catMetaLine's badge prefix, which
+            # reads `c.anchor` directly rather than re-deriving the name
+            # match, never fired for a row the curation logic had already
+            # decided was an anchor (2026-08-22 review round 11, panels
+            # finding #3). Weekly rows are never anchors — unchanged.
+            "anchor": anchor,
             "source": "market_calendar",
         })
     return out
@@ -2942,6 +2985,18 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
     """
     filters: dict[str, Optional[bool]] = {}
     metrics: dict[str, float] = {}
+    # A filter rejected by an implausibility ceiling (Filter 4/5's
+    # FRAMEWORK_OPMARGIN_MAX_PLAUSIBLE_BPS / FRAMEWORK_FCF_GROWTH_MAX_PLAUSIBLE)
+    # is a PERMANENT data-quality rejection, not a temporary data gap — it
+    # will never resolve just by waiting the way the two consensus-history
+    # filters genuinely do. Both used to collapse into the same `None`/
+    # "building…" word as "still gathering data" filters, telling the reader
+    # a ceiling-rejected reading might arrive next week when it structurally
+    # cannot (2026-08-22 review round 11, data honesty finding #1). Recorded
+    # here so the frontend can render "DATA FLAGGED" instead of "building…"
+    # for exactly these two keys, without changing the passed/failed/unknown
+    # counting a flagged filter still correctly behaves as unknown for.
+    filter_flags: dict[str, str] = {}
 
     eps_ntm = f.get("eps_ntm") if isinstance(f, dict) else None
     rev_ntm = f.get("rev_ntm") if isinstance(f, dict) else None
@@ -3006,6 +3061,7 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
             bps = (oi_now / rev_now - oi_prior / rev_prior) * 10000
             if abs(bps) > FRAMEWORK_OPMARGIN_MAX_PLAUSIBLE_BPS:
                 filters["opmargin_expansion"] = None
+                filter_flags["opmargin_expansion"] = "implausible_swing"
             else:
                 metrics["opmargin_expansion_bps"] = round(bps, 1)
                 filters["opmargin_expansion"] = bps > FRAMEWORK_OPMARGIN_MIN_BPS
@@ -3027,6 +3083,7 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
                 rev_growth_ttm = (ttm_rev_now - ttm_rev_prior) / ttm_rev_prior
                 if abs(fcf_growth) > FRAMEWORK_FCF_GROWTH_MAX_PLAUSIBLE:
                     filters["fcf_growth"] = None
+                    filter_flags["fcf_growth"] = "implausible_swing"
                 else:
                     metrics["fcf_growth_ttm_pct"] = round(fcf_growth * 100, 2)
                     metrics["revenue_growth_ttm_pct"] = round(rev_growth_ttm * 100, 2)
@@ -3047,6 +3104,7 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
         "filters_passed": passed,
         "filters_failed": failed,
         "filters_unknown": unknown,
+        "filter_flags": filter_flags,
         "verdict": _framework_verdict(passed, passed + failed),
         "metrics": metrics,
     }
@@ -3151,7 +3209,19 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         cache["catalysts"] = catalysts
         cache["news"] = news
         cache["desk_private"] = desk_private
-        cache["fed_odds"] = fed_odds
+        # fetch_fed_odds returns None on ANY ordinary transient condition (an
+        # HTTP error, the nearest market's volume dipping under
+        # POLY_MIN_EVENT_VOLUME_USD, its legs summing outside 80-120%) — an
+        # unconditional overwrite wiped a genuinely good prior-hour reading
+        # for the rest of the hourly gate, unlike avg_move's own merge-not-
+        # replace pattern just above this block. Keep the previous cached
+        # value on a None result; its own `as_of` timestamp already lets the
+        # frontend show it aging (2026-08-22 review round 11, data honesty
+        # finding #2).
+        if isinstance(fed_odds, dict):
+            cache["fed_odds"] = fed_odds
+        else:
+            fed_odds = cache.get("fed_odds")
     else:
         brief = cache["brief"]
         catalysts = cache["catalysts"]
