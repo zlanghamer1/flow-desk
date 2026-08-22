@@ -850,6 +850,13 @@ def analyze_ticker(ticker: str, chain: dict, session_date: date,
                 "iv": iv,
                 "premium": premium,
                 "occ": occ,
+                # This snapshot's own spot, so the page's "MOSTLY INTRINSIC"
+                # badge can cross the contract's premium against the price
+                # from the SAME moment, instead of a live poll running
+                # against a ~7-minute-old "last" premium — the badge's real
+                # detection path was published nowhere until this field
+                # existed (2026-08-22 review, flow boards finding #1).
+                "spot": float(spot) if isinstance(spot, (int, float)) else None,
             }))
 
         # ── aggressor tilt (both DTE buckets) ──────────────────────────

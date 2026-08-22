@@ -943,7 +943,13 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
   "iv": 0.31,                       // decimal (0.31 = 31%); null if CBOE omits it
   "premium": 125416670.0,           // volume x last x 100 — the ranking key.
                                     // A SESSION TOTAL, not one order (see note above).
-  "occ": "AMZN260821C00250000"
+  "occ": "AMZN260821C00250000",
+  "spot": 231.40                    // the underlying's spot AT THIS SNAPSHOT, so the page's
+                                    // "MOSTLY INTRINSIC" badge can cross the contract against
+                                    // the price from the same moment, instead of a live poll
+                                    // running against this row's ~7-minute-old "last" premium.
+                                    // Added 2026-08-22 — was computed on the frontend for a
+                                    // field that did not exist on this row until now.
 }
 ```
 

@@ -615,5 +615,149 @@ The non-obvious decisions from this pass:
   fix — a test that mirrors buggy logic keeps passing against a copy of the
   bug instead of the fetcher's real code.
 
+## Guardrails added 2026-08-22, round-8 fix pass (26 findings, all 9 sections)
+
+Round 8 of the nine-section review confirmed 26 findings (see
+`docs/OPEN_ITEMS.md` for the full list, scores, and a second occurrence of
+the "schema pass is not a content pass" methodology note — this round's
+Chart Stage reviewer returned the same placeholder-garbage failure round 7's
+Auto-TA reviewer did); this pass fixed all 26 the same day. The non-obvious
+decisions from this pass:
+
+- **A synthetic "today" candle now checks `isTradingDay()`, not just
+  premarket-vs-not.** `stageDailyData`'s two live-append branches and
+  `seriesQuads`' weekly resample all built a full fabricated candle from a
+  stale weekend/holiday scanner quote, tagged `syntheticReal=true` so none
+  of the existing fabrication disclosures fired — exactly the class of bug
+  the fetcher's `write_history` guard exists to prevent server-side, with
+  no client-side counterpart until now. One underlying bug, confirmed
+  independently by both the Chart Stage and Data honesty reviewers.
+- **A new `isLastTradingDayOfWeek()` helper decides the weekly view's
+  "closed" wording, not today's own intraday session state.** The 1W
+  view's current (partial) candle used to read "closed" any weekday
+  afternoon after the regular session ended, even on a Tuesday — asserting
+  the week's bar was settled three days early.
+- **Auto-TA's bar-count thresholds are now interval-scaled.**
+  `TA_FRESH_BARS`/`TA_MIN_SPAN`/`TA_MIN_WIN_FOR_TREND` were tuned for daily
+  bars; a new `TA_BARS_PER_DAY` map and
+  `taBarScale()`/`taFreshBars()`/`taMinSpanScaled()`/`taMinWinForTrend()`
+  convert them per active interval, so 1D and 1W no longer disagree about
+  what "fresh" or "long enough" means for the same calendar stretch (live
+  example: XLB).
+- **S/R level captions state a %-distance now, reusing `taSrSide`'s own
+  side determination rather than re-deriving it.** `TA_SR_MAX_DIST` permits
+  a level up to 20% from spot; before this, a 19.3%-away band (AMAT) printed
+  with the identical wording as a 1%-away one.
+- **`liveStale(sym)` now gates the rail's own summary boxes, not just its
+  individual rows.** MOVERS and the shopping list rendered `hotOf()`/
+  `statsOf()` figures with no staleness check of their own, so a frozen
+  quote could sit at the top of MOVERS with nothing marking it frozen —
+  both boxes now append the same STALE tag the rows already carry.
+- **`LEV_NAME_RE` now matches "short" + a major index name.** ProShares'
+  plain (non-leveraged) inverse funds — SH, PSQ, DOG, MYY — are named
+  "Short S&P500"/"Short QQQ"/etc., none of which contain "inverse", "ultra",
+  or a leverage multiple, so they slipped past the shopping list's own
+  advertised exclusion.
+- **The shopping list now discloses its own 3-name cap**, mirroring MOVERS'
+  existing "+N more — sort by hot" pattern with its own "+N more — sort by
+  range" note. Before this, a broad day could push real candidates off the
+  list with nothing on screen saying more existed.
+- **The money and EPS financials charts get the same `robustClampMag`
+  outlier clamp margins/YoY already had.** The clamp shipped in round 6 for
+  two of the four chart types was never extended to the other two — live on
+  LITE's EPS array and NBIS's FCF — so a single anomalous quarter could
+  visually flatten the rest of either chart. `clampedAny`'s declaration
+  moved earlier in `renderGrowth` so the money chart's clamp can flip it
+  before margins/YoY get their turn; the shared caption note now says "one
+  or more charts" instead of naming only margins/growth.
+- **`.gwrap .chartread{grid-column:1/-1}` makes the tap-to-read readout
+  span the grid row it lands in.** `#chartread` moves itself into whichever
+  chart's `.gwrap` via `insertAdjacentElement`, but had no `grid-column` of
+  its own, so it took only one 300px track at desktop widths instead of
+  spanning the row.
+- **The "vendor duplicated this row" caveat now requires revenue AND EPS to
+  both match at the same index**, not EPS alone. ONTO's real, distinct
+  Q2/Q3 24 quarters happened to round EPS to the same figure while revenue
+  genuinely differed, and the EPS-only check flagged that as a duplicate.
+- **The heatmap tooltip's market-cap fallback now says so explicitly**
+  ("market cap (no dollar-volume reading today)") instead of keeping the
+  "traded per day" wording that belongs only to the dollar-volume figure it
+  replaced.
+- **The heatmap's tile-count cap now diffs the sector set before and after
+  slicing**, and names any sector that vanished entirely in the footer note.
+  The cap previously ran before sector grouping, so a small-cap-heavy sector
+  (Utilities, Real Estate) could sort entirely below the cutoff with only a
+  generic "N smaller names left off" count — no sector-level disclosure.
+- **`postmarket_change` (`d[13]`) is finally read.** Fetched into
+  `HEAT_COLS` in the same round `premarket_change` was, for the identical
+  reason, but nothing consumed it — after the bell a tile kept showing the
+  regular-session close-to-close move with no equivalent to the rail's own
+  AFT tag. After-hours, a tile's 1D reading now swaps to the live
+  postmarket print (tagged POST), mirroring the existing PRE/PREV
+  convention.
+- **The indexed-revenue-growth note now names which peers, if any, are
+  live-scanner lines rather than daily-sidecar ones.** The `sources` object
+  distinguishing them was already computed; the printed note stayed generic
+  regardless of what actually got used, so a chart mixing a once-daily
+  sidecar line with a seconds-old scanner line said nothing about which was
+  which.
+- **`_tickerRank()` is wired into `ingest()`'s collision branch now**,
+  tracked via a new `seenIssuerAt` map from issuer key to `cands[]` index so
+  a better-ranked line (a plain ticker over a `.`-suffixed dual listing) can
+  replace an already-accepted one for the same issuer. It existed since an
+  earlier round and was never called — the `/`-suffix half of its job was
+  already redundant with an existing filter, but the `.`-suffix half had no
+  coverage at all.
+- **`renderPeersInto`'s post-fund-load step patches only PEG's chart node in
+  place now, via `outerHTML`, instead of a full recursive re-render.** PEG
+  is the one PEER_METRICS entry that needs `FUND_CACHE` (via `derivedPeg`);
+  every other metric already renders its final value on first paint. The
+  old code recursed into `renderPeersInto` a second time regardless of that,
+  tearing down and rebuilding the whole section — every metric, the key,
+  the source note — a second time just to refresh PEG, discarding any
+  tap-to-read state a trader had open on some unrelated chart. The per-
+  metric chart builder is now `oneMetricChartHTML()`, callable standalone;
+  the recursive call and the now-unused `isRedraw` parameter are gone.
+- **`fedLegPct()` is the one function computing the Fed-odds card's
+  largest-remainder rounding, used by `normalizeFedOdds`'s new `hikePct`
+  field, the card headline, the rail chip, and the FED HIKE RISK banner
+  alike.** The headline used to round independently with plain
+  `toFixed(0)` while the legend used largest-remainder rounding so its
+  three legs sum to 100 — the two could print different whole-percent
+  figures for the identical reading. Same "one function, every surface"
+  convention as `taSrSide`/`taTrendFlipped`/the `loud` boolean above.
+- **`renderTape()` now runs on the same 1-second clock-driven timer as the
+  market-state lamp.** The lamp got a 1-second repaint in round 7; the
+  tape's own PRE/AFT tags were left on the 30-second data-poll cadence, so
+  the lamp could flip to OPEN or AFTER HOURS up to 30 seconds before the
+  tiles beneath it agreed. `renderTape()` is a pure render off already-
+  cached data with no network call, so this is free.
+- **A new `tickNewsStat()` rewrites just the `#newsstat` staleness badge on
+  the existing 30-second standalone timer**, the same timer `renderCats()`
+  already uses to recompute ITS staleness badge regardless of whether
+  `fetchData()` got a new payload. News had no equivalent — its badge only
+  updated from inside `renderNews()`'s call in the data-fetch success path,
+  which never fires during a total outage, so the badge froze at whatever
+  age it last saw instead of escalating to STALE. A full `renderNews()` on
+  this timer was rejected on purpose (it throws away keyboard focus on a
+  headline link, per the standing comment above `tickNewsStamps()`) —
+  `tickNewsStat()` only ever touches the one badge span.
+- **`BigOrder` rows now publish `spot`** (`build_snapshot.py`'s
+  `big_candidates.append()`), added to `DATA_CONTRACT.md`'s schema. The
+  frontend's `o.spot`-based MOSTLY INTRINSIC detection (added in round 7 to
+  fix the badge's live-price flicker) had no field to read — verified
+  against the live `origin/data:data.json` payload showing `'spot' in o`
+  false for every row — so the badge's real detection path was dead code
+  since the day it shipped.
+- **Conviction/Swing's live price block is `.livepx` now, not `.nm`.** Both
+  boards' live price/%-change span shared the `.nm` class with sector-table
+  company names, so the mobile media query's `td .nm{display:none}` rule
+  (meant only for those names) silently hid the live price on a phone too.
+- **The 'VOL > OI' badge moved from the Open Interest cell to the Side
+  cell** in the Biggest Orders table. It was glued inside the OI `<td>`,
+  which the mobile media query hides outright to fit the table — the Side
+  cell (column 2) is never hidden at mobile and already carries the
+  contract's other badges (delta, MOSTLY INTRINSIC).
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
