@@ -439,6 +439,67 @@ def test_catalysts_are_sorted_by_date_then_time():
     assert ordering == sorted(ordering)
 
 
+# ── forward-fetch backfill (2026-08-22, round 9 finding #1) ─────────────────
+
+def test_econ_tv_looks_back_26_hours_so_todays_release_can_carry_actual():
+    """fetch_econ_tv's own from=now-only window meant a released row's
+    `actual` could never be received at all -- TV only sets `actual` on a
+    row whose time has already passed, and from=now excludes anything in
+    the past by definition. Assert the request now looks back."""
+    seen = {}
+    def fake_get(url, headers):
+        seen["url"] = url
+        return json.dumps({"result": []}).encode()
+    context.fetch_econ_tv(_get=fake_get)
+    from urllib.parse import urlparse, parse_qs
+    q = parse_qs(urlparse(seen["url"]).query)
+    frm = datetime.fromisoformat(q["from"][0].replace("Z", "+00:00"))
+    now = datetime.now(timezone.utc)
+    assert frm < now - timedelta(hours=20)   # well before now -- a real lookback, not a rounding artifact
+    assert frm > now - timedelta(hours=30)   # and bounded, not an unbounded backward window
+
+
+def test_catalyst_still_fresh_econ_row_within_6h_grace():
+    row = {"date": "2026-08-22", "time_ct": "07:30"}
+    now_ct = datetime(2026, 8, 22, 12, 0, tzinfo=context.TZ_CT)     # 4.5h after release
+    assert context._catalyst_still_fresh(row, now_ct)
+    now_ct_late = datetime(2026, 8, 22, 14, 0, tzinfo=context.TZ_CT)  # 6.5h after release
+    assert not context._catalyst_still_fresh(row, now_ct_late)
+
+
+def test_catalyst_still_fresh_no_time_row_clears_at_end_of_day():
+    row = {"date": "2026-08-22", "time_ct": None}
+    assert context._catalyst_still_fresh(row, datetime(2026, 8, 22, 23, 0, tzinfo=context.TZ_CT))
+    assert not context._catalyst_still_fresh(row, datetime(2026, 8, 23, 0, 30, tzinfo=context.TZ_CT))
+
+
+def test_merge_catalysts_forward_backfills_released_row_the_fresh_fetch_dropped():
+    """The exact bug: a from=now-only refetch no longer returns a HIGH row
+    that released an hour ago, so build_catalysts alone would silently drop
+    it. _merge_catalysts_forward must bring it back from the previous
+    cycle's cache while it's still inside its own grace period."""
+    prev = [_econ_row("2026-08-22", "Non Farm Payrolls", "HIGH", time_ct="07:30")]
+    fresh = []   # this cycle's from=now fetch no longer includes it
+    now_ct = datetime(2026, 8, 22, 9, 0, tzinfo=context.TZ_CT)   # 1.5h after release
+    merged = context._merge_catalysts_forward(fresh, prev, now_ct)
+    assert any(r["title"] == "Non Farm Payrolls" for r in merged)
+
+
+def test_merge_catalysts_forward_drops_stale_previous_row_past_grace():
+    prev = [_econ_row("2026-08-22", "Non Farm Payrolls", "HIGH", time_ct="07:30")]
+    fresh = []
+    now_ct = datetime(2026, 8, 22, 14, 0, tzinfo=context.TZ_CT)   # 6.5h after release
+    merged = context._merge_catalysts_forward(fresh, prev, now_ct)
+    assert not any(r["title"] == "Non Farm Payrolls" for r in merged)
+
+
+def test_merge_catalysts_forward_never_duplicates_a_row_still_in_the_fresh_fetch():
+    row = _econ_row("2026-08-22", "CPI", "HIGH", time_ct="07:30")
+    now_ct = datetime(2026, 8, 22, 8, 0, tzinfo=context.TZ_CT)
+    merged = context._merge_catalysts_forward([row], [dict(row)], now_ct)
+    assert len([r for r in merged if r["title"] == "CPI"]) == 1
+
+
 def test_memory_rows_are_not_bounded_by_the_display_window():
     """memory_events.csv rows show regardless of how far out they are — the
     source is small and hand-curated, unlike the noisy TV econ feed."""

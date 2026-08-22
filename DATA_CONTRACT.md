@@ -232,8 +232,17 @@ values are `null` (never a string sentinel). All strings are already plain
 >                                     // derivable from TV's earnings timestamp
 >   "forecast": null,                 // econ rows only (TV/csv "forecast"); else null
 >   "prior": null,                    // econ rows only (TV/csv "previous"); else null
->   "actual": null,                   // econ rows only, filled in once the print
->                                     // lands; else null
+>   "actual": null,                   // econ rows only, filled in once the print lands; else
+>                                     // null. Requires fetch_econ_tv's own 26h lookback window
+>                                     // (added 2026-08-22 — a from=now request could never
+>                                     // receive a released row's actual at all, since a released
+>                                     // row's time is necessarily in the past). Only ever
+>                                     // populated on a tv_calendar row: the hand-kept
+>                                     // econ_calendar CSV mirror carries no numeric fields and
+>                                     // wins same-date+title conflicts against tv_calendar
+>                                     // regardless (see _dedup_econ), so an anchor event
+>                                     // (FOMC/CPI) sourced from the CSV shows no actual even
+>                                     // after it releases.
 >   "anchor": false,                  // true = kept past the 28-day window (see above)
 >   "source": "tv_calendar",          // "econ_calendar" | "tv_calendar" | "tv_earnings"
 >                                     // | "memory_events" | "market_calendar".

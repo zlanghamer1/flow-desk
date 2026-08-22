@@ -722,9 +722,20 @@ def fetch_econ_tv(days: int = 28, _get: Optional[Callable] = None) -> list[dict]
     previousRaw 1427000 vs previous 1.427 with scale "M"), so the renderer
     appends the suffix and never rescales. All four fields are optional and
     fail soft to None; the page's meta line degrades to the bare number.
+
+    `from` looks back 26 hours, not from=now: TV only reports a non-null
+    `actual` on a row once it has released, and a released row's time is
+    necessarily in the past — so a from=now request can NEVER receive one,
+    making DATA_CONTRACT.md's "actual is filled in once the print lands"
+    promise permanently unreachable regardless of anything downstream
+    (2026-08-22 review, panels finding #2). 26h covers a full CT session day
+    from any DST offset; build_catalysts's own _in_window filter (bounded to
+    session_date onward) still drops anything from a prior calendar day, so
+    this only ever adds TODAY's already-released rows with their real
+    `actual`, never widens what actually displays.
     """
     now = datetime.now(timezone.utc)
-    frm = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    frm = (now - timedelta(hours=26)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     to = (now + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     url = f"{TV_ECON_URL}?from={frm}&to={to}&countries=US"
     headers = {
@@ -1223,6 +1234,61 @@ def build_catalysts(econ_rows: list[dict], memory_rows: list[dict],
 
     out.sort(key=lambda r: (r["date"], r.get("time_ct") or "99:99"))
     return out
+
+
+def _catalyst_key(row: dict) -> tuple:
+    return (row.get("date"), (row.get("title") or "").strip().lower())
+
+
+def _catalyst_still_fresh(row: dict, now_ct: datetime) -> bool:
+    """Mirrors index.html's catDone()/countdown() grace period exactly: a
+    row stays visible until its own release grace period elapses — a
+    same-day row with no published time, or 6h past a row with one. Used to
+    decide whether a previous cycle's catalyst can be backfilled into this
+    cycle's list (see the merge in build_context below); a row this
+    function calls "not fresh" would render "cleared" anyway, so dropping
+    it costs nothing.
+    """
+    d_str = row.get("date")
+    if not d_str:
+        return False
+    try:
+        d = date.fromisoformat(d_str)
+    except Exception:
+        return False
+    t_str = row.get("time_ct")
+    if not isinstance(t_str, str) or ":" not in t_str:
+        return d >= now_ct.date()
+    try:
+        hh, mm = t_str.split(":")
+        when_ct = datetime(d.year, d.month, d.day, int(hh), int(mm), tzinfo=TZ_CT)
+    except Exception:
+        return d >= now_ct.date()
+    return (now_ct - when_ct) < timedelta(hours=6)
+
+
+def _merge_catalysts_forward(fresh: list[dict], prev: list[dict], now_ct: datetime) -> list[dict]:
+    """fetch_econ_tv fetches from=now forward, so a release from an hour ago
+    is simply absent from the next hourly refetch — build_catalysts has no
+    memory of what it built last cycle, so a HIGH-importance print (Non
+    Farm Payrolls, an earnings report) could silently vanish from the rail
+    within an hour of releasing, well before the frontend's own 6h grace
+    period would have called it "cleared" (2026-08-22 review, panels
+    finding #1). Backfill any previous-cycle row still inside that grace
+    period that the fresh fetch no longer carries, then re-sort — the same
+    order build_catalysts itself returns.
+    """
+    fresh_keys = {_catalyst_key(r) for r in fresh if isinstance(r, dict)}
+    merged = list(fresh)
+    for row in prev or []:
+        if not isinstance(row, dict):
+            continue
+        if _catalyst_key(row) in fresh_keys:
+            continue
+        if _catalyst_still_fresh(row, now_ct):
+            merged.append(row)
+    merged.sort(key=lambda r: (r.get("date") or "", r.get("time_ct") or "99:99"))
+    return merged
 
 
 # ── Bars (Yahoo daily OHLC, at most once per day) ───────────────────────────
@@ -2965,6 +3031,9 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
             earn_map[ticker] = {"ts": ts, "days": d if d >= 0 else None}
 
         catalysts = build_catalysts(econ_rows, memory_rows, earn_map, csv_mirror, session_date)
+        # Backfill anything the previous cycle had that a from=now-only
+        # refetch would otherwise silently drop the moment it releases.
+        catalysts = _merge_catalysts_forward(catalysts, cache.get("catalysts") or [], now_utc.astimezone(TZ_CT))
 
         symbols = [q.get("tv_symbol") for q in quotes.values() if isinstance(q, dict)]
         news = fetch_news([s for s in symbols if s], _get=_get)

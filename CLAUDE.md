@@ -767,5 +767,103 @@ decisions from this pass:
   cell (column 2) is never hidden at mobile and already carries the
   contract's other badges (delta, MOSTLY INTRINSIC).
 
+## Guardrails added 2026-08-22, round-9 fix pass (24 findings, all 9 sections)
+
+Round 9 of the nine-section review confirmed 24 findings (see
+`docs/OPEN_ITEMS.md` for the full list and scores) — the first round run
+under the feature freeze (see "Getting to a real done" in that same doc).
+This pass fixed all 24 the same day. The non-obvious decisions:
+
+- **The 1H/4H live-quote-artifact filter now detects by SIGNATURE (zero
+  range, zero volume), never by a fixed-hour grid modulus.** A real
+  08:30-anchored hourly bar lands at :30 past every hour in UTC epoch
+  seconds, DST or not — `t%3600===1800`, never 0 — so the old
+  `t%3600!==0` check deleted the genuine most-recently-completed candle on
+  most symbols, not Yahoo's actual live-quote artifact.
+- **The daily/weekly synthetic-candle dimming now checks
+  `!STAGE.syntheticReal`, not just `STAGE.synthetic`.** A genuinely
+  complete, scanner-sourced afterhours close is a real reading, not a
+  fabricated bracket, and drawing it translucent contradicted the
+  crosshair's own "fabricated" definition a few lines below.
+- **A new `STAGE.weekRealDays` (from `intervalDataFor`) counts real prior
+  daily rows already folded into the current 1W bar**, so the pre-market
+  and CLOSE-ONLY captions can say "this week already has N real trading
+  days in it" instead of claiming the whole week has no data, the way the
+  1D version of the same caption correctly does for a single day.
+- **`seriesFull`'s trailing-window append now calls `candleClose()`**, the
+  same session-aware function the candle and the drawn MA lines both use —
+  it used to append raw `q.px` unconditionally, which is yesterday's price
+  during pre-market, silently distorting the "% vs it" legend's own rolling
+  average by one sample and disagreeing with the chart's own MA lines.
+- **`robustClampMag` no longer clamps an outlier whose own immediate
+  neighbor is also well above the ordinary spread.** Magnitude alone can't
+  tell a lone data glitch (a real spinoff-quarter margin distortion) apart
+  from genuine sustained compounding growth (a real earnings explosion) —
+  both are "one point far above the median." A glitch is isolated; a real
+  trend's neighbor is elevated too.
+- **`#chartread` never leaves its original DOM position again.** Round 8's
+  own fix moved it into whichever `.gwrap` grid was tapped via
+  `insertAdjacentElement`, which incidentally planted it as a descendant of
+  `#stagetabbody` — so the next tab switch's `body.innerHTML=...` destroyed
+  the node permanently, killing tap-to-read for the rest of the session. A
+  `.floating` class now repositions it with `position:absolute` computed
+  from the tapped chart's bounding box against `#s-stage`, never touching
+  where the node actually lives in the tree.
+- **A curated peer set's PARTIAL result now caches separately from its
+  COMPLETE one** (`PEERS_LAST` vs. `PEERS_CACHE`). Caching only a complete
+  answer keeps a transient scanner outage retryable, but it also meant
+  `peerStat`'s fallback (the only path the Fundamentals grid uses) saw
+  nothing and showed zero peer context for a name like V, whose one stale
+  ticker pin (NASDAQ:FISV instead of NYSE:FI) will never resolve — while
+  vs-Peers, holding the same resolved result directly, correctly ranked it.
+- **A released catalyst is backfilled forward, not re-derived backward.**
+  `fetch_econ_tv` requests `from=now`, so a print that released an hour ago
+  is simply absent from the next refetch and `build_catalysts` has no
+  memory of what it built last cycle. `_merge_catalysts_forward`
+  (fetcher/context.py) carries a previous-cycle row forward while it's
+  still inside its own release grace period — computed by
+  `_catalyst_still_fresh`, a direct Python port of the frontend's
+  `catDone`/`countdown` logic, so the two can never disagree about when a
+  row goes from "released" to "cleared."
+- **`fetch_econ_tv` looks back 26 hours now, not from=now.** TV only ever
+  sets a non-null `actual` on a row whose release time has passed — which a
+  from=now-forward-only request can never receive by construction, making
+  `DATA_CONTRACT.md`'s "actual fills in once the print lands" promise
+  permanently unreachable regardless of anything downstream.
+  `build_catalysts`'s own window filter (bounded to `session_date` onward)
+  still drops anything from a prior calendar day, so the wider fetch window
+  only ever adds today's already-released rows with their real `actual`.
+- **Conviction's header counts now disclose their own scope.** bulls/bears/
+  firing describe the WHOLE scored watchlist, computed before the
+  score-floor cut is applied to what the table actually shows — the header
+  now also prints the shown board's own bull/bear split in parentheses
+  whenever the cut trims anything, with the two scopes spelled out in the
+  tooltip.
+- **`adhocFillAvgMove` now matches the fetcher's exact window (20 closes,
+  19 changes)**, not 21 closes/20 changes — a one-day-wider window for the
+  identical "usual move" figure the HOT badge reads meant a desk-pinned
+  ticker (server-computed) and a searched/custom one (this client fallback)
+  could disagree about the SAME ticker.
+- **Gamma coverage is disclosed as a percentage of total gamma open
+  interest, not a strike count.** `total_strikes` isn't on the payload
+  (only `total_gamma_oi` is), so "top 4 of N strikes" isn't literally
+  available; the caption instead sums the shown levels' own published
+  `pct` values against 100% and says how much of the total they cover.
+- **The heatmap's three hatch states (`nodata`/`prev1d`/`capfall`) are
+  mutually exclusive by precedence now, `nodata` always winning.** A tile
+  with no reading for the period AND a stale 1D print used to carry both
+  classes, and CSS cascade order let the less severe one's pattern silently
+  overwrite the more severe one's.
+- **`heatFetchNow` short-circuits before the request, not just before
+  branching on the response**, when the Desk universe has no tickers at
+  all (every pinned name hidden, or none added) — otherwise a self-caused
+  empty watchlist landed on the identical "scanner unreachable" message a
+  real HTTP failure produces, blaming TradingView for a state the reader
+  caused.
+- **Sortable column headers are real tab stops now** (`tabindex="0"`,
+  `role="columnheader"`, `aria-sort`, Enter/Space activation) on the shared
+  `table()` helper used by every board — Conviction, Swing, Biggest Orders,
+  ETF flows, and sector rotation all inherit the fix from one place.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

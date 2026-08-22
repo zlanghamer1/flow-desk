@@ -44,17 +44,17 @@ approved fix, in full:
 
 ## Open — in the order they are worth doing
 
-### 1. Round 9 verification is pending
+### 1. Round 10 verification is pending
 
-The round-8 fix pass below (2026-08-22) closed all 26 confirmed findings the
-same day they were found. It has NOT yet been checked with a fresh nine-
-section review run — the fetcher-side fix (`o.spot` on `BigOrder`) is covered
-by the full `fetcher/` pytest suite (279 passing), but the JS-side fixes have
-only been read back and syntax-checked (`node --check`), not exercised
-against a running page. A later session should run round 9, confirm the nine
-sections actually clear 80, and fix or log whatever it finds — the pattern
-held in every prior round (a deeper pass finds new ground; it does not mean
-the fixes it re-checks were wrong).
+The round-9 fix pass below (2026-08-22) closed all 24 confirmed findings the
+same day they were found, including one fetcher-side fix (a merge-forward
+gate for catalysts, plus a 26h econ-calendar lookback) covered by 6 new
+`fetcher/` tests (285 passing total). The JS-side fixes have only been read
+back and syntax-checked (`node --check`), not exercised against a running
+page. A later session should run round 10 against the now-hardened review
+script (`docs/review/nine-section-review.js`'s placeholder-garbage retry,
+shipped this same round) and fix or log whatever it finds, continuing until
+the "Open" section here is empty per the finish-line ruling above.
 
 ### 2. Deferred by judgement, not by omission
 
@@ -72,6 +72,230 @@ the fixes it re-checks were wrong).
   answer to "what traded"; ranking on extrinsic value would answer a different
   question. If that other question is the one worth answering, the change is
   one sort key.
+
+---
+
+## Shipped 2026-08-22, round 9 (24 findings confirmed, all fixed)
+
+Round 9 checked the round-8-fixed page — the first round run under the
+feature freeze, with no new feature landing between rounds 8 and 9. Pre-fix
+scores:
+
+| Section | R9 |
+|---|---|
+| Left watchlist rail | 80 |
+| Flow boards | 79 |
+| Auto-TA | 74 |
+| Sector Heatmap | 74 |
+| Data honesty | 78 |
+| vs Peers | 64 |
+| Right rail panels | 60 |
+| Financials | 46 |
+| Chart Stage | 42 |
+
+**Left watchlist rail cleared 80 for the first time.** Its 2 confirmed
+findings were fixed anyway, per the finish-line ruling above (a passing
+score doesn't exempt a section from a confirmed finding). Two of Data
+honesty's findings landed on the newest code in the repo — gamma levels,
+shipped the same day the freeze took effect — which is exactly the pattern
+the freeze exists to stop from recurring.
+
+**24 findings confirmed** across the 9 sections. None of the round-8 fixes
+broke or regressed; every round-9 finding is new ground the deeper pass
+reached.
+
+They are ordered by section in review order; within each section, blocker
+first, then major, then minor.
+
+#### Chart Stage — 42
+
+- **[blocker] 1H and 4H charts silently drop the most recent real hourly
+  candle on every symbol whose fetch cycle catches it before the next
+  live-quote row appends.** `intervalDataFor`'s live-quote-artifact detector
+  compared the last bar's timestamp against a fixed hour grid (`t%3600===0`)
+  to find Yahoo's off-grid live quote and drop it — but every REAL
+  08:30-anchored regular-session hourly bar also lands at :30 past the hour
+  (`t%3600===1800`, in UTC epoch seconds, DST or not), so the check deleted
+  the genuine latest candle instead. Verified live on MU/CRWD/COHR/V's i60
+  series. **Fixed**: detection now uses the live-quote row's own signature
+  (zero range, zero volume) instead of a grid modulus.
+- **[major] Today's candle stays dimmed at 50% opacity all evening even when
+  it is the real, fully-settled closing bar.** The dimming gate checked only
+  `STAGE.synthetic`, not `STAGE.syntheticReal` — so a scanner-sourced,
+  genuinely complete afterhours close (not a fabricated bracket) drew
+  translucent, contradicting the crosshair's own "fabricated" definition a
+  few lines below. **Fixed**: gated on `STAGE.synthetic && !STAGE.syntheticReal`.
+- **[major] Weekly view's "no session open/high/low yet" and "open is
+  yesterday's close" disclosures are false once earlier days in the same
+  week have already traded.** Both captions were written as if the visible
+  bar held nothing but today's bracket; a 1W chart opened midweek already
+  has real Monday/Tuesday sessions baked into the same weekly candle's
+  open/high/low. **Fixed**: `intervalDataFor` now counts real prior days in
+  the current week (`STAGE.weekRealDays`), and both captions name that count
+  when nonzero instead of claiming the week has no real data at all.
+
+#### Automatic Technical Analysis — 74
+
+- **[major] "Closest approach" caption actually reports the WORST touch, not
+  the closest.** `fit.worstTouch` tracks the maximum gap among counted
+  touches; the caption called it "closest approach," the opposite of what
+  it measures. **Fixed**: relabeled "loosest touch."
+- **[major] Chart's 50-day/200-day "% vs it" legend uses yesterday's frozen
+  price during pre-market, while the candle beside it shows today's real
+  gap.** `seriesFull`'s trailing-window append read raw `q.px` (still
+  yesterday's price pre-market) instead of the session-aware price
+  `candleClose`/`dispQuote` already compute — distorting the rolling
+  average by one sample and silently diverging from the chart's own drawn
+  MA lines (which use `candleClose`-built rows). **Fixed**: `seriesFull` now
+  calls `candleClose()`, the same function the candle itself uses.
+- **[minor] Flag/pole reclassification has no cap on how long a "pole" can
+  span, so a slow multi-month drift can be mislabeled a sharp flagpole.**
+  The bar-count factor in the magnitude threshold was capped at 15, so a
+  100+-bar "pole" needed the same magnitude as a 15-bar one. **Fixed**:
+  removed the cap; the threshold now scales with the pole's real length.
+
+#### Left watchlist rail — 80
+
+- **[major] MOVERS box fabricates a "names that have printed pre-market"
+  count for symbols with no data at all.** `dispQuote(null)` returns
+  `prev:false`, the identical shape a genuine pre-market print returns, so a
+  symbol the feed hasn't answered for yet was counted as "printed"
+  alongside names that actually had. **Fixed**: the count now requires
+  `liveBySym(s)!=null` before checking `.prev`.
+- **[minor] A leveraged/inverse wrapper's range bar shows a
+  reverse-split-distorted position with no caveat on the row itself.** The
+  shopping list already excludes these names on the strength of this
+  disclosure; any OTHER box showing the same bar (52w sort, groups view)
+  gave no hint. **Fixed**: added a "(lev.)" tag and tooltip to
+  `rangeBarHTML` whenever `isLeveraged(sym)`.
+
+#### Financials tab — 46
+
+- **[blocker] Tapping a financial chart, then clicking any stage tab,
+  permanently destroys the tap-to-read readout for the rest of the
+  session.** `#chartread` physically moved itself into whichever `.gwrap`
+  grid was tapped via `insertAdjacentElement` — planting it as a descendant
+  of `#stagetabbody`, so the next tab switch's `body.innerHTML=...`
+  destroyed the actual DOM node. This was a correction of round 8's own
+  financials finding #3 fix, which fixed the visual symptom (a cramped
+  300px-wide readout) without noticing the reparenting itself was
+  destructive. **Fixed**: `#chartread` never leaves its original position as
+  a sibling of `#stagetabbody`; a new `.floating` class repositions it with
+  `position:absolute`, computed from the tapped chart's own bounding box
+  against `#s-stage`.
+- **[major] The outlier clamp on the Financials money and EPS charts
+  flattens MU's real, current earnings/revenue explosion into a bar
+  indistinguishable from a smaller prior quarter.** `robustClampMag` judged
+  an outlier purely by magnitude against the series median, which can't
+  tell a lone data glitch (NBIS's real spinoff-quarter margin distortion)
+  apart from genuine sustained compounding growth (MU's real earnings) —
+  both are "one point far above the median." **Fixed**: a candidate outlier
+  is no longer clamped when its own immediate neighbor is also well above
+  the ordinary spread, since a lone spike's neighbors sit back at normal
+  levels and sustained growth's don't.
+- **[minor] `numStr`/`pctStr` print a plain ASCII hyphen for negative
+  values, breaking the file's own U+2212 minus-sign convention** used
+  throughout the Fundamentals grid (P/E, PEG, Fwd P/E, P/S, P/B, EV/EBITDA,
+  Debt/Eq, Beta, margins, ROE, dividend yield). **Fixed**: both functions
+  now route through the same substitution the axis/hover formatters use.
+
+#### Sector Heatmap — 74
+
+- **[major] Isolating a sector that empties out renders a silent blank
+  box.** The toolbar's own "show all sectors" button already names the
+  isolated sector and offers the recovery action, but the box itself gave
+  no indication anything was wrong. **Fixed**: added an inline message
+  inside `#heatwrap` for the same case.
+- **[major] "Scanner unreachable" is printed for a self-caused empty Desk
+  watchlist, not just a real API failure.** Hiding every pinned name (or
+  adding none) makes `heatDeskTickers()` return empty, but the code fired
+  the scanner request anyway and blamed TradingView for the resulting empty
+  response. **Fixed**: `heatFetchNow` now short-circuits before the request
+  when the Desk universe has no tickers, with a distinct message.
+- **[major] Desk-universe size fallback can mix market cap into a
+  dollar-volume map by 2-3 orders of magnitude, with only a tooltip flagging
+  it.** Round 8 added the tooltip; nothing made the distortion glanceable
+  without hovering. **Fixed**: a new dotted `.capfall` hatch class, distinct
+  from `.nodata`'s diagonal and `.prev1d`'s vertical lines.
+- **[minor] `.nodata` hatch can be silently overridden by `.prev1d` hatch on
+  the same tile.** Both classes could apply to one tile, and CSS cascade
+  order let `.prev1d` win, hiding the stronger "no data" fact. **Fixed**:
+  the three hatch states (`nodata`/`prev1d`/`capfall`) are now mutually
+  exclusive by precedence, `nodata` always winning.
+
+#### vs PEERS tab — 64
+
+- **[blocker] Fundamentals tab and vs-Peers tab disagree about whether peer
+  data exists — live and reproducible on V.** A curated set with one
+  unresolved peer (V's own NASDAQ:FISV pin is stale — Fiserv trades NYSE:FI
+  now) deliberately never writes `PEERS_CACHE` (kept retryable), so
+  `peerStat`'s no-override fallback — the only path the Fundamentals grid
+  uses — saw nothing cached and showed zero peer context, while vs-Peers,
+  holding the resolved result directly, correctly ranked V against 3 real
+  peers one click away. **Fixed**: a new `PEERS_LAST` cache always holds the
+  most recent result regardless of completeness; `peerStat` falls back to
+  it, while `peersFor`'s own retry-on-incompleteness behavior is unchanged.
+- **[minor] The "comparing SYM to its peers…" loading state has no timeout
+  and no way to tell a hang from a fetch in progress.** **Fixed**: a 10s
+  timeout races the fetch and falls back to the same "scan-failed / reopen
+  this tab to retry" message every other peers failure already uses.
+
+#### Right rail panels + top rail — 60
+
+- **[blocker] A released catalyst (econ print or earnings) silently
+  disappears from the rail instead of showing "released"/"cleared".**
+  `fetch_econ_tv` requests `from=now` forward only, so a print that released
+  an hour ago is simply absent from the next hourly refetch, and
+  `build_catalysts` has no memory of the previous cycle's rows to backfill
+  from — a HIGH-importance print could vanish well before the frontend's
+  own 6h grace period would call it "cleared." **Fixed**: a new
+  `_merge_catalysts_forward` (fetcher/context.py) backfills any previous
+  cycle's row still inside its own grace period (mirrored exactly from the
+  frontend's `catDone`/`countdown` logic via `_catalyst_still_fresh`) that
+  the fresh fetch no longer carries. 6 new tests cover both helpers.
+- **[major] `DATA_CONTRACT.md` promises `actual` is "filled in once the
+  print lands"; no code path ever sets it.** TV only reports a non-null
+  `actual` once a row has released — and a released row's time is
+  necessarily in the past, which a `from=now` request can never receive by
+  construction. **Fixed**: `fetch_econ_tv` now looks back 26 hours (bounded
+  so it only ever adds today's already-released rows; `build_catalysts`'s
+  own window filter still drops anything from a prior calendar day). The
+  contract note is also corrected to name the CSV-mirror exception (a
+  CSV-sourced anchor carries no numeric fields at all and wins date+title
+  conflicts against TV regardless).
+
+#### Flow boards — 79
+
+- **[major] Conviction header's bull/bear/firing counts describe the whole
+  watchlist, not the board shown underneath, with no disclosure.** The
+  counts were computed from the full scored array before the score-floor
+  cut was applied. **Fixed**: the header now also shows the shown-board's
+  own bull/bear split in parentheses whenever the cut actually trims
+  anything, with a tooltip spelling out both scopes.
+- **[minor] Mobile Conviction board loses its contract column entirely;
+  Swing keeps the equivalent column at the same breakpoint.** The mobile
+  media query hid both RVOL and the loudest-contract column on Conviction,
+  while Swing's equivalent rule kept its own last column. **Fixed**: only
+  RVOL is hidden now.
+- **[minor] Sortable column headers on all four boards are mouse-only.**
+  **Fixed**: added `tabindex`, `role="columnheader"`, `aria-sort`, and a
+  keydown handler (Enter/Space) to the shared `table()` helper's sort
+  headers, mirroring the tab-stop treatment already given to heatmap tiles.
+
+#### Data honesty — 78
+
+- **[major] `avg_move` (the "×usual move" HOT badge input) is computed with
+  two different window sizes for desk names vs. custom watchlist names.**
+  The fetcher's `_avg_move` uses the last 20 closes (19 changes);
+  `adhocFillAvgMove` used 21 closes (20 changes) — a one-day-wider window
+  for the identical figure. **Fixed**: `adhocFillAvgMove` now matches the
+  fetcher's window exactly.
+- **[minor] Gamma-levels caption never discloses that only the top 4
+  strikes are shown, and the printed percentages don't sum to 100% with no
+  explanation.** `total_strikes` isn't published (only `total_gamma_oi`
+  is), so a literal "top 4 of N strikes" isn't available. **Fixed**: the
+  caption now discloses coverage as a percentage of total gamma open
+  interest instead.
 
 ---
 
