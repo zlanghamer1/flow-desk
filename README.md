@@ -324,10 +324,15 @@ is there because it is usually the interesting one. Odds can sit still for a
 month and then move ten points in an afternoon on one speech, and a weekly
 number smears that flat.
 
-A red banner appears above the card when either the odds pass 40% — a rate rise
-is close to a coin flip — or they jump 10 points in a single day. A jump that
-size is news whatever the starting level, so an 8% chance becoming 19% shouts
-even though 19% still sounds small.
+A red banner appears above the card whenever the reading is graded HOSTILE
+upstream — the odds pass 25%, or they jump 10 points in a single day —
+corrected 2026-08-22 from an earlier draft of this page that said the floor
+was 40%; 40% is where the wording inside the banner changes, not where it
+first appears. A same-day jump of 10+ points says "jumped hard today"
+whatever the starting level, so an 8% chance becoming 19% shouts even though
+19% still sounds small. Short of that, odds at or above 40% say "near a coin
+flip"; anything HOSTILE below 40% says "elevated enough to flag, short of a
+coin flip."
 
 Three things to keep in mind:
 
