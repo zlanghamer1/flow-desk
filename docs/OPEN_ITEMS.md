@@ -6,6 +6,42 @@ work a later session can pick up. Nothing here blocks using the page.
 
 ---
 
+## Getting to a real "done" (Zach's ruling, 2026-08-22)
+
+Eight review rounds in, no round has cleared 80 across all nine sections at
+once, and the confirmed-finding count has held flat at 26-27 per round for
+three rounds running rather than dropping toward zero. Diagnosis and the
+approved fix, in full:
+
+1. **Feature work is frozen until this closes out.** The gamma-levels
+   feature landed between rounds 7 and 8 and was itself a fresh source of
+   round-8 findings — every feature added mid-stabilization reopens surface
+   area for the next round to find, so fixing and building at the same time
+   never converges. No new features land in this repo until every section
+   clears the bar below, or Zach explicitly lifts the freeze.
+2. **The grading tool itself had a reliability bug, now fixed.** Two
+   separate rounds (7's Auto-TA, 8's Chart Stage) returned schema-valid
+   placeholder garbage (`section:"test"`, a finding titled `"t"`) that
+   looked like a real score until caught by hand. `docs/review/nine-
+   section-review.js` now runs each section's review through the same
+   content-sanity retry check (`looksLikePlaceholder`, up to 4 attempts)
+   that a one-off script used to catch this manually — a broken run can no
+   longer silently pass as a real score.
+3. **Rounds keep running back-to-back** until the finish line below is met.
+4. **The finish line changed.** "All nine sections clear 80 in the same
+   single pass" chases a number the review script's own header says is not
+   comparable round to round (a harsher re-read of an improved page can
+   score lower with nothing having regressed). The bar is now: **zero
+   unresolved confirmed findings in the "Open" section below.** Every
+   confirmed finding from a round gets fixed and moved to "Shipped" the same
+   day it's found, same as every round so far — the difference is the stop
+   condition is "nothing left in Open," not a specific number on a specific
+   day. Numeric scores are still recorded per round for trend-reading (is
+   severity shifting from blocker to minor?) but are not themselves the
+   pass/fail test.
+
+---
+
 ## Open — in the order they are worth doing
 
 ### 1. Round 9 verification is pending

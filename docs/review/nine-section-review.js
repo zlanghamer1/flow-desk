@@ -20,6 +20,23 @@
  * the numbers. If you want the number itself to track quality, give the
  * reviewer a fixed rubric carried between rounds — that is a change to this
  * prompt, not to the page.
+ *
+ * THE PASS BAR IS 80, not 90 (Zach's 2026-08-21 ruling) — the `below90`
+ * variable name below is legacy from before that ruling; the threshold it
+ * filters on is 80.
+ *
+ * PLACEHOLDER-GARBAGE RETRY (added 2026-08-22, round 9): a section reviewer
+ * agent can return schema-VALID content that is actually a placeholder —
+ * `section:"test"`, a two-sentence lorem-ipsum-style summary, a finding
+ * titled "t" — because the JSON Schema only checks shape, not substance.
+ * This happened twice before this fix existed (round 7's Auto-TA, round 8's
+ * Chart Stage), and both times required a human to notice, read
+ * journal.jsonl by hand, and hand-write a standalone retry script
+ * (docs/review/chart-section-redo.js) to get a real score. Each section's
+ * review stage now runs through looksLikePlaceholder() with up to 4
+ * attempts before accepting a result, the same check that one-off script
+ * used — so a broken run can no longer pass as a real score without anyone
+ * noticing.
  */
 export const meta = {
   name: 'flow-desk-nine-section-review',
@@ -119,13 +136,36 @@ const SECTIONS = [
   { key: 'data-honesty', prompt: `Review DATA HONESTY across the whole page: every number the page shows, and whether the page states truthfully where it came from, how old it is, and how precise it is. Hunt for anything the page presents as fact that is actually inferred, approximated, stale, or from a different source than implied. Check delayed-quote disclosure, staleness stamps (ageStampHTML, liveStale, macroSymStale), the price-feed failure banner, approximate dates (BAR_DATES_APPROX, MARKET_HOLIDAYS, weekdayDatesEndingAt), the CLOSE ONLY and STALE and FROZEN and PREV tags, rounded figures presented as exact, and any sentence that overstates what the data supports.` },
 ]
 
+function looksLikePlaceholder(review) {
+  if (!review) return true
+  if (!review.section || review.section.toLowerCase() === 'test') return true
+  if (!review.summary || review.summary.length < 20) return true
+  const bad = (review.findings || []).some(f =>
+    !f.title || f.title.length <= 2 ||
+    !f.lines || f.lines.length <= 2 ||
+    !f.failure || f.failure.length <= 2 ||
+    !f.fix || f.fix.length <= 2
+  )
+  return bad
+}
+
 phase('Review')
 
 const results = await pipeline(
   SECTIONS,
-  s => agent(COMMON + '\n\n' + s.prompt, {
-    label: 'review:' + s.key, phase: 'Review', schema: SCHEMA, effort: 'high',
-  }),
+  async (s) => {
+    let review = null
+    for (let attempt = 0; attempt < 4; attempt++) {
+      review = await agent(COMMON + '\n\n' + s.prompt, {
+        label: 'review:' + s.key + '-attempt' + attempt, phase: 'Review', schema: SCHEMA, effort: 'high',
+      })
+      if (!looksLikePlaceholder(review)) break
+      log(s.key + ' review attempt ' + (attempt + 1) + ' looked like placeholder garbage (section="' +
+        (review && review.section) + '") — retrying')
+      review = null
+    }
+    return review
+  },
   (review, s) => {
     if (!review || !review.findings || !review.findings.length) return { review, verdicts: [] }
     return parallel(review.findings.map(f => () =>
@@ -152,8 +192,11 @@ right, set real=true and put the accurate version in "correction".`,
   }
 )
 
-const report = results.filter(Boolean).map(r => ({
-  section: r.review ? r.review.section : 'unknown',
+const report = results.filter(Boolean).map((r, i) => ({
+  // All 4 retry attempts can still fail — say so explicitly rather than
+  // reporting "unknown" with no indication the section's score is missing,
+  // not merely unlabeled.
+  section: r.review ? r.review.section : (SECTIONS[i].key + ' (all 4 review attempts returned placeholder garbage — re-run this section)'),
   score: r.review ? r.review.score : null,
   summary: r.review ? r.review.summary : '',
   confirmed: r.verdicts.filter(v => v.verdict && v.verdict.real).map(v => ({
@@ -164,7 +207,8 @@ const report = results.filter(Boolean).map(r => ({
   refuted: r.verdicts.filter(v => !v.verdict || !v.verdict.real).map(v => v.finding.title),
 }))
 
-const below = report.filter(r => r.score !== null && r.score < 90).map(r => r.section + ' ' + r.score)
-log('below 90: ' + (below.length ? below.join(', ') : 'none'))
+// PASS BAR IS 80 (Zach's 2026-08-21 ruling) — see the file header note.
+const below = report.filter(r => r.score !== null && r.score < 80).map(r => r.section + ' ' + r.score)
+log('below 80: ' + (below.length ? below.join(', ') : 'none'))
 
-return { report, below90: below }
+return { report, below80: below }

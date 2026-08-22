@@ -19,6 +19,14 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
 - **Haiku** — mechanical grunt work.
 
 ## Hard guardrails
+- **FEATURE FREEZE IN EFFECT (Zach's ruling, 2026-08-22) — see
+  `docs/OPEN_ITEMS.md`'s "Getting to a real 'done'" section.** Eight review
+  rounds have not closed the nine-section review with zero open findings;
+  every feature added mid-stabilization (gamma levels, between rounds 7 and
+  8) reopened fresh review surface area and reset progress. **Do not add new
+  features to this repo** until `docs/OPEN_ITEMS.md`'s "Open" section is
+  empty, or Zach explicitly lifts the freeze in so many words. Bug fixes
+  from the review rounds are the only work permitted.
 - **Never** push the `data` branch by hand — the loop force-pushes it every
   cycle; a manual push will be clobbered or will fight the loop.
 - **Never** flip Settings → Pages to "GitHub Actions" mode. Branch mode from
