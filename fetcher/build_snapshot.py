@@ -217,6 +217,17 @@ ACTIVITY_FLAT_PCT = 0.3      # deadband around 0% price change, in percentage po
 # outlast that lookback with room for the tolerance search either side.
 MAX_CONSENSUS_WEEKS = 40
 
+# Gamma concentration levels (added 2026-08-22, Fable's design ruling) — unsigned
+# options-positioning walls from the same CBOE chain, top-K strikes by
+# gamma-weighted open interest. Display-only reference, never a scoring input
+# (see analyze_ticker/run_cycle). All three constants below are first-pass,
+# NOT-backtested heuristics, same disclosure class as UOA_HOT_MULT /
+# TA_FLAG_MIN_BARS — a judgment call on what reads as a legible wall count and
+# window, not a measured optimum.
+GAMMA_DTE_HI = 45            # dte window for the gamma aggregation
+GAMMA_TOP_K = 4              # top strikes kept per ticker
+GAMMA_MIN_CONTRACTS = 20     # below this, gamma reads null (chain too thin)
+
 ACCEL_MULT = 1.5             # net_flow acceleration threshold for "firing"
 MONEYNESS_BAND = 0.20        # +/-20% of spot for 0-7DTE popular_contract
 SWING_DELTA_LO, SWING_DELTA_HI = 0.30, 0.60
@@ -767,6 +778,11 @@ def analyze_ticker(ticker: str, chain: dict, session_date: date,
     swing_calls_oi = swing_puts_oi = 0.0
     tilt_bull = tilt_bear = 0.0          # this cycle's classified premium
     contract_vols: dict[str, float] = {}  # occ -> cumulative vol (next cycle's baseline)
+    # Gamma concentration (added 2026-08-22) — accumulated in this same pass,
+    # no second loop over the chain. gamma_by_strike[strike] = {"gamma_oi", "oi"}.
+    gamma_by_strike: dict[float, dict] = {}
+    gamma_contracts = 0
+    gamma_expiries: set[str] = set()
 
     for opt in chain["options"]:
         if not isinstance(opt, dict):
@@ -789,6 +805,17 @@ def analyze_ticker(ticker: str, chain: dict, session_date: date,
         delta = _num(opt.get("delta"))
         iv = _num(opt.get("iv"))
         premium = vol * last * 100.0
+
+        # ── gamma concentration (added 2026-08-22) ──────────────────────
+        # abs() belt-and-suspenders — long-option gamma is positive for both
+        # calls and puts, but a vendor sign quirk must not subtract.
+        g = _num(opt.get("gamma"))
+        if g is not None and 0 <= dte <= GAMMA_DTE_HI:
+            bucket = gamma_by_strike.setdefault(strike, {"gamma_oi": 0.0, "oi": 0.0})
+            bucket["gamma_oi"] += abs(g) * oi * 100.0
+            bucket["oi"] += oi
+            gamma_contracts += 1
+            gamma_expiries.add(yymmdd)
 
         in_short = DTE_SHORT_LO <= dte <= DTE_SHORT_HI
         in_swing = DTE_SWING_LO <= dte <= DTE_SWING_HI
@@ -964,6 +991,36 @@ def analyze_ticker(ticker: str, chain: dict, session_date: date,
     big_candidates.sort(key=lambda x: x[0], reverse=True)
     big_orders = [row for _, row in big_candidates[:BIG_ORDERS_CAP]]
 
+    # ── gamma concentration reduction (added 2026-08-22) ────────────────────
+    # null (not a guessed level) when the chain is too thin in the DTE window;
+    # see GAMMA_MIN_CONTRACTS's disclosure comment above.
+    gamma = None
+    total_gamma_oi = sum(b["gamma_oi"] for b in gamma_by_strike.values())
+    if gamma_contracts >= GAMMA_MIN_CONTRACTS and total_gamma_oi > 0:
+        ranked = sorted(
+            ((strike, b) for strike, b in gamma_by_strike.items() if b["gamma_oi"] > 0),
+            key=lambda kv: kv[1]["gamma_oi"], reverse=True,
+        )
+        levels = [
+            {
+                "strike": strike,
+                "gamma_oi": b["gamma_oi"],
+                "oi": int(b["oi"]),
+                "pct": round(b["gamma_oi"] / total_gamma_oi * 100, 1),
+            }
+            for strike, b in ranked[:GAMMA_TOP_K]
+        ]
+        gamma = {
+            "spot": spot,
+            "dte_hi": GAMMA_DTE_HI,
+            "levels": levels,
+            "peak_strike": levels[0]["strike"] if levels else None,
+            "total_gamma_oi": total_gamma_oi,
+            "expiries_used": len(gamma_expiries),
+            "contracts_used": gamma_contracts,
+            "computed_from": "cboe_delayed_chain",
+        }
+
     return {
         "spot": spot,
         "iv30": chain["iv30"],
@@ -995,6 +1052,7 @@ def analyze_ticker(ticker: str, chain: dict, session_date: date,
         "tilt_bull_cycle": tilt_bull,
         "tilt_bear_cycle": tilt_bear,
         "contract_vols": contract_vols,
+        "gamma": gamma,
     }
 
 
@@ -1472,6 +1530,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     conviction_cards = []
     swing_cards = []
     big_orders_pool: list[dict] = []   # every ticker's shortlist, merged below
+    gamma_by_ticker: dict[str, dict | None] = {}  # merged into facts after context.build_context
     with_options = 0
 
     for i, ticker in enumerate(candidates):
@@ -1489,6 +1548,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
         if not isinstance(prev_vols, dict):
             prev_vols = None
         analysis = analyze_ticker(ticker, chain, session_date, prev_vols=prev_vols)
+        gamma_by_ticker[ticker] = analysis["gamma"]
         direction = analysis["direction"]
         net_flow = analysis["net_flow"]
         new_prev_cycle["flows"][ticker] = net_flow
@@ -1878,6 +1938,18 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
                                    consensus_history=consensus_history)
     except Exception as e:
         log(f"WARN context build failed: {e}")
+
+    # ── gamma merge (added 2026-08-22) — AFTER context.build_context returns
+    # and BEFORE the data{} assembly below, which is after both boards are
+    # already built. This placement is what keeps gamma structurally unable
+    # to feed conviction_score/swing_score. A ticker with a chain but no
+    # facts entry gets nothing (fail-soft); a cycle where context raised
+    # carries no gamma key at all (fail-soft, no new top-level key).
+    _facts = context_fields.get("facts")
+    if isinstance(_facts, dict):
+        for _t, _g in gamma_by_ticker.items():
+            if _t in _facts:
+                _facts[_t]["gamma"] = _g
 
     bullish_flow = sum(1 for v in by_ticker.values() if v["direction"] == "BULL")
     bearish_flow = sum(1 for v in by_ticker.values() if v["direction"] == "BEAR")

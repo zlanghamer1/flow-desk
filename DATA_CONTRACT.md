@@ -375,6 +375,34 @@ values are `null` (never a string sentinel). All strings are already plain
 >       "revenue_growth_ttm_pct": 12.1
 >     }
 >   },
+>   // ── Gamma concentration levels (added 2026-08-22) — UNSIGNED options-
+>   // positioning walls from the same CBOE delayed chain the flow numbers
+>   // read. Computed in build_snapshot.analyze_ticker, merged into facts by
+>   // run_cycle AFTER context.build_context returns and both boards are
+>   // already built — structurally unable to feed conviction_score/
+>   // swing_score. KEY OMITTED (not present, not null) when no chain was
+>   // analyzed this cycle (TRACK_ONLY name, chain fetch failed, no quote).
+>   // Present as null when a chain WAS analyzed but had fewer than
+>   // GAMMA_MIN_CONTRACTS usable contracts in the DTE window. Never
+>   // partially filled. Display-only reference — never a scoring input.
+>   "gamma": {
+>     "spot": 112.34,              // chain's own spot at compute time; null if
+>                                  // CBOE served no usable price (levels stand)
+>     "dte_hi": 45,                // the GAMMA_DTE_HI window used, disclosure
+>     "levels": [                  // top GAMMA_TOP_K strikes by gamma_oi, DESC;
+>                                  // may hold fewer than K when the chain has
+>                                  // fewer distinct strikes with gamma
+>       {"strike": 115.0,          // OCC strike, $
+>        "gamma_oi": 1234567.8,    // sum(|gamma| * open_interest * 100) at strike
+>        "oi": 45210,              // total open interest summed at strike (int)
+>        "pct": 34.2}              // gamma_oi / total_gamma_oi * 100, 1dp
+>     ],
+>     "peak_strike": 115.0,        // levels[0].strike
+>     "total_gamma_oi": 3609846.2, // window-wide sum, the pct denominator
+>     "expiries_used": 7,          // distinct expiries contributing (int)
+>     "contracts_used": 2841,      // contracts that carried a usable gamma (int)
+>     "computed_from": "cboe_delayed_chain"   // fixed literal
+>   },
 >   // ── Classification (added 2026-08-19, trading-platform redesign) — rides
 >   // the same scanner call. TradingView's OWN taxonomy, not GICS: MU reads
 >   // "Electronic Technology" / "Semiconductors", NKE reads "Consumer
@@ -413,6 +441,29 @@ values are `null` (never a string sentinel). All strings are already plain
 > their numbers appear anywhere in this implementation — every value in
 > `facts.<TICKER>.framework` comes from a live vendor at fetch time, or the
 > filter is null.
+>
+> **`facts.<TICKER>.gamma` null-behavior table (normative):**
+>
+> | Situation | Value |
+> |---|---|
+> | TRACK_ONLY / chain fetch failed / no quote | key OMITTED |
+> | chain analyzed, `contracts_used < GAMMA_MIN_CONTRACTS` | `null` |
+> | chain analyzed, thresholds met, spot missing | object with `"spot": null` |
+> | a contract with missing/non-numeric `gamma` | contract skipped; not in `contracts_used` |
+> | a contract with `open_interest` 0 or missing | contributes 0; still counts in `contracts_used` if gamma present |
+> | strike whose summed `gamma_oi` is 0 | excluded from `levels` |
+> | `context.build_context` raised (no `facts` key at all) | gamma absent with it — fail-soft, no new top-level key |
+>
+> **Definition (normative):** per contract in `0 <= dte <= GAMMA_DTE_HI`,
+> `gamma_oi = abs(gamma) * open_interest * 100`, accumulated per strike, calls
+> and puts both adding. `abs()` is belt-and-suspenders — long-option gamma is
+> positive for both sides, but a vendor sign quirk must not subtract. No
+> `spot^2` scaling (ranking is identical, raw figure stays legible). Unsigned
+> only — no dealer sign, no flip level; see `fetcher/build_snapshot.py`'s
+> `GAMMA_*` constants comment for why. Chart-only in v1: no rail scanner
+> equivalent (`gammaOf(sym)`), since the levels are once-a-day per-ticker
+> values already sitting in `facts`, not a bars recomputation.
+>
 > **`desk_private`** — omitted, same as the other five keys, whenever the
 > vault fetch has nothing to report (no token, 404, bad JSON); present as
 > `{"v": 1, ...}` — an encrypted blob passed through **verbatim** from the
