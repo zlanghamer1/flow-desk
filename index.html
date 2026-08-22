@@ -5631,8 +5631,15 @@ function stageSetEmpty(msg){
   // SPY's resistance and support levels under a header showing NKE's price.
   var st = document.getElementById("staget");
   if(st) st.innerHTML = "";
-  var sg = document.getElementById("stagegex");
-  if(sg) sg.innerHTML = "";
+  // Blanking #stagegex here (rather than calling stageGammaLegend) left the
+  // gamma slot empty on any chart with no price history — a genuinely
+  // off-desk name, a pinned name whose chain never resolved, or a searched
+  // ticker that simply doesn't exist — contradicting the design's own
+  // "the slot always renders one of these lines; it never disappears" rule
+  // (docs/GAMMA_LEVELS_DESIGN.md). gammaReasonFor(STAGE.sym) needs no chart
+  // data at all, so it's safe to call here unconditionally.
+  STAGE.gammaSummary = null;
+  stageGammaLegend();
   stageBar(); stageLegend(); stageSetOhlc(null);
 }
 function stageApplyWindow(total){
@@ -7900,7 +7907,11 @@ var GAMMA_STALE_DAYS = 4; // a normal weekend/holiday gap should not alarm — s
 var GAMMA_REASON = {
   NO_CHAIN: "no options chain read for this name this cycle",
   THIN: "chain too thin for a gamma read",
-  OFFDESK: "gamma levels are a desk-name feature"
+  // Both call sites prepend "gamma levels: " to whichever reason applies
+  // (see stageGammaLegend/stageSourceLine below) — this string must not
+  // repeat that phrase itself, or an off-desk name reads "gamma levels:
+  // gamma levels are a desk-name feature."
+  OFFDESK: "a desk-name feature, same as intraday bars"
 };
 // Day-based staleness against data.session_date — the fundBuiltStaleDays
 // SHAPE (~line 1874: a calendar-day diff), deliberately NOT the millisecond
