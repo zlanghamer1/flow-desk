@@ -19,6 +19,12 @@
      7.38:1 (light) — same bar the other meaningful tokens above were held
      to on 2026-08-19. */
   --bb:#B07CD6; --bbbg:rgba(176,124,214,.14);
+  /* Teal — added 2026-08-22 for gamma concentration levels. Unsigned and
+     neutral by design (see docs/GAMMA_LEVELS_DESIGN.md): magnitude, never a
+     directional claim, so it must sit visually apart from both --bb (purple,
+     already claimed by Bollinger/HEDGING) and --up/--dn (green/red, reserved
+     for a directional verdict gamma explicitly does not make). */
+  --gex:#3FB5B0; --gexbg:rgba(63,181,176,.14);
   --sel:rgba(94,159,216,.07);
   --spark-up:#3ECF8E; --spark-dn:#F06A5D; --spark-n:#5C6B7A;
   /* Chart gridlines. --edge2 is a table hairline at 1.05:1 against --srf,
@@ -38,6 +44,7 @@
     --acc:#2F6FAE; --accbg:rgba(47,111,174,.10);
     --hi:#7A5408; --hibg:rgba(122,84,8,.13);
     --bb:#6B3FA0; --bbbg:rgba(107,63,160,.10);
+    --gex:#1E7A76; --gexbg:rgba(30,122,118,.10);
     --sel:rgba(47,111,174,.06);
     --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   --grid:#D3DBE4; --gridzero:#B4C0CD;
@@ -50,6 +57,7 @@
   --acc:#2F6FAE; --accbg:rgba(47,111,174,.10);
   --hi:#7A5408; --hibg:rgba(122,84,8,.13);
   --bb:#6B3FA0; --bbbg:rgba(107,63,160,.10);
+  --gex:#1E7A76; --gexbg:rgba(30,122,118,.10);
   --sel:rgba(47,111,174,.06);
   --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   --grid:#D3DBE4; --gridzero:#B4C0CD;
@@ -61,6 +69,7 @@
   --acc:#5E9FD8; --accbg:rgba(94,159,216,.12);
   --hi:#D9A845; --hibg:rgba(217,168,69,.16);
   --bb:#B07CD6; --bbbg:rgba(176,124,214,.14);
+  --gex:#3FB5B0; --gexbg:rgba(63,181,176,.14);
   --sel:rgba(94,159,216,.07);
   --spark-up:#3ECF8E; --spark-dn:#F06A5D; --spark-n:#5C6B7A;
   /* Chart gridlines. --edge2 is a table hairline at 1.05:1 against --srf,
@@ -929,6 +938,7 @@ footer b{color:var(--ink2)}
         </div>
         <div class="leg" id="stageleg"></div>
         <div class="leg" id="staget"></div>
+        <div class="leg" id="stagegex"></div>
         <div class="stagetabs" id="stagetabs"></div>
         <div class="stagetab" id="stagetabbody"></div>
         <!-- Tap/click readout for the financial and peer charts. Their exact
@@ -5079,7 +5089,8 @@ var STAGE = {
   vZoom:1,                   // vertical candle stretch, driven by the wheel over the price axis
   synthetic:false,           // last row is the live-appended today candle
   log:false, logManual:null, // null = auto rule decides; true/false = user override
-  markerByTime:{}, ratingByTime:{}, fund:null, hovering:false
+  markerByTime:{}, ratingByTime:{}, fund:null, hovering:false,
+  gammaLines:[]              // top-K gamma strikes, drawn separate from srLines — see stageGamma()
 };
 function cssVar(name){
   var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -5620,6 +5631,8 @@ function stageSetEmpty(msg){
   // SPY's resistance and support levels under a header showing NKE's price.
   var st = document.getElementById("staget");
   if(st) st.innerHTML = "";
+  var sg = document.getElementById("stagegex");
+  if(sg) sg.innerHTML = "";
   stageBar(); stageLegend(); stageSetOhlc(null);
 }
 function stageApplyWindow(total){
@@ -7749,6 +7762,21 @@ function taSrSide(l, lastPx){
 function taSrColorVar(side){
   return side==="over" ? "--dn" : side==="under" ? "--up" : "--acc";
 }
+// Gamma concentration levels (added 2026-08-22, see docs/GAMMA_LEVELS_DESIGN.md).
+// UNSIGNED options-positioning walls — magnitude, never a direction call, so
+// unlike taSrColorVar this NEVER colors by side; every line and badge stays
+// --gex regardless of where price sits. The only thing that moves with price
+// is the WORD ("above"/"below"/"at"), and gexSide is the single source for
+// it — the caption (stageGammaLegend), the live poke (stageTAPoke) and the
+// tooltip (stageSourceLine) all call this one function, mirroring the
+// taSrSide pattern above: a level can never be described "below spot" in one
+// place and "above" in another.
+var GAMMA_AT_TOL = 0.003; // within 0.3% of spot reads "at", not above/below — a first-pass tolerance, not backtested
+function gexSide(strike, lastPx){
+  if(strike==null || lastPx==null || !(lastPx>0)) return null;
+  if(Math.abs(strike-lastPx)/lastPx <= GAMMA_AT_TOL) return "at";
+  return (strike > lastPx) ? "above" : "below";
+}
 // Which level keeps the single axis price badge: the one nearest CURRENT
 // price, skipping any that would collide with a moving-average badge
 // (measured across 40 charts, 12 put an S/R title within 5px of an MA one).
@@ -7853,6 +7881,139 @@ function taShapeLabel(fitRes, fitSup, win, sym){
   }
   return {label:label, detail:detail};
 }
+/* ============ gamma concentration levels (added 2026-08-22) ============
+   docs/GAMMA_LEVELS_DESIGN.md is the binding design for this block. Reads
+   facts.<TICKER>.gamma (fetcher unit, a different module/loop than the
+   scanner-built facts — see the design doc's correction #1) and draws the
+   top-K strikes as horizontal price lines in the neutral --gex color. Chart-
+   only in v1: no rail scanner, unlike Bollinger — these are once-a-day
+   snapshot values already sitting in facts, not a bars-driven recompute, so
+   a second call site would add no new information (design doc, scope ruling
+   b). Display-only: never touches conviction_score/swing_score. Unsigned:
+   never colored by side, magnitude only (lineWidth), matching the
+   Bollinger-cross "volatility, never bullish/bearish" convention. */
+var GAMMA_STALE_DAYS = 4; // a normal weekend/holiday gap should not alarm — same allowance as FUND_BUILT_STALE_DAYS
+// Three fixed failure-reason strings, shared VERBATIM between the caption
+// (stageGammaLegend) and the tooltip clause (stageSourceLine) — "a feed that
+// fails keeps its slot": the gamma slot is always rendered, never hidden,
+// and never fabricates a guessed or zeroed level.
+var GAMMA_REASON = {
+  NO_CHAIN: "no options chain read for this name this cycle",
+  THIN: "chain too thin for a gamma read",
+  OFFDESK: "gamma levels are a desk-name feature"
+};
+// Day-based staleness against data.session_date — the fundBuiltStaleDays
+// SHAPE (~line 1874: a calendar-day diff), deliberately NOT the millisecond
+// isStaleFlow/isStaleContext helpers, which compare against Date.now() and
+// are gated to trading hours — the wrong shape for a once-a-cycle field with
+// no timestamp of its own.
+function gammaStaleDays(){
+  var sess = STATE.data && typeof STATE.data.session_date==="string" ? STATE.data.session_date : null;
+  if(!sess) return null;
+  var s = Date.parse(sess.slice(0,10)+"T12:00:00Z");
+  var now = Date.parse(new Date().toISOString().slice(0,10)+"T12:00:00Z");
+  if(!isFinite(s) || !isFinite(now)) return null;
+  return Math.round((now-s)/86400000);
+}
+// Which failure slot applies, or null when a real gamma object is available.
+// ONE function: stageGamma/stageGammaLegend (the chart + caption) and
+// stageSourceLine (the Overview tooltip) both call this, so the reason named
+// under the chart and the reason named in the tooltip can never disagree —
+// "one rule, one helper, every surface."
+// Null-behavior table (DATA_CONTRACT.md, normative): key OMITTED = no chain
+// analyzed this cycle (TRACK_ONLY name, chain fetch failed, no quote); value
+// `null` = chain analyzed but contracts_used fell below GAMMA_MIN_CONTRACTS.
+// Both are fail-soft fetcher outcomes, never a page-side guess.
+function gammaReasonFor(sym){
+  if(!sym) return GAMMA_REASON.OFFDESK;
+  var pinned = railHasSym(sym);
+  var deskFacts = STATE.data && STATE.data.facts && STATE.data.facts[sym];
+  if(!deskFacts) return pinned ? GAMMA_REASON.NO_CHAIN : GAMMA_REASON.OFFDESK;
+  if(!Object.prototype.hasOwnProperty.call(deskFacts, "gamma")) return GAMMA_REASON.NO_CHAIN;
+  if(deskFacts.gamma === null) return GAMMA_REASON.THIN;
+  return null;
+}
+function gammaObjFor(sym){
+  var deskFacts = STATE.data && STATE.data.facts && STATE.data.facts[sym];
+  return (deskFacts && deskFacts.gamma && typeof deskFacts.gamma==="object") ? deskFacts.gamma : null;
+}
+// Draw the top-K strikes. Positions are set HERE, at full render, only —
+// they are once-a-day snapshot values and do not move intraday (per the
+// design doc: "Levels do not move intraday"). What DOES move live is the
+// caption's above/below wording, re-derived every poke by stageGammaLegend.
+function stageGamma(){
+  if(!STAGE.chart) return;
+  var g = gammaObjFor(STAGE.sym);
+  if(!g || !Array.isArray(g.levels) || !g.levels.length){
+    STAGE.gammaSummary = null;
+    stageGammaLegend();
+    return;
+  }
+  var LWC = window.LightweightCharts;
+  var color = cssVar("--gex");
+  var maxPct = g.levels.reduce(function(m,l){ var p=num(l.pct); return (p!=null && p>m) ? p : m; }, 0) || 1;
+  g.levels.forEach(function(l){
+    var strike = num(l.strike);
+    if(strike==null) return;
+    var pct = num(l.pct)||0;
+    // Weight scales with pct — peak thickest — clamped 1..3 per the design.
+    var w = Math.max(1, Math.min(3, Math.round((pct/maxPct)*3)));
+    var isPeak = (g.peak_strike!=null && strike===num(g.peak_strike));
+    STAGE.gammaLines.push({level:l, line: STAGE.s.candle.createPriceLine({
+      price:strike, color:color, lineWidth:w, lineStyle:LWC.LineStyle.Dotted,
+      // The axis is already contested by the S/R badge (taSrBadgePick) —
+      // one gamma badge max, on the peak strike only, per the design doc.
+      axisLabelVisible:isPeak,
+      title:"GEX $"+fmtpx(strike)+" ("+pct.toFixed(1)+"%)"
+    })});
+  });
+  STAGE.gammaSummary = {g:g};
+  stageGammaLegend();
+}
+// Caption: plain neutral wording — magnitude, never direction. The
+// above/below words come from gexSide, called fresh here every time
+// (full render via stageGamma, and every 30s poke via stageTAPoke) — never
+// cached from render time, so they track the live close as it crosses a
+// wall, the same discipline taSrSide's callers already hold to.
+function stageGammaLegend(){
+  var el = document.getElementById("stagegex");
+  if(!el) return;
+  var sym = STAGE.sym;
+  var reason = gammaReasonFor(sym);
+  if(reason){
+    el.innerHTML = '<span class="m">gamma levels: '+esc(reason)+'.</span>';
+    return;
+  }
+  var sm = STAGE.gammaSummary;
+  if(!sm){ el.innerHTML = ""; return; }
+  var g = sm.g;
+  var lastPx = STAGE.rows.length ? num(STAGE.rows[STAGE.rows.length-1][3]) : null;
+  var sorted = g.levels.slice().sort(function(a,b){ return (num(b.pct)||0)-(num(a.pct)||0); });
+  var peak = sorted[0];
+  if(!peak){ el.innerHTML = ""; return; }
+  var bits = ['<span style="color:var(--gex)">peak wall '+fmtpx(peak.strike)+' ('+(num(peak.pct)||0).toFixed(1)+'%)</span>'];
+  var above=null, below=null;
+  g.levels.forEach(function(l){
+    var strike = num(l.strike);
+    var side = gexSide(strike, lastPx);
+    if(side==="above" && (above==null || strike<num(above.strike))) above=l;
+    else if(side==="below" && (below==null || strike>num(below.strike))) below=l;
+  });
+  if(above && above!==peak) bits.push('nearest wall above spot '+fmtpx(above.strike)+' ('+(num(above.pct)||0).toFixed(1)+'%)');
+  if(below && below!==peak) bits.push('nearest wall below spot '+fmtpx(below.strike)+' ('+(num(below.pct)||0).toFixed(1)+'%)');
+  var rest = sorted.slice(1).filter(function(l){ return l!==above && l!==below; });
+  if(rest.length){
+    bits.push('also '+rest.map(function(l){ return fmtpx(l.strike)+' ('+(num(l.pct)||0).toFixed(1)+'%)'; }).join(', '));
+  }
+  var dte = num(g.dte_hi), exp = num(g.expiries_used);
+  var asOf = (STATE.data && STATE.data.session_date) ? esc(STATE.data.session_date) : "unknown";
+  var sd = gammaStaleDays();
+  var staleTag = (sd!=null && sd > GAMMA_STALE_DAYS)
+    ? (' <span class="sess" data-tip="Gamma levels are from a snapshot this old.">STALE '+sd+'d</span>') : '';
+  el.innerHTML = '<span class="m">gamma: </span>'+bits.join(' · ')
+    + '<span class="m"> — options-positioning magnets, not a direction call; from settled open interest, '
+    + (exp!=null?exp:"?")+' expir'+(exp===1?"y":"ies")+' within '+(dte!=null?dte:"?")+' days, as of '+asOf+'.'+staleTag+'</span>';
+}
 /* apply/clear the TA overlays on the stage */
 function stageKeepView(fn){
   var ts = null, range = null;
@@ -7867,6 +8028,14 @@ function stageTAClear(){
   });
   (STAGE.srLines||[]).forEach(function(h){ try{ STAGE.s.candle.removePriceLine(h.line); }catch(e){} });
   STAGE.srLines = [];
+  // Gamma levels ride a SEPARATE array from srLines (never co-mingled — the
+  // two are different data sources, different meaning) but share the same
+  // clear path, so a symbol switch (stageShow -> stageRender -> stageTA ->
+  // stageTAClear, or stageSetEmpty's direct call) can never leave the last
+  // ticker's gamma walls drawn over the new one's candles.
+  (STAGE.gammaLines||[]).forEach(function(h){ try{ STAGE.s.candle.removePriceLine(h.line); }catch(e){} });
+  STAGE.gammaLines = [];
+  STAGE.gammaSummary = null;
   STAGE.taSummary = null;
 }
 /* Which bars the overlays are computed on, in words. A 40 on an hourly RSI is
@@ -8052,6 +8221,7 @@ function stageTA(){
   }
   STAGE.taSummary = summary;
   stageTALegend(prefs);
+  stageGamma();
 }
 function stageTAPoke(){
   if(!STAGE.chart || !STAGE.rows.length) return;
@@ -8140,6 +8310,11 @@ function stageTAPoke(){
   // Redraw the caption every poke — it carries the trend-line verdict, which
   // is what the re-grade above just changed.
   if(STAGE.taSummary) stageTALegend(taPrefs());
+  // Gamma walls don't move intraday (positions are set once, at full
+  // render), but the "nearest wall above/below spot" WORDS do — gexSide is
+  // re-run against the live close on every poke here, same pattern as
+  // taSrSide above. Never cache the side at render time.
+  stageGammaLegend();
 }
 /* The line's GEOMETRY comes from settled bars and does not move during the
    session. Its VERDICT does: RETEST, FAILED and BREAKOUT are all decided by
@@ -9768,6 +9943,23 @@ function stageSourceLine(sym, fund){
   } else {
     bits.push("no fundamentals loaded for this name");
   }
+
+  // GAMMA LEVELS. gammaReasonFor is the SAME function the chart caption
+  // calls (stageGammaLegend) — "one rule, one helper, every surface" — so
+  // this tooltip and the line under the chart can never name two different
+  // reasons for the same missing read.
+  var gReason = gammaReasonFor(sym);
+  if(gReason){
+    bits.push("gamma levels: "+gReason);
+  } else {
+    var gObj = gammaObjFor(sym);
+    var gExp = gObj ? num(gObj.expiries_used) : null;
+    var gDte = gObj ? num(gObj.dte_hi) : null;
+    var gSd = gammaStaleDays();
+    bits.push("gamma levels from the desk's own CBOE delayed chain, settled open interest, "
+      + (gExp!=null?gExp:"?")+" expir"+(gExp===1?"y":"ies")+" within "+(gDte!=null?gDte:"?")+" days"
+      + (gSd!=null && gSd > GAMMA_STALE_DAYS ? (' <span class="sess" data-tip="Gamma levels are from a snapshot this old.">STALE '+gSd+'d</span>') : ""));
+  }
   return bits.join(" · ") + ". Nothing here is investment advice.";
 }
 /* ---- stage entry point: what [data-sym] clicks now drive ---- */
@@ -9783,6 +9975,8 @@ function stageShow(sym, opts){
   try{ store("desk.stage.sym", JSON.stringify({sym:sym, tv:symbolForTicker(sym)||null, name:ADHOC_NAMES[sym]||null})); }catch(e){}
   var _st = document.getElementById("staget");
   if(_st) _st.innerHTML = "";      // never carry the last symbol's TA reading
+  var _sg = document.getElementById("stagegex");
+  if(_sg) _sg.innerHTML = "";      // nor the last symbol's gamma reading (2026-08-22 view-changes-symbol rule)
   // Nor the last symbol's BARS. stageHeader() below repaints the OHLC readout
   // from STAGE.rows, and the bars for the new name are still in flight — so
   // clicking COHR then LLY put "Eli Lilly 1,280.34" in the header over
