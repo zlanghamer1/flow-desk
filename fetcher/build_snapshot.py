@@ -382,6 +382,11 @@ WATCHLIST = [
     "STRL", "MOD", "BE",          # Sterling Infra, Modine, Bloom Energy
     "APLD", "CORZ", "CIFR", "RIOT", "CLSK",
     "QQQ",                        # Nasdaq-100 (broad index, Zach's add 2026-07-17)
+    "SPY",                        # S&P 500 (broad index, Zach's add 2026-08-22 —
+                                    # parallels QQQ; usable CBOE chain live-probed
+                                    # 13,980 contracts. Pinned so it gets gamma
+                                    # levels; that also pulls it fully onto boards/
+                                    # facts/bars/fund like QQQ, per Zach's ruling.)
     # ---- Leveraged wrappers, REINSTATED 2026-08-15 (Zach's final ruling) ----
     "SOXL", "SOXS",                # 3x / -3x semis — real chains (3434 / 2422
                                     # contracts live 2026-08-15), board-eligible
