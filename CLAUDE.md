@@ -427,5 +427,193 @@ The non-obvious decisions from that pass:
   monthly/quarterly/quad/triple regex above it already covers both titles
   this exception exists for.
 
+## Guardrails added 2026-08-22, round-7 fix pass (27 findings, all 9 sections)
+
+Round 7 of the nine-section review confirmed 27 findings against the new
+80-point bar (see `docs/OPEN_ITEMS.md` for the full list, scores, and the
+methodology note on catching a schema-valid-but-empty review result); this
+pass fixed all 27 the same day. Round 8, an independent re-review against
+the fixed page, has not yet run — see `docs/OPEN_ITEMS.md`'s Open section.
+The non-obvious decisions from this pass:
+
+- **A trend line's role FLIPS on BREAKOUT and EXTENDED, never on RETEST or
+  FAILED — one function, three call sites.** `taTrendFlipped(status)` is now
+  the single source for the fit-time series color, `stageTAPoke`'s live
+  recolor, and the caption's color/name in `stageTALegend`. Before this, all
+  three independently checked `status==="BREAKOUT"` only, so an EXTENDED
+  line (a confirmed, matured break — reachable only once price ran >12%
+  past the line or the break is >12 sessions old, never a false positive)
+  stayed drawn in its pre-break color while its own caption said the move
+  was already made. Mirrors `taSrSide`'s existing one-function pattern for
+  the horizontal S/R lines.
+- **The on-chart Bollinger Bands now use completed closes only, same
+  convention as the rail's `bollingerOf(sym)`.** `stageTA`'s BB block used
+  to run over `STAGE.rows`, which includes the live-appended "today" candle
+  — baked in once at full render and never recomputed, so it was
+  simultaneously live-contaminated (disagreeing with `bollingerOf` for the
+  same ticker at the same instant) and frozen (the code's own comment
+  claimed "computed on settled bars," which was true of `.side` but not of
+  the band's dollar levels themselves). Slicing off the live bar when
+  `STAGE.synthetic` is true fixes both findings in the same change — the
+  comment is now actually true, so no live recompute in `stageTAPoke` was
+  needed.
+- **The drawn SMA20/50/200 lines now recompute their own last point on every
+  live poke**, inside `stageTAPoke`, from `STAGE.rows` (which `stageLivePoke`
+  has already patched with the live close by the time TA poke runs). Before
+  this, the lines only got new data from a full `stageRender`, while the
+  adjacent legend text recomputed fresh every poll from `statsOf` — so the
+  stated "+Y% vs it" and the true visual gap to the line could name two
+  different values for any name that moved since the last full render.
+- **The single S/R axis price badge is re-picked on every live poke, not
+  just recolored.** `taSrBadgePick(lvls, lastPx)` — one function for fit
+  time and every poke — returns which level is nearest price and which
+  moving averages it would collide with; `STAGE.srLines` entries now carry
+  `levelIdx`/`edge` so a wide band's near edge can be re-derived as price
+  crosses the cluster, not just recolored. Previously `nearestIdx` was
+  computed once at the fit and never revisited, so the badge could keep
+  sitting on a level that used to be nearest and no longer is.
+- **`wlIoApply` (bulk watchlist paste) now enriches every newly-listed
+  symbol the same way `wlAdd` (single search-add) always has** —
+  `adhocEnsureFacts`/`adhocEnsureDaily` for each entry in the resolved
+  `list`, right after `adhocRegister`. The bulk path never called either,
+  so a pasted ticker showed price and name only: no 52-week bar, no
+  earnings countdown, and no way to ever trigger the hot badge or reach
+  MOVERS, until the page was reloaded or the chart opened individually.
+- **`adhocFillAvgMove(sym)` is now called from BOTH `adhocEnsureDaily` and
+  `adhocEnsureFacts`'s success paths**, not just the daily path. The two
+  fetches are deliberately still unchained and racing (wlAdd/wlIoApply fire
+  them together), but before this only `adhocEnsureDaily`'s own callback
+  attempted the avg_move write, gated on an ambient "does `ADHOC_FACTS[sym]`
+  already exist" check rather than a real dependency — so if the plain GET
+  to stockanalysis.com won the race, the write was silently skipped forever
+  (`ADHOC_BARS[sym].D` already existed, so no later call ever retried).
+  Whichever fetch settles SECOND now does the write, since only it can see
+  both pieces.
+- **`renderGrowth` now flags byte-identical revenue/EPS across back-to-back
+  quarters as a probable duplicated vendor row**, alongside the existing
+  missing-data/outlier checks — never silently dropped, since the desk
+  cannot know which of two identical readings (if either) is the real one.
+  CBRS's live sidecar carries exactly this (Q1/Q2 23 both 4,332,000 revenue
+  and -0.907903 EPS to six decimals).
+- **The shared tap-to-read chart readout (`#chartread`) now moves itself
+  to sit under whichever chart was tapped**, via `insertAdjacentElement` on
+  click, instead of staying fixed at the bottom of the whole tab. It is
+  still the one aria-live node; only its DOM position changes per tap. Any
+  chart wrapped in `.gchart` (Financials AND vs Peers both use it) benefits.
+- **`.hm-tile b`/`span` get nowrap/ellipsis plus `max-width:100%`** — matching
+  every other truncatable label in the file. Column-direction
+  `align-items:center` does not stretch these children, so without an
+  explicit width neither overflow rule had anything to fire against, and a
+  5-letter ticker at the minimum label-showing tile size could clip to a
+  DIFFERENT real, currently-listed symbol with no ellipsis to say it was cut.
+- **`heatDeskTickers()` now filters by `wlHidden()`**, the same way the rail
+  itself does. Hiding a pinned name pushes it onto `desk.wl.hidden` without
+  touching `RAIL_GROUPS`, so the "Desk" heatmap kept rendering a hidden
+  name's tile at full size and color with no note that it wasn't on the
+  visible watchlist.
+- **A `matchMedia('(prefers-color-scheme: light)')` change listener now
+  clears `_heatRGB` and re-renders the heatmap**, guarded on no explicit
+  `desk.theme` being stored (an explicit in-app choice already pins
+  `dataset.theme` regardless of the OS). Before this, `_heatRGB` only
+  invalidated on the explicit theme-button click, so a tab left open across
+  an OS-scheduled light/dark switch kept mixing the old theme's `--up`/`--dn`
+  hex with the new theme's neutral midpoint.
+- **`peerStat(sym, key, peersOverride)` takes an optional resolved peer list
+  now**, and `renderPeersInto`'s per-metric-chart loop passes `res.peers`
+  instead of letting the function re-read the module-global `PEERS_CACHE`.
+  `peersFor` only WRITES that cache when every curated peer resolves, so a
+  curated set that only partially resolved on a given cycle drew a full
+  chart from the `res` already in hand while every caption underneath it,
+  reading the still-empty cache, said "too few peers to rank." Callers with
+  no `res` in scope (`peerAnnotate`, from the Fundamentals grid) still fall
+  back to the cache.
+- **`inBand(c)` in `_peersByIndustry` returns `null` for "unknown" now,
+  never `false`** — `false` is reserved for two KNOWN sizes that are
+  genuinely more than 5× apart. With `myCap` null (common for a foreign
+  issuer or thin OTC name the scanner hasn't backfilled), every candidate
+  used to read `inBand()===false`, so the footer named every peer as
+  size-mismatched with a specific, false numeric claim instead of saying
+  the real reason: SYM's own cap is unknown.
+- **The indexed-revenue-growth chart now appends a one-line reason** naming
+  which peers lacked enough quarterly history, instead of disappearing with
+  zero explanation whenever fewer than 2 series clear the 5-quarter minimum
+  — the file's own "a failed feed keeps its slot" rule, which this was the
+  one remaining exception to.
+- **`fedAlarmHTML` now has three "why" phrasings, not two**, and reads the
+  upstream `f.alarm` boolean rather than re-deriving the 40% ALARM threshold
+  in JS (this file's own standing rule). The banner fires at the fetcher's
+  25%-grade HOSTILE floor, well below the 40%/10pp ALARM thresholds
+  README.md documented for it, so a 32%-with-no-jump reading used to print
+  "near a coin flip" — now it prints "elevated enough to flag, short of a
+  coin flip" unless `f.alarm` is actually true. README.md's own paragraph is
+  corrected to match.
+- **`catPassesCurated`'s memory-kind branch no longer requires a desk-ticker
+  match on its own** — a desk-ticker memory row still passes unconditionally
+  (unchanged), but everything else now gates on `importance` the same way
+  the econ branch already does. Most memory events carry `ticker:null` BY
+  DESIGN (non-US-ticker companies, index-wide events), so the ticker
+  requirement had dropped 21 of 22 memory catalysts from the default
+  curated view with no on-screen note that anything was dropped.
+- **The news ticker's marquee track drops its duplicate copy under reduced
+  motion.** The duplicate exists to loop the animation seamlessly and is
+  `aria-hidden`, but reduced motion disables the animation and switches to
+  manual horizontal scroll — so the hidden-from-screen-readers copy was
+  still fully visible to scrolling, printing every headline twice
+  back-to-back for the one audience the duplicate was never meant to reach.
+- **The Biggest Orders "MOSTLY INTRINSIC" badge now computes intrinsic value
+  against the fetcher snapshot's OWN spot (`o.spot`), not a live poll.**
+  Crossing a live price against the contract's frozen ~7-minute-old "last"
+  premium let the badge flicker on and off every 30 seconds purely from
+  live/stale timing, with no actual change in the contract's real extrinsic
+  value.
+- **`contractLine` now caps displayed IV at `IV_DISPLAY_CAP_PCT` (300%)** and
+  shows a dashed, tooltipped placeholder above it instead of the raw number
+  — live examples were XLF 847%, AAOI 757%, XLV 559%, CORZ 511%, all 0DTE
+  deep-ITM pricing artifacts (delta≈±1.0), not real implied vol. The
+  function no longer wraps its whole return in one `esc()` call, since the
+  capped-IV branch needs to return real markup (a tooltip span); every other
+  piece was already safe to leave un-escaped a second time (expiry is
+  pre-escaped, everything else is numeric/enum).
+- **The Swing board now renders the same live price/±change block
+  Conviction already builds**, from the identical `dispQuote(liveBySym(...))`
+  call already in scope — it just never got rendered. SwingCard carries no
+  `change_pct` snapshot fallback the way ConvictionCard does, so this one
+  reads live-or-nothing rather than falling back to a stale snapshot figure.
+- **DATA_CONTRACT.md's `etf_flows` note is corrected**, not the code: the
+  code's always-show-a-reason behavior was already right (matches the "a
+  feed that fails keeps its slot" convention every other panel follows) —
+  the doc just never got updated when that behavior was written.
+- **"Short % float" gets the same `fundStaleSub` staleness badge Fwd P/E and
+  Next earnings already carry**, gated on `shortFromFund` (true only when
+  the value actually came from the sidecar `fund` object, never from
+  `facts.short_pct`, which the fetcher always sets null). `stageSourceLine`'s
+  STALE tooltip is also corrected to name all three sidecar-sourced fields
+  it warns about, not just two of the three it had just claimed came from
+  that sidecar in the same sentence.
+- **`_ratio_matches_split(ratio)` guards both consensus-EPS filters
+  (forward EPS revision, analyst velocity) against an unadjusted split
+  between two weekly snapshots.** Reuses the existing `SPLIT_RATIOS` /
+  `SPLIT_SNAP_TOL` / `SPLIT_BREAK_MIN` constants already vetted for price-bar
+  split repair (`_repair_split_breaks`) rather than inventing a new
+  threshold or a new vendor field — `consensus_history.json`'s weekly
+  `eps_ntm` snapshots carry no split adjustment of their own and there are
+  no bars to repair at that layer, so this checks the ratio itself: a jump
+  landing on a clean split factor (2, 3, 4, 5, 10, ...) AND outside the
+  2.5x "ordinary move" band reads UNKNOWN instead of a real revision. Not
+  yet observed live (only one week of consensus history exists), but the
+  misfiring path was already live.
+- **`_framework_verdict` now appends a `_BUILDING` suffix to a tier reached
+  with fewer than all 5 filters resolved** (e.g. `ADD_BUILDING`), which the
+  frontend's `stageFrameworkHTML` strips back off to get the base tier's
+  label/color and adds a "(building)" qualifier instead. Before this,
+  `passed=3` with 2 filters still UNKNOWN rendered byte-identical to
+  `passed=3` with those same 2 filters genuinely FAILED — "ADD" either way,
+  collapsing "clean record, still gathering data" into "mixed record,
+  already failing." `fetcher/test_framework_score.py`'s verdict-tier
+  parametrization had a `(3, 3, "ADD")` case that was pinning the OLD,
+  ambiguous behavior; updated in step, same as round 6's `test_big_orders.py`
+  fix — a test that mirrors buggy logic keeps passing against a copy of the
+  bug instead of the fetcher's real code.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

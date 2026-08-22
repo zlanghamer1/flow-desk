@@ -190,6 +190,33 @@ def test_forward_eps_revision_fails_when_consensus_fell():
     assert out["filters"]["forward_eps_revision"] is False
 
 
+def test_forward_eps_revision_unknown_on_a_split_sized_jump():
+    # 5.0 -> 20.0 is a clean 4x, outside the "not a break" band (2.5x) and
+    # landing exactly on a SPLIT_RATIOS entry — read as a probable unadjusted
+    # split in the consensus number, not a real quadrupling of the forward
+    # EPS estimate (2026-08-22 review, data honesty finding #2).
+    hist = {"weekly": {}}
+    d_6m_ago = SESSION - timedelta(weeks=context.FRAMEWORK_WEEKS_6M)
+    hist["weekly"][context._iso_week_key(d_6m_ago)] = {"X": {"eps_ntm": 5.0}}
+    f = {"eps_ntm": 20.0, "rev_ntm": None}
+    out = context.score_framework("X", f, None, hist, SESSION)
+    assert out["filters"]["forward_eps_revision"] is None
+    assert "eps_revision_6m_pct" not in out["metrics"]
+
+
+def test_forward_eps_revision_not_flagged_for_an_ordinary_large_revision():
+    # 5.0 -> 9.0 is a genuinely large (+80%) revision, but inside the 2.5x
+    # "not a break" band _repair_split_breaks itself uses for price bars —
+    # a real analyst re-rating, not a split artifact, and must still resolve.
+    hist = {"weekly": {}}
+    d_6m_ago = SESSION - timedelta(weeks=context.FRAMEWORK_WEEKS_6M)
+    hist["weekly"][context._iso_week_key(d_6m_ago)] = {"X": {"eps_ntm": 5.0}}
+    f = {"eps_ntm": 9.0, "rev_ntm": None}
+    out = context.score_framework("X", f, None, hist, SESSION)
+    assert out["filters"]["forward_eps_revision"] is True
+    assert out["metrics"]["eps_revision_6m_pct"] == pytest.approx(80.0)
+
+
 def test_lookback_tolerates_a_one_week_gap():
     # The exact 6-month week is missing (a loop outage); one week later exists.
     hist = {"weekly": {}}
@@ -254,7 +281,13 @@ def test_snapshot_skips_a_ticker_with_no_eps_ntm():
 @pytest.mark.parametrize("passed,evaluated,want", [
     (5, 5, "BUY_5"), (4, 5, "BUY_4"), (3, 5, "ADD"), (2, 5, "HOLD"),
     (1, 5, "AVOID"), (0, 5, "AVOID"),
-    (3, 3, "ADD"),          # only 3 filters evaluated, all 3 pass -> still ADD
+    # Fewer than all 5 filters resolved: the tier word carries "_BUILDING" so
+    # it can never render byte-identical to the same tier reached with a
+    # complete, genuinely mixed record (2026-08-22 review, data honesty
+    # finding #3 — this parametrization's own (3, 3, "ADD") case used to be
+    # exactly the collision the finding flagged, indistinguishable from
+    # (3, 5, "ADD") above where the other 2 filters had actually FAILED).
+    (3, 3, "ADD_BUILDING"), (4, 4, "BUY_4_BUILDING"), (1, 4, "AVOID_BUILDING"),
     (2, 2, "BUILDING"),     # fewer than FRAMEWORK_MIN_EVALUATED (3) -> never a tier
     (0, 0, "BUILDING"),
 ])

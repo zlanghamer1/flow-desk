@@ -830,8 +830,14 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
 > (ETFs create/destroy shares as money enters/leaves), so it reads "previous
 > session's money movement," unlike the 7-minute options boards. SOXX is
 > fetched for this card only — it is NOT part of the PINNED options universe.
-> The frontend must render nothing (no card) when `etf_flows` is null/absent
-> or `funds` is empty, so old snapshots keep working.
+> Corrected 2026-08-22: the frontend does NOT hide the card when `etf_flows`
+> is null/absent or `funds` is empty — this doc previously said it should,
+> but `renderETF` deliberately keeps the section visible with a one-line
+> reason instead ("the fund-flow reading did not publish this cycle" /
+> "the vendor returned no readings for these ETFs"), matching the "a feed
+> that fails keeps its slot" convention every other panel on the page
+> follows. `hidden` is for a payload the desk never carries, not one that
+> came back empty this cycle.
 
 > **Note on `big_orders` — it is a DAY TOTAL PER CONTRACT, not a single order.**
 > Each row is one options contract's whole session: `volume x last x 100`, the

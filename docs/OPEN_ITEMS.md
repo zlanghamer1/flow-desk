@@ -8,11 +8,45 @@ work a later session can pick up. Nothing here blocks using the page.
 
 ## Open — in the order they are worth doing
 
-### 1. Round 7 findings — confirmed, not yet fixed (none of the 9 sections reach 80 yet)
+### 1. Round 8 verification is pending
 
-Round 7 checked the now-fixed page against Zach's 2026-08-21 ruling that the
-passing bar is 80, not 90. **No section reached 80.** Highest was Chart Stage
-at 79 — one point short. Full scores:
+The round-7 fix pass below (2026-08-22) closed all 27 confirmed findings, the
+same day they were found. It has NOT yet been checked with a fresh nine-
+section review run (`docs/review/nine-section-review.js`) the way round 6's
+fixes were checked against the live scanner — the fetcher-side fixes are
+covered by the full `fetcher/` pytest suite (270 passing, including two new
+tests for the split-ratio guard and three new parametrized cases for the
+verdict-word fix), but the JS-side fixes have only been read back and syntax-
+checked (`node --check`), not exercised against a running page. A later
+session should run round 8, confirm the nine sections actually clear 80, and
+fix or log whatever it finds — the pattern held in every prior round (a
+deeper pass finds new ground; it does not mean the fixes it re-checks were
+wrong).
+
+### 2. Deferred by judgement, not by omission
+
+- **The chart's own attribution link** is 35x11 on a phone, under the 24px
+  touch minimum. Lightweight Charts injects and sizes it; restyling a vendor's
+  attribution is not ours to do. It is the only remaining under-minimum target.
+- **Net flow and the BULL/BEAR pill count every strike; Flow % counts only
+  strikes within 20% of spot.** They can point opposite ways on one row. Both
+  tooltips now say so. Making them agree means changing what the publisher
+  computes (`build_snapshot.py`, net_flow and direction), which is a data
+  decision, not a display one.
+- **The biggest-orders board ranks gross premium**, so deep in-the-money paper
+  can lead on money already in the strike. Those rows are badged MOSTLY
+  INTRINSIC rather than re-ranked, because the gross figure is the honest
+  answer to "what traded"; ranking on extrinsic value would answer a different
+  question. If that other question is the one worth answering, the change is
+  one sort key.
+
+---
+
+## Shipped 2026-08-22, round 7 (27 findings confirmed, 1 refuted, all fixed)
+
+Round 7 checked the round-6-fixed page against Zach's 2026-08-21 ruling that
+the passing bar is 80, not 90. **No section reached 80 pre-fix.** Highest was
+Chart Stage at 79 — one point short. Full pre-fix scores:
 
 | Section | R7 |
 |---|---|
@@ -352,7 +386,7 @@ a future session hitting the same "schema-valid but empty content" failure
 mode should add the `looksLikePlaceholder`-style check directly into the
 main script rather than re-deriving it.
 
-### 2. Score trajectory, and what "80" would take
+### Score trajectory, and what "80" would take
 
 | Section | R3 | R4 | R5 | R6 (pre-fix) | R7 |
 |---|---|---|---|---|---|
@@ -375,22 +409,20 @@ banner and a memory-catalysts filter gap, neither related to anything round 6
 touched). The finding LISTS are the useful output, not the number. None of
 the nine sections has reached 80 yet; Chart Stage's 79 is the closest.
 
-### 3. Deferred by judgement, not by omission
-
-- **The chart's own attribution link** is 35x11 on a phone, under the 24px
-  touch minimum. Lightweight Charts injects and sizes it; restyling a vendor's
-  attribution is not ours to do. It is the only remaining under-minimum target.
-- **Net flow and the BULL/BEAR pill count every strike; Flow % counts only
-  strikes within 20% of spot.** They can point opposite ways on one row. Both
-  tooltips now say so. Making them agree means changing what the publisher
-  computes (`build_snapshot.py`, net_flow and direction), which is a data
-  decision, not a display one.
-- **The biggest-orders board ranks gross premium**, so deep in-the-money paper
-  can lead on money already in the strike. Those rows are badged MOSTLY
-  INTRINSIC rather than re-ranked, because the gross figure is the honest
-  answer to "what traded"; ranking on extrinsic value would answer a different
-  question. If that other question is the one worth answering, the change is
-  one sort key.
+**Round-7 fix pass (2026-08-22):** all 27 confirmed findings above were
+fixed the same day. The non-obvious decisions, condensed, live in
+`CLAUDE.md`'s "Guardrails added 2026-08-22, round-7 fix pass" section —
+notably a new shared `taTrendFlipped`/`taSrBadgePick` pair for Auto-TA's
+color/badge bugs (mirroring `taSrSide`'s existing pattern), the on-chart
+Bollinger Band switching to completed-closes-only (which incidentally fixed
+the Chart Stage minor finding in the same change), and a `_BUILDING`
+verdict-word suffix plus a matching `_ratio_matches_split` guard on the
+fetcher side. Verified: the full `fetcher/` pytest suite (270 passing,
+including new tests for both fetcher-side fixes) and a `node --check` syntax
+pass on the extracted inline script. **Not yet verified**: a fresh
+nine-section review run against the fixed page (see "Round 8 verification
+is pending" under Open, above) — treat the post-fix behavior as reasoned
+through and tested, not yet re-scored by an independent reviewer.
 
 ---
 

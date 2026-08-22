@@ -2720,6 +2720,26 @@ def _consensus_lookback(consensus_history: dict, ticker: str, session_date: date
     return None
 
 
+def _ratio_matches_split(ratio: float) -> bool:
+    """True when `ratio` (or its inverse) lands within SPLIT_SNAP_TOL of a
+    clean split factor from SPLIT_RATIOS — the same match _snap_split_ratio
+    performs for a price-bar break, reused here on a raw eps_ntm ratio.
+    consensus_history's weekly eps_ntm snapshots carry no split adjustment of
+    their own, unlike price bars (see _repair_split_breaks above): a 2-for-1
+    split between two snapshot dates would roughly halve the raw number with
+    nothing else in this pipeline to catch it, and _consensus_lookback has no
+    bars to repair — this checks the ratio itself instead of a price series.
+    """
+    if not (isinstance(ratio, (int, float)) and ratio > 0):
+        return False
+    inv = ratio < 1
+    x = (1.0 / ratio) if inv else ratio
+    for c in SPLIT_RATIOS:
+        if abs(x / c - 1.0) <= SPLIT_SNAP_TOL:
+            return True
+    return False
+
+
 def _framework_verdict(passed: int, evaluated: int) -> str:
     """Map filters-passed to a verdict word on the framework's own 0-5 tier
     scale. "BUILDING" while fewer than FRAMEWORK_MIN_EVALUATED filters have
@@ -2727,10 +2747,21 @@ def _framework_verdict(passed: int, evaluated: int) -> str:
     analyst velocity) read UNKNOWN until weekly snapshots accumulate the
     needed 3-6 months, so a fresh deployment starts here and fills in on its
     own; never upgraded to a confident tier on a minority of the filters.
+
+    A "_BUILDING" suffix marks a tier reached with fewer than all 5 filters
+    resolved — passed=3 with 2 filters still UNKNOWN used to render
+    byte-identical to passed=3 with those same 2 filters genuinely FAILED
+    ("ADD" either way), collapsing "clean record, still gathering data" and
+    "mixed record, already failing" into one chip (2026-08-22 review, data
+    honesty finding #3). BUY_5 has no such variant: reaching it requires all
+    5 filters to have passed, which means all 5 have resolved.
     """
     if evaluated < FRAMEWORK_MIN_EVALUATED:
         return "BUILDING"
-    return _FRAMEWORK_VERDICTS.get(passed, "BUILDING")
+    word = _FRAMEWORK_VERDICTS.get(passed, "BUILDING")
+    if evaluated < 5 and word != "BUILDING":
+        return word + "_BUILDING"
+    return word
 
 
 def score_framework(ticker: str, f: dict, fund: Optional[dict],
@@ -2757,11 +2788,20 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
         return isinstance(v, (int, float)) and not isinstance(v, bool)
 
     # Filter 1: forward EPS revision — is the NTM consensus higher than it
-    # was ~6 months ago?
+    # was ~6 months ago? A split between the two snapshots would move the raw
+    # eps_ntm ratio by roughly the split factor with no repair anywhere in
+    # this path (2026-08-22 review, data honesty finding #2) — see
+    # _ratio_matches_split's docstring. Not yet observed live; only one week
+    # of history exists since this feature shipped, but the misfiring path
+    # is already live and will start firing once 26-week lookbacks have data.
     eps_6m_ago = _consensus_lookback(consensus_history, ticker, session_date, FRAMEWORK_WEEKS_6M)
     if _isnum(eps_ntm) and _isnum(eps_6m_ago) and eps_6m_ago != 0:
-        metrics["eps_revision_6m_pct"] = round((eps_ntm - eps_6m_ago) / abs(eps_6m_ago) * 100, 2)
-        filters["forward_eps_revision"] = eps_ntm > eps_6m_ago
+        eps_ratio_6m = eps_ntm / eps_6m_ago
+        if not (1.0 / SPLIT_BREAK_MIN < eps_ratio_6m < SPLIT_BREAK_MIN) and _ratio_matches_split(eps_ratio_6m):
+            filters["forward_eps_revision"] = None
+        else:
+            metrics["eps_revision_6m_pct"] = round((eps_ntm - eps_6m_ago) / abs(eps_6m_ago) * 100, 2)
+            filters["forward_eps_revision"] = eps_ntm > eps_6m_ago
     else:
         filters["forward_eps_revision"] = None
 
@@ -2778,10 +2818,15 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
 
     # Filter 3: analyst revision velocity — same eps_ntm series as filter 1,
     # a shorter ~3-month lookback (momentum vs. the 6-month magnitude above).
+    # Same split-sized-ratio guard as filter 1, for the same reason.
     eps_3m_ago = _consensus_lookback(consensus_history, ticker, session_date, FRAMEWORK_WEEKS_3M)
     if _isnum(eps_ntm) and _isnum(eps_3m_ago) and eps_3m_ago != 0:
-        metrics["eps_velocity_3m_pct"] = round((eps_ntm - eps_3m_ago) / abs(eps_3m_ago) * 100, 2)
-        filters["analyst_velocity"] = eps_ntm > eps_3m_ago
+        eps_ratio_3m = eps_ntm / eps_3m_ago
+        if not (1.0 / SPLIT_BREAK_MIN < eps_ratio_3m < SPLIT_BREAK_MIN) and _ratio_matches_split(eps_ratio_3m):
+            filters["analyst_velocity"] = None
+        else:
+            metrics["eps_velocity_3m_pct"] = round((eps_ntm - eps_3m_ago) / abs(eps_3m_ago) * 100, 2)
+            filters["analyst_velocity"] = eps_ntm > eps_3m_ago
     else:
         filters["analyst_velocity"] = None
 
