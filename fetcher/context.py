@@ -240,6 +240,59 @@ ROTATION_KEYWORDS = [
 
 _FOMC_RE = re.compile(r"fomc.*rate decision", re.IGNORECASE)
 _CPI_RE = re.compile(r"\bcpi\b", re.IGNORECASE)
+# Known equivalent-event aliases: the vault's hand-kept CSV names an event
+# (CPI, Jobs Report, Retail Sales, FOMC, PCE) using its own conventional
+# title, while TradingView's calendar publishes the SAME release under a
+# different title entirely (Inflation Rate YoY/MoM, Non Farm Payrolls, Fed
+# Interest Rate Decision, Core PCE Price Index MoM) — so most of these never
+# hit _dedup_econ's title-conflict path at all (only PPI's titles happen to
+# literally overlap), and survived on the rail as two separate rows: the
+# CSV-sourced anchor everyone actually sees, carrying no numbers, and a
+# same-day TV row with the real forecast/prior sitting one line away with
+# nothing tying the two together (2026-08-22 review, panels finding #1).
+# (csv-side pattern, tv-side pattern) — matched against each row's own title.
+_ECON_ALIASES = [
+    (re.compile(r"\bcpi\b", re.IGNORECASE), re.compile(r"inflation rate", re.IGNORECASE)),
+    (re.compile(r"jobs report|non[\s-]*farm[\s-]*payrolls", re.IGNORECASE),
+     re.compile(r"non[\s-]*farm[\s-]*payrolls|unemployment rate", re.IGNORECASE)),
+    (re.compile(r"retail sales", re.IGNORECASE), re.compile(r"retail sales", re.IGNORECASE)),
+    (re.compile(r"fomc.*rate decision", re.IGNORECASE),
+     re.compile(r"fed interest rate decision|fomc", re.IGNORECASE)),
+    (re.compile(r"\bpce\b", re.IGNORECASE), re.compile(r"pce price index", re.IGNORECASE)),
+]
+
+
+def _merge_econ_aliases(out: list[dict], tv_rows: list[dict]) -> None:
+    """In place: for a CSV-sourced econ row still missing forecast AND prior,
+    find a TV row on the SAME DATE whose title matches the known alias for
+    the CSV row's own event name (see _ECON_ALIASES) and copy its numeric
+    fields across. Never overwrites a value already present, never touches
+    title/importance/anchor/source — this only fills in numbers a lexical
+    title match (_dedup_econ) could never find because the two vendors name
+    the same release differently.
+    """
+    for row in out:
+        if row.get("kind") != "econ" or row.get("source") != "econ_calendar":
+            continue
+        if row.get("forecast") is not None or row.get("prior") is not None:
+            continue
+        title = row.get("title") or ""
+        tv_pattern = None
+        for csv_re, tv_re in _ECON_ALIASES:
+            if csv_re.search(title):
+                tv_pattern = tv_re
+                break
+        if tv_pattern is None:
+            continue
+        match = next(
+            (t for t in tv_rows if t.get("date") == row.get("date") and tv_pattern.search(t.get("title") or "")),
+            None,
+        )
+        if match is None:
+            continue
+        for field in _ECON_MERGE_FIELDS:
+            if row.get(field) is None and match.get(field) is not None:
+                row[field] = match[field]
 _PAREN_RE = re.compile(r"\([^)]*\)")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9 ]")
 _TICKER_RE = re.compile(r"^[A-Z]{1,5}$")
@@ -1010,10 +1063,21 @@ def _titles_conflict(a: str, b: str) -> bool:
     return ka == kb or ka in kb or kb in ka
 
 
+_ECON_MERGE_FIELDS = ("forecast", "prior", "actual", "unit", "scale", "period", "agency")
+
+
 def _dedup_econ(tv_rows: list[dict], csv_rows: list[dict]) -> list[dict]:
     """CSV rows always survive; a TV row is dropped when it conflicts
     (same date + similar title, see _titles_conflict) with a CSV row — the
-    hand-kept CSV is the verified source and wins.
+    hand-kept CSV is the verified source and wins on title/importance/time.
+
+    But the CSV mirror hardcodes forecast/prior/actual/unit/scale/period to
+    null (it exists to pin the EVENT, not carry the vendor's numbers), so a
+    conflicting TV row used to be dropped ENTIRELY — discarding real
+    forecast/prior/actual data along with the title it lost the tie-break
+    on. The surviving CSV row now inherits those numeric fields from the
+    TV row it beat, whenever the CSV row doesn't already have its own value
+    (2026-08-22 review, panels finding #1).
 
     Returns fresh dict copies (never the caller's own row objects) so later
     in-place edits (see build_catalysts's anchor promotion) can never leak
@@ -1021,11 +1085,13 @@ def _dedup_econ(tv_rows: list[dict], csv_rows: list[dict]) -> list[dict]:
     """
     out = [dict(r) for r in csv_rows]
     for tv_row in tv_rows:
-        conflict = any(
-            c["date"] == tv_row["date"] and _titles_conflict(c["title"], tv_row["title"])
-            for c in csv_rows
-        )
-        if not conflict:
+        conflicting = [c for c in out if c["date"] == tv_row["date"] and _titles_conflict(c["title"], tv_row["title"])]
+        if conflicting:
+            for c in conflicting:
+                for field in _ECON_MERGE_FIELDS:
+                    if c.get(field) is None and tv_row.get(field) is not None:
+                        c[field] = tv_row[field]
+        else:
             out.append(dict(tv_row))
     return out
 
@@ -1192,10 +1258,23 @@ def build_catalysts(econ_rows: list[dict], memory_rows: list[dict],
             edt_ct = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(TZ_CT)
         except Exception:
             continue
+        earn_date = edt_ct.date().isoformat()
+        # A memory-kind row sharing this same (ticker, date) is almost always
+        # hand-curated color about the SAME earnings report (e.g. "FY2026
+        # year-end + guidance") rather than a separate event — MU's Q4
+        # earnings printed twice on the rail, once from each source, with
+        # near-identical countdowns and nothing distinguishing them
+        # (2026-08-22 review, panels finding #2). Fold the memory row's
+        # title into the earnings row instead of emitting both.
+        dup_memory = [o for o in out if o.get("kind") == "memory" and o.get("ticker") == ticker
+                      and o.get("date") == earn_date]
+        out = [o for o in out if o not in dup_memory]
+        memory_color = dup_memory[0].get("title") if dup_memory else None
+        title = f"{ticker} earnings" + (f" ({memory_color})" if memory_color else "")
         out.append({
-            "date": edt_ct.date().isoformat(),
+            "date": earn_date,
             "time_ct": edt_ct.strftime("%H:%M"),
-            "title": f"{ticker} earnings",
+            "title": title,
             "importance": "HIGH",
             "kind": "earnings",
             "ticker": ticker,
@@ -1231,6 +1310,12 @@ def build_catalysts(econ_rows: list[dict], memory_rows: list[dict],
             promoted = dict(row)
             promoted["anchor"] = True
             out.append(promoted)
+
+    # Cross-reference the CSV-named anchors (CPI, Jobs Report, Retail Sales,
+    # FOMC, PCE) against TV's differently-titled rows for the same release —
+    # run against the FULL (unwindowed) econ_rows so an anchor promoted above
+    # from outside the display window still gets its numbers.
+    _merge_econ_aliases(out, econ_rows)
 
     out.sort(key=lambda r: (r["date"], r.get("time_ct") or "99:99"))
     return out
@@ -2729,6 +2814,23 @@ FRAMEWORK_WEEKS_6M = 26                 # Filter 1 lookback: ~6 months of ISO we
 FRAMEWORK_WEEKS_3M = 13                 # Filter 3 lookback: ~3 months of ISO weeks
 FRAMEWORK_WEEK_TOLERANCE = 1            # nearest-available-snapshot search radius
 FRAMEWORK_MIN_EVALUATED = 3             # filters needed before a verdict is given at all
+# Filters 4/5 (opmargin expansion, FCF growth) had no anomaly check on the
+# same fund/{SYM}.json quarterly arrays the Financials chart already guards
+# with robustClampMag and a duplicate-row detector. Live example: MU's
+# sidecar computed "+5705 bps YoY" opmargin expansion and "+1291%" FCF
+# growth, both silently PASSing (2026-08-22 review, data honesty finding
+# #1). A tight reconciliation band (trailing-4-quarter revenue vs. the prior
+# full fiscal year) was rejected per that finding's own correction — a
+# fast-growing company diverges from a year-old annual figure for genuine
+# reasons mid-fiscal-year, and a tight band would misfire on real
+# hypergrowth. These ceilings instead bound the FILTER'S OWN OUTPUT
+# magnitude: a >20-percentage-point YoY opmargin swing or >300% TTM FCF
+# growth is far more likely a quarter-alignment/duplicate-row artifact than
+# a real reading, so it reads UNKNOWN rather than a guessed PASS/FAIL —
+# same "no trustworthy data, no guessed verdict" rule this file applies
+# everywhere else.
+FRAMEWORK_OPMARGIN_MAX_PLAUSIBLE_BPS = 2000.0   # >20pp YoY swing reads UNKNOWN, not PASS/FAIL
+FRAMEWORK_FCF_GROWTH_MAX_PLAUSIBLE = 3.0        # >300% TTM FCF growth reads UNKNOWN, not PASS/FAIL
 _FRAMEWORK_VERDICTS = {5: "BUY_5", 4: "BUY_4", 3: "ADD", 2: "HOLD", 1: "AVOID", 0: "AVOID"}
 
 
@@ -2902,8 +3004,11 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
         rev_now, rev_prior, oi_now, oi_prior = q_rev[-1], q_rev[-5], q_opinc[-1], q_opinc[-5]
         if all(_isnum(x) for x in (rev_now, rev_prior, oi_now, oi_prior)) and rev_now > 0 and rev_prior > 0:
             bps = (oi_now / rev_now - oi_prior / rev_prior) * 10000
-            metrics["opmargin_expansion_bps"] = round(bps, 1)
-            filters["opmargin_expansion"] = bps > FRAMEWORK_OPMARGIN_MIN_BPS
+            if abs(bps) > FRAMEWORK_OPMARGIN_MAX_PLAUSIBLE_BPS:
+                filters["opmargin_expansion"] = None
+            else:
+                metrics["opmargin_expansion_bps"] = round(bps, 1)
+                filters["opmargin_expansion"] = bps > FRAMEWORK_OPMARGIN_MIN_BPS
         else:
             filters["opmargin_expansion"] = None
     else:
@@ -2920,9 +3025,12 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
             if ttm_fcf_prior != 0 and ttm_rev_prior > 0:
                 fcf_growth = (ttm_fcf_now - ttm_fcf_prior) / abs(ttm_fcf_prior)
                 rev_growth_ttm = (ttm_rev_now - ttm_rev_prior) / ttm_rev_prior
-                metrics["fcf_growth_ttm_pct"] = round(fcf_growth * 100, 2)
-                metrics["revenue_growth_ttm_pct"] = round(rev_growth_ttm * 100, 2)
-                filters["fcf_growth"] = (ttm_fcf_now > 0) and (fcf_growth > rev_growth_ttm)
+                if abs(fcf_growth) > FRAMEWORK_FCF_GROWTH_MAX_PLAUSIBLE:
+                    filters["fcf_growth"] = None
+                else:
+                    metrics["fcf_growth_ttm_pct"] = round(fcf_growth * 100, 2)
+                    metrics["revenue_growth_ttm_pct"] = round(rev_growth_ttm * 100, 2)
+                    filters["fcf_growth"] = (ttm_fcf_now > 0) and (fcf_growth > rev_growth_ttm)
             else:
                 filters["fcf_growth"] = None
         else:

@@ -116,6 +116,27 @@ def test_opmargin_expansion_unknown_when_a_quarter_is_null():
     assert out["filters"]["opmargin_expansion"] is None
 
 
+def test_opmargin_expansion_unknown_on_an_implausible_yoy_swing():
+    # Live MU sidecar shape: a >20pp YoY opmargin swing reads as a probable
+    # quarter-misalignment/duplicate-row artifact, not a real reading, and
+    # must not silently PASS (2026-08-22 review, data honesty finding #1).
+    revenue = [100.0, 100.0, 100.0, 100.0, 100.0]
+    opinc = [23.0, 23.0, 23.0, 23.0, 80.0]   # 23% -> 80%: +5700bps
+    fund = _fund(revenue=revenue, opinc=opinc)
+    out = context.score_framework("X", {}, fund, {"weekly": {}}, SESSION)
+    assert out["filters"]["opmargin_expansion"] is None
+    assert "opmargin_expansion_bps" not in out["metrics"]
+
+
+def test_opmargin_expansion_still_resolves_just_inside_the_plausible_ceiling():
+    revenue = [100.0, 100.0, 100.0, 100.0, 100.0]
+    opinc = [20.0, 20.0, 20.0, 20.0, 39.9]   # +1990bps, just under the 2000bps ceiling
+    fund = _fund(revenue=revenue, opinc=opinc)
+    out = context.score_framework("X", {}, fund, {"weekly": {}}, SESSION)
+    assert out["filters"]["opmargin_expansion"] is True
+    assert out["metrics"]["opmargin_expansion_bps"] == pytest.approx(1990.0, abs=0.1)
+
+
 # ── Filter 5: FCF growth ─────────────────────────────────────────────────────
 
 def test_fcf_growth_passes_when_positive_and_faster_than_revenue():
@@ -159,6 +180,27 @@ def test_fcf_growth_unknown_with_fewer_than_8_quarters():
     fund = _fund(revenue=[100.0] * 4, fcf=[10.0] * 4)
     out = context.score_framework("X", {}, fund, {"weekly": {}}, SESSION)
     assert out["filters"]["fcf_growth"] is None
+
+
+def test_fcf_growth_unknown_on_an_implausible_ttm_swing():
+    # Live MU sidecar shape: +1291% TTM FCF growth reads as a probable
+    # quarter-alignment artifact, not a real reading (2026-08-22 review,
+    # data honesty finding #1).
+    revenue = [100.0] * 8
+    fcf = [10.0, 10.0, 10.0, 10.0, 50.0, 50.0, 50.0, 50.0]   # 40 -> 200: +400%
+    fund = _fund(revenue=revenue, fcf=fcf)
+    out = context.score_framework("X", {}, fund, {"weekly": {}}, SESSION)
+    assert out["filters"]["fcf_growth"] is None
+    assert "fcf_growth_ttm_pct" not in out["metrics"]
+
+
+def test_fcf_growth_still_resolves_just_inside_the_plausible_ceiling():
+    fcf = [10.0, 10.0, 10.0, 10.0, 39.0, 39.0, 39.0, 39.0]   # 40 -> 156: +290%, under the 300% ceiling
+    revenue = [100.0] * 8
+    fund = _fund(revenue=revenue, fcf=fcf)
+    out = context.score_framework("X", {}, fund, {"weekly": {}}, SESSION)
+    assert out["filters"]["fcf_growth"] is True
+    assert out["metrics"]["fcf_growth_ttm_pct"] == pytest.approx(290.0, abs=0.1)
 
 
 # ── Filters 1 & 3: consensus-history-dependent, and never fabricated ────────

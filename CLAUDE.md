@@ -865,5 +865,164 @@ This pass fixed all 24 the same day. The non-obvious decisions:
   `table()` helper used by every board — Conviction, Swing, Biggest Orders,
   ETF flows, and sector rotation all inherit the fix from one place.
 
+## Guardrails added 2026-08-22, round-10 fix pass (23 findings, all 9 sections)
+
+Round 10 of the nine-section review confirmed 23 findings (see
+`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
+this pass fixed all 23 the same day. The non-obvious decisions from this
+pass:
+
+- **The live-poke path now recomputes the SAME extended/fabricated state
+  `stageRender` computes at full-render time, on every 30-second poll, in
+  both the 1D and 1W branches.** Before this, `stageRender` alone set
+  `bar.color`/`bar.wickColor` to a 50%-alpha hex for a dimmed candle and
+  `STAGE.syntheticReal` for the "CLOSE ONLY" caption — both froze at
+  whatever the last full render computed, so a dimmed candle reverted to
+  full opacity 30 seconds later and a real scanner-published open/high/low
+  kept reading "CLOSE ONLY" for the rest of the session on a tab left open
+  since pre-market. `stageLivePoke` now recomputes `ext` and sets
+  `color`/`wickColor`/volume alpha on every `candle.update()` call, and
+  flips `STAGE.syntheticReal=true` the moment real `live.o`/`live.h`/
+  `live.l` are confirmed, mirroring `stageDailyData`'s own test.
+- **The 1W live poke now folds `live.h`/`live.l` into its ratcheted
+  high/low, matching what the 1D branch already did.** The weekly branch
+  only compared the stored high/low against the new close, silently
+  understating the real intraday range whenever a fresh high/low printed
+  without moving the close past the prior extreme.
+- **A new `taAmvForInterval(amv)` helper extends the existing avg_move-based
+  tolerance scaling from 1D-only to every interval**, so `taContainTol` and
+  `taFitLine`'s `touchTol`/`hugTol` no longer fall back to flat
+  intraday-sized tolerances on 1W — a weekly bar's naturally wider range
+  was blowing through those tolerances on every fit attempt, silently
+  starving volatile names of any weekly trend line.
+- **A new shared `TA_SR_WIDE_BAND` constant (0.02) is now read by both the
+  S/R chart-draw block and the caption's wide-band text**, so a cluster
+  between the draw block's old 2% threshold and the caption's old 0.4%
+  threshold can no longer get a caption describing a two-sided range the
+  chart drew as one dashed line. Same "one function/constant, every
+  surface" convention as `taSrSide`/`taTrendFlipped` from round 7.
+- **A new `TA_FLAG_POLE_LOOKBACK` constant (20 bars) anchors the flag/pole
+  percentage to the channel's own start**, not to `win[0]` (the edge of
+  whatever range button happens to be active) — before this, clicking 1M
+  vs. 1Y re-sliced `win` from scratch and reported a different "run into a
+  tight channel" percentage for the identical underlying pattern.
+- **`wlRemove(sym)` now always strips a custom entry AND separately hides a
+  pinned one**, rather than running only one branch. When `RAIL_GROUPS`
+  grows to pin a symbol a browser had already custom-added (the WTI case,
+  pinned 2026-08-15), that browser's stale `desk.wl.custom` entry rendered
+  a duplicate ghost row whose × button did nothing — `renderWL()`'s
+  `custom` list is now filtered to exclude anything `railHasSym` before the
+  render list and count are built.
+- **Annual financials bar charts get the same `robustClampMag` outlier
+  clamp the quarterly charts already had**, folded into the same
+  `clampedAny` disclosure flag — LITE's and NBIS's real annual EPS/FCF
+  charts were rendering as one bar and near-invisible slivers with no clamp
+  and no caption note.
+- **`metricValue()`'s PEG derivation now fires on `v==null || v<=0`, not
+  just `v==null`.** A company with a real vendor-reported negative PEG (an
+  ordinary case: a profitable company whose trailing EPS growth went
+  negative) was never given the page's own derived-PEG fallback, and
+  `metricReason`'s blanket negative-value check ran before the
+  derived-PEG-specific reason could fire for that same case.
+- **The heatmap footer now surfaces the previously-unused `staleRead`
+  variable as a STALE badge**, and `nCapFall` is recomputed from the
+  post-cap `rows` — a scanner outage after first load kept repainting the
+  last good tiles with no on-screen sign the scanner had stopped
+  responding, and the cap-fallback count could include a row the tile-count
+  cap had already sliced off.
+- **`peerStat(sym, key, peersOverride)` takes the SAME 2-point/high-spread
+  "no usable median" guard `oneMetricChartHTML` already computes**, via a
+  new optional `peersOverride` parameter instead of re-reading the
+  module-global `PEERS_CACHE` — the rank badge's better/worse color used to
+  paint a directional verdict off a median the adjacent caption explicitly
+  called unusable (MRVL's PEG chart, a ~100x KLAC/SKHY spread).
+- **`_peersByIndustry`'s `finish()` now tracks a null-cap candidate as
+  `capUnknown`, distinct from a genuinely out-of-band peer.** `inBand()`
+  returns `null` for an unresolved cap and `false` only for two known,
+  mismatched sizes — the `wide` array's old `inBand(c.cap)===false` check
+  let a null-cap candidate (a foreign issuer or thin OTC name the scanner
+  hasn't backfilled) through completely unflagged.
+- **`renderPeersTab`'s timeout no longer kills the underlying peer-scan
+  promise's callback.** The old `if(timedOut) return;` early-return
+  permanently locked the tab on "the peer scan did not answer" even when
+  the real two-POST scan (a banded query, then an unbanded retry) finished
+  successfully moments later in the background — removed, along with the
+  now-unused `timedOut` variable, so a late success still repaints.
+- **`_dedup_econ` now merges `forecast`/`prior`/`unit`/`scale`/`period`/
+  `agency` onto a surviving CSV row instead of discarding the conflicting
+  TradingView row's data outright**, via a new `_ECON_MERGE_FIELDS` tuple —
+  every HIGH-importance CSV-sourced row (PCE, Jobs Report, PPI, CPI, Retail
+  Sales, FOMC, Fed Chair presser) was live-showing `forecast:null`/
+  `prior:null` because the CSV feed itself never carries those numbers and
+  the dedup step threw away the TV row that did. A new `_ECON_ALIASES` list
+  and `_merge_econ_aliases()` function handle the 5 known title mismatches
+  between the two feeds (CPI↔Inflation Rate, Jobs Report↔Non Farm
+  Payrolls/Unemployment Rate, FOMC↔Fed Interest Rate Decision, PCE↔PCE
+  Price Index); `catMetaLine` still prints "no forecast published for this
+  reading" for any HIGH-importance row still missing both after the merge.
+- **`build_catalysts`'s earn_map loop now drops a same-day, same-ticker
+  memory row and folds its title into the earnings row as a
+  parenthetical**, instead of emitting both — MU's Q4 earnings was printing
+  twice in the catalysts panel for the same day with no dedup by
+  (ticker, date) across the two row kinds.
+- **The Swing board's chase chip now derives "since flagged" from a new
+  cross-day-persistent `history["swing_first_seen"]` map**, distinct from
+  Conviction's original daily-reset `today_sessions`-based
+  `first_board_swing` stamping, which Swing had been incorrectly sharing.
+  Conviction genuinely resets daily and keeps its original logic unchanged;
+  Swing's board persists for weeks to months, so re-baselining
+  `spot_at_alert` to that morning's spot on every new trading day defeated
+  the chip's entire purpose for a name that had sat on the board, unbroken,
+  for 15 sessions. `chaseChipHTML(c, px, board)` gained a `board` parameter
+  so the tooltip wording matches which board it's on ("first flagged" for
+  Swing, "first hit the board today" for Conviction) — same "one function,
+  every surface" convention as `taSrSide`/`taTrendFlipped`/`fedLegPct`.
+- **The Biggest Orders delta badge moved to its own `.deltabadge` class**,
+  off the shared `"nm tn"` class sector-table company names also carry — the
+  mobile media query's `td .nm{display:none}` rule (meant only for those
+  names) was hiding the one figure that separates a hedge from a
+  directional bet, even though the badge lives in the Side cell the query
+  never hides.
+- **Every flow-board `tr.rw` row now carries `role="button" tabindex="0"`**
+  (Conviction, Swing, Big Orders, and the sector table) — the column
+  headers got exactly this fix in round 9, but the rows themselves had no
+  attribute for the existing `[data-sym][role="button"]` keydown handler to
+  match, so Tab could reach a sortable header but never the row beneath it.
+  No handler change was needed; the existing delegate covers the rows
+  automatically once the attribute is present.
+- **`score_framework`'s Filters 4 and 5 now read UNKNOWN, not a guessed
+  PASS/FAIL, past a plausibility ceiling on the FILTER'S OWN OUTPUT
+  magnitude** — `FRAMEWORK_OPMARGIN_MAX_PLAUSIBLE_BPS` (2000, a 20
+  percentage-point YoY swing) and `FRAMEWORK_FCF_GROWTH_MAX_PLAUSIBLE` (3.0,
+  a 300% TTM swing). MU's live sidecar was driving a silent "+5705 bps
+  PASS" and "+1291% FCF growth," both far more likely a quarter-alignment
+  or duplicate-row artifact than a real reading — the same class of data
+  quality problem the Financials chart already guards against with
+  `robustClampMag` on the identical arrays, with no equivalent gate on the
+  one surface making an investment-grade PASS/FAIL claim from that data. A
+  tight reconciliation band (trailing-4-quarter revenue vs. the prior
+  annual figure) was considered and rejected: a genuinely fast-growing
+  company diverges from a year-old annual figure for real reasons
+  mid-fiscal-year, and a tight band would misfire on real hypergrowth into
+  false UNKNOWNs — bounding the filter's own computed magnitude instead
+  avoids that failure mode.
+- **`staleWindowActive()` now also covers `afterhours` up to 15:20 CT.**
+  The gate covered `open` (08:30-15:00 CT) and `premarket` from 08:15, but
+  nothing covered 15:00-15:20 CT — 20 minutes the page's own tooltips
+  repeatedly promise are covered ("outside 8:00-15:20 CT the last publish
+  stands"). A fetcher stall at 15:05 drew no STALE badge on any flow board
+  for the final 15 minutes of the loop's documented window, the exact
+  stretch a trader watches most closely. The 08:00-08:15 front-edge gap is
+  a deliberate buffer for the loop's first daily cycle to actually publish
+  before the badge starts checking — left unchanged; only the back-edge gap
+  was a real bug.
+- **`stageFrameworkHTML` now calls `fundBuiltStaleDays(FUND_CACHE[sym])`
+  and shows the same STALE badge convention the Fundamentals grid already
+  carries for the identical `fund` object.** 3 of the 5 framework filters
+  (revenue growth, opmargin expansion, FCF growth — not just the 2
+  originally suspected) read from that sidecar with no staleness signal on
+  the framework panel at all, so a stockanalysis.com outage kept printing a
+  confident verdict off a days-old filing with nothing on screen saying so.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

@@ -325,6 +325,90 @@ def test_csv_and_tv_rows_on_different_days_both_survive():
     assert len(merged) == 2
 
 
+# ── forecast/prior/actual merge onto a CSV-winning row (2026-08-22, round 10) ─
+
+def test_dedup_econ_merges_tv_numbers_onto_surviving_csv_row():
+    """The CSV mirror hardcodes forecast/prior/actual to null -- winning the
+    title conflict used to mean the TV row's real numbers were discarded
+    along with its title. They must now land on the surviving CSV row."""
+    tv_row = _econ_row("2026-08-22", "PPI MoM", "HIGH")
+    tv_row["forecast"], tv_row["prior"], tv_row["actual"] = 0.2, 0.1, 0.3
+    tv_row["unit"], tv_row["scale"] = "%", None
+    csv_row = _econ_row("2026-08-22", "PPI", "HIGH", source="econ_calendar")
+    merged = context._dedup_econ([tv_row], [csv_row])
+    assert len(merged) == 1
+    assert merged[0]["source"] == "econ_calendar"
+    assert merged[0]["forecast"] == 0.2
+    assert merged[0]["prior"] == 0.1
+    assert merged[0]["actual"] == 0.3
+    assert merged[0]["unit"] == "%"
+
+
+def test_dedup_econ_never_overwrites_a_real_csv_value():
+    tv_row = _econ_row("2026-08-22", "PPI MoM", "HIGH")
+    tv_row["forecast"] = 0.9  # should NOT win
+    csv_row = _econ_row("2026-08-22", "PPI", "HIGH", source="econ_calendar")
+    csv_row["forecast"] = 0.2  # CSV already has a real value
+    merged = context._dedup_econ([tv_row], [csv_row])
+    assert merged[0]["forecast"] == 0.2
+
+
+# ── cross-vendor alias merge for differently-titled same events ─────────────
+
+def test_merge_econ_aliases_cpi_pulls_numbers_from_inflation_rate_row():
+    out = [_econ_row("2026-09-10", "CPI", "HIGH", source="econ_calendar")]
+    tv_rows = [_econ_row("2026-09-10", "Inflation Rate YoY", "HIGH")]
+    tv_rows[0]["forecast"], tv_rows[0]["prior"] = 2.9, 2.7
+    context._merge_econ_aliases(out, tv_rows)
+    assert out[0]["forecast"] == 2.9
+    assert out[0]["prior"] == 2.7
+    assert out[0]["title"] == "CPI"   # title/source untouched
+
+
+def test_merge_econ_aliases_fomc_pulls_from_fed_interest_rate_decision():
+    out = [_econ_row("2026-09-16", "FOMC Rate Decision", "HIGH", source="econ_calendar")]
+    tv_rows = [_econ_row("2026-09-16", "Fed Interest Rate Decision", "HIGH")]
+    tv_rows[0]["forecast"] = 4.25
+    context._merge_econ_aliases(out, tv_rows)
+    assert out[0]["forecast"] == 4.25
+
+
+def test_merge_econ_aliases_does_nothing_when_csv_row_already_has_a_value():
+    out = [_econ_row("2026-09-10", "CPI", "HIGH", source="econ_calendar")]
+    out[0]["forecast"] = 3.0
+    tv_rows = [_econ_row("2026-09-10", "Inflation Rate YoY", "HIGH")]
+    tv_rows[0]["forecast"] = 2.9
+    context._merge_econ_aliases(out, tv_rows)
+    assert out[0]["forecast"] == 3.0
+
+
+def test_merge_econ_aliases_ignores_non_csv_rows():
+    out = [_econ_row("2026-09-10", "CPI", "HIGH", source="tv_calendar")]  # not econ_calendar
+    tv_rows = [_econ_row("2026-09-10", "Inflation Rate YoY", "HIGH")]
+    tv_rows[0]["forecast"] = 2.9
+    context._merge_econ_aliases(out, tv_rows)
+    assert out[0]["forecast"] is None
+
+
+# ── MU-style memory+earnings same-day double-print (2026-08-22, round 10) ────
+
+def test_build_catalysts_folds_same_day_memory_row_into_earnings_row():
+    memory_rows = [{
+        "date": "2026-09-24", "time_ct": None, "title": "FY2026 year-end + guidance",
+        "importance": "HIGH", "kind": "memory", "ticker": "MU", "session": None,
+        "forecast": None, "prior": None, "actual": None, "anchor": False,
+        "source": "memory_events",
+    }]
+    earn_map = {"MU": {"ts": datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc).timestamp(), "days": 5}}
+    cats = context.build_catalysts([], memory_rows, earn_map, [], date(2026, 9, 20), days=28)
+    mu_rows = [c for c in cats if c.get("ticker") == "MU" or (c.get("kind") == "memory" and "MU" in (c.get("title") or ""))]
+    earnings_rows = [c for c in cats if c["kind"] == "earnings" and c["ticker"] == "MU"]
+    memory_leftover = [c for c in cats if c["kind"] == "memory" and c.get("ticker") == "MU"]
+    assert len(earnings_rows) == 1
+    assert len(memory_leftover) == 0
+    assert "FY2026 year-end + guidance" in earnings_rows[0]["title"]
+
+
 def test_build_catalysts_applies_csv_precedence_end_to_end():
     session_date = date(2026, 8, 15)
     econ_rows = [_econ_row("2026-08-17", "CPI", "MEDIUM")]

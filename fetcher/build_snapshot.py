@@ -1276,9 +1276,10 @@ def load_history(out_dir: Path) -> dict:
         raw.setdefault("vol_history", {})
         raw.setdefault("etf_so", {})
         raw.setdefault("big_orders", {})
+        raw.setdefault("swing_first_seen", {})
         return raw
     except Exception:
-        return {"sessions": {}, "iv_history": {}, "vol_history": {}, "etf_so": {}, "big_orders": {}}
+        return {"sessions": {}, "iv_history": {}, "vol_history": {}, "etf_so": {}, "big_orders": {}, "swing_first_seen": {}}
 
 
 def save_history(out_dir: Path, history: dict) -> None:
@@ -1843,15 +1844,35 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     # the capped board this cycle, and only once per ticker per day ────────
     if write_history:
         now_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-        for board_cards, key in ((conviction_cards, "first_board_conviction"),
-                                  (swing_cards, "first_board_swing")):
-            for c in board_cards:
-                ticker = c["ticker"]
-                row = today_sessions.setdefault(ticker, {})
-                if key not in row or not row[key]:
-                    row[key] = {"time": now_iso, "spot": c["spot"]}
-                fb = row[key]
-                c["spot_at_alert"] = fb.get("spot") if isinstance(fb, dict) else None
+        for c in conviction_cards:
+            ticker = c["ticker"]
+            row = today_sessions.setdefault(ticker, {})
+            if "first_board_conviction" not in row or not row["first_board_conviction"]:
+                row["first_board_conviction"] = {"time": now_iso, "spot": c["spot"]}
+            fb = row["first_board_conviction"]
+            c["spot_at_alert"] = fb.get("spot") if isinstance(fb, dict) else None
+        # Conviction's own daily reset (first_board_conviction, above) is
+        # correct — it is a short-dated board where "since flagged" inside
+        # today already matches the board's own intent. Swing persists 2
+        # weeks to 6 months, and the SAME daily-reset key reused here
+        # unmodified meant the "since flagged" chase chip could never show
+        # more than a few hours' worth of gain on a board meant to track
+        # weeks (2026-08-22 review, flow boards finding #1). Swing now
+        # tracks first-seen in a cross-day map (history["swing_first_seen"],
+        # never reset by the daily today_sessions machinery), and a ticker's
+        # entry is cleared the day it actually drops off the board so a
+        # genuine later re-flag still starts fresh.
+        swing_first_seen = history.setdefault("swing_first_seen", {})
+        swing_tickers_today = {c["ticker"] for c in swing_cards}
+        for ticker in list(swing_first_seen.keys()):
+            if ticker not in swing_tickers_today:
+                del swing_first_seen[ticker]
+        for c in swing_cards:
+            ticker = c["ticker"]
+            if ticker not in swing_first_seen or not swing_first_seen[ticker]:
+                swing_first_seen[ticker] = {"time": now_iso, "spot": c["spot"]}
+            fb = swing_first_seen[ticker]
+            c["spot_at_alert"] = fb.get("spot") if isinstance(fb, dict) else None
     else:
         # Closed-day cycle: no history mutation, but spot_at_alert must still
         # be present on every card (DATA_CONTRACT field shape) — the frontend
