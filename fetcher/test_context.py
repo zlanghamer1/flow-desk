@@ -1871,6 +1871,26 @@ def test_build_fund_sidecar_yahoo_leg_skipped_entirely_when_crumb_is_none():
     assert payload["earnings"] == []
     assert payload["next_earnings"] == {"date": "2026-09-01", "session": "BMO", "eps_est": None, "rev_est": None}
     assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": [], "opinc": []}
+    # The Yahoo leg (the ONLY source of a real `currency` answer) never ran
+    # here, so currency must default to USD rather than staying null and
+    # letting the page print a false "may not report in dollars" hedge for
+    # an ordinary US company (2026-08-22 review round 12, financials
+    # finding #3).
+    assert payload["currency"] == "USD"
+
+
+def test_build_fund_sidecar_currency_falls_back_to_known_foreign_reporter_when_yahoo_leg_is_skipped():
+    sa_stats_root = {
+        "shortSelling": {"data": []}, "ratios": {"data": []}, "dates": {"text": "", "data": []},
+    }
+    def fake_get(url, headers):
+        if "statistics" in url:
+            return _sa_data_json(sa_stats_root)
+        raise urllib.error.URLError("boom")
+    payload = context.build_fund_sidecar("SKHY", date(2026, 8, 15), None, None, _get=fake_get)
+    assert payload["currency"] == "KRW"
+    payload2 = context.build_fund_sidecar("TSM", date(2026, 8, 15), None, None, _get=fake_get)
+    assert payload2["currency"] == "TWD"
 
 
 def test_build_fund_universe_fetches_crumb_exactly_once_across_symbols():

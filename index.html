@@ -411,6 +411,12 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .iodot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:0}
 .iodot.b{background:var(--up)} .iodot.s{background:var(--dn)}
 .iodot.n{background:transparent;border:1px solid var(--ink3);opacity:.5}
+/* Price-relative-strength FALLBACK dot — a hollow ring, never the solid
+   flow-colored fill, so it can never be mistaken for a real $1w flow
+   reading it visually is not (2026-08-22 review round 12, panels finding
+   #1). */
+.iodot.pu{background:transparent;border:1.5px solid var(--up)}
+.iodot.pd{background:transparent;border:1.5px solid var(--dn)}
 /* The sector and havens tables live in a 372px rail. Fixed layout with an
    ellipsized first column keeps every column on screen: before this the table
    wanted 580px, so the flows and the IN/OUT column were simply off the right
@@ -1428,7 +1434,7 @@ var TIPS = {
   "tip-flow5d": "Total net options premium (calls minus puts) added up over the last up-to-5 trading sessions.",
   "tip-flow5dpct": "The same 5-day net flow expressed as a percentage of all option premium (calls + puts) that traded over those sessions — i.e. how one-sided the flow was. +100% = every dollar leaned bullish, -100% = all bearish, 0% = evenly split.",
   "tip-oiconfirm": "Did yesterday's 2wk-6mo flow OPEN new positions or close them? OPENING = open interest grew by at least 25% of yesterday's volume on the flow's side (positions being held — conviction). CLOSING = it shrank that much (unwinding). CHURN = day-traded or rolled. Needs 2 days of data and real volume to show.",
-  "tip-trend": "Whether the stock price is above its 20- and 50-day moving averages (UP), below both (DOWN), or split between them (MIXED).",
+  "tip-trend": "Whether the stock price is above its 20- and 50-day moving averages (UP), below both (DOWN), or split between them (MIXED). A dash means the scanner had no 20/50-day averages to compare at all (a thinly-traded new leveraged ETF, for example) — a different fact from MIXED, and never scored as one.",
   "tip-ivrank": "Where today's option prices (implied volatility) sit versus this stock's own recent history — up to the last 60 trading sessions (about 3 months), not a full year. High = options are relatively expensive right now. Needs 20+ sessions of history to calculate; until then the cell shows a dash with the raw IV in its tooltip.",
   "tip-suggested": "The highest-premium contract with a delta between 0.30 and 0.60, expiring 2 weeks to 6 months out — a middle-of-the-road strike, not a lottery ticket.",
   // The conviction board's column is a DIFFERENT selection: it reports what
@@ -3097,7 +3103,18 @@ var LEV_SYMS = (function(){
 // missed them entirely, contradicting the shopping list's own tooltip
 // ("leveraged and inverse wrappers are excluded") the moment one of these
 // landed near its 52-week low (2026-08-22 review, watchlist finding #2).
-var LEV_NAME_RE = /\b(2x|3x|-?1x|ultra|ultrashort|ultrapro|inverse|leverag|bear\s*\d|bull\s*\d|daily\s+\w+\s+(bull|bear)|short\s+(s&p|dow|qqq|russell|midcap|smallcap|nasdaq))\b/i;
+// \d+(\.\d+)?x replaces a fixed 2x|3x set — GraniteShares' real 1.75x
+// single-stock ETFs (TSLR, CONL) have no leveraged flag under a
+// whole-multiple-only pattern (2026-08-22 review round 12, left rail
+// finding #2). The short-index alternatives allow an optional attached
+// number (s&p\s*\d*, dow\s*\d*, ...) instead of ending flush against the
+// trailing \b: ProShares' plain inverse funds glue the index number
+// directly onto the name with no separator ("Short S&P500", "Short
+// Dow30", "Short MidCap400"), so requiring a word boundary immediately
+// after the bare index name put it between two word characters (p/5, w/3,
+// p/4) where no boundary exists, and the alternative never matched at all
+// (2026-08-22 review round 12, left rail finding #1).
+var LEV_NAME_RE = /\b(\d+(\.\d+)?x|-?1x|ultra|ultrashort|ultrapro|inverse|leverag|bear\s*\d|bull\s*\d|daily\s+\w+\s+(bull|bear)|short\s+(s&p\s*\d*|dow\s*\d*|qqq\d*|russell\s*\d*|midcap\s*\d*|smallcap\s*\d*|nasdaq\d*))\b/i;
 function isLeveraged(sym){
   if(LEV_SYMS[sym]) return true;
   var n = (ADHOC_NAMES[sym] || nameFor(sym) || "");
@@ -4115,17 +4132,29 @@ function renderSectorSection(data){
       // an inflow.
       var f1w = num(r.flow_1w);
       var known = (f1w!=null) || (num(r.rel)!=null) || !!r.tag;
+      // relFallback: no $1w flow reading exists, so mtag (and the dot) come
+      // from price relative strength vs SPY (r.tag or the sign of r.rel)
+      // instead — a DIFFERENT fact from "money went in/out," but the dot's
+      // tooltip and the panel's own caption both unconditionally called it
+      // "the sign of the $1w flow beside it" even when that column read
+      // "—" right next to it (2026-08-22 review round 12, panels finding
+      // #1).
+      var relFallback = (f1w==null) && (!!r.tag || num(r.rel)!=null);
       var mtag = f1w!=null ? (f1w>=0?"IN":"OUT") : (r.tag || (num(r.rel)!=null ? (num(r.rel)>=0?"IN":"OUT") : null));
       var wpx = num(r.rel)!=null ? Math.round(Math.abs(rel)/mx*22) : 0;   // half of .rr .dvg's 44px
       var dim = Math.abs(rel)/mx<0.55 ? "opacity:.4" : "";
       var side = rel>=0 ? ("left:50%;width:"+wpx+"px;background:var(--up)") : ("left:calc(50% - "+wpx+"px);width:"+wpx+"px;background:var(--dn)");
-      var mtip = (mtag ? ((mtag==="IN"?"Money went IN":"Money went OUT")+" this week — the sign of the $1w flow beside it.") : "")
-        + (r.flow_1m!=null ? (" One month: "+fmB(r.flow_1m)+".") : "");
+      var mtip = relFallback
+        ? ("Price "+(mtag==="IN"?"outperformed":"underperformed")+" SPY this week — no $1w flow reading published for this sector, "
+           + "so this dot falls back to price strength instead of money direction.")
+        : (mtag ? ((mtag==="IN"?"Money went IN":"Money went OUT")+" this week — the sign of the $1w flow beside it.") : "");
+      mtip += (r.flow_1m!=null ? (" One month: "+fmB(r.flow_1m)+".") : "");
       // Its own class, not `dim`: applyFocus toggles `dim` for focus
       // highlighting on every render and on every sort click, so the
       // no-reading state never reached the screen.
+      var dotCls = relFallback ? (mtag==="IN"?"pu":"pd") : (mtag==="IN"?"b":"s");
       return '<tr class="rw'+(known?'':' noread')+'" data-sym="'+esc(r.ticker||"")+'" role="button" tabindex="0"><td>'
-        +(mtag ? ('<span class="iodot '+(mtag==="IN"?"b":"s")+'" data-tip="'+esc(mtip)+'"></span>')
+        +(mtag ? ('<span class="iodot '+dotCls+'" data-tip="'+esc(mtip)+'"></span>')
                : '<span class="iodot n" data-tip="No flow or relative-strength reading published for this sector this cycle."></span>')
         +'<span class="sy2">'+esc(r.ticker||"?")+'</span><span class="nm">'+esc(r.name||"")+'</span></td>'
         +'<td>'+(num(r.rel)!=null ? ('<span class="dvg"><em></em><i style="'+side+';'+dim+'"></i></span> ') : '')
@@ -4134,8 +4163,9 @@ function renderSectorSection(data){
         +'<td class="'+sign(r.flow_1w)+'">'+fmB(r.flow_1w)+'</td></tr>';
     }, "rel");
     el.insertAdjacentHTML("beforeend",
-      '<div class="note">The dot on each ticker is the week\u2019s money direction — green in, red out — the sign of the $1w column. '
-      + 'Hover it for the one-month dollar figure.</div>');
+      '<div class="note">A filled dot is the week\u2019s money direction — green in, red out — the sign of the $1w column. '
+      + 'A hollow ring dot means no $1w flow reading published this cycle; it falls back to price strength vs SPY instead, '
+      + 'a different fact from money direction. Hover any dot for the one-month dollar figure.</div>');
   }
   if(havens.length){
     var hv = document.getElementById("havensbox");
@@ -4262,9 +4292,17 @@ function boardCutNoteHTML(cut, key){
   // watchlist sitting below the line, and "show all" changes nothing — both
   // used to print anyway on a violent-flow day where nothing is hidden
   // (2026-08-21 review, flow boards finding #3).
+  // "every tracked name clears the bar" additionally requires lowFiring===0
+  // — cut.strong===cut.total only says every row is SHOWN, which is also
+  // true whenever the remaining names all score 60+ while at least one
+  // firing name stays sub-60 (live shape: AVGO/MU both firing-but-sub-60).
+  // That sentence used to fire anyway, asserting in the same breath that
+  // those firing names are "below the line" and that "every tracked name
+  // clears the bar" (2026-08-22 review round 12, flow boards finding #1).
   var restNote = (cut.strong < cut.total)
     ? (' — the rest of the watchlist sits below the line. '+btn+'show all '+cut.total+'</button>')
-    : ' — every tracked name clears the bar.';
+    : (cut.lowFiring>0 ? (' — every tracked name is shown ('+cut.lowFiring+' firing below the '+BOARD_SCORE_FLOOR+' line).')
+       : ' — every tracked name clears the bar.');
   return '<div class="boardcut">'+scored+' of '+cut.total+' names score '+BOARD_SCORE_FLOOR+'+'
     + (cut.lowFiring ? (', plus '+cut.lowFiring+' firing below the line (a firing name is never hidden) — '
                         + cut.strong+' rows shown') : '')
@@ -4413,8 +4451,19 @@ function renderConv(data, livePoll){
   // livePoll, so a real data refresh or a header click still resorts.
   {liveKeys:["rvol_shown"], freeze:!!livePoll});
   function rowHTMLConv(c){
-    var q = liveBySym(c.ticker) || {};
-    var dq = dispQuote(q);
+    // dispQuote(null) is deliberately built to return a neutral, untagged
+    // state (`if(!q) return {px:null,...,tag:null,...}`) — pre-substituting
+    // {} before calling it defeated that guard (an empty object is truthy),
+    // so a failed live-quote lookup fell into dispQuote's premarket branch
+    // instead and rendered a false "PREV" (pre-market not printed yet)
+    // badge with its own misleading tooltip. Every other call site in the
+    // file, including Swing's own row builder, calls dispQuote(liveBySym(...))
+    // directly with no fallback (2026-08-22 review round 12, flow boards
+    // finding #2) — qSafe below exists only for the later q.rvol access,
+    // which does need a non-null object.
+    var qRaw = liveBySym(c.ticker);
+    var dq = dispQuote(qRaw);
+    var q = qRaw || {};
     var px = dq.px!=null?dq.px:num(c.spot), ch = dq.ch!=null?dq.ch:num(c.change_pct);
     // FLOW % with the $100K display floor; the basis rides in the tooltip
     // either way. Older snapshots without flow_pct_basis skip the floor.
@@ -5048,7 +5097,15 @@ function renderNewsTicker(data){
       + '</div>';
     return;
   }
-  var key = items.length+"|"+(items[0].ts||"")+"|"+(items[0].title||"");
+  // Keying on only the newest headline + count missed real changes deeper
+  // in the list: if the top story dominates slot 1 across several 2-minute
+  // polls while headlines in slots 2-20 rotate out for newer ones (a
+  // plausible 10-20 minute stretch) and the total count stays the same,
+  // this key never changed, so the marquee kept showing headlines the
+  // fetcher's news.items array no longer contained with nothing on screen
+  // saying anything was withheld (2026-08-22 review round 12, panels
+  // finding #2). Hash every item's identity, not just the first.
+  var key = items.map(function(n){ return (n.url||n.title||"")+"@"+(n.ts||""); }).join("|");
   if(key === NT_KEY){ el.hidden = false; return; }
   NT_KEY = key;
   function itemHTML(n){
@@ -6863,6 +6920,41 @@ function fmtAxisNum(v){ var a=Math.abs(v); return (a>=100? v.toFixed(0) : a>=10?
 // newsworthy CURRENT one, to sub-pixel height (2026-08-21 review,
 // financials finding #1). Symmetric by design: the outlier that needs
 // clamping is not always the oldest quarter — CIFR's is its latest.
+// Signals the specific case robustClampMag's own isolation test bails out
+// on entirely: at least one over-threshold value IS an isolated glitch
+// (deserves clamping on its own) while a DIFFERENT over-threshold value in
+// the same set is part of a genuine trend (must not be clamped) — the
+// uniform single-ceiling clamp axisChartSVG supports cannot clip just the
+// glitch without also flattening the real trend value sitting above the
+// same ceiling, so robustClampMag correctly returns null and applies no
+// clamp at all. That leaves the recognized glitch uncorrected with nothing
+// on screen saying so (2026-08-22 review round 12, financials finding #1 —
+// live on SNDK: a real -13.33 write-down quarter sits isolated among real
+// 23.03/43.96 hypergrowth quarters that correctly veto a uniform clamp).
+function robustClampHasUncorrectedGlitch(valueArrays, floorMag, mult){
+  var mags = [], flat = [];
+  (valueArrays||[]).forEach(function(arr, ai){
+    (arr||[]).forEach(function(v, i){
+      var n=num(v);
+      if(n!=null && isFinite(n)){ mags.push(Math.abs(n)); flat.push({mag:Math.abs(n), arrIdx:ai, idx:i}); }
+    });
+  });
+  if(mags.length < 3) return false;
+  mags.sort(function(a,b){ return a-b; });
+  var med = mags[Math.floor(mags.length/2)];
+  var maxAbs = mags[mags.length-1];
+  if(!(med>0) || maxAbs <= med*mult) return false;
+  var ceil = Math.max(floorMag, med*mult);
+  var anyIsolated = false, anyTrend = false;
+  flat.filter(function(f){ return f.mag > ceil; }).forEach(function(f){
+    var arr = valueArrays[f.arrIdx] || [];
+    var neighborMags = [f.idx-1, f.idx+1].map(function(ni){
+      var v = num(arr[ni]); return (v!=null && isFinite(v)) ? Math.abs(v) : null;
+    }).filter(function(v){ return v!=null; });
+    if(neighborMags.some(function(nm){ return nm > med*(mult/2); })) anyTrend = true; else anyIsolated = true;
+  });
+  return anyIsolated && anyTrend;
+}
 function robustClampMag(valueArrays, floorMag, mult){
   var mags = [], flat = [];
   (valueArrays||[]).forEach(function(arr, ai){
@@ -7370,10 +7462,23 @@ function renderGrowth(sym, fund){
   // the authored viewBox stays close to 1:1 and the axis text lands near
   // 10-11px instead of 5-7px. Re-rendered on a width-class change.
   var narrow = (window.innerWidth || 1440) <= 760;
-  var SM = narrow ? {W:340, H:200} : {W:340, H:180};
   var hostW = (function(){ var el=document.getElementById("stagetabbody"); return el ? el.clientWidth : 0; })();
   var bigW = Math.max(560, Math.min(1000, Math.round((hostW || 600) - 44)));
   var BIG = narrow ? {W:380, H:230} : {W:bigW, H:200};
+  // Margins/YoY/EPS render inside .gwrap's own CSS grid
+  // (grid-template-columns:repeat(auto-fit,minmax(300px,1fr)), 16px gap),
+  // but SM.W stayed a flat 340 regardless of how many 300px+ columns
+  // actually fit — the money chart right above it (BIG.W) already derives
+  // its width from hostW, so at a narrow desktop width (e.g. a 1200px
+  // three-column layout leaving ~548px for the mid stage column, where
+  // .gwrap collapses to ONE column) the money chart rendered at its
+  // authored scale while each SM chart rendered at 548/340 = 1.61x it —
+  // an 11px axis tick displaying at ~17.7px (2026-08-22 review round 12,
+  // financials finding #2). Mirrors BIG.W's own derivation, sized per the
+  // actual column count auto-fit will produce at this host width.
+  var smCols = Math.max(1, Math.floor(((hostW||600) + 16) / (300 + 16)));
+  var smColW = Math.floor(((hostW||600) - (smCols-1)*16) / smCols);
+  var SM = narrow ? {W:340, H:200} : {W:Math.max(280, Math.min(460, smColW || 340)), H:180};
   // What the statements are reported in. NEVER assume dollars: SK hynix files
   // in won and Taiwan Semi in New Taiwan dollars, both with US listings.
   var cur = (fund && typeof fund.currency === "string" && fund.currency) ? fund.currency : null;
@@ -7427,8 +7532,14 @@ function renderGrowth(sym, fund){
     // floorMag is 0: the median-vs-max ratio test in robustClampMag is what
     // actually decides whether anything is clamped.
     var clampedAny = false;
+    // A genuine glitch that robustClampMag recognized but could NOT clamp
+    // (a real trend value shares its over-threshold set) is otherwise
+    // invisible — nothing on screen said the clamp was even considered
+    // (2026-08-22 review round 12, financials finding #1).
+    var uncorrectedAny = false;
     var moneyMag = robustClampMag(money.map(function(d){ return d.values; }), 0, 6);
     if(moneyMag!=null) clampedAny = true;
+    if(moneyMag==null && robustClampHasUncorrectedGlitch(money.map(function(d){ return d.values; }), 0, 6)) uncorrectedAny = true;
     var moneySvg = axisChartSVG(q.labels, money, {kind:"money", zeroLine:true, W:BIG.W, H:BIG.H,
         clamp: moneyMag, clampLo: moneyMag!=null ? -moneyMag : null});
     if(moneySvg){
@@ -7456,6 +7567,7 @@ function renderGrowth(sym, fund){
       // the way of an ordinary name's -50%-to-+50% swings alike.
       var marginMag = robustClampMag(margins.map(function(d){ return d.values; }), 200, 6);
       if(marginMag!=null) clampedAny = true;
+      if(marginMag==null && robustClampHasUncorrectedGlitch(margins.map(function(d){ return d.values; }), 200, 6)) uncorrectedAny = true;
       row2 += '<div class="gchart"><h4>Margins</h4>'
         + axisChartSVG(q.labels, margins, {kind:"pct", W:SM.W, H:SM.H, zeroLine:true,
             clamp: marginMag, clampLo: marginMag!=null ? -marginMag : null})
@@ -7472,6 +7584,7 @@ function renderGrowth(sym, fund){
       var ppyWord = (ppy===4) ? "quarter" : (ppy===2) ? "half-year period" : (ppy===1) ? "year" : "period";
       var yoyMag = robustClampMag([yoy], 200, 6);
       if(yoyMag!=null) clampedAny = true;
+      if(yoyMag==null && robustClampHasUncorrectedGlitch([yoy], 200, 6)) uncorrectedAny = true;
       row2 += '<div class="gchart"><h4>Revenue growth, year over year'
         + (ppy!==4 ? (' <span class="m" style="font-weight:400">· each '+esc(ppyWord)+' vs the same one a year earlier</span>') : '')
         + '</h4>'
@@ -7483,6 +7596,7 @@ function renderGrowth(sym, fund){
       var epsDef = [{name:"Diluted EPS", color:seriesColor(3), values:q.eps, type:"bar"}];
       var epsMag = robustClampMag([q.eps], 0, 6);
       if(epsMag!=null) clampedAny = true;
+      if(epsMag==null && robustClampHasUncorrectedGlitch([q.eps], 0, 6)) uncorrectedAny = true;
       row2 += '<div class="gchart"><h4>Earnings per share'+(cur?(' · '+esc(cur)):'')+'</h4>'
         + axisChartSVG(q.labels, epsDef, {kind:"num", W:SM.W, H:SM.H,
             clamp: epsMag, clampLo: epsMag!=null ? -epsMag : null})
@@ -7527,6 +7641,7 @@ function renderGrowth(sym, fund){
       // gets its own independent clamp.
       var aMag = robustClampMag([vals], 0, 6);
       if(aMag!=null) clampedAny = true;
+      if(aMag==null && robustClampHasUncorrectedGlitch([vals], 0, 6)) uncorrectedAny = true;
       arow += '<div class="gchart"><h4>'+esc(t[1])+' — annual</h4>'
         + axisChartSVG(a.labels, def, {kind:t[3], W:SM.W, H:SM.H, xEvery:1,
             clamp: aMag, clampLo: aMag!=null ? -aMag : null})
@@ -7583,6 +7698,11 @@ function renderGrowth(sym, fund){
     + (clampedAny
         ? ' One or more charts above clip an outlier period\u2019s value (far beyond the others) so the rest stay '
           + 'readable \u2014 an arrow marks the clipped point, and hovering or tapping it still shows its real figure.'
+        : '')
+    + (uncorrectedAny
+        ? ' At least one period looks like an isolated data anomaly, but a DIFFERENT period in the same chart is a genuine, '
+          + 'sustained reading of comparable size \u2014 clamping one would have misrepresented the other, so neither is clipped here. '
+          + 'Read the small periods against their own neighbors rather than assuming the axis alone tells the full story.'
         : '')
     + (dupPeriods && dupPeriods.length
         ? (' The vendor reports the exact same revenue and/or EPS figure across back-to-back periods ('
@@ -7972,10 +8092,19 @@ function stageFrameworkHTML(sym){
       + (detail ? ('<div class="kvrow" style="margin-top:-4px"><span></span>'+detail+'</div>') : '');
   }).join("");
   var vcode = fw.verdict || "";
-  var vbuilding = /_BUILDING$/.test(vcode);
-  var vbase = vbuilding ? vcode.slice(0, -"_BUILDING".length) : vcode;
+  // "_CAPPED" (added 2026-08-22, round 12) marks a tier reached with every
+  // unresolved filter PERMANENTLY rejected by an implausibility ceiling —
+  // never a genuine "still gathering data" gap. "(building)" promised the
+  // verdict could still move once the remaining filter(s) report, which is
+  // structurally impossible when those filters are flagged, not pending
+  // (data honesty finding #2). Distinct from "_BUILDING", which still means
+  // at least one unresolved filter is genuinely pending.
+  var vcapped = /_CAPPED$/.test(vcode);
+  var vbuilding = !vcapped && /_BUILDING$/.test(vcode);
+  var vbase = vcapped ? vcode.slice(0, -"_CAPPED".length)
+    : vbuilding ? vcode.slice(0, -"_BUILDING".length) : vcode;
   var vcls = FRAMEWORK_VERDICT_CLS[vbase] || "";
-  var vlabel = (FRAMEWORK_VERDICT_LABEL[vbase] || vbase) + (vbuilding ? " (building)" : "");
+  var vlabel = (FRAMEWORK_VERDICT_LABEL[vbase] || vbase) + (vcapped ? " (capped)" : vbuilding ? " (building)" : "");
   // 3 of the 5 filters (revenue growth, opmargin expansion, FCF growth) read
   // straight off the same once-a-day fund/{SYM}.json sidecar the
   // Fundamentals grid already flags STALE — this panel had no equivalent, so
@@ -7999,8 +8128,10 @@ function stageFrameworkHTML(sym){
     + '<div class="note">Display-only reference for theses, independent of the conviction/swing scores above — it never '
       + 'moves either board. Two filters need 3-6 months of accumulated weekly history before they can resolve; with fewer '
       + 'than 3 in, the verdict says BUILDING HISTORY rather than guessing. Once 3 or 4 have resolved, a tier verdict carries '
-      + 'a "(building)" qualifier — it could still move once the remaining filter(s) report, unlike the same tier reached '
-      + 'with all 5 in.</div></div>';
+      + 'a "(building)" qualifier when at least one remaining filter is genuinely still gathering data — it could still move '
+      + 'once that filter reports, unlike the same tier reached with all 5 in. A "(capped)" qualifier instead means every '
+      + 'remaining filter was rejected as an implausible reading, not pending — this verdict will not move on its own; it '
+      + 'needs the underlying vendor data corrected.</div></div>';
 }
 /* =================== auto technical analysis (display-only) ===================
    The pivot/trendline geometry is a JS port of the vault's tuned research
@@ -8056,7 +8187,22 @@ var TA_BARS_PER_DAY = { "1W": 1/5, "1D": 1, "4H": 390/240, "1H": 390/60, "15m": 
 function taBarScale(){ return TA_BARS_PER_DAY[STAGE.iv] || 1; }
 function taFreshBars(){ return Math.max(1, Math.round(TA_FRESH_BARS * taBarScale())); }
 function taMinSpanScaled(){ return Math.max(4, Math.round(TA_MIN_SPAN * taBarScale())); }
-function taMinWinForTrend(){ return Math.max(8, Math.round(TA_MIN_WIN_FOR_TREND * taBarScale())); }
+// The real max bar counts the browser can ever hold for a thin intraday
+// interval — from fetcher/context.py's own INTRA_MAX (15m: 140 rows) and
+// intervalDataFor's own additional raw.slice(-160) for 1H — capping the
+// scaled minimum so 15m/1H get their own honest, REACHABLE threshold
+// instead of demanding a bar count no dataset can ever supply. Uncapped,
+// 15m needed 1040 bars (40 * 390/15) against a 140-bar ceiling and 1H
+// needed 260 (40 * 390/60) against a 160-bar ceiling — both permanently
+// "too short" on every ticker, forever, with no path to resolve (2026-08-22
+// review round 12, auto-TA finding #1). 4H clears its own scaled minimum
+// comfortably and needs no cap.
+var TA_REALISTIC_MAX_BARS = { "15m": 130, "1H": 150 };
+function taMinWinForTrend(){
+  var v = Math.max(8, Math.round(TA_MIN_WIN_FOR_TREND * taBarScale()));
+  var cap = TA_REALISTIC_MAX_BARS[STAGE.iv];
+  return cap!=null ? Math.min(v, cap) : v;
+}
 // avg_move (facts.avg_move) is a DAILY % figure. taContainTol/taFitLine's own
 // touchTol/hugTol only ever scaled it for STAGE.iv==="1D" — every other
 // interval fell back to a flat, un-scaled default, which silently starved
@@ -8199,10 +8345,17 @@ function taFitLine(rows, piv, side, sym){
       var slope=(yb-ya)/(xb-xa);
       // 1. containment between the anchors
       var bad=false;
-      // Daily containment is judged on CLOSES: a wick through a line is not a
-      // broken pattern, and wick-based containment killed 55% of all candidate
-      // pairs on daily charts.
-      var containLeg = (STAGE.iv==="1D") ? 3 : side;
+      // Daily (and weekly) containment is judged on CLOSES: a wick through a
+      // line is not a broken pattern, and wick-based containment killed 55%
+      // of all candidate pairs on daily charts. A weekly bar's high/low wick
+      // spans five trading days of intrabar extremes — wick-based
+      // containment could silently kill a genuine, tradeable weekly support/
+      // resistance line the moment any ONE day that week pokes through, even
+      // while every weekly CLOSE respects it. No amount of widening
+      // containTol (already interval-scaled via taAmvForInterval) fixes
+      // this — a wick still encodes intrabar extremes a close-based check
+      // would never see (2026-08-22 review round 12, auto-TA finding #2).
+      var containLeg = (STAGE.iv==="1D" || STAGE.iv==="1W") ? 3 : side;
       for(var x=xa; x<=xb; x++){
         var lv=lineAt(ya,slope,xa,x); if(lv<=0){ bad=true; break; }
         var pv=num(rows[x][containLeg]); if(pv==null) continue;
@@ -8451,7 +8604,13 @@ function taSrBadgePick(lvls, lastPx){
   var nearestIdx = -1, nearestD = Infinity;
   (lvls||[]).forEach(function(l, i){
     if(lastPx==null) return;
-    var d = Math.abs(l.price-lastPx);
+    // A wide band draws (and labels) its NEAR EDGE, never the cluster's
+    // arithmetic mean — picking "nearest level" from l.price (the mean)
+    // could name the wrong level relative to what's actually drawn on
+    // screen for a wide band (2026-08-22 review round 12, auto-TA finding
+    // #3's correction).
+    var wideBand = (l.lo!=null && l.hi!=null && l.price>0 && (l.hi-l.lo)/l.price > TA_SR_WIDE_BAND);
+    var d = wideBand ? Math.min(Math.abs(l.hi-lastPx), Math.abs(l.lo-lastPx)) : Math.abs(l.price-lastPx);
     if(d < nearestD){ nearestD = d; nearestIdx = i; }
   });
   return {nearestIdx:nearestIdx, maNow:maNow};
@@ -8869,10 +9028,17 @@ function stageTA(){
         var nearEdge = (lastPx!=null && Math.abs(l.hi-lastPx) < Math.abs(l.lo-lastPx)) ? l.hi : l.lo;
         [l.lo, l.hi].forEach(function(pxE){
           var isNear = (pxE === nearEdge);
+          // Collision must be tested against the EDGE actually drawn/
+          // labeled, not the cluster's mean (l.price, used by `collides`
+          // above) -- an MA line could sit exactly on the displayed edge
+          // while the mean reads 3%+ away, reporting "no collision" and
+          // stacking this badge directly on the MA's (2026-08-22 review
+          // round 12, auto-TA finding #3).
+          var edgeCollides = maNow.some(function(v){ return v>0 && Math.abs(pxE-v)/v < 0.012; });
           STAGE.srLines.push({level:l, levelIdx:i, edge:(pxE===l.hi?"hi":"lo"),
             line: STAGE.s.candle.createPriceLine({
             price:pxE, color:edge, lineWidth:1, lineStyle:LWC.LineStyle.Dashed,
-            axisLabelVisible:(i===nearestIdx && isNear && !collides),
+            axisLabelVisible:(i===nearestIdx && isNear && !edgeCollides),
             title:"S/R band "+fmtpx(l.lo)+"–"+fmtpx(l.hi)+" \u00d7"+l.touches })});
         });
         return;
@@ -8999,7 +9165,13 @@ function stageTAPoke(){
     var visible = false;
     if(h.levelIdx===srPick.nearestIdx){
       var l = h.level;
-      var collides = srPick.maNow.some(function(v){ return v>0 && Math.abs(l.price-v)/v < 0.012; });
+      // Test collision against the price actually drawn on THIS line —
+      // l.hi/l.lo for a wide-band edge, l.price for a single narrow line —
+      // not always the cluster's mean, which could sit 3%+ away from a
+      // wide band's displayed edge (2026-08-22 review round 12, auto-TA
+      // finding #3).
+      var checkPx = (h.edge==="hi") ? l.hi : (h.edge==="lo") ? l.lo : l.price;
+      var collides = srPick.maNow.some(function(v){ return v>0 && Math.abs(checkPx-v)/v < 0.012; });
       if(!collides){
         visible = (h.edge==null) ? true
           : (h.edge === ((lastC!=null && Math.abs(l.hi-lastC) < Math.abs(l.lo-lastC)) ? "hi" : "lo"));
@@ -9418,6 +9590,19 @@ function heatFetchNow(univ){
           if(dvol!=null){ cap = dvol; byVol = true; }
           else { dropped.push(sym); return; }
         }
+        // "Is this a fund" and "does this row need the dollar-volume sizing
+        // fallback" are two DIFFERENT facts — byVol above fires for ANY row
+        // (real stock or fund) missing a market-cap reading THIS CYCLE. The
+        // old code conflated them, bucketing a real stock's transient
+        // missing-cap read into "Funds & wrappers" and telling its tooltip
+        // "(a fund: no market cap)" — a specific, false claim about what
+        // the company IS, not a statement about today's data (2026-08-22
+        // review round 12, sector heatmap finding #1). d[11] ("type") is
+        // already fetched into HEAT_COLS for exactly this and was never
+        // read; TradingView returns "stock"/"fund"/"dr" (see the scanner
+        // query filter at line ~3590).
+        var typ = (typeof d[11]==="string") ? d[11].toLowerCase() : "";
+        var isFund = (typ==="fund");
         // Pre-market: `change` (d[3]) is still YESTERDAY's regular-session
         // move — the exact fact priceSessionNow()'s own doc comment and the
         // rail's dispQuote() already carry. Swap in the live pre-market
@@ -9442,8 +9627,8 @@ function heatFetchNow(univ){
         out.push({ sym:sym, tv:row.s, name:(typeof d[1]==="string")?d[1]:"",
           close:num(d[2]), chg:{ "1D":chg1D, "1W":num(d[7]), "1M":num(d[8]), "YTD":num(d[9]) },
           tag1D:tag1D,
-          cap:cap, dvol:dvol, byVol:byVol,
-          sector: byVol ? "Funds & wrappers" : ((typeof d[5]==="string" && d[5])?d[5]:"Other"),
+          cap:cap, dvol:dvol, byVol:byVol, isFund:isFund,
+          sector: isFund ? "Funds & wrappers" : ((typeof d[5]==="string" && d[5])?d[5]:"Other"),
           industry:(typeof d[6]==="string")?d[6]:null });
       });
       HEAT.data[univ] = {rows:out, fetchedAt:Date.now(), dropped:dropped};
@@ -9807,15 +9992,23 @@ function heatRender(refetch){
         // dollar-volume reading fell into the r.cap fallback here and had
         // that market-cap number printed under the words "traded per day",
         // a different quantity entirely (2026-08-22 review, heatmap finding
-        // #1). Only a fund (r.byVol true, sized by dollar volume because it
-        // has no cap) may ever call r.cap "traded per day".
+        // #1). "(a fund: ...)" wording reads r.isFund (the scanner's own
+        // "type" field), not r.byVol — byVol only says a cap reading was
+        // MISSING this cycle, which happens to real stocks too (a real
+        // equity's transient missing-cap read used to be asserted as "a
+        // fund" outright) (2026-08-22 review round 12, sector heatmap
+        // finding #1). A row byVol-but-not-a-fund gets the honest "no
+        // market cap reading today" wording instead.
         var tip = r.sym+" · "+r.name+(r.industry?(" · "+r.industry):"")
           + " · "+(byDollarVol
               ? (r.dvol!=null ? ("~"+fmtCapDollars(r.dvol)+" traded per day"
-                   + (r.byVol ? " (a fund: no market cap)" : (" · market cap "+fmtCapDollars(r.cap))))
-                 : (r.byVol ? ("~"+fmtCapDollars(r.cap)+" traded per day (a fund: no market cap, sized by dollar volume)")
+                   + (r.isFund ? " (a fund: no market cap)"
+                      : r.byVol ? " (no market cap reading today)" : (" · market cap "+fmtCapDollars(r.cap))))
+                 : (r.isFund ? ("~"+fmtCapDollars(r.cap)+" traded per day (a fund: no market cap, sized by dollar volume)")
+                    : r.byVol ? ("~"+fmtCapDollars(r.cap)+" traded per day (no market cap reading today, sized by dollar volume)")
                             : (fmtCapDollars(r.cap)+" market cap (no dollar-volume reading today)")))
-              : (r.byVol ? ("~"+fmtCapDollars(r.cap)+" traded per day (a fund: no market cap, sized by dollar volume)")
+              : (r.isFund ? ("~"+fmtCapDollars(r.cap)+" traded per day (a fund: no market cap, sized by dollar volume)")
+                 : r.byVol ? ("~"+fmtCapDollars(r.cap)+" traded per day (no market cap reading today, sized by dollar volume)")
                          : fmtCapDollars(r.cap)))
           + " · "+tf+" "+heatPct(v, tf)+tagWord+(tf!=="1D" && r.chg["1D"]!=null?(" · 1D "+heatPct(r.chg["1D"],"1D")):"");
         // A tile too small to carry its own ticker is too small to be a
@@ -9839,6 +10032,18 @@ function heatRender(refetch){
           : (tag1D==="PREV" ? " prev1d" : "") + (r.capFallback ? " capfall" : "");
         html += '<div class="hm-tile'+hmHatch+'" data-sym="'+esc(r.sym)+'" data-htv="'+esc(r.tv)+'" data-hname="'+esc(r.name||"")+'"'
           + (reachable ? (' role="button" tabindex="0" aria-label="'+esc(tip)+'"') : '')
+          // A tile with no visible ticker (showSym false) gives a touch user
+          // NOTHING to identify it by before a tap navigates straight to a
+          // full chart — there is no touch-hover equivalent of the desktop
+          // mouseover tooltip, and the tile's own click handler used to
+          // stopPropagation() before the document-level click-tooltip
+          // fallback ever got a chance to fire (2026-08-22 review round 12,
+          // sector heatmap finding #2). data-bare marks it so the click
+          // handler below can require a first tap to identify, second to
+          // navigate — desktop mouse users already saw the hover tooltip
+          // before clicking, so this only changes behavior for the
+          // touch/no-hover case.
+          + (showSym ? '' : ' data-bare="1"')
           + ' data-tip="'+esc(tip)+'"'
           // background-color (longhand), never the background shorthand: the
           // shorthand resets background-image to none, which silently
@@ -9862,6 +10067,19 @@ function heatRender(refetch){
     });
     $$(".hm-tile", wrap).forEach(function(tl){
       tl.addEventListener("click", function(e){
+        // A bare tile (no on-screen ticker) gets identified on the FIRST
+        // tap instead of navigating immediately — the only way a touch
+        // user, who has no hover, ever sees what they are about to open.
+        // The second tap on the SAME still-identified tile navigates.
+        // Desktop mouse users are unaffected in practice: they already saw
+        // the hover tooltip before clicking at all (2026-08-22 review
+        // round 12, sector heatmap finding #2).
+        if(tl.dataset.bare==="1" && tl.dataset.tapped!=="1"){
+          e.stopPropagation();
+          showTip(tl);
+          tl.dataset.tapped = "1";
+          return;
+        }
         e.stopPropagation();
         var symb = tl.dataset.sym, tv = tl.dataset.htv;
         // The map already knows the company name; passing null made the chart
@@ -9882,7 +10100,7 @@ function heatRender(refetch){
         var bg = heatColor(v, clamp);
         return '<i style="background:'+bg+';color:'+heatTextColor(bg)+'">'+(f===0?"0":fm1(v))+'</i>';
       }).join("")+'<i style="background:none;color:var(--ink3)">%</i></span>';
-      var nFund = rows.filter(function(r){ return r.byVol; }).length;
+      var nFund = rows.filter(function(r){ return r.isFund; }).length;
       // maxTiles is driven by AREA (wrapW*wrapH), not width alone -- a window
       // that is wide but SHORT (e.g. 1600x600 in expanded mode, where
       // .heatwrap's min-height can shrink well under its usual floor) hits
@@ -9999,13 +10217,17 @@ function stageHeaderHTML(sym){
 function stageNextEarnHTML(sym){
   var ne = STAGE.nextEarn;
   if(!ne || !ne.date || STAGE.sym !== sym) return "";
-  var f = factsOf(sym) || {};
-  var _ednow = earnDaysNow(f);
-  var days = (_ednow!=null) ? Math.round(_ednow) : null;
-  if(days==null){
-    var dd = new Date(String(ne.date)+"T12:00:00Z"), today = ctTodayDate();
-    if(!isNaN(dd.getTime()) && today) days = Math.round((dd.getTime()-today.getTime())/86400000);
-  }
+  // Derive the day-count from ne.date (fund/{SYM}.json, stockanalysis.com)
+  // itself, not from earnDaysNow(factsOf(sym)) (TradingView-sourced) — the
+  // button's own tooltip/popover print ne.date, so a count computed from a
+  // DIFFERENT vendor's date disagreed with the date sitting right next to
+  // it by up to 7 days (MU showed "E 38d" while its own tooltip said a date
+  // 32 days out). This is the exact bug the Fundamentals grid's "Next
+  // earnings" cell already fixed; it was never applied here (2026-08-22
+  // review round 12, chart stage finding #1). Gating on ne.date's own
+  // freshness also hides a stale past date (TSEM) instead of showing it as
+  // an upcoming report under an unrelated day-count.
+  var days = fedDaysToMeeting(ne.date);
   if(days==null || days < 0) return "";
   var when = (ne.session==="pre") ? " before the open" : (ne.session==="post") ? " after the close" : "";
   return '<button class="fbtn" id="stagenextearn" data-tip="'+esc("Next earnings report: "+ne.date+when
@@ -10117,6 +10339,13 @@ function stageBar(){
     b.addEventListener("click", function(){
       if(b.dataset.iv){ STAGE.iv = b.dataset.iv; }
       else if(b.dataset.tf){ STAGE.tf = b.dataset.tf; STAGE.iv = "1D"; }
+      // A vertical-zoom stretch from scrolling the price axis on the
+      // PREVIOUS interval/window persisted onto a chart the user never
+      // zoomed on that view — stageRender()'s autoscaleInfoProvider
+      // re-applies whatever STAGE.vZoom was left at, only ever reset on a
+      // symbol change (stageShow) or an explicit double-click on the axis
+      // (2026-08-22 review round 12, chart stage finding #3).
+      if(STAGE.vZoom && STAGE.vZoom!==1) STAGE.vZoom = 1;
       stageRender();
     });
   });
@@ -10198,15 +10427,19 @@ var PEER_METRICS = [
    vendor publishes no growth rate" for nine tracked names whose real reason
    was that their own earnings shrank or went negative — the page telling the
    reader a vendor gap where the truth was a fact about the company. */
-// A growth rate this extreme is almost always a near-zero-denominator
-// artifact (a prior-year TTM EPS base that rounds to a few tenths of a
-// cent), not a real earnings trajectory — BE's live sidecar summed a
-// $0.0047 prior-year TTM base against a $0.7603 current one, a 16,166%
-// "growth" rate that rendered as a green 0.02 "bargain" PEG with no caveat
-// (2026-08-22 review round 11). Same posture as the framework's
-// FRAMEWORK_*_MAX_PLAUSIBLE ceilings: bound the DERIVED metric's own
-// magnitude rather than guess a number from an unreliable base.
-var DERIVED_PEG_MAX_GROWTH_PCT = 500;
+// A percentage-only growth ceiling cannot tell a near-zero-denominator
+// rounding artifact (BE: a $0.0047 prior-year TTM EPS base against a
+// $0.7603 current one, a 16,166% "growth" rate that rendered as a green
+// 0.02 "bargain" PEG with no caveat) apart from a real V-shaped cyclical
+// earnings recovery (MU: a genuine, non-degenerate $5.5538 prior-year TTM
+// base growing to $44.1733, a real 695% AI-driven supercycle move) — a
+// fixed percentage ceiling flagged MU's real PEG as "not a real reading"
+// right alongside BE's actual artifact (2026-08-22 review round 12, vs
+// Peers finding #1's correction). Gate on whether the PRIOR-YEAR BASE
+// ITSELF is implausibly tiny instead: a company earning less than 5 cents
+// a share in its trailing base is where rounding/near-zero artifacts
+// dominate, regardless of how large the resulting percentage is.
+var DERIVED_PEG_MIN_PRIOR_EPS = 0.05;
 // The trailing EPS growth % PEG is built on, factored out of derivedPeg so
 // metricValue can also gate a VENDOR-supplied PEG against it — TradingView
 // computes its own PEG from this same near-zero-denominator EPS base, so
@@ -10225,9 +10458,9 @@ function pegGrowthPctFor(fund){
   if(okT<n || okP<n) return {code:"short history"};
   if(prior<=0) return {code:"prior loss"};
   if(ttm<=0) return {code:"ttm loss"};
+  if(prior < DERIVED_PEG_MIN_PRIOR_EPS) return {code:"implausible growth"};
   var growth = (ttm/prior - 1) * 100;
   if(growth <= 0) return {code:"shrinking"};
-  if(growth > DERIVED_PEG_MAX_GROWTH_PCT) return {code:"implausible growth"};
   return {growth:growth};
 }
 function derivedPeg(f, fund, why){
@@ -11060,12 +11293,52 @@ function stageLivePoke(){
     stageRender();
     return;
   }
+  // STAGE.premarketBar is set once at the full render and must track the
+  // CURRENT session regardless of which interval is active, or the candle
+  // keeps re-drawing the pre-market bracket all session after the open —
+  // the header price keeps ticking live while the candle itself freezes
+  // (2026-08-21 review, chart stage finding #1). Moved above both the 1W
+  // and 1D branches (was 1D-only) so opening straight to the 1W view during
+  // pre-market and never switching to 1D still clears the flag once the
+  // session leaves pre-market (2026-08-22 review round 12, chart stage
+  // finding #2). The session only ever moves forward within a day
+  // (premarket -> open -> afterhours), so once it has left premarket the
+  // flag flips off for good.
+  if(STAGE.premarketBar && priceSessionNow()!=="premarket") STAGE.premarketBar = false;
   if(STAGE.iv==="1W" && STAGE.synthetic && STAGE.rows.length>=2 && STAGE.chart){
     var wlive = liveBySym(STAGE.sym);
+    var wn = STAGE.rows.length, wr = STAGE.rows[wn-1];
+    var wo = num(wr[0]);
+    if(STAGE.premarketBar){
+      // Pre-market: live.o/h/l still describe YESTERDAY's regular session,
+      // not the forming week — folding them into the ratcheted weekly
+      // high/low (as the branch below does) silently pulled a PRIOR day's
+      // reading into the new week's range, and flipping syntheticReal here
+      // desynced the candle's dimmed/real visual state from its own
+      // "· pre-market" caption a few lines below. Build the update purely
+      // from the pre-market bracket instead, mirroring the 1D branch's own
+      // premarketBar handling (2026-08-22 review round 12, chart stage
+      // finding #2).
+      var wPrevClose = num(STAGE.rows[wn-2][3]);
+      var wpmb = wPrevClose!=null ? preMarketBar(wlive, wPrevClose) : null;
+      if(wpmb){
+        var pwo=wpmb[0], pwhi=wpmb[1], pwlo=wpmb[2], pwc=wpmb[3], pwv=wpmb[4];
+        STAGE.rows[wn-1] = [pwo, pwhi, pwlo, pwc, pwv];
+        var pwCol = cssVar(pwc>=pwo ? "--up" : "--dn");
+        var pwUpd = {time:STAGE.times[wn-1], open:pwo, high:pwhi, low:pwlo, close:pwc,
+                     color:hexA(pwCol,0.5), wickColor:hexA(pwCol,0.5)};
+        try{
+          STAGE.s.candle.update(pwUpd);
+          if(STAGE.s.volume && pwv!=null && STAGE.hasVolume){
+            STAGE.s.volume.update({time:STAGE.times[wn-1], value:pwv, color: hexA(pwCol, 0.2)});
+          }
+        }catch(e){}
+        if(!STAGE.hovering) stageSetOhlc(null);
+        stageLegend();
+      }
+    } else {
     var wc = candleClose(wlive);
     if(wc!=null){
-      var wn = STAGE.rows.length, wr = STAGE.rows[wn-1];
-      var wo = num(wr[0]);
       // Fold live.h/live.l in too, not just the previously-stored row vs the
       // new close — the stored high/low only ever advanced when a FULL
       // render happened to run at a moment the intraday high/low matched,
@@ -11100,6 +11373,7 @@ function stageLivePoke(){
       if(!STAGE.hovering) stageSetOhlc(null);
       stageLegend();
     }
+    }
   }
   if(STAGE.iv==="1D" && STAGE.synthetic && STAGE.rows.length>=2 && STAGE.chart){
     var live = liveBySym(STAGE.sym);
@@ -11112,14 +11386,6 @@ function stageLivePoke(){
         // ratchet is only the fallback path's memory (the SVG engine used to
         // re-bracket prevClose..live on every rebuild and forget the day's
         // real extremes).
-        // STAGE.premarketBar is set once at the full render and must track
-        // the CURRENT session, or the candle keeps re-drawing the pre-market
-        // bracket all day after the open — the header price keeps ticking
-        // live while the candle itself freezes (2026-08-21 review, chart
-        // stage finding #1). The session only ever moves forward within a
-        // day (premarket -> open -> afterhours), so once it has left
-        // premarket the flag flips off for good.
-        if(STAGE.premarketBar && priceSessionNow()!=="premarket") STAGE.premarketBar = false;
         var op, cc, hi, lo, vv;
         if(STAGE.premarketBar){
           // Pre-market: yesterday's close to the pre-market print, nothing else.
@@ -11255,7 +11521,14 @@ function updatePricesTimestamp(){
 function renderPriceBanner(){
   var el = document.getElementById("pricebanner");
   if(!el) return;
-  var dead = tvPollFailed && tvPollMisses >= 2;
+  // Was >=2: on a phone, .rl.clock (the ONLY other carrier of a poll-
+  // failure warning) is display:none at 640px, so the full-width banner
+  // was the only visible warning at all on mobile — and it waited a full
+  // extra ~30s poll past the first failure to show anything, while desktop
+  // saw the identical single failure immediately via the clock-row hint
+  // (2026-08-22 review round 12, panels finding #3). Both surfaces now
+  // agree on when a failure becomes visible, regardless of viewport.
+  var dead = tvPollFailed && tvPollMisses >= 1;
   el.hidden = !dead;
   if(dead){
     el.textContent = lastPriceUpdateTs

@@ -355,6 +355,51 @@ def test_verdict_tiers(passed, evaluated, want):
     assert context._framework_verdict(passed, evaluated) == want
 
 
+def test_verdict_capped_when_every_unresolved_filter_is_flagged():
+    # 2 unresolved (5-3), both flagged -- this verdict can NEVER move by
+    # waiting, unlike a genuine "_BUILDING" gap (2026-08-22 review round
+    # 12, data honesty finding #2).
+    assert context._framework_verdict(3, 3, flagged=2) == "ADD_CAPPED"
+
+
+def test_verdict_still_building_when_only_some_unresolved_filters_are_flagged():
+    # 2 unresolved, only 1 flagged -- the other is genuinely still pending,
+    # so the verdict COULD still move once it reports.
+    assert context._framework_verdict(3, 3, flagged=1) == "ADD_BUILDING"
+
+
+def test_verdict_capped_never_fires_below_min_evaluated():
+    # Below FRAMEWORK_MIN_EVALUATED, the verdict is plain BUILDING regardless
+    # of how many unresolved filters are flagged.
+    assert context._framework_verdict(2, 2, flagged=3) == "BUILDING"
+
+
+def test_score_framework_verdict_is_capped_when_only_flagged_filters_remain_unresolved():
+    # Filters 1/3 (consensus-history) both resolve and pass; filters 2
+    # (revenue growth, no rev_ntm here) is unknown for an unrelated reason
+    # that keeps evaluated at 2 -- raise it to 3 by also passing filter 2,
+    # so only 4/5 and 5's ceiling-rejections are left unresolved, both
+    # flagged.
+    hist = {"weekly": {}}
+    d_6m = SESSION - timedelta(weeks=context.FRAMEWORK_WEEKS_6M)
+    d_3m = SESSION - timedelta(weeks=context.FRAMEWORK_WEEKS_3M)
+    hist["weekly"][context._iso_week_key(d_6m)] = {"X": {"eps_ntm": 8.0}}
+    hist["weekly"][context._iso_week_key(d_3m)] = {"X": {"eps_ntm": 9.0}}
+    fund = _fund(
+        revenue=[100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
+        opinc=[23.0, 23.0, 23.0, 23.0, 23.0, 23.0, 23.0, 80.0],   # +5700bps: flagged
+        fcf=[10.0, 10.0, 10.0, 10.0, 50.0, 50.0, 50.0, 50.0],     # +400%: flagged
+        annual_revenue=[100.0],
+    )
+    f = {"eps_ntm": 10.0, "rev_ntm": 130.0}
+    out = context.score_framework("X", f, fund, hist, SESSION)
+    assert out["filters"]["opmargin_expansion"] is None
+    assert out["filters"]["fcf_growth"] is None
+    assert set(out["filter_flags"].keys()) == {"opmargin_expansion", "fcf_growth"}
+    assert out["filters_passed"] == 3   # forward_eps_revision, revenue_growth, analyst_velocity
+    assert out["verdict"] == "ADD_CAPPED"
+
+
 def test_full_5_of_5_verdict_end_to_end():
     hist = {"weekly": {}}
     d_6m = SESSION - timedelta(weeks=context.FRAMEWORK_WEEKS_6M)

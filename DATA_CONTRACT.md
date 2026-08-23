@@ -387,7 +387,16 @@ values are `null` (never a string sentinel). All strings are already plain
 >     "verdict": "BUY_4",       // "BUY_5" | "BUY_4" | "ADD" | "HOLD" | "AVOID" |
 >                               // "BUILDING" (fewer than 3 of 5 filters have
 >                               // resolved yet — never a confident tier on a
->                               // minority of the filters)
+>                               // minority of the filters). Any tier but
+>                               // BUY_5 may carry a "_BUILDING" or "_CAPPED"
+>                               // suffix (added 2026-08-22, round 12) when
+>                               // fewer than all 5 have resolved: "_BUILDING"
+>                               // means at least one unresolved filter is
+>                               // genuinely still gathering data (could still
+>                               // move); "_CAPPED" means EVERY unresolved
+>                               // filter was permanently rejected by an
+>                               // implausibility ceiling (filter_flags) and
+>                               // this verdict will not move by waiting.
 >     "metrics": {              // only the metrics whose filter resolved; a
 >                               // key is simply absent when its filter is null
 >       "revenue_growth_ntm_pct": 24.3,
@@ -871,12 +880,20 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
     snapshot session-date guard.
 - `currency` — the ISO code the company FILES in, from Yahoo quoteSummary's
   `financialData.financialCurrency`, which also rides the existing
-  quoteSummary request. **Never assume USD.** A US-listed foreign company
-  reports in its home currency while its shares price in dollars: SK hynix
-  (SKHY) files in KRW and Taiwan Semi (TSM) in TWD. Before this field existed
-  the desk labeled 79 trillion won "reported dollars". `null` when the vendor
-  does not say, and the page then says it does not know rather than guessing.
-  Anything that is not a three-letter alphabetic code is dropped.
+  quoteSummary request. **Never assume USD from a real vendor answer.** A
+  US-listed foreign company reports in its home currency while its shares
+  price in dollars: SK hynix (SKHY) files in KRW and Taiwan Semi (TSM) in
+  TWD. Before this field existed the desk labeled 79 trillion won "reported
+  dollars". Anything that is not a three-letter alphabetic code is dropped.
+  (Added 2026-08-22, round 12) This field is **never `null` in the
+  published payload**: the Yahoo leg only ever runs behind a once-per-run
+  crumb handshake, so a crumb failure used to blank EVERY pinned ticker's
+  currency for that day's rebuild at once — not just one unlucky
+  symbol — and the page then printed a false "may not report in dollars"
+  hedge for an ordinary US company (MU, CRWD, ...). `build_fund_sidecar`
+  now falls back to a small, explicit `KNOWN_NON_USD_CURRENCY` table
+  (currently just SKHY/TSM) and defaults every other pinned ticker to
+  `"USD"` when the Yahoo leg didn't run or didn't answer.
   - Capped at `RATINGS_MAX` (40) rows inside `RATINGS_MAX_AGE_DAYS` (~3 years,
     the deepest window any chart shows), deduped on (date, firm, direction).
     Full histories run to 878 rows / 168 KB for a name like MU; the cap is what
@@ -1086,7 +1103,17 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
                                    // yesterday's side volume < 500
   "oi_confirm_frac": 0.41,         // (OI_today - OI_yest) / vol_yest on yesterday's direction side; null when oi_confirm is null
   "oi_confirm_side": "CALL",       // which side was checked (yesterday's direction); null when oi_confirm is null
-  "trend": "UP",                   // "UP" | "DOWN" | "MIXED"  (spot vs SMA20/SMA50)
+  "trend": "UP",                   // "UP" | "DOWN" | "MIXED" | null  (spot vs SMA20/SMA50)
+                                   // null means the scanner had no SMA20/SMA50
+                                   // to compare at all (thinly-traded new
+                                   // leveraged ETFs, e.g. MUU/RAM) — a
+                                   // DIFFERENT fact from "MIXED" (a genuine
+                                   // split-above-one-average/below-the-other
+                                   // reading). Collapsing the two into one
+                                   // MIXED value let swing_score award the
+                                   // same +7 points for "no data" as for a
+                                   // real mixed trend (2026-08-22, round 12).
+                                   // The frontend renders null as "—".
   "iv_rank": 63,                   // 0-100 percentile once >=20 sessions; else null
   "iv30": 0.98,                    // decimal; always present as fallback display
   "iv_collecting": true,           // true while <20 sessions of iv history (show "collecting history")

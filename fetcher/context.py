@@ -2082,6 +2082,16 @@ YAHOO_QUOTESUMMARY_URL = "https://query1.finance.yahoo.com/v10/finance/quoteSumm
 # both price in USD, so the page was labeling trillions of won "reported
 # dollars". No extra HTTP call — it rides the same quoteSummary request.
 YAHOO_QS_MODULES = "defaultKeyStatistics,earningsHistory,earnings,calendarEvents,upgradeDowngradeHistory,financialData"
+# currency only ever gets SET by the Yahoo leg above, gated behind a
+# once-per-run crumb handshake (fetch_yahoo_crumb) — a crumb failure blanks
+# EVERY pinned ticker's currency for that day's rebuild at once, not just
+# one unlucky symbol, and the frontend then printed a false "may not report
+# in dollars" hedge for an ordinary US company like MU or CRWD (2026-08-22
+# review round 12, financials finding #3). The only two currently-pinned
+# non-USD reporters are named here explicitly (both real US-listed ADRs);
+# every other pinned ticker defaults to USD when the Yahoo leg didn't run
+# or didn't answer, rather than "unknown."
+KNOWN_NON_USD_CURRENCY = {"SKHY": "KRW", "TSM": "TWD"}
 
 FUND_SLEEP_SEC = 0.3
 # Analyst rating CHANGES (added 2026-08-19, Zach's ask: "analyst rating updates
@@ -2687,10 +2697,12 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
         "quarterly": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": [], "opinc": []},
         "annual": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": [], "opinc": []},
         "ratings": [],
-        # The currency the statements are REPORTED in. None means unknown, and
-        # the page says "as reported" rather than naming a currency it is
-        # guessing at. Never assume USD: a US-listed ADR files in its home
-        # currency (SKHY in KRW, TSM in TWD).
+        # The currency the statements are REPORTED in — a US-listed ADR
+        # files in its home currency (SKHY in KRW, TSM in TWD). This
+        # starts None here but is never left None in the returned payload:
+        # see the KNOWN_NON_USD_CURRENCY fallback at the end of this
+        # function, applied only after a real vendor answer (the Yahoo leg
+        # below) has had its chance.
         "currency": None,
     }
 
@@ -2742,6 +2754,8 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
             payload["next_earnings"] = ne
 
     _backfill_earnings_revenue(payload["earnings"], payload["quarterly"])
+    if payload["currency"] is None:
+        payload["currency"] = KNOWN_NON_USD_CURRENCY.get(sym, "USD")
     return payload
 
 
@@ -2951,7 +2965,7 @@ def _ratio_matches_split(ratio: float) -> bool:
     return False
 
 
-def _framework_verdict(passed: int, evaluated: int) -> str:
+def _framework_verdict(passed: int, evaluated: int, flagged: int = 0) -> str:
     """Map filters-passed to a verdict word on the framework's own 0-5 tier
     scale. "BUILDING" while fewer than FRAMEWORK_MIN_EVALUATED filters have
     real data — the two consensus-history filters (forward EPS revision,
@@ -2966,11 +2980,24 @@ def _framework_verdict(passed: int, evaluated: int) -> str:
     "mixed record, already failing" into one chip (2026-08-22 review, data
     honesty finding #3). BUY_5 has no such variant: reaching it requires all
     5 filters to have passed, which means all 5 have resolved.
+
+    `flagged` (added 2026-08-22, round 12) is the count of unresolved
+    filters rejected by an implausibility ceiling (score_framework's
+    filter_flags, e.g. Filter 4/5's "implausible_swing") rather than
+    genuinely still gathering data. A filter flagged this way will NEVER
+    resolve by waiting — the underlying financials are what's wrong, not
+    the elapsed time — so when EVERY unresolved filter is flagged, "_BUILDING"
+    promises a resolution that structurally cannot happen; "_CAPPED" marks
+    that case instead. If at least one unresolved filter is still genuinely
+    pending, "_BUILDING" stays correct (data honesty finding #2).
     """
     if evaluated < FRAMEWORK_MIN_EVALUATED:
         return "BUILDING"
     word = _FRAMEWORK_VERDICTS.get(passed, "BUILDING")
     if evaluated < 5 and word != "BUILDING":
+        unresolved = 5 - evaluated
+        if flagged > 0 and flagged >= unresolved:
+            return word + "_CAPPED"
         return word + "_BUILDING"
     return word
 
@@ -3105,7 +3132,7 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
         "filters_failed": failed,
         "filters_unknown": unknown,
         "filter_flags": filter_flags,
-        "verdict": _framework_verdict(passed, passed + failed),
+        "verdict": _framework_verdict(passed, passed + failed, flagged=len(filter_flags)),
         "metrics": metrics,
     }
 

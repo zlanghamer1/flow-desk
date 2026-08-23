@@ -1204,5 +1204,189 @@ pass:
   rolled to tomorrow while it is still today in CT, producing an
   off-by-one-day STALE count in the evening.
 
+## Guardrails added 2026-08-23, round-12 fix pass (21 findings, all 9 sections)
+
+Round 12 of the nine-section review confirmed 21 findings (see
+`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
+this pass fixed all 21 the same day. The non-obvious decisions from this
+pass:
+
+- **`stageNextEarnHTML` now derives its displayed day-count from
+  `fund.next_earnings.date` via `fedDaysToMeeting`, the same vendor the
+  button's own tooltip/popover print** — it used to compute the count from
+  `earnDaysNow(factsOf(sym))` (TradingView) while printing a
+  stockanalysis.com date in the same UI element, live-verified disagreeing
+  by up to 7 days (MU) and showing a countdown next to a date 18 days in
+  the past (TSEM). This is the exact class of bug the Fundamentals grid's
+  "Next earnings" cell already fixed, applied to the one remaining call
+  site that still had it.
+- **The 1D-only `STAGE.premarketBar` session-transition clear now runs
+  before BOTH the 1W and 1D live-poke branches**, not just ahead of 1D's
+  own block — a tab opened straight to the 1W view during pre-market and
+  never switched to 1D had no path to ever clear the flag once the session
+  left pre-market, since the clearing check lived inside the `iv==="1D"`
+  gated block.
+- **The 1W live-poke's pre-market branch now builds its update purely from
+  `preMarketBar(wlive, prevWeekClose)`, never folding `live.h`/`live.l`
+  into the ratcheted weekly high/low or flipping `syntheticReal`** — those
+  fields still describe YESTERDAY's regular session during pre-market (the
+  same fact the 1D branch's own `STAGE.premarketBar` gate already
+  respects), so folding them into the FORMING week's range silently pulled
+  a prior day's reading into the new week and desynced the candle's
+  dimmed/real visual state from its own "· pre-market" caption.
+- **`STAGE.vZoom` resets to 1 on every interval/window-button click**, not
+  just on a symbol change (`stageShow`) or an explicit double-click on the
+  axis — a wheel-zoom stretch from a previous view otherwise persisted
+  onto a chart the user never touched, re-applied by
+  `stageApplyVZoom`/`autoscaleInfoProvider`.
+- **A new `TA_REALISTIC_MAX_BARS` map caps `taMinWinForTrend()`'s scaled
+  minimum at the actual max bar count the browser can ever hold for 15m
+  (130) and 1H (150)** — uncapped, 15m needed 1040 bars against a 140-bar
+  fetcher ceiling and 1H needed 260 against a 160-bar frontend slice, both
+  permanently "too short" on every ticker forever, with the caption's own
+  "try a longer window" escape hatch gated to `iv==="1D"` and therefore
+  never reachable from either interval. 4H clears its own scaled minimum
+  comfortably and needs no cap.
+- **`containLeg` (trend-line containment) now reads CLOSES for 1W as well
+  as 1D, not just 1D** — a weekly bar's high/low wick spans five trading
+  days of intrabar extremes, so wick-based containment could silently kill
+  a genuine, tradeable weekly support/resistance line the moment any ONE
+  day that week poked through, even while every weekly close respected it.
+  Widening `containTol` (already interval-scaled via `taAmvForInterval`
+  since round 10) doesn't fix this — a wick still encodes intrabar
+  extremes a close-based check would never see, so the leg selection
+  itself had to change, not the tolerance.
+- **`taSrBadgePick`'s "nearest level" distance and the S/R axis-badge
+  collision test both now measure against a wide band's actual drawn
+  EDGE (`l.hi`/`l.lo`), never the cluster's arithmetic mean (`l.price`)**
+  — a wide band draws and labels only its near edge, so an MA line sitting
+  exactly on that edge while the mean read 3%+ away reported "no
+  collision" and stacked the S/R badge directly on the MA's. Fixed at both
+  fit time (`taSrBadgePick`, the wideBand render branch) and every live
+  poke (`stageTAPoke`'s recolor loop), so a fit-time and a live-poke
+  collision decision can never disagree.
+- **`LEV_NAME_RE`'s short-index alternatives now allow an optional
+  attached number instead of ending flush against a trailing `\b`**
+  (`short\s+s&p\s*\d*`, not `short\s+s&p\b`) — ProShares glues the index
+  number directly onto the name with no separator ("Short S&P500", "Short
+  Dow30", "Short MidCap400"), landing the required word boundary between
+  two word characters where none exists, so the alternative never matched
+  at all. The multiplier alternatives now also accept a decimal
+  (`\d+(\.\d+)?x`, replacing the fixed `2x|3x` set) for real
+  fractional-multiple single-stock ETFs (GraniteShares' 1.75x TSLR/CONL).
+- **A new `robustClampHasUncorrectedGlitch` detector runs alongside
+  `robustClampMag` wherever the latter returns null**, adding a caption
+  note for the specific case where an isolated glitch WAS recognized but
+  couldn't be clamped because a different value in the same over-threshold
+  set is a genuine trend — the uniform single-ceiling clamp this chart kit
+  supports cannot clip just the glitch without also flattening the real
+  trend value above the same ceiling. A true per-point clip was considered
+  and rejected: modeling it against SNDK's live data barely changed its
+  bar heights, since SNDK's real EPS genuinely spans 200x+ — the
+  actionable fix is disclosure, not chasing a cosmetic reshuffle.
+- **The Margins/YoY/EPS chart's `SM.W` now derives from the same `hostW`
+  measurement the money chart's `BIG.W` already uses**, sized per the
+  actual column count CSS auto-fit will produce, instead of a flat
+  hardcoded 340 — at a narrow desktop width where `.gwrap` collapses to
+  one ~548px column, each 340-viewBox SVG rendered at 1.61x its authored
+  scale while the money chart right above it rendered correctly at the
+  same width.
+- **`fund.currency` is never left `null` in the published payload
+  anymore.** It's only ever SET by the Yahoo leg, gated behind a
+  once-per-run crumb handshake — a crumb failure used to blank currency
+  for the ENTIRE tracked universe at once, not just one ticker, and the
+  page then printed a false "may not report in dollars" hedge for an
+  ordinary US company. `build_fund_sidecar` now falls back to a small,
+  explicit `KNOWN_NON_USD_CURRENCY` table (SKHY/TSM, the only two
+  currently-pinned non-USD reporters) and defaults every other pinned
+  ticker to `"USD"` — deliberately NOT a heuristic guess based on exchange
+  or any other signal, since none reliable enough exists in this pipeline.
+- **The sector heatmap's `isFund` (used for sector bucketing and the "(a
+  fund: ...)" tooltip wording) now reads `d[11]` ("type," already fetched
+  into `HEAT_COLS` and never used) instead of being inferred from a
+  missing market-cap reading.** `byVol` (fires for ANY row missing a cap
+  THIS CYCLE, real stock or fund) and "is this actually a fund" are two
+  different facts that were conflated — a real equity's transient
+  missing-cap read got bucketed into "Funds & wrappers" with a tooltip
+  asserting outright what the company IS, not a statement about today's
+  data. A `byVol`-but-not-fund row now gets honest "no market cap reading
+  today" wording instead.
+- **A bare heatmap tile (no visible ticker label) now requires two taps to
+  navigate: the first identifies (shows the tooltip via `data-bare`/
+  `data-tapped`), the second opens the chart** — a touch user has no
+  hover, so a tap on an unlabeled tile used to navigate straight to a full
+  chart with zero on-screen identification first; the tile's own click
+  handler called `stopPropagation()` before the document-level
+  click-tooltip fallback (mobile browsers' tap-triggered click event) ever
+  got a chance to fire. Desktop mouse users are unaffected in practice —
+  they already saw the hover tooltip before clicking at all.
+- **`pegGrowthPctFor` now gates on whether the PRIOR-YEAR EPS BASE itself
+  is implausibly tiny (`DERIVED_PEG_MIN_PRIOR_EPS`, 5 cents/share),
+  replacing round 11's percentage-only growth ceiling.** A fixed
+  percentage ceiling can't distinguish a real V-shaped cyclical earnings
+  recovery from a near-zero-denominator rounding artifact — both produce
+  "one extreme percentage from one small base." MU's live sidecar has a
+  genuine, non-degenerate $5.5538 prior-year base growing to $44.1733 (a
+  real 695% AI-supercycle move) that round 11's 500% ceiling flagged
+  identically to BE's actual $0.0047-base artifact. Gating on the base's
+  own magnitude instead lets MU's real reading through while still
+  catching BE's.
+- **Sector rotation's fallback dot (price relative strength vs SPY, used
+  only when `flow_1w` is null) now renders as a hollow ring
+  (`.iodot.pu`/`.pd`), never the solid flow-colored fill**, with its own
+  tooltip and panel-caption wording — the dot's tooltip and the panel's
+  caption both used to unconditionally call it "the sign of the $1w flow
+  beside it" even when the $1w column read "—" right next to it, since
+  price-relative-strength is a genuinely different fact from money
+  direction.
+- **The news ticker's change-detection key now hashes every item's
+  identity (`url@ts`), not just the newest headline plus a count** — a
+  dominant top story holding slot 1 across several polls while headlines
+  in slots 2-20 rotated out for newer ones (same count) went completely
+  undetected, freezing the marquee on stale content with nothing on
+  screen saying anything was withheld.
+- **`renderPriceBanner`'s dead-feed threshold dropped from 2 consecutive
+  misses to 1** — `.rl.clock` (the only OTHER carrier of a poll-failure
+  warning) is `display:none` at 640px, so on a phone the full-width banner
+  was the sole visible warning, and it waited a full extra ~30s poll past
+  the first failure while desktop saw the identical single failure
+  immediately via the clock-row hint. Both surfaces now agree regardless
+  of viewport.
+- **`boardCutNoteHTML`'s "every tracked name clears the bar" wording now
+  also requires `lowFiring===0`, not just `strong===total`** — a
+  live-reachable shape (every non-firing name clearing 60+ while at least
+  one firing name, like AVGO or MU, stays sub-60) let the sentence assert
+  in one breath that those names are "below the line" AND that "every
+  tracked name clears the bar."
+- **Conviction's `rowHTMLConv` now calls `dispQuote(liveBySym(c.ticker))`
+  directly instead of pre-substituting `{}` when the lookup fails** —
+  `dispQuote`'s own `if(!q) return {...tag:null...}` guard exists
+  specifically to produce a neutral untagged state for a missing quote,
+  but an empty object is truthy, so the pre-substitution defeated the
+  guard and fell into the premarket branch, rendering a false "PREV"
+  badge and its misleading tooltip for what was actually a failed lookup.
+  Every other call site in the file, including Swing's own row builder,
+  already called `dispQuote` directly with no fallback.
+- **The Swing board's `trend` field is a genuine tri-state now
+  (`"UP"`/`"DOWN"`/`"MIXED"`/`null`), not a two-state collapsed onto
+  `"MIXED"`.** A ticker with no SMA20/SMA50 from the scanner at all
+  (thinly-traded new leveraged ETFs like MUU/RAM, the fetcher's own
+  documented gap) used to read identically to a genuine split-above-one-
+  average/below-the-other reading, and `swing_score` awarded the same +7
+  points for both — `trend == "MIXED"` already excludes `None` with no
+  further scoring change needed, and the frontend already renders a null
+  trend as "—".
+- **The 5-metric framework verdict gained a `"_CAPPED"` suffix, distinct
+  from `"_BUILDING"`, for when EVERY unresolved filter was permanently
+  rejected by an implausibility ceiling rather than genuinely still
+  gathering data.** `_framework_verdict` now takes a `flagged` count
+  (`len(filter_flags)`) and only keeps `"_BUILDING"`'s "could still move"
+  promise when at least one unresolved filter is genuinely pending — a
+  ticker whose only unresolved filters are BOTH ceiling-rejected (MU's own
+  real opmargin/FCF swings) got the same "(building)" wording and note as
+  one genuinely accumulating weekly consensus history, promising a
+  resolution that structurally cannot happen since the underlying
+  financials are what's wrong, not the elapsed time.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

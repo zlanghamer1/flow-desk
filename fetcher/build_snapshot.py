@@ -1693,7 +1693,16 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
                     else:
                         oi_confirm = "CHURN"
 
-        # trend: spot vs SMA20/SMA50
+        # trend: spot vs SMA20/SMA50. A ticker with no SMA data at all (the
+        # scanner's own documented gap for thinly-traded new leveraged ETFs
+        # like MUU/RAM) used to fall into the same "MIXED" value as a
+        # genuine split-above-one-average/below-the-other reading, with
+        # nothing anywhere disclosing that MIXED could also mean "no
+        # moving averages existed to compare" — and swing_score awarded the
+        # same +7 points for both cases (2026-08-22 review round 12, data
+        # honesty finding #1). None is its own tri-state now, reserved for
+        # missing data; swing_score's `trend == "MIXED"` check already
+        # excludes None with no further change needed there.
         spot = analysis["spot"]
         sma20, sma50 = quote.get("sma20"), quote.get("sma50")
         if spot and sma20 and sma50:
@@ -1704,7 +1713,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
             else:
                 trend = "MIXED"
         else:
-            trend = "MIXED"
+            trend = None
 
         # iv_rank: percentile within iv_history (including today's just-appended value)
         ivs = iv_history.get(ticker, [])
