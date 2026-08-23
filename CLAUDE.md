@@ -1463,5 +1463,93 @@ The non-obvious decisions from this pass:
   "today" — on any trading day before premarket opens (`priceSessionNow`
   gates premarket to >=3:00 CT), the real next session is today itself.
 
+## Guardrails added 2026-08-23, round-14 fix pass (21 findings, 19 fixed, 2 deferred)
+
+Round 14 of the nine-section review confirmed 21 findings (see
+`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
+this pass fixed 19 the same day. The remaining 2 (both Financials, the
+ad-hoc/scanner currency hardcode and the ad-hoc quarter-cadence assumption)
+are documented as deliberately deferred in `docs/OPEN_ITEMS.md`'s Open
+section — both require client-side vendor-data infrastructure that doesn't
+currently exist, and both of the review's own proposed fixes were checked
+and rejected by its own correction. The non-obvious decisions from this
+pass:
+
+- **A synthetic "today" candle now also checks the CLOCK, not just the
+  calendar.** `stageDailyData`'s closed-branch and `seriesQuads`' identical
+  branch both already gated on `isTradingDay(now)` (added in round 8, to
+  stop a weekend/holiday's stale-but-real quote from becoming a phantom
+  trading day) — but neither checked whether the clock had actually reached
+  the trading day's premarket start (3:00 CT). Between midnight and 3:00 CT
+  on an ordinary weekday, `live` is still the PRIOR day's settled close (the
+  scanner hasn't seen a trade yet), and stamping it with today's date
+  fabricated a "today, closed" candle hours before the market opened. Both
+  gates now also require `ctMinutesOfDay(new Date()) >= 3*60`.
+- **The weekend/holiday zoom-reset bug and the log-button zoom-reset bug are
+  the same underlying pattern (a bare `stageRender()` call skipping
+  `stageKeepView`), fixed the same way in both places.** `stageLivePoke`'s
+  boot-race guard additionally needed an `isTradingDay(new Date())` term —
+  without it, a non-trading day never sets `STAGE.synthetic` true (correctly
+  — `stageDailyData` withholds the synthetic bar), so the "one rebuild"
+  guard stayed satisfied forever and refit the chart from scratch on every
+  30-second poll for the entire weekend a tab was left open.
+- **A new `earnCountdownDays(sym, f)` helper is now the one function every
+  earnings-countdown surface OUTSIDE the open chart itself calls**, mirroring
+  `stageNextEarnHTML`'s own round-12 fix (prefer `FUND_CACHE[sym].
+  next_earnings.date` via `fedDaysToMeeting` when already cached, fall back
+  to `earnDaysNow(f)` otherwise) — wired into the rail's per-row badge and
+  Conviction's 0-7 day "E Nd" pill. Deliberately opportunistic, not a forced
+  fetch: a rail row rendering is not by itself a reason to fetch every
+  pinned ticker's fund sidecar, so the fallback still applies whenever
+  `FUND_CACHE[sym]` isn't populated yet. Swing's board has a separate,
+  narrower bug (no elapsed-day aging on `c.earnings_days` at all, unrelated
+  to the vendor-mismatch this helper fixes) — fixed independently by aging
+  it through `earnDaysNow({earn_days: edRaw})`.
+- **`wlCustom()`/`wlHidden()` now hold an in-memory mirror (`WL_MEM`) instead
+  of re-reading `localStorage` on every call.** `store()` now returns a
+  success boolean; `wlSaveCustom`/`wlSaveHidden` write the in-memory value
+  FIRST, so a browser where `localStorage.setItem` throws (blocked storage,
+  strict privacy mode, a storage-partitioned iframe) still has "+ add"/bulk
+  paste register for the rest of the session — before this, the write was a
+  total, silent no-op and the very next render read back the unchanged old
+  list, even though the UI's own message said "N added." `WL_MEM.saveFailed`
+  surfaces a one-line warning near the sort strip instead of pretending
+  nothing went wrong.
+- **The non-DESK sector-heatmap universes (S&P 500, Nasdaq 100) now exclude
+  a `byVol` row from the sized set entirely**, rather than letting it size a
+  market-cap treemap with a dollar-volume number 500-1000x smaller. `byVol`
+  rows get their `cap` field silently overwritten with dollar volume
+  UPSTREAM in `heatFetchNow` (a transient missing-`market_cap_basic`
+  fallback, for ANY universe) — DESK already avoids the scale-mixing problem
+  by using dollar volume UNIFORMLY for every row, but the non-DESK maps had
+  no equivalent guard and used the already-substituted `r.cap` as if it were
+  real market cap. Dropped instead of given a sub-scale, matching the
+  "a missing reading is never sized as if it were real" convention.
+- **`min-height:min(420px, calc(...))` on the heatmap's expand-mode height
+  was a no-op that looked like a floor.** Both terms of that `min()` used
+  the SAME `calc()` as the sibling `height` property, so `min-height` always
+  computed to the identical (possibly tiny) value as `height` — it added no
+  real floor at all. Replaced with a flat `min-height:240px`, which CSS
+  spec guarantees always wins over a smaller `height` — a genuine legibility
+  floor, deliberately well under the default view's 420px so round 11's
+  original "420px pushes the footer off-screen on a short window" problem
+  doesn't fully return.
+- **Keyboard-focus preservation across a full `innerHTML` rebuild is now a
+  repeated pattern in this file, not a one-off**: `renderHeatBar`,
+  `heatRender`'s wrap rebuild, and `renderTape` all capture a stable
+  attribute-based key for `document.activeElement` before the rebuild and
+  restore focus to the matching new element after. `renderTape` additionally
+  restores an open tooltip (re-invoking `showTip` for whatever tile was
+  `:hover`ed before the rebuild), since a DOM mutation alone doesn't re-fire
+  `mouseover` without real pointer movement — the same root cause silently
+  broke both keyboard operability and left a tooltip frozen on stale text
+  indefinitely.
+- **`peerBarsSVG` takes an `opts.W` override now**, read from the same
+  `.gwrap`-column-width measurement (`smAvail`/`smCols`/`smColW`-style math)
+  `renderGrowth` already uses for the Financials tab's identical chart kit —
+  the existing width-change `ResizeObserver` already re-rendered the peers
+  tab on every relevant resize (round 10), so only the geometry computation
+  itself, not a new re-render trigger, needed the fix.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

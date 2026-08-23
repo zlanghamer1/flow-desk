@@ -316,6 +316,12 @@ section.closed .sb{display:none}
 .bc.stale{color:var(--ink2);background:var(--srf2);border-color:var(--edge)}
 .bc.gone{color:var(--ink3);border-style:dashed;background:transparent}
 .peerkey .oob{color:var(--hi);font-weight:700}
+/* Distinct from ✳ (a confirmed 5x+ size mismatch) — a "?" is a data gap
+   (the scanner published no cap this cycle), not a confirmed fact, and
+   sharing one style made them read equally alarming at a glance despite the
+   underlying inBand()/capUnknown logic already keeping the two states
+   distinct (2026-08-23 review round 14, vs peers finding #3). */
+.peerkey .oob.unk{color:var(--ink3);font-weight:600}
 .warn{margin-top:10px;border-left:2px solid var(--hi);padding:5px 10px;font-size:11.5px;color:var(--ink2);background:var(--hibg)}
 .warn.wgood{border-left-color:var(--up);background:color-mix(in srgb,var(--up) 8%,transparent)}
 .warn b{color:var(--hi);letter-spacing:.08em;font-size:10px;margin-right:6px}
@@ -588,9 +594,20 @@ body.heatwide:has(#s-stage.heatmode) .wl,
 body.heatwide:has(#s-stage.heatmode) .rr{display:none}
 /* min-height used to win on a short window and push the legend, the clamp
    and the as-of stamp back under the fold — in the one mode built for
-   studying the map. The floor now yields to the viewport. */
+   studying the map. The floor now yields to the viewport, but
+   `min-height:min(420px, calc(...))` self-defeated on a genuinely short
+   window: since both terms of that min() used the SAME calc(), min-height
+   always computed to the same small value as height, so it added no real
+   floor at all — a phone rotated to landscape (~375px CSS height) collapsed
+   the map to ~135px, well under the point tiles stay legible or clickable
+   (2026-08-23 review round 14, sector heatmap finding #3). 240px is a
+   genuine, always-enforced legibility floor (CSS min-height always wins
+   over a smaller height) — deliberately well under the default view's
+   420px so round 11's original overflow problem doesn't return in full,
+   but high enough that most tiles still clear the 24px label/keyboard
+   gate. */
 body.heatwide #s-stage.heatmode .heatwrap{height:calc(100vh - 210px - var(--heatfoot-h, 30px));
-  min-height:min(420px, calc(100vh - 210px - var(--heatfoot-h, 30px)))}
+  min-height:240px}
 body.heatwide:has(#s-stage.heatmode) .mid>*:not(#s-stage){display:none}
 body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){display:none}
 .hm-sec{position:absolute;overflow:hidden}
@@ -1259,16 +1276,32 @@ var ADHOC_FACTS = {};   // sym -> facts-shaped snapshot fetched from the scanner
 // genuinely resolves empty.
 var ADHOC_FACTS_FAILED = {};
 var ADHOC_BARS = {};    // sym -> {D:{rows:[[o,h,l,c,v],..], dates:[Date,..]}, i15:[[t,o,h,l,c,v],..], i60:[..]}
+// In-memory mirror of the two localStorage lists — wlCustom/wlHidden
+// previously re-read storage on every call with no cache, so a browser
+// where localStorage.setItem throws (blocked storage, strict privacy mode,
+// a storage-partitioned iframe, a corporate policy) made wlSaveCustom's
+// write a total, silent no-op: the very next wlCustom() call read back the
+// unchanged old list, and "+ add"/bulk-paste looked like it worked (the
+// message even said "N added") right up until the render disagreed with it
+// (2026-08-23 review round 14, left rail finding #2). The mirror makes a
+// click register for the rest of the session even when the underlying
+// write silently fails; WL_MEM.saveFailed lets the rail surface a one-line
+// warning instead of pretending nothing went wrong.
+var WL_MEM = { custom: undefined, hidden: undefined, saveFailed: false };
 function wlCustom(){
-  try{ var v = JSON.parse(read("desk.wl.custom")||"[]"); return Array.isArray(v)?v.filter(function(r){return r&&r.sym;}):[]; }
-  catch(e){ return []; }
+  if(WL_MEM.custom !== undefined) return WL_MEM.custom;
+  try{ var v = JSON.parse(read("desk.wl.custom")||"[]"); WL_MEM.custom = Array.isArray(v)?v.filter(function(r){return r&&r.sym;}):[]; }
+  catch(e){ WL_MEM.custom = []; }
+  return WL_MEM.custom;
 }
 function wlHidden(){
-  try{ var v = JSON.parse(read("desk.wl.hidden")||"[]"); return Array.isArray(v)?v.filter(function(x){return typeof x==="string";}):[]; }
-  catch(e){ return []; }
+  if(WL_MEM.hidden !== undefined) return WL_MEM.hidden;
+  try{ var v = JSON.parse(read("desk.wl.hidden")||"[]"); WL_MEM.hidden = Array.isArray(v)?v.filter(function(x){return typeof x==="string";}):[]; }
+  catch(e){ WL_MEM.hidden = []; }
+  return WL_MEM.hidden;
 }
-function wlSaveCustom(list){ store("desk.wl.custom", JSON.stringify(list)); }
-function wlSaveHidden(list){ store("desk.wl.hidden", JSON.stringify(list)); }
+function wlSaveCustom(list){ WL_MEM.custom = list; if(!store("desk.wl.custom", JSON.stringify(list))) WL_MEM.saveFailed = true; }
+function wlSaveHidden(list){ WL_MEM.hidden = list; if(!store("desk.wl.hidden", JSON.stringify(list))) WL_MEM.saveFailed = true; }
 function adhocRegister(sym, tv, name){
   if(tv) ADHOC_TV[sym] = tv;
   if(name) ADHOC_NAMES[sym] = name;
@@ -2333,7 +2366,13 @@ function seriesQuads(sym, info){
   // trading day whose session already ended for the night (a real settled
   // bar, fine to show) — isTradingDay distinguishes that from a weekend/
   // holiday, where a stale-but-real quote must not become a phantom week.
-  if(!isTradingDay(new Date())) return q;
+  // Also requires the clock to be past the 3:00 CT premarket start — before
+  // that, on an ordinary trading weekday, `live` is still yesterday's
+  // settled close (the scanner hasn't seen a trade yet today), so appending
+  // it stamped "today" fabricated a session the market hadn't opened
+  // (2026-08-23 review round 14, chart stage finding #1 — same fix as
+  // stageDailyData's identical branch).
+  if(!isTradingDay(new Date()) || ctMinutesOfDay(new Date()) < 3*60) return q;
   var rc = candleClose(live);
   if(rc == null) return q;
   if(live.o!=null && live.h!=null && live.l!=null && live.h>=live.l && live.o>0){
@@ -2935,8 +2974,44 @@ function macroTileHTML(m){
     +'<span class="p">'+priceStr+'</span><span class="c '+cls+'">'+changeStr+'</span></div>';
 }
 function renderTape(){
+  var tapeEl = document.getElementById("tape");
+  // A full innerHTML rewrite every second (the market-state lamp's own
+  // 1-second clock timer, round 8) silently defeated two things this file
+  // spent multiple rounds building: keyboard focus (HTML focus rules revert
+  // focus to <body> when the focused element leaves the document — any Tab
+  // dwell longer than ~1s on a tile made it Enter-unresponsive with no
+  // visible focus ring) and an open tooltip (mouseover doesn't re-fire on a
+  // DOM mutation with no real pointer movement, so a hovered tile's tooltip
+  // froze at whatever text it showed at the moment of the original hover,
+  // even as the live number kept changing underneath it — the exact "never
+  // present a frozen price as fresh" failure this codebase's FROZEN badges
+  // exist to prevent, just for the tooltip layer instead of the tile itself
+  // (2026-08-23 review round 14, right rail findings #1/#2). Save/restore
+  // focus and the hovered tile's tooltip across the rewrite, mirroring the
+  // "never destroy what the reader is currently doing" convention
+  // tickNewsStamps already follows for the news ticker.
+  var focusedSym = null;
+  if(tapeEl){
+    var a = document.activeElement;
+    if(a && tapeEl.contains(a) && a.dataset && a.dataset.sym) focusedSym = a.dataset.sym;
+  }
+  var hoveredSym = null;
+  if(tapeEl && typeof tipb !== "undefined" && tipb && tipb.style.display === "block"){
+    var hoveredTile = $$("[data-sym]", tapeEl).filter(function(el){
+      try{ return el.matches(":hover"); }catch(e){ return false; }
+    })[0];
+    if(hoveredTile) hoveredSym = hoveredTile.dataset.sym;
+  }
   var html = MAIN_TAPE.map(mainTileHTML).join("") + MACRO_TAPE.map(macroTileHTML).join("");
-  $("#tape").innerHTML = html;
+  if(tapeEl) tapeEl.innerHTML = html;
+  if(focusedSym && tapeEl){
+    var newFocus = tapeEl.querySelector('[data-sym="'+focusedSym.replace(/"/g,'\\"')+'"]');
+    if(newFocus) newFocus.focus();
+  }
+  if(hoveredSym && tapeEl){
+    var newHover = tapeEl.querySelector('[data-sym="'+hoveredSym.replace(/"/g,'\\"')+'"]');
+    if(newHover && newHover.hasAttribute("data-tip")) showTip(newHover);
+  }
 }
 
 /* =================== 52w range + hot-move stats (facts + bars, no fabricated series) =================== */
@@ -3069,7 +3144,15 @@ function bollingerOf(sym){
   if(ma[lastIdx]==null) return null;
   var upperNow = ma[lastIdx] + BB_MULT*sd[lastIdx], lowerNow = ma[lastIdx] - BB_MULT*sd[lastIdx];
   var q = liveBySym(sym);
-  var live = (q && q.px!=null) ? q.px : hist[lastIdx];
+  // candleClose(q), not bare q.px — q.px maps straight from the scanner's
+  // `rtc` column, which pre-market IS YESTERDAY's regular close, not this
+  // morning's print (this file's own standing rule). Reading it raw meant a
+  // real pre-market band cross went undetected by the one alert panel built
+  // specifically to catch it, while the on-chart BB overlay (which already
+  // uses candleClose-derived rows) saw it correctly (2026-08-23 review round
+  // 14, auto-TA finding #1).
+  var live = candleClose(q);
+  if(live == null) live = hist[lastIdx];
   var sideNow = bbSide(live, upperNow, lowerNow);
   var crossed = false;
   if(ma[prevIdx]!=null){
@@ -3244,7 +3327,16 @@ function wlIoApply(text){
       }
     });
     var parts = [];
-    var removed = had.filter(function(r){ return list.every(function(x){ return x.sym!==r.sym; }); });
+    // Excludes any rail-promoted ticker (railHasSym), the same filter
+    // renderWL already applies to `custom` for display — a stale custom
+    // entry for a ticker later promoted to RAIL_GROUPS (WTI, NRGU) never
+    // makes it into `list` (it's routed into `pinned`/`unhidden` above via
+    // an early `return`, before `want.push`), so without this exclusion it
+    // ALSO satisfied "not in list" and reported as "removed" in the same
+    // message that called it "already pinned, left alone" (or "unhidden")
+    // for the identical ticker (2026-08-23 review round 14, left rail
+    // finding #3).
+    var removed = had.filter(function(r){ return !railHasSym(r.sym) && list.every(function(x){ return x.sym!==r.sym; }); });
     if(list.length) parts.push(list.length+" added");
     if(removed.length) parts.push(removed.length+" removed: "+removed.map(function(r){ return r.sym; }).join(", "));
     if(dropped.length) parts.push("dropped (nothing listed): "+dropped.join(", "));
@@ -3263,7 +3355,11 @@ function railRowHTML(s, opts){
   var cls = sign1(d.ch);
   var h = hotOf(s);
   var isHot = h!=null && h>=HOT_AT;
-  var earnDays = earnDaysNow(f);
+  // earnCountdownDays, not bare earnDaysNow(f) — prefers the fund sidecar's
+  // next_earnings.date when already cached, matching stageNextEarnHTML's own
+  // fix, so the rail row and the chart header can't disagree by up to a week
+  // about the same ticker (2026-08-23 review round 14, left rail finding #1).
+  var earnDays = earnCountdownDays(s, f);
   // The name and the earnings countdown both fit now that meta owns its own
   // line — before, the countdown replaced the name and then got clipped to
   // "e…" by the hot badge and the edit ×.
@@ -3349,6 +3445,10 @@ function renderWL(){
       : k[0]==="chg" ? "Sort by today's % move." : "Grouped view.";
     return '<button class="fbtn" data-ws="'+k[0]+'" aria-pressed="'+(wlSort===k[0])+'" data-tip="'+esc(tip)+'">'+k[1]+'</button>';
   }).join("")
+  // A write failure is now visible instead of a click that silently did
+  // nothing — see WL_MEM's own comment above (2026-08-23 review round 14,
+  // left rail finding #2).
+  + (WL_MEM.saveFailed ? '<div class="note" style="margin-top:6px;color:var(--hi)">This browser is blocking site storage, so watchlist changes (add/remove/hide) won’t survive a reload — they still work for this tab session.</div>' : "")
   +'<button class="fbtn" id="wledit" aria-pressed="'+wlEdit+'" data-tip="Add or remove names. Custom adds live in this browser only; hiding a pinned name is display-only — the boards still track the full server universe.">'+(wlEdit?"done":"edit")+'</button>'
   +'</div>';
   // No silent caps: the rail says when it differs from the server universe.
@@ -4567,7 +4667,11 @@ function renderConv(data, livePoll){
       }
     } else fpHtml = "—";
     var f = factsOf(c.ticker) || {};
-    var ed = earnDaysNow(f);
+    // earnCountdownDays, matching the rail's own fix — a 0-7 day boundary
+    // pill judged on the uncorrected TradingView date could badge a real
+    // 8-day-out report as "inside the window" (2026-08-23 review round 14,
+    // data honesty finding #2).
+    var ed = earnCountdownDays(c.ticker, f);
     var eHtml = (ed!=null && ed>=0 && ed<=7)
       ? ' <span class="pill f" data-tip="Earnings in '+Math.round(ed)+' day'+(Math.round(ed)===1?"":"s")+' — inside this board’s 0–7 day window. Flow into a report is a bet on the report: a different trade.">E '+Math.round(ed)+'d</span>' : "";
     var rv = q.rvol!=null ? q.rvol : num(c.rvol);
@@ -4667,7 +4771,14 @@ function renderSwing(data){
     // finding's comment (2026-08-23 review round 13, flow boards finding
     // #2).
     var frozen = liveStale(c.ticker);
-    var ed = num(c.earnings_days);
+    // Re-aged against today via the same elapsed-days correction
+    // earnDaysNow already applies to facts.earn_days — c.earnings_days was
+    // read straight off the payload with no correction, so it froze at
+    // whatever it was on the snapshot's own session_date and grew stale by
+    // one day for every day the loop didn't republish, unlike Conviction's
+    // identical badge (2026-08-22 review round 14, flow boards finding #2).
+    var edRaw = num(c.earnings_days);
+    var ed = edRaw!=null ? earnDaysNow({earn_days: edRaw}) : null;
     var eHtml = c.earnings_in_window
       ? ' <span class="pill f" data-tip="An earnings report lands '+(ed!=null?("in "+Math.round(ed)+" day"+(Math.round(ed)===1?"":"s")+" "):"")+'inside this contract’s life. Earnings gap straight through option positions — a flow signal that spans a report is a bet on the report.">E'+(ed!=null?(" "+Math.round(ed)+"d"):"")+'</span>' : "";
     return '<tr class="rw" data-sym="'+esc(c.ticker||"")+'" role="button" tabindex="0">'
@@ -4771,7 +4882,17 @@ function renderOrders(data){
       if(earned===null||shown===null) return null;
       return esc(c.ticker||"?")+" earned "+Math.round(earned)+" of these rows, showing "+Math.round(shown);
     }).filter(function(x){return x;});
-    return parts.length ? ('<div class="note" data-tip="'+esc(TIPS["tip-bigorders"])+'">'+parts.join(" · ")+" — capped so one busy name can't fill the board.</div>") : "";
+    var cappedNote = parts.length ? ('<div class="note" data-tip="'+esc(TIPS["tip-bigorders"])+'">'+parts.join(" · ")+" — capped so one busy name can't fill the board.</div>") : "";
+    // boardCoverageHTML() — Conviction and Swing already wire this into
+    // their table() footers, but renderOrders built big_orders from the
+    // exact same per-ticker chain-resolution loop and never called it: a
+    // partial CBOE outage (with_options short of candidates) left this
+    // board looking like a normal-looking top-12 list with no sign that
+    // some tickers — any of which could carry the day's loudest single-
+    // contract bet — were silently excluded (2026-08-23 review round 14,
+    // flow boards finding #1).
+    var coverage = boardCoverageHTML();
+    return cappedNote + (coverage ? ('<div class="note">'+coverage+'</div>') : "");
   })()});
 }
 // Routed through the same unit-aware scaler as every other money figure
@@ -5883,6 +6004,25 @@ function earnDaysNow(f){
   }
   return d;
 }
+// One helper, every "how many days to earnings" surface outside the open
+// chart itself — stageNextEarnHTML already prefers fund.next_earnings.date
+// (stockanalysis.com) over earnDaysNow's TradingView-sourced facts.earn_days
+// (round 12 fixed this for the chart header only). The rail's own per-row
+// badge and Conviction's 0-7 day "E Nd" pill both still called earnDaysNow(f)
+// directly, so the SAME ticker could show a 6+ day disagreement between the
+// rail/board and the chart a click away (2026-08-23 review round 14, left
+// rail + data honesty findings). Falls back to earnDaysNow(f) whenever
+// FUND_CACHE[sym] isn't populated yet (a rail row is not itself a reason to
+// fetch every pinned ticker's sidecar) — an opportunistic upgrade, not a
+// forced fetch.
+function earnCountdownDays(sym, f){
+  var fund = FUND_CACHE[sym];
+  if(fund && fund.next_earnings && fund.next_earnings.date){
+    var d = fedDaysToMeeting(fund.next_earnings.date);
+    if(d!=null) return d;
+  }
+  return earnDaysNow(f);
+}
 /* ---- stage data builders ---- */
 // Daily rows for the stage: the FULL bars.json history (no window slicing —
 // the window buttons set the visible range instead, so zooming out reveals
@@ -5911,7 +6051,7 @@ function stageDailyData(sym){
           // bar at all when the name has not traded pre-market yet.
           var pmb = preMarketBar(live, prevClose);
           if(pmb){ rows = rows.concat([pmb]); synthetic = true; premarketBar = true; }
-        } else if(isTradingDay(new Date())){
+        } else if(isTradingDay(new Date()) && ctMinutesOfDay(new Date()) >= 3*60){
           // priceSessionNow() also returns "closed" outside the premarket
           // check above for a genuinely-trading day whose session already
           // ended for the night — that's a real settled bar worth showing.
@@ -5925,6 +6065,14 @@ function stageDailyData(sym){
           // (2026-08-22 review, chart stage/data honesty finding). Skipping
           // the append entirely on a non-trading day leaves the chart on the
           // last real session, which is the truth.
+          // The added `ctMinutesOfDay(new Date()) >= 3*60` term covers the
+          // OTHER dead zone: 00:00-03:00 CT on an ordinary trading weekday,
+          // before premarket even starts (priceSessionNow gates premarket to
+          // >=3:00 CT). isTradingDay(now) alone says nothing about the
+          // CLOCK — `live` is still Monday night's settled close reported by
+          // a scanner that hasn't seen a Tuesday trade yet, so appending it
+          // stamped "today" fabricated a session that hadn't opened
+          // (2026-08-23 review round 14, chart stage finding #1).
           var ro=live.o, rh=live.h, rl=live.l, rc=candleClose(live);
           if(ro!=null && rh!=null && rl!=null && rh>=rl && ro>0 && rc!=null){
             var rhi = Math.max(rh, rc), rlo = Math.min(rl, rc);
@@ -7452,7 +7600,10 @@ function peerBarsSVG(entries, focusedSym, fmt, opts, kind, noMedian){
   opts = opts || {};
   var vals = entries.map(function(e){ return num(e.val); });
   if(!vals.some(function(v){ return v!=null; })) return "";
-  var W = 300, H = 158, padR = 8, padT = 16, padB = 34;
+  // opts.W lets callers pass the real measured column width (2026-08-23
+  // review round 14, vs peers finding #1) — 300 stays the fallback for any
+  // caller that doesn't measure.
+  var W = opts.W || 300, H = 158, padR = 8, padT = 16, padB = 34;
   var known = vals.filter(function(v){ return v!=null; });
   // The dashed reference is the PEER median: it excluded nothing before, so on
   // a 4-peer chart it often landed exactly on the focused company's own bar
@@ -7595,7 +7746,17 @@ function renderGrowth(sym, fund){
   var narrow = (window.innerWidth || 1440) <= 760;
   var hostW = (function(){ var el=document.getElementById("stagetabbody"); return el ? el.clientWidth : 0; })();
   var bigW = Math.max(560, Math.min(1000, Math.round((hostW || 600) - 44)));
-  var BIG = narrow ? {W:380, H:230} : {W:bigW, H:200};
+  // The narrow (<=760px) branch used a flat 380/340 regardless of the real
+  // host width, unlike the desktop branch's own hostW-based measurement —
+  // "chart geometry is authored for the width it renders at" is this file's
+  // own stated principle, and it stopped applying below 760px. On a
+  // genuinely narrow phone (~320px CSS width, ~280px real chart host) a
+  // 380-viewBox SVG rendered at ~0.74x its authored scale, dropping the
+  // 11px axis-tick text under 8px (2026-08-23 review round 14, financials
+  // finding #3). Clamped to a phone-appropriate range, not the desktop
+  // bigW clamp (560-1000), which would never shrink on a small screen.
+  var bigWNarrow = Math.max(240, Math.min(420, Math.round((hostW || 380) - 20)));
+  var BIG = narrow ? {W:bigWNarrow, H:230} : {W:bigW, H:200};
   // Margins/YoY/EPS render inside .gwrap's own CSS grid
   // (grid-template-columns:repeat(auto-fit,minmax(300px,1fr)), 16px gap),
   // but SM.W stayed a flat 340 regardless of how many 300px+ columns
@@ -7616,7 +7777,12 @@ function renderGrowth(sym, fund){
   var smAvail = Math.max(0, (hostW||600) - 32);
   var smCols = Math.max(1, Math.floor((smAvail + 16) / (300 + 16)));
   var smColW = Math.floor((smAvail - (smCols-1)*16) / smCols);
-  var SM = narrow ? {W:340, H:200} : {W:Math.max(280, Math.min(460, smColW || 340)), H:180};
+  // Same narrow-viewport fix as BIG.W above — a single-column phone layout,
+  // so the real available width is the measured host minus a small padding
+  // allowance, not a flat 340 (2026-08-23 review round 14, financials
+  // finding #3).
+  var smWNarrow = Math.max(200, Math.min(380, Math.round((hostW || 340) - 20)));
+  var SM = narrow ? {W:smWNarrow, H:200} : {W:Math.max(280, Math.min(460, smColW || 340)), H:180};
   // What the statements are reported in. NEVER assume dollars: SK hynix files
   // in won and Taiwan Semi in New Taiwan dollars, both with US listings.
   var cur = (fund && typeof fund.currency === "string" && fund.currency) ? fund.currency : null;
@@ -8513,10 +8679,17 @@ function taFitLine(rows, piv, side, sym){
         if(side===1 ? (c > lc*(1+TA_BREAK_CONF)) : (c < lc*(1-TA_BREAK_CONF))){ bo=y; break; }
       }
       // 3. between the second anchor and the break, allow POST_TOL slack
+      // Reads containLeg (closes on 1D/1W), not the raw high/low wick — the
+      // anchor-to-anchor containment check three lines up already made this
+      // switch (round 12) specifically because a weekly wick's intrabar
+      // extremes could kill a genuine weekly line no close ever invalidated;
+      // this gate used the wick anyway, silently starving the same class of
+      // line at a different gate in the same function (2026-08-23 review
+      // round 14, auto-TA finding #2).
       var stop = (bo==null) ? N : bo;
       for(var z=xb+1; z<stop; z++){
         var lz=lineAt(ya,slope,xa,z); if(lz<=0){ bad=true; break; }
-        var pz=num(rows[z][side]); if(pz==null) continue;
+        var pz=num(rows[z][containLeg]); if(pz==null) continue;
         if(side===1 ? (pz > lz*(1+postTol)) : (pz < lz*(1-postTol))){ bad=true; break; }
       }
       if(bad){ gate.post++; continue; }
@@ -9435,7 +9608,14 @@ function stageTALegend(prefs){
     // Price sitting on the line has not chosen a side; naming one reads as a
     // contradiction ("resistance … 0.4% below").
     var atLine = (last!=null && fit.lineNow!=null && Math.abs(fit.lineNow/last - 1) <= TA_BREAK_CONF);
-    if(atLine) name = label+" (at the line)";
+    // Preserves the flipped prefix instead of unconditionally overwriting
+    // `name` — a broken line being retested (status BREAKOUT, flipped=true,
+    // price back within TA_BREAK_CONF of the old level) used to drop the
+    // "broken " word taTrendFlipped exists specifically to guarantee stays
+    // attached, at the exact moment (a retest) a trader is most likely to
+    // read only the label and glance away (2026-08-23 review round 14,
+    // auto-TA finding #3).
+    if(atLine) name = (flipped?"broken ":"")+label+" (at the line)";
     // On a name that moves 6.7% a day the touch tolerance caps out at 3%, so a
     // "touch" can be $21 off the line and read exactly like a 0.08% one. Print
     // the worst gap when it is wide enough to matter.
@@ -9937,6 +10117,22 @@ function heatPct(v, tf){
 function renderHeatBar(){
   var el = document.getElementById("heatbar");
   if(!el) return;
+  // el.innerHTML=... below destroys and recreates every button, including
+  // whichever one had focus — HTML focus rules revert focus to <body> when
+  // the focused element leaves the document, so a keyboard user flipping
+  // between 1D/1W/1M/YTD a few times (ordinary use) had to Tab back in from
+  // the top of the page after every keystroke. Capture a stable key for the
+  // focused control (its data-hu/data-htf value, or its id) before the
+  // rebuild and restore focus to the matching new element after
+  // (2026-08-23 review round 14, sector heatmap finding #2).
+  var _focusKey = (function(){
+    var a = document.activeElement;
+    if(!a || !el.contains(a)) return null;
+    if(a.dataset && a.dataset.hu!=null) return '[data-hu="'+a.dataset.hu+'"]';
+    if(a.dataset && a.dataset.htf!=null) return '[data-htf="'+a.dataset.htf+'"]';
+    if(a.id) return "#"+a.id;
+    return null;
+  })();
   var univBtns = Object.keys(HEAT_UNIVERSES).map(function(k){
     return '<button data-hu="'+k+'" aria-pressed="'+(HEAT.univ===k)+'">'+HEAT_UNIVERSES[k].label+'</button>';
   }).join("");
@@ -9949,6 +10145,9 @@ function renderHeatBar(){
     + '<button class="fbtn" id="heatwide" aria-pressed="'+wide+'" data-tiphold="0" data-tip="Hide both side rails and give the map the full window, the way Finviz does. The watchlist and the brief come straight back.">'
     + (wide ? "\u21f2 shrink" : "\u21f1 expand")+'</button>'
     + (HEAT.isolate ? '<button class="fbtn" id="heatall" aria-pressed="true">'+esc(HEAT.isolate)+' only — show all sectors</button>' : '');
+  if(_focusKey){
+    try{ var restore = el.querySelector(_focusKey); if(restore) restore.focus(); }catch(e){}
+  }
   $$("[data-hu]", el).forEach(function(b){ b.addEventListener("click", function(){ HEAT.univ=b.dataset.hu; HEAT.isolate=null; renderHeatBar(); heatRender(true); }); });
   $$("[data-htf]", el).forEach(function(b){ b.addEventListener("click", function(){ HEAT.tf=b.dataset.htf; renderHeatBar(); heatRender(); }); });
   var hw = document.getElementById("heatwide");
@@ -10037,17 +10236,30 @@ function heatRender(refetch){
     // encoding carried two quantities with nothing on screen saying which
     // tiles were which. It still falls back — a missing tile is worse — but
     // the footer now says how many.
-    var nCapFall = 0;
+    var nCapFall = 0, nVolMismatch = 0;
     rows = rows.map(function(r){
       var w = r.cap;
-      var capFallback = false;
+      var capFallback = false, volMismatch = false;
       if(byDollarVol){
         if(r.dvol!=null) w = r.dvol;
         else { w = r.cap; if(r.cap!=null && r.cap>0){ nCapFall++; capFallback = true; } }
+      } else if(r.byVol){
+        // r.cap was already overwritten with dollar volume upstream
+        // (heatFetchNow's transient missing-market_cap_basic fallback) for
+        // ANY universe, not just DESK — a market-cap-sized map (S&P 500,
+        // Nasdaq 100) squarifying that dollar-volume number as if it were
+        // market cap understated the tile by 500-1000x against every real
+        // neighboring tile. DESK's own byDollarVol branch above uses dvol
+        // uniformly for every row specifically to avoid mixing scales; the
+        // non-DESK maps had no equivalent guard, so a byVol row is dropped
+        // from the sized set entirely here instead (2026-08-23 review round
+        // 14, sector heatmap finding #1).
+        w = 0; nVolMismatch++; volMismatch = true;
       }
       var c2 = {}; for(var k2 in r) if(Object.prototype.hasOwnProperty.call(r,k2)) c2[k2]=r[k2];
       c2.w = (w!=null && w>0) ? w : 0;
       c2.capFallback = capFallback;
+      c2.volMismatch = volMismatch;
       return c2;
     }).filter(function(r){ return r.w > 0; });
 
@@ -10087,6 +10299,7 @@ function heatRender(refetch){
     // post-cap rows, the same "diff after slicing" fix heatVanishedSectors
     // just got (2026-08-22 review, heatmap finding #2).
     nCapFall = rows.filter(function(r){ return r.capFallback; }).length;
+    nVolMismatch = rows.filter(function(r){ return r.volMismatch; }).length;
     // group by sector, keep Finviz's shape: sectors sized by summed weight
     var bySec = {};
     rows.forEach(function(r){ (bySec[r.sector] = bySec[r.sector]||[]).push(r); });
@@ -10250,7 +10463,20 @@ function heatRender(refetch){
       });
       html += '</div>';
     });
+    // Same focus-preservation fix as renderHeatBar (2026-08-23 review round
+    // 14, sector heatmap finding #2) — Enter on a sector header isolates
+    // that sector and rebuilds this whole wrap, which otherwise dropped
+    // focus to <body> on every isolate.
+    var _wrapFocusKey = (function(){
+      var a = document.activeElement;
+      if(!a || !wrap.contains(a)) return null;
+      if(a.dataset && a.dataset.hsec!=null) return '.hm-sechead[data-hsec="'+a.dataset.hsec.replace(/"/g,'\\"')+'"]';
+      return null;
+    })();
     wrap.innerHTML = '<div class="heatmsg" id="heatmsg" hidden></div>' + html;
+    if(_wrapFocusKey){
+      try{ var wrestore = wrap.querySelector(_wrapFocusKey); if(wrestore) wrestore.focus(); }catch(e){}
+    }
     $$(".hm-sechead", wrap).forEach(function(hd){
       hd.addEventListener("click", function(e){ e.stopPropagation(); HEAT.isolate = hd.dataset.hsec; renderHeatBar(); heatRender(); });
       hd.addEventListener("keydown", function(e){
@@ -10311,7 +10537,8 @@ function heatRender(refetch){
         + (byDollarVol
             ? (' · size = dollar volume, price \u00d7 10-day average volume (the one measure every desk name has — the funds have no market cap)'
                + (nCapFall ? (' \u00b7 '+nCapFall+' name'+(nCapFall===1?'':'s')+' had no volume figure and fall back to market cap') : ''))
-            : ' · size = market cap'+(nFund?(', '+nFund+' fund'+(nFund===1?'':'s')+' sized by 10-day dollar volume'):''))
+            : ' · size = market cap'+(nFund?(', '+nFund+' fund'+(nFund===1?'':'s')+' sized by 10-day dollar volume'):'')
+               + (nVolMismatch ? (' · '+nVolMismatch+' name'+(nVolMismatch===1?'':'s')+' had no market cap reading this cycle and '+(nVolMismatch===1?'is':'are')+' left off rather than sized by a dollar-volume figure too small to compare') : ''))
         + ((data.dropped && data.dropped.length && !HEAT.isolate)
             ? (' · not on the map: '+esc(data.dropped.join(", "))+' (no market cap and no traded volume to size '
                + (data.dropped.length===1?'it':'them')+' by)') : '')
@@ -10543,7 +10770,12 @@ function stageBar(){
     });
   });
   var lg = document.getElementById("stagelog");
-  if(lg) lg.addEventListener("click", function(e){ e.stopPropagation(); STAGE.logManual = !STAGE.log; stageRender(); });
+  // stageKeepView-wrapped, matching the TA toggle buttons and the periodic
+  // refetches two call sites down — bare stageRender() always ends by
+  // calling stageApplyWindow, which recomputes the DEFAULT visible range and
+  // silently discarded any custom zoom/pan on every log toggle (2026-08-23
+  // review round 14, chart stage finding #2).
+  if(lg) lg.addEventListener("click", function(e){ e.stopPropagation(); STAGE.logManual = !STAGE.log; stageKeepView(stageRender); });
   $$("[data-ta]", el).forEach(function(b){
     b.addEventListener("click", function(e){
       e.stopPropagation();
@@ -10889,6 +11121,21 @@ function renderPeersInto(body, sym, res, seq){
     return;
   }
   var entries = [sym].concat(peers).map(function(t, i){ return {sym:t, color:seriesColor(i)}; });
+  // Measured the same way renderGrowth's smAvail/smCols/smColW already do
+  // for the identical .gwrap grid (minmax(300px,1fr), 16px gap, inside a
+  // .dsec with 32px padding) — peerBarsSVG used a hardcoded 300px viewBox
+  // regardless of the real column width, so at a width where auto-fit
+  // produced ~420-426px columns (e.g. ~900px total), every axis tick/value
+  // label rendered at ~1.4x its authored size while the Financials tab's
+  // identical chart-kit convention, fixed for this in round 12, rendered
+  // correctly at the same width — an existing ResizeObserver already
+  // re-renders this tab on width changes, so only the geometry computation
+  // itself needed to read the measured width (2026-08-23 review round 14,
+  // vs peers finding #1).
+  var pbHostW = (function(){ var el=document.getElementById("stagetabbody"); return el ? el.clientWidth : 0; })();
+  var pbAvail = Math.max(0, (pbHostW||600) - 32);
+  var pbCols = Math.max(1, Math.floor((pbAvail + 16) / (300 + 16)));
+  var pbColW = Math.max(240, Math.min(460, Math.floor((pbAvail - (pbCols-1)*16) / pbCols) || 300));
   var srcLine = res.source==="curated"
     ? ("curated set — " + esc(PEER_GROUP_LABEL[sym] || "documented comparisons")
        + ((res.unresolved && res.unresolved.length)
@@ -10938,7 +11185,7 @@ function renderPeersInto(body, sym, res, seq){
           + (capUnk[e.sym]?" · no market cap published — size unknown":"")
           + " · figures " + vint.word)+'">'
         + '<i style="background:'+e.color+'"></i>'+esc(e.sym)+(e.sym===sym?" (focused)":"")
-        + (oob[e.sym]?'<b class="oob"> ✳</b>':"")+(capUnk[e.sym]?'<b class="oob"> ?</b>':"")+'</span>';
+        + (oob[e.sym]?'<b class="oob"> ✳</b>':"")+(capUnk[e.sym]?'<b class="oob unk"> ?</b>':"")+'</span>';
     }).join("")+'</div>';
   // Factored out of the old inline forEach body so the same per-metric chart
   // can be rebuilt for JUST "peg" once fund data lands, instead of the whole
@@ -10984,7 +11231,7 @@ function renderPeersInto(body, sym, res, seq){
     var pvA = pv0.map(function(r){ return Math.abs(r.val); }).filter(function(v){ return v>0; });
     var spread0 = pvA.length>=2 ? (Math.max.apply(null,pvA)/Math.min.apply(null,pvA)) : 1;
     var noMedian = (pv0.length===2 && spread0 > 10);
-    var svg = peerBarsSVG(rows, sym, fmtC, null, (fmt===fmtAxisPct ? "pct" : "num"), noMedian);
+    var svg = peerBarsSVG(rows, sym, fmtC, {W:pbColW}, (fmt===fmtAxisPct ? "pct" : "num"), noMedian);
     if(!svg) return null;
     var known = rows.map(function(r){ return r.val; }).filter(function(v){ return v!=null; });
     // What actually clipped: the renderer's own clamp, not a second guess.
@@ -11192,7 +11439,14 @@ function renderPeersInto(body, sym, res, seq){
 // ordinary fetch in progress — it could sit forever with no path to the
 // "scan-failed / reopen this tab to retry" message every other peers
 // failure already lands on (2026-08-22 review, peers finding #2).
-var PEERS_TAB_TIMEOUT_MS = 10000;
+// Raised from 10s — a genuinely searched/off-desk symbol's worst case is up
+// to 4 sequential network round trips (facts fetch, banded scanner POST, a
+// possible unbanded retry, a facts-batch fetch), each with no per-request
+// timeout of its own, so 10s could fire well before a real, slower answer
+// arrived and self-corrected — a trader who read "did not answer" and moved
+// on never saw the later repaint (2026-08-23 review round 14, vs peers
+// finding #2).
+var PEERS_TAB_TIMEOUT_MS = 20000;
 function renderPeersTab(sym){
   var body = document.getElementById("stagetabbody");
   if(!body) return;
@@ -11497,10 +11751,17 @@ function stageLivePoke(){
   // traded yet returns null from preMarketBar, so STAGE.synthetic stays false
   // and this branch fired on every 30-second poll — a full re-render that
   // threw away the zoom and refit the TA, forever, on the thinnest names.
+  // Also requires isTradingDay(now) — without it, a weekend/holiday tab left
+  // open never sets STAGE.synthetic true (stageDailyData correctly withholds
+  // the synthetic bar on a non-trading day), so this "one rebuild" guard
+  // stayed satisfied forever and refit the chart from scratch — discarding
+  // any zoom/pan — on every single 30-second poll for the entire weekend
+  // (2026-08-23 review round 14, chart stage finding #3).
   if(STAGE.iv==="1D" && !STAGE.synthetic && STAGE.rows.length>=2 && STAGE.chart
+     && isTradingDay(new Date())
      && quadsRaw(STAGE.sym) && liveBySym(STAGE.sym) && liveBySym(STAGE.sym).px!=null
      && candleClose(liveBySym(STAGE.sym)) != null){
-    stageRender();
+    stageKeepView(stageRender);
     return;
   }
   // STAGE.premarketBar is set once at the full render and must track the
@@ -11867,7 +12128,7 @@ function palClose(){
 }
 
 /* =================== collapse / theme persistence =================== */
-function store(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function store(k,v){ try{ localStorage.setItem(k,v); return true; }catch(e){ return false; } }
 function read(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 // Nine collapsible headers, all plain DIVs with no role, no tabindex and no
 // aria-expanded — a keyboard user could not collapse a panel and a screen

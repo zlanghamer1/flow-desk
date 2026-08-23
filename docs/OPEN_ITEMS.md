@@ -44,18 +44,50 @@ approved fix, in full:
 
 ## Open — in the order they are worth doing
 
-### 1. Round 14 verification is pending
+### 1. Round 15 verification is pending
 
-The round-13 fix pass below (2026-08-23) closed all 25 confirmed findings the
-same day they were found. All 25 were frontend JS fixes — no fetcher-side
-changes this round, so the test count stays at 306 passing. The fixes have
-only been read back and syntax-checked (`node --check`), not exercised
-against a running page. A later session should run round 14 against the
-review script and fix or log whatever it finds, continuing until the "Open"
-section here is empty per the finish-line ruling above.
+The round-14 fix pass below (2026-08-23) closed 19 of 21 confirmed findings
+the same day they were found; the remaining 2 are documented as deferred in
+item 2 below. All fixes this round were frontend JS — no fetcher-side
+changes, so the test count stays at 306 passing. The fixes have only been
+read back and syntax-checked (`node --check`), not exercised against a
+running page. A later session should run round 15 against the review script
+and fix or log whatever it finds, continuing until the "Open" section here
+is empty per the finish-line ruling above.
 
 ### 2. Deferred by judgement, not by omission
 
+- **The ad-hoc/scanner Financials fallback (`adhocEnsureFundamentals`)
+  hardcodes `currency: "USD"` for every off-desk (non-pinned) ticker.** Round
+  13 added this deliberately, replacing a `null` currency that wrongly
+  flagged the far more common case (an ordinary US company reached via
+  search) as "may not report in dollars." Round 14 confirmed the flip side:
+  a genuine foreign issuer reached via search (an ADR like Toyota/TM) now
+  gets a false "filed in US dollars" claim instead. Both of the round-14
+  review's own proposed fixes were checked and rejected by its own
+  correction: reverting to `null` reintroduces the documented, more common
+  round-13 regression, and mirroring `context.py`'s `KNOWN_NON_USD_CURRENCY`
+  table client-side fixes nothing, since that table only covers pinned
+  tickers whose sidecars never fail into this fallback path. A real fix
+  needs a way to detect a SEARCHED ticker's actual reporting currency that
+  does not currently exist client-side — the same "no reliable signal
+  exists" problem round 12 cites for rejecting an exchange-based heuristic
+  server-side. Left as a documented, judged tradeoff until such a signal
+  exists.
+- **The ad-hoc/scanner Financials fallback's quarter labels
+  (`_adhocQuarterLabels`) assume a strict 3-month cadence**, mechanically
+  subtracting 3 calendar months per column from a single known end-date
+  scalar — there is no equivalent to the sidecar path's `periodsPerYear`
+  cadence check, because TradingView's scanner columns for this path don't
+  expose each individual period's own end date to validate against. A
+  semiannual filer, a post-spinoff stub quarter, or any other off-calendar
+  cadence among off-desk searched tickers would get fabricated labels that
+  read back as a confident quarterly cadence downstream (`ttmEpsOf`,
+  `pegGrowthPctFor`). Fixing this well needs either a different TV column
+  that isn't currently fetched, or a real per-path redesign of the ad-hoc
+  quarter math — not a small patch — so it's left open rather than shipping
+  a partial fix (e.g. generic "period N" labels) that would still leave the
+  downstream TTM/YoY math wrong.
 - **The chart's own attribution link** is 35x11 on a phone, under the 24px
   touch minimum. Lightweight Charts injects and sizes it; restyling a vendor's
   attribution is not ours to do. It is the only remaining under-minimum target.
@@ -73,7 +105,119 @@ section here is empty per the finish-line ruling above.
 
 ---
 
-## Shipped 2026-08-23, round 13 (25 findings confirmed, all fixed)
+## Shipped 2026-08-23, round 14 (21 findings confirmed, 19 fixed, 2 deferred)
+
+Scores before this pass: Chart Stage 38, Auto-TA 78, Left watchlist rail 68,
+Financials 64, Sector Heatmap 76, vs Peers 85, Right rail 74, Flow boards 82,
+Data honesty 72. Two findings (both Financials, ad-hoc currency and ad-hoc
+quarter cadence) are documented as deferred in the "Open" section above
+rather than shipped with a partial fix — see that section for why.
+
+**Chart Stage (3 findings)**
+- A fabricated, undimmed "today, closed" candle appeared every weekday
+  between midnight and 3:00 AM CT — `stageDailyData`'s closed-branch and
+  `seriesQuads`' equivalent both checked `isTradingDay(now)` but never the
+  CLOCK, so `live` (still yesterday's settled close) got stamped with
+  today's date. Added `ctMinutesOfDay(new Date()) >= 3*60` to both gates.
+- Clicking the log-scale button silently discarded the chart's zoom/pan on
+  every click — wrapped in `stageKeepView`, matching the TA toggle buttons.
+- Over a weekend/holiday, `stageLivePoke`'s boot-race guard never saw
+  `STAGE.synthetic` go true (correctly, since `stageDailyData` withholds the
+  synthetic bar on a non-trading day), so it stayed satisfied forever and
+  reset the chart's zoom/pan every 30-second poll. Added `isTradingDay(new
+  Date())` to the guard and wrapped its render in `stageKeepView`.
+
+**Auto-TA (3 findings)**
+- Rail-wide Bollinger "Band crosses" read `q.px` (yesterday's regular close
+  pre-market, per `rtc`'s own documented behavior) instead of a
+  session-aware value — the one alert panel built to catch a pre-market band
+  cross couldn't see one. Changed to `candleClose(q)`, matching the on-chart
+  BB overlay.
+- The post-break POST_TOL slack containment check read the raw high/low wick
+  (`rows[z][side]`) instead of `containLeg` (closes on 1D/1W) — the
+  anchor-to-anchor containment check three lines up already made this switch
+  in round 12 for exactly this reason. Fixed the one remaining gate.
+- A flipped (broken) trend line lost its "broken" label the moment price
+  retested it — the `atLine` override unconditionally replaced `name` with
+  no `flipped` check. Preserved the prefix: `name = (flipped?"broken
+  ":"")+label+" (at the line)"`.
+
+**Left watchlist rail (3 findings)**
+- Rail's per-row earnings countdown used the uncorrected TradingView date,
+  disagreeing with the chart header/Fundamentals grid (already fixed in
+  round 12) by up to a week for the same ticker. New shared
+  `earnCountdownDays(sym, f)` helper prefers `FUND_CACHE[sym].next_earnings.date`
+  when already cached, falling back to `earnDaysNow(f)` — wired into the
+  rail row and Conviction's "E Nd" pill.
+- Custom watchlist add/paste failed completely silent if `localStorage`
+  writes fail (blocked storage, strict privacy mode). Added an in-memory
+  mirror (`WL_MEM`) so a click registers for the session even when the
+  underlying write fails, plus a visible warning when it does.
+- Bulk-paste could report the same ticker as both "removed" and "already
+  pinned"/"unhidden" in one message — a stale custom entry for a
+  rail-promoted ticker satisfied both conditions. Excluded `railHasSym`
+  tickers from the `removed` computation.
+
+**Financials (1 of 3 findings fixed; 2 deferred, see Open section)**
+- The narrow (<=760px) branch hardcoded `BIG.W`/`SM.W` to 380/340 regardless
+  of the real host width, unlike the desktop branch's own measurement — on a
+  ~320px phone this rendered 11px axis text under 8px. Now measures `hostW`
+  in the narrow branch too, clamped to a phone-appropriate range.
+
+**Sector Heatmap (3 findings)**
+- S&P 500/Nasdaq 100 maps mixed dollar-volume into market-cap-sized tiles
+  for any row with a transient missing market cap (the exact bug already
+  fixed for the Desk map) — a byVol row's `cap` field had already been
+  overwritten with a 500-1000x-smaller dollar-volume figure upstream, for
+  every universe. Now excluded entirely from the sized set for non-DESK
+  universes, with a new footer disclosure count.
+- Every heatmap toolbar/sector-header click destroyed keyboard focus (a
+  full `innerHTML` rebuild on every render, including the one triggered by
+  the just-clicked button). Capture a stable key (`data-hu`/`data-htf`/
+  `data-hsec`/id) before rebuild, restore focus to the matching new element
+  after — both `renderHeatBar` and `heatRender`'s wrap rebuild.
+- Expand mode's height floor was self-defeating: `min-height:min(420px,
+  calc(...))` used the SAME calc() as `height`, so it never actually added a
+  floor — a phone in landscape collapsed the map to ~135px. Replaced with a
+  flat, always-enforced `min-height:240px` (a genuine legibility floor, well
+  under the default view's 420px so round 11's original overflow problem
+  doesn't return in full).
+
+**vs Peers (3 findings)**
+- `peerBarsSVG` used a hardcoded 300px viewBox regardless of the real
+  measured column width, unlike the Financials tab's identical chart kit
+  (fixed in round 12) — text rendered at up to ~1.4x its authored size. Now
+  measures the real `.gwrap` column width the same way `renderGrowth`'s
+  `smAvail`/`smCols`/`smColW` already do, and passes it via `opts.W`.
+- The 10s peer-scan timeout was shorter than the documented worst-case
+  4-sequential-round-trip path for a genuinely searched/off-desk symbol.
+  Raised to 20s.
+- The ✳ (confirmed 5x+ size mismatch) and ? (unknown size) peer-key marks
+  shared one style, reading equally alarming despite meaning different
+  things. Gave "?" its own muted `.oob.unk` style.
+
+**Right rail + top rail (2 findings)**
+- The tape's 1-second render loop unconditionally rewrote every tile's DOM
+  node, silently defeating keyboard focus (Tab+Enter stopped working after
+  any ~1s dwell) and freezing an open tooltip on stale text indefinitely
+  (mouseover doesn't re-fire on a mutation with no pointer movement).
+  `renderTape` now saves/restores focus and re-invokes `showTip` for the
+  hovered tile across the rewrite.
+
+**Flow boards (2 findings)**
+- Biggest Orders never called `boardCoverageHTML()`, unlike Conviction and
+  Swing, despite building `big_orders` from the identical per-ticker
+  chain-resolution loop — a partial CBOE outage left the board looking
+  normal with no sign some tickers were silently excluded. Wired in.
+- Swing's earnings-countdown badge read `c.earnings_days` straight off the
+  payload with no elapsed-day correction, unlike Conviction's identical
+  badge (`earnDaysNow`). Now ages it the same way:
+  `earnDaysNow({earn_days: edRaw})`.
+
+**Data honesty (2 findings)**
+- Same root cause as the left-rail earnings-countdown finding — Conviction's
+  "E Nd" 0-7 day pill also read the uncorrected TradingView date. Fixed by
+  the same `earnCountdownDays` wiring.
 
 Scores before this pass: Chart Stage 60, Auto-TA 58, Left watchlist rail 76,
 Financials 74, Sector Heatmap 66, vs Peers 62, Right rail panels 72, Flow
