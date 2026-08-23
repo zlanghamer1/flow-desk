@@ -1783,5 +1783,178 @@ this pass fixed all 26 the same day, no deferrals. The non-obvious decisions:
   ways depending on a decimal never shown on screen. Same "one function, one
   value" convention as `taSrSide`/`taTrendFlipped`/`fedLegPct`.
 
+## Guardrails added 2026-08-23, round-16 fix pass (25 findings, all 9 sections, all fixed) — last automated round before the Fable architect pass
+
+Round 16 of the nine-section review confirmed 25 findings (see
+`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
+this pass fixed all 25 the same day, no deferrals, no fetcher changes. **Zach
+paused the automated round-fix-launch cycle after this round** — the next
+step is a Fable-led architect pass over the whole site, producing a corrections
+list for one final Sonnet-executed pass. Do not resume the automated round-N
+cycle without that list or an explicit new ask. The non-obvious decisions
+from this pass:
+
+- **The ad-hoc (searched-ticker) daily chart branch now carries the same
+  `ctMinutesOfDay(new Date()) >= 3*60` clock gate the pinned-symbol branch
+  got in round 14.** The pinned branch's gate stops a stale overnight quote
+  from becoming a phantom "today, closed" candle between midnight and 3 AM
+  CT; the ad-hoc branch's own comment claimed parity with that gate while
+  actually missing the clock term entirely — updated the comment alongside
+  the fix so it doesn't keep asserting a parity a future reader would have
+  to re-discover is false.
+- **`stageLivePoke`'s one-time "boot race" rebuild now also accepts
+  `ADHOC_BARS[STAGE.sym] && ADHOC_BARS[STAGE.sym].D`, not just
+  `quadsRaw(STAGE.sym)`.** `quadsRaw` only ever reads the pinned-universe
+  `BARS_CACHE.bars`, so this guard could never fire for a searched ticker —
+  if `adhocEnsureDaily`'s fetch resolved and rendered before `pollTvPrices`
+  had populated `LIVE[sym]` (an ordinary, unguaranteed race between two
+  independent network calls), the chart froze at yesterday's close
+  permanently, since no other poke branch builds the FIRST synthetic candle.
+- **`resample4H` now tracks a separate `row[6]` — the last REAL hourly bar
+  merged into each bucket — kept apart from `row[0]` (the bucket's own OPEN
+  time, still needed for correct candle x-position).** The "bars through
+  HH:MM CT" freshness chip read `STAGE.dates` (built from `row[0]`) and so
+  always reported the bucket's opening time, understating freshness by up to
+  ~4 hours on the "am" bucket hours after later hourly bars had merged in.
+  Threaded through `intervalDataFor`'s return as `lastUpdate`, then
+  `STAGE.lastBarUpdate`, which the chip now prefers when set.
+- **A new `taTrendTip()` builds the "trend" toggle's tooltip numbers from
+  `taFreshBars()`/`taMinWinForTrend()` at render time**, string-replacing the
+  static `TIPS.ta_trend`'s hardcoded "12 bars"/"40 bars" text — those numbers
+  are only literally true on 1D; 1H's real `taFreshBars()` is 78 (6.5x the
+  claimed 12), so a support line broken 8 trading days ago stayed drawn and
+  captioned RETEST/BREAKOUT on 1H well past what the tooltip promised.
+- **A new `taShapeMinMove(sym)` scales `TA_SHAPE_MIN_MOVE`** (the
+  triangle/wedge/flag caption's flat/rising/falling classifier threshold) the
+  same way `taContainTol`/`hugTol` already scale via `taAmvForInterval` — the
+  one threshold in the whole shape-detection pipeline that had never been
+  scaled, so a flat 2% net drift between two anchor pivots on a 78-bar 1H fit
+  (ordinary chop for a volatile name) could mislabel a genuinely flat channel
+  as rising/falling and misname the whole pattern. `TA_SHAPE_CONVERGE` is
+  left unscaled on purpose — it's a dimensionless ratio of the pair's own
+  width, not an absolute percent of price, so it isn't a like-for-like
+  candidate for the same amv-based scaling.
+- **`taLevels`'s S/R inclusion filter now measures from the cluster's near
+  EDGE (`min(|hi-last|,|lo-last|)`), never the arithmetic mean.** Every other
+  part of this feature (`taSrBadgePick`, the wide-band draw block) already
+  measures from the edge actually drawn and labeled — a wide band whose mean
+  sat just past the 20%-of-price distance limit while its near edge sat well
+  inside it was dropped from the returned levels array entirely and never
+  reached the chart, even though every other consumer of the same cluster
+  would have called it in range.
+- **The ticker-search dropdown's session/ext chip moved from inline inside
+  `.tsr .ch` to its own second-line slot next to `.nm`.** Every element on
+  the dropdown row (`.sy`, `.px`, `.ch`, `.add`) was `flex:none`/`flex:0 0
+  auto` with no shrink target, so a chip appended inline inside `.ch` (any
+  actively-traded ticker searched between 3-7 PM CT gets an AFT/PRE/PREV
+  chip) pushed the row past the rail's fixed ~220-250px column width and hid
+  the +add/×remove button entirely. `.nm` already has `flex:1;min-width:0`
+  overflow handling, so the chip needed no new CSS once moved there.
+- **`wlSort` is persisted to `localStorage` (`desk.wl.sort`) now**, read at
+  boot through a `WL_SORT_VALUES` allow-list (falling back to "groups" for
+  any unrecognized/missing stored value) and written on every sort-button
+  click — it was a plain in-memory variable that always booted back to
+  "groups" on reload, unlike every other rail preference (custom adds,
+  hidden pins, the mobile watchlist-collapse flag).
+- **`yoyDenomDiscontinuous` now walks outward past a null immediate neighbor
+  to the next REAL value on each side**, instead of bailing to "not
+  discontinuous" the moment either immediate neighbor was null. NBIS's real
+  Q3'23 discontinuity has idx=0 (no left neighbor can exist) and a null
+  Q4'23 revenue on its right — both candidate neighbors got filtered out by
+  the old `nb.filter(...)` and the function's own `if(!nb.length) return
+  false` bailout fired, letting a fake -98.5% YoY collapse print next to real
+  +350%-to-+770% bars on the exact chart this function was written to fix.
+- **`fmtAxisNum` now gets the same minus-sign fix `fmtAxisPct` already has**
+  (`.replace(/^-/,"−")`) — it was defined one line below `fmtAxisPct`'s own
+  fix-with-comment but never given the identical treatment, so a negative
+  EPS legend showed a plain ASCII hyphen while the axis tick and hover
+  tooltip for the identical value both correctly used the page's real minus
+  sign (U+2212).
+- **`HEAT.lastFetchFailed` is now keyed per universe (`HEAT.lastFetchFailed[univ]`)**,
+  matching how `HEAT.data`/`HEAT.inflight` were already keyed — the old
+  single shared boolean let a failed fetch on one universe (e.g. Desk,
+  rate-limited mid-switch) falsely mark a DIFFERENT universe's own fresh,
+  successful fetch (e.g. switched back to moments later while Desk's request
+  was still in flight) as stale.
+- **A new `heatMeasureHead()` replaces the expanded map's hardcoded 210px
+  header-offset constant**, publishing `--heathead-h` the same way
+  `heatMeasureFoot()` already measures the real footer height — `.rail` is
+  never hidden by any heatwide-mode CSS rule (those only hide `.wl`/`.rr`/
+  other `.mid` children) and flex-wraps to a second row at <=1080px, so a
+  flat constant undershot the real header height on a phone where the rail
+  had wrapped, overflowing the expanded map past the viewport.
+- **`adhocFactsBatch` now returns whether the scanner REQUEST succeeded**,
+  never whether every symbol resolved (callers still decide that from
+  `factsOf()` afterward) — threaded into `peersFor`'s curated branch as
+  `unresolvedScanFailed`, so a curated peer unresolved because the POST
+  itself failed (WDC/STX for MU's curated set, while SKHY/SNDK are
+  desk-pinned and always resolve regardless of network state) gets the
+  correct "a scanner request that did not answer" wording instead of the
+  far less likely "usually a company that changed listing" — mirrors
+  `_peersByIndustry`'s own `scan-failed` two-reason wording.
+- **`renderPeersTab` gained a `widthOnly` parameter for the resize-driven
+  redraw path**, reusing `PEERS_CACHE[sym] || PEERS_LAST[sym]` directly via
+  `renderPeersInto` instead of routing back through `peersFor()`'s full
+  network fetch — dragging the window, undocking devtools, or switching
+  monitors while a curated set had one peer still unresolved (deliberately
+  left unresolved so a later retry is possible, per the round-15 fix) used
+  to re-enter a full scanner request on every resize tick even though only
+  the SVG geometry needed to change.
+- **Safe havens rows, catalyst rows and news rows all gained the missing
+  `data-sym`/`role="button"`/`tabindex="0"` triad**, matching every other
+  interactive row's convention exactly (`class="rw"` for havens, matching
+  the sector table three lines above it). Catalysts and news were both
+  mouse-clickable via the global bare-`[data-sym]` delegate but invisible to
+  Tab, since the keydown delegate only activates `[data-sym][role="button"]`.
+- **`boardEmptyHTML` now checks `candidates===0` before `with_options===0`.**
+  `with_options` (the CBOE chain fetch) is only even attempted for a name
+  that already resolved a TradingView quote, so a total quote-vendor outage
+  makes both zero automatically with no chain ever attempted — the old
+  `wo===0`-only check unconditionally blamed "the chain vendor" for what was
+  actually a TradingView quote-resolution failure.
+- **A new `boardCutEmptyHTML()` routes the `cut.rows.length===0` case
+  (candidates got a chain but none scored above `BOARD_SCORE_FLOOR`) through
+  the same candidates/with_options coverage check `boardEmptyHTML` already
+  applies to the `arr.length===0` case**, falling back to the true "quiet
+  tape" wording only when coverage is NOT materially short — a partial
+  chain-vendor outage that happened to score zero of its resolved names
+  above the floor used to print a flat "quiet tape" sentence directly above
+  `boardCoverageHTML`'s own "N of your M candidates resolved a quote but no
+  usable option chain" note, contradicting it in the same breath.
+- **`table()`'s `draw()` now captures and restores a hovered `[data-tip]`
+  element across its own periodic `innerHTML` rewrite**, mirroring
+  `renderTape`'s existing pattern (round 14) — keyed on the row/header
+  (`data-sym`/`data-k`) plus the hovered tip element's index within it,
+  since tip text can repeat across rows and isn't a stable identity alone.
+  The round-15 fix only restored keyboard FOCUS across this same rewrite; a
+  live/snapshot drift tooltip (Conviction's RVOL cell) held open with the
+  mouse still had no equivalent restore, so it froze on stale numbers
+  through every 30-second live poll with no re-hover to refresh it.
+- **A new shared `flowCpMismatchHTML(fpSide, cp)` factors out the Flow%/C-P
+  "counts ≠ $" mismatch pill**, called from both `rowHTMLConv` (the
+  Conviction board row) and `stageFlowSecHTML` (the same ticker's Options
+  flow detail panel) — the pill existed only on the board row before this,
+  so a trader who opened a ticker's detail panel instead of reading the
+  board saw no sign the two figures disagreed for that exact name. Same
+  "one function, every surface" convention as `taSrSide`/`fedLegPct`.
+- **The watchlist's "volume" sort comparator now sinks a `liveStale(sym)`
+  row to the bottom**, the same convention the "chg" sort already applies —
+  it had zero staleness handling of its own despite `liveStale()` tripping
+  after just 75 seconds with no fresh scanner read, a routine occurrence
+  this file already guards against in six other places on this page. The
+  row's own existing STALE price badge (unconditional, every sort) already
+  gives the visual disclosure; no separate volume figure is rendered per
+  row to badge separately.
+- **A new shared `fwSignedFixed(v, decimals)` guards all five
+  `FRAMEWORK_FILTER_ROWS` `fmt()` functions against JS's signed-zero
+  rounding** (`(-0.3).toFixed(0)==="-0"`) — none of them had the epsilon
+  guard `fm1`/`sign1` elsewhere in the file already carry for this exact bug
+  class (added round 13), so a tiny negative reading (a real, very slight
+  YoY margin contraction) rendered as a literal "-0 bps" or "-0.0%" next to
+  a red FAIL badge, visually reading as flat/zero. The fifth row
+  (`fcf_growth`, no "+"/"-" prefix by design) gets the equivalent
+  `Number(v.toFixed(n)).toFixed(n)` normalization instead, since it doesn't
+  share the other four rows' signed-prefix structure.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

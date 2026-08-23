@@ -44,16 +44,23 @@ approved fix, in full:
 
 ## Open — in the order they are worth doing
 
-### 1. Round 16 verification is pending
+### 1. Automated review cycle paused after round 16 — Fable architect pass next (Zach's call, 2026-08-23)
 
-The round-15 fix pass below (2026-08-23) closed all 26 confirmed findings
-the same day they were found — no deferrals this round. Two findings touched
-`fetcher/context.py` (the econ-alias dedup and the framework's FCF-positivity
-disclosure); `python3 -m pytest fetcher/` passed all 306 tests after both.
-Every other fix was frontend JS, syntax-checked with `node --check` but not
-yet exercised against a running page. A later session should run round 16
-against the review script and fix or log whatever it finds, continuing until
-the "Open" section here is empty per the finish-line ruling above.
+The round-16 fix pass below closed all 25 confirmed findings the same day
+they were found — no deferrals this round, no fetcher-side changes (frontend
+JS only), syntax-checked with `node --check`. `python3 -m pytest fetcher/`
+still passes all 306 tests (unchanged this round).
+
+Zach's instruction after round 16: **stop the automated round-fix-launch
+cycle here.** The next step is a Fable-led architect pass — a thorough,
+independent read through every part of the site (not scoped to what the
+automated nine-section review's own rubric catches), producing a concrete,
+itemized corrections list with specific instructions per item. That list then
+drives one final Sonnet-executed pass to address everything to completion,
+verified the same way every round above was (syntax check, pytest, commit,
+push). Do not resume the automated round-N review cycle on your own judgment
+— wait for that list, or for Zach to explicitly ask for another automated
+round.
 
 ### 2. Deferred by judgement, not by omission
 
@@ -107,6 +114,118 @@ the "Open" section here is empty per the finish-line ruling above.
   one sort key.
 
 ---
+
+## Shipped 2026-08-23, round 16 (25 findings confirmed, all fixed) — last automated round before the Fable architect pass
+
+All 9 sections scored below 80 (Chart Stage 70, Auto-TA 73, Left watchlist
+rail 83, Financials 68, Sector Heatmap 76, vs Peers 80, Right rail panels 80,
+Flow boards 64, Data Honesty 84). Every confirmed finding was fixed the same
+day — no fetcher changes this round, all frontend JS. Summary by section:
+
+- **Chart Stage (3 fixed):** the ad-hoc (searched-ticker) daily chart branch
+  never got round 14's clock gate (`ctMinutesOfDay(new Date()) >= 3*60`) that
+  stops a stale overnight quote from becoming a phantom "today, closed"
+  candle before the market opens — added, matching the pinned-symbol branch
+  exactly. The one-time "boot race" rebuild in `stageLivePoke` was gated on
+  `quadsRaw(STAGE.sym)`, always null for a searched ticker, so a chart could
+  freeze at yesterday's close forever if `adhocEnsureDaily` resolved before
+  `pollTvPrices` populated `LIVE[sym]` — now also accepts
+  `ADHOC_BARS[STAGE.sym] && ADHOC_BARS[STAGE.sym].D`. The 4H "bars through
+  HH:MM CT" freshness chip read the bucket's OPEN time (needed for correct
+  candle x-position), understating freshness by up to ~4 hours — `resample4H`
+  now tracks a separate `row[6]` last-merged-bar time, threaded through as
+  `STAGE.lastBarUpdate`, which the chip reads instead.
+- **Auto-TA (3 fixed):** the "trend" toggle's tooltip stated a flat 12/40-bar
+  rule true only on 1D (off by 4-6x on every other interval) — now built from
+  `taFreshBars()`/`taMinWinForTrend()` at render time via a new `taTrendTip()`
+  function. The triangle/wedge/flag shape caption's `TA_SHAPE_MIN_MOVE`
+  (a flat 2% net-move threshold) was the one threshold in the whole fitter
+  never routed through `taAmvForInterval` — added `taShapeMinMove(sym)`,
+  scaled the same way `hugTol`/`taContainTol` already are.
+  `taLevels`'s S/R inclusion filter measured distance from the cluster's
+  arithmetic MEAN while every other part of the feature (the axis badge, the
+  wide-band draw block) measures from the near EDGE actually drawn — a level
+  whose mean sat just past the 20%-of-price limit while its near edge sat
+  well inside it was dropped from the levels array entirely; now measured
+  from `min(|hi-last|,|lo-last|)`.
+- **Left watchlist rail (2 fixed):** the ticker-search dropdown's session/ext
+  chip was appended inline inside `.tsr .ch` (flex:none, no shrink target),
+  so it could push the row past the rail's fixed ~220-250px width and hide
+  the add/remove button entirely — moved to its own second-line slot
+  alongside `.nm`, which already handles overflow. `wlSort` was a plain
+  in-memory variable that always booted back to "groups" — now persisted to
+  `localStorage` (`desk.wl.sort`) the same way custom adds, hidden pins and
+  the mobile collapse flag already are.
+- **Financials tab (3 fixed):** `yoyDenomDiscontinuous`'s null-neighbor bailout
+  meant it never fired on NBIS's real Q3'23 discontinuity (idx=0, no left
+  neighbor, a null right neighbor) — both candidates got filtered to
+  `nb.length===0` and the check returned false via its own empty-array
+  bailout, letting a fake -98.5% YoY collapse print next to real +350%-to-
+  +770% bars. Now walks outward past a null to the next REAL value on each
+  side. `fmtAxisNum` never got `fmtAxisPct`'s own minus-sign fix, so a
+  negative EPS legend showed a plain ASCII hyphen while the axis tick and
+  tooltip for the identical value both used the real minus sign (U+2212) —
+  fixed. The duplicate-quarter caption said "revenue and/or EPS" but the
+  actual check (since round 8) requires BOTH to match exactly — reworded to
+  "revenue AND EPS."
+- **Sector Heatmap (3 fixed):** `HEAT.lastFetchFailed` was one shared boolean,
+  not keyed per universe like `HEAT.data`/`HEAT.inflight` — a failed fetch on
+  one universe (mid-switch) could falsely mark a DIFFERENT universe's fresh,
+  successful fetch as stale; now `HEAT.lastFetchFailed[univ]`. The expanded
+  map's hardcoded `210px` header-offset constant ignored the top rail's own
+  mobile wrapping (`.rail` flex-wraps at <=1080px, is never hidden by any
+  heatwide-mode rule) — added `heatMeasureHead()`, mirroring
+  `heatMeasureFoot()`'s own real-measurement approach, publishing
+  `--heathead-h`. "Energy Minerals" (XOM's real sector) had no
+  `HEAT_SEC_SHORT` medium form while every sibling long sector name did —
+  added.
+- **vs Peers tab (2 fixed):** a curated peer unresolved because the scanner
+  POST itself failed was told "usually a company that changed listing" —
+  `adhocFactsBatch` now returns whether the REQUEST succeeded (not whether
+  every symbol resolved), threaded into `peersFor`'s curated branch as
+  `unresolvedScanFailed`, which the disclosure text now reads to give the
+  correct two-reason wording (mirroring `_peersByIndustry`'s own
+  `scan-failed` wording). Resizing the window while vs Peers was open
+  re-entered a full `peersFor()` network fetch for any curated set that
+  hadn't fully resolved, even though only the SVG geometry needed to change
+  — `renderPeersTab` gained a `widthOnly` parameter that reuses
+  `PEERS_CACHE`/`PEERS_LAST` directly via `renderPeersInto` instead.
+- **Right rail panels (3 fixed):** the Safe havens table (GLD/TLT/IEF/TIP/BIL)
+  had no `data-sym`/`role`/`tabindex` at all, unlike the sector table three
+  lines above it — added, matching exactly. Catalyst rows and news rows were
+  both mouse-clickable (`[data-sym]`) but keyboard-unreachable (no
+  `role="button"`/`tabindex="0"`, so the keydown delegate never matched and
+  the row wasn't even a Tab stop) — added to both row templates.
+- **Flow boards (4 fixed):** `boardEmptyHTML` checked `with_options===0`
+  before `candidates`, so a total TradingView quote-vendor outage (which
+  makes `candidates===0` and `with_options===0` follow automatically, with no
+  CBOE chain ever attempted) was misdiagnosed as a chain-vendor outage — now
+  checks `cand===0` first and names the TradingView quote step specifically.
+  `table()`'s periodic full re-render restored keyboard focus (round 15) but
+  never a hovered tooltip, so a live/snapshot drift tooltip (e.g.
+  Conviction's RVOL cell) held open with the mouse froze on stale numbers
+  every 30-second poll — added the same capture/restore pattern `renderTape`
+  already uses, keyed on the row/header plus the hovered `[data-tip]`
+  element's index within it. The `cut.rows.length===0` "no names score 60+"
+  message was a hardcoded "quiet tape" sentence regardless of coverage,
+  which could flatly contradict `boardCoverageHTML`'s own partial-outage note
+  printed one line below it — new `boardCutEmptyHTML()` routes through the
+  same candidates/with_options check `boardEmptyHTML` already does for the
+  `arr.length===0` case. The Flow%/C-P mismatch "counts ≠ $" pill existed
+  only on the Conviction board row — factored into a shared
+  `flowCpMismatchHTML()` and called from both the board row and
+  `stageFlowSecHTML`'s Options flow detail panel (same "one function, every
+  surface" convention as `taSrSide`/`fedLegPct`).
+- **Data Honesty (2 fixed):** the watchlist's "volume" sort had zero
+  staleness handling — `liveStale()` trips after 75s with no fresh scanner
+  read, guarded against in six other places on this page, but not here —
+  added the same stale-sinks-to-bottom comparator term the "chg" sort already
+  has. None of `FRAMEWORK_FILTER_ROWS`'s five `fmt()` functions guarded
+  against JS's signed-zero rounding (`(-0.3).toFixed(0)==="-0"`) the way
+  `fm1`/`sign1` elsewhere do — a tiny negative reading (e.g. a -0.3bps YoY
+  margin contraction) rendered as a literal "-0 bps" next to a red FAIL
+  badge, reading as flat/zero rather than "very slightly negative" — added a
+  shared `fwSignedFixed()` helper used by all five rows.
 
 ## Shipped 2026-08-23, round 15 (26 findings confirmed, all fixed)
 
