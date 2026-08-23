@@ -402,7 +402,16 @@ values are `null` (never a string sentinel). All strings are already plain
 >       "revenue_growth_ntm_pct": 24.3,
 >       "opmargin_expansion_bps": 230.0,
 >       "fcf_growth_ttm_pct": 18.5,
->       "revenue_growth_ttm_pct": 12.1
+>       "revenue_growth_ttm_pct": 12.1,
+>       "ttm_fcf_positive": true    // published alongside fcf_growth_ttm_pct so
+>                                   // the frontend can explain a FAIL whose two
+>                                   // printed percentages (FCF growing faster
+>                                   // than revenue) would otherwise look like a
+>                                   // PASS — the real filter also requires TTM
+>                                   // FCF to be positive, not just growing
+>                                   // faster than a shrinking-loss baseline
+>                                   // (2026-08-23 review round 15, data
+>                                   // honesty finding #1)
 >     }
 >   },
 >   // ── Gamma concentration levels (added 2026-08-22) — UNSIGNED options-

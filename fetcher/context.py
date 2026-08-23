@@ -279,6 +279,14 @@ _ECON_ALIASES = [
     (re.compile(r"fomc.*rate decision", re.IGNORECASE), [
         ([re.compile(r"fed interest rate decision|fomc", re.IGNORECASE)], []),
     ]),
+    # Neither _titles_conflict (a substring test) nor the pair above catches
+    # this one — "Fed Chair Press Conference" and "Fed Press Conference"
+    # share no title-key substring relationship in either direction, so the
+    # CSV anchor and the TV row both survived as separate rows on the same
+    # FOMC day (2026-08-23 review round 15, panels finding #2).
+    (re.compile(r"fed chair press conference", re.IGNORECASE), [
+        ([re.compile(r"fed press conference", re.IGNORECASE)], []),
+    ]),
     (re.compile(r"\bpce\b", re.IGNORECASE), [
         ([re.compile(r"pce price index", re.IGNORECASE), re.compile(r"\byoy\b", re.IGNORECASE)],
          [re.compile(r"\bcore\b", re.IGNORECASE)]),
@@ -308,6 +316,16 @@ def _merge_econ_aliases(out: list[dict], tv_rows: list[dict]) -> None:
     title/importance/anchor/source — this only fills in numbers a lexical
     title match (_dedup_econ) could never find because the two vendors name
     the same release differently.
+
+    Also drops the matched TV row from `out` if it's present there as its
+    own independent row. _dedup_econ only drops a TV row when
+    _titles_conflict (a normalized substring test) matches it against a CSV
+    row; a TV row whose title doesn't lexically overlap the CSV row (e.g.
+    "Fed Interest Rate Decision" vs. "FOMC Rate Decision + Summary of
+    Economic Projections") survives _dedup_econ untouched, gets its numbers
+    copied onto the CSV anchor here, and then showed up a second time as a
+    duplicate row for the identical release with no numbers ever dropped
+    from either copy (2026-08-23 review round 15, panels finding #2).
     """
     for row in out:
         if row.get("kind") != "econ" or row.get("source") != "econ_calendar":
@@ -328,6 +346,12 @@ def _merge_econ_aliases(out: list[dict], tv_rows: list[dict]) -> None:
         for field in _ECON_MERGE_FIELDS:
             if row.get(field) is None and match.get(field) is not None:
                 row[field] = match[field]
+        match_date, match_title = match.get("date"), match.get("title")
+        out[:] = [
+            o for o in out
+            if not (o is not row and o.get("kind") == "econ" and o.get("source") != "econ_calendar"
+                    and o.get("date") == match_date and o.get("title") == match_title)
+        ]
 _PAREN_RE = re.compile(r"\([^)]*\)")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9 ]")
 _TICKER_RE = re.compile(r"^[A-Z]{1,5}$")
@@ -3114,6 +3138,14 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
                 else:
                     metrics["fcf_growth_ttm_pct"] = round(fcf_growth * 100, 2)
                     metrics["revenue_growth_ttm_pct"] = round(rev_growth_ttm * 100, 2)
+                    # Published so the frontend can explain a FAIL that would
+                    # otherwise contradict its own two printed percentages — the
+                    # real rule ANDs in ttm_fcf_now>0, which is invisible on
+                    # screen if only fcf_growth_ttm_pct/revenue_growth_ttm_pct
+                    # are shown (2026-08-23 review round 15, data honesty
+                    # finding #1; DATA_CONTRACT.md's own documented rule already
+                    # names this second condition).
+                    metrics["ttm_fcf_positive"] = ttm_fcf_now > 0
                     filters["fcf_growth"] = (ttm_fcf_now > 0) and (fcf_growth > rev_growth_ttm)
             else:
                 filters["fcf_growth"] = None

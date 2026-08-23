@@ -44,16 +44,16 @@ approved fix, in full:
 
 ## Open — in the order they are worth doing
 
-### 1. Round 15 verification is pending
+### 1. Round 16 verification is pending
 
-The round-14 fix pass below (2026-08-23) closed 19 of 21 confirmed findings
-the same day they were found; the remaining 2 are documented as deferred in
-item 2 below. All fixes this round were frontend JS — no fetcher-side
-changes, so the test count stays at 306 passing. The fixes have only been
-read back and syntax-checked (`node --check`), not exercised against a
-running page. A later session should run round 15 against the review script
-and fix or log whatever it finds, continuing until the "Open" section here
-is empty per the finish-line ruling above.
+The round-15 fix pass below (2026-08-23) closed all 26 confirmed findings
+the same day they were found — no deferrals this round. Two findings touched
+`fetcher/context.py` (the econ-alias dedup and the framework's FCF-positivity
+disclosure); `python3 -m pytest fetcher/` passed all 306 tests after both.
+Every other fix was frontend JS, syntax-checked with `node --check` but not
+yet exercised against a running page. A later session should run round 16
+against the review script and fix or log whatever it finds, continuing until
+the "Open" section here is empty per the finish-line ruling above.
 
 ### 2. Deferred by judgement, not by omission
 
@@ -73,7 +73,10 @@ is empty per the finish-line ruling above.
   does not currently exist client-side — the same "no reliable signal
   exists" problem round 12 cites for rejecting an exchange-based heuristic
   server-side. Left as a documented, judged tradeoff until such a signal
-  exists.
+  exists. Round 15 added a scoped on-screen caveat ("Reporting currency was
+  not checked for this searched ticker...") for this specific path instead of
+  a silent "Statements are filed in US dollars" claim — a mitigation, not the
+  real fix described above, which still needs a genuine per-ticker signal.
 - **The ad-hoc/scanner Financials fallback's quarter labels
   (`_adhocQuarterLabels`) assume a strict 3-month cadence**, mechanically
   subtracting 3 calendar months per column from a single known end-date
@@ -104,6 +107,110 @@ is empty per the finish-line ruling above.
   one sort key.
 
 ---
+
+## Shipped 2026-08-23, round 15 (26 findings confirmed, all fixed)
+
+All 9 sections scored below 80 (Chart Stage 64, Auto-TA 70, Left watchlist
+rail 66, Financials 47, Sector Heatmap 52, vs Peers 60, Right rail panels 76,
+Flow boards 64, Data honesty 76). Every confirmed finding was fixed the same
+day. Full per-finding detail lives in the review transcript; summary by
+section:
+
+- **Chart Stage (1 fixed):** the weekly chart's premarket live-poke read the
+  PRIOR completed week's close (`STAGE.rows[wn-2]`) as "yesterday" on every
+  weekday except Monday, corrupting the forming week's open/high/low with a
+  stale reference. Fixed by adding `STAGE.weekPrevClose` — the forming week's
+  own last REAL daily close, computed once in `intervalDataFor` and threaded
+  through `stageViewData`/`stageRender` — and reading it instead of indexing
+  into the mutable weekly `STAGE.rows` array. The premarket branch also now
+  folds any already-recorded weekly open/high/low into the poke instead of
+  overwriting them outright.
+- **Auto-TA (3 fixed):** `taFreshBars()` had no ceiling, so 15m/1H's
+  interval-scaled minimum bar count could exceed the browser's own max fetch
+  window, permanently reading "too short" — added `TA_REALISTIC_MAX_BARS`.
+  `TIPS.ta_trend` claimed a flat 1%/1.2% touch/poke tolerance on intraday
+  views that the code doesn't actually use (tolerances scale by avg_move on
+  every interval) — corrected. The flag/pole lookback anchored to `win[0]`
+  (whatever range button happened to be active), reporting a different
+  percentage for the same pattern depending on the chart's zoom — anchored to
+  a fixed `TA_FLAG_POLE_LOOKBACK` window instead.
+- **Left watchlist rail (3 fixed):** `railRowHTML` computed an unused `q`
+  variable before calling `dispQuote` — dead code cleanup, no behavior
+  change. `earnCountdownDays` never fell through to `earnDaysNow` when the
+  fund-cache-derived count had gone negative (a stale cached earnings date),
+  now guards on `d>=0`. MOVERS counted stale rows toward its own cap/overflow
+  math — split into `hot` (all rows, preserving individual STALE tags) and
+  `hotFresh` (used only for the cap/overflow/tab-title numbers).
+- **Financials tab (3 fixed):** the YoY chart could silently divide by a
+  denominator from a different fiscal regime (a spinoff, a restated prior
+  period) with no disclosure — added `yoyDenomDiscontinuous`, an
+  isolation-test (same philosophy as `robustClampMag`) that nulls a YoY point
+  when its denominator is 8x+ off both neighbors and flags the chart. The
+  tap-to-read readout's floating position didn't scope to the tapped chart's
+  own column width. The Annual section silently disappeared for any filer
+  with a non-4-quarter cadence with no explanation — added a caption note.
+- **Sector Heatmap (2 fixed):** a bare tile (`data-bare="1"`) needed its tooltip marked "tapped"
+  on first touch so a second tap opens the chart, not the first — the
+  mouseover delegate now sets `data-tapped` for exactly this case.
+  `nVolMismatch` had a stray post-cap recompute that double-counted rows —
+  removed, restoring the single accumulate-once-during-mapping value.
+- **vs Peers tab (3 fixed):** a failed peer-facts batch fetch (TradingView
+  scanner returned symbols but no matching `factsOf` data for any of them)
+  cached as a real, data-free "peer" set forever — added a `batchFailed`
+  check forcing `source:"scan-failed"` so it retries. The zero-metric
+  fallback replaced the WHOLE section (key, srcLine, curated/scan-source
+  note) with one bare sentence and left no `.gwrap` for a later-resolving PEG
+  chart to insert into — now preserves `key`/`srcLine` and always renders an
+  (initially empty) `.gwrap`. Both `pbColW` (vs Peers) and `SM.W`
+  (Financials) clamped their column width to 460px while `.gchart`'s own CSS
+  caps `max-width` at 420 — both clamps corrected to 420.
+- **Right rail panels (3 fixed):** the Fed-odds card and its rail chip had no
+  staleness signal anywhere despite `context.py`'s cache-merge leaving a bad
+  fetch's last-good value in place indefinitely — added `fed.stale` (derived
+  from `f.asOf` age against a new `FED_ODDS_STALE_MS`, 3 hours) threaded into
+  the rail chip's tooltip/text and the card's `.fedsrc` line. The catalysts
+  panel could show the same FOMC-day event twice — `_dedup_econ`'s
+  substring-based title match missed alias pairs `_merge_econ_aliases`
+  itself later matched and copied numbers FROM, without ever removing the
+  now-redundant TV row; fixed by removing the matched TV row from `out` after
+  the merge, and added a "Fed Chair Press Conference"/"Fed Press Conference"
+  alias pair neither mechanism previously caught. The Fed-odds card's
+  countdown silently dropped once a meeting date passed instead of saying so
+  — added an explicit `dLeft<0` branch (normally unreachable, but reachable
+  in combination with the staleness bug above during an extended outage).
+- **Flow boards (5 fixed):** sorting ANY board with the keyboard (Enter on a
+  sortable `<th>`) destroyed keyboard focus on every redraw, since `table()`'s
+  `draw()` fully rewrites `innerHTML` with no focus-preservation of its own —
+  the exact bug the watchlist rail's `renderWL` already solved. Applied the
+  identical capture/restore pattern (keyed on `data-k` for a header, `data-sym`
+  for a row) inside `table()` itself, which also fixes the 30-second live-poll
+  redraw dropping focus from a tabbed board row (same root cause, same fix).
+  Conviction's RVOL column header tooltip claimed "the column sorts on the
+  number you can see," false whenever the freeze mechanism (added round 11)
+  is holding the last real sort's order against the ticking live value —
+  reworded to describe the freeze accurately. The ETF board's single
+  aggregate staleness stamp (`ef.flow_session`, published as the MAX/freshest
+  of every fund's own `flow_session`) made one stalled fund invisible while
+  its peers kept updating — added a shared `sessionsBehind()` helper used by
+  both the header and a new per-fund "Nd behind" badge. ETF rows were the
+  only board rows in the file with no `data-sym`/`role="button"` — added,
+  matching every other board's row convention exactly.
+- **Data honesty (3 fixed):** Filter 5's FAIL badge could show two numbers
+  that both look like a PASS (FCF growing faster than revenue) because the
+  real rule ANDs in an undisclosed `ttm_fcf_now > 0` condition — the fetcher
+  now publishes `metrics.ttm_fcf_positive` and the frontend appends "(TTM FCF
+  still negative)" to the row when that's the actual reason for the FAIL;
+  `TIPS.framework` and `DATA_CONTRACT.md` corrected to state the real
+  two-part rule. Searched (non-pinned) foreign-issuer financials got a flat,
+  server-confirmed-looking "Statements are filed in US dollars" claim with no
+  caveat that this specific path never actually checked — added a scoped
+  caveat for `fund.source==="scanner"` (see the deferred item above for why a
+  full fix isn't shipped here). The Fundamentals grid's RSI cell rounded for
+  display (`Math.round(f.rsi)`) but its overbought/oversold color used the
+  raw unrounded value — a reading in [69.5,70) or (30,30.5] could print "70"/
+  "30" uncolored while an exact 70.0/30.0 colored, showing the same visible
+  number two different ways; `fundCls("rsi", ...)` now rounds before
+  thresholding, same convention as `taSrSide`/`taTrendFlipped`/`fedLegPct`.
 
 ## Shipped 2026-08-23, round 14 (21 findings confirmed, 19 fixed, 2 deferred)
 

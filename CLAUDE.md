@@ -1650,5 +1650,138 @@ additive, doesn't touch review-flagged code).
   sets `wlSort` generically from `data-ws`, so no enum needed updating
   anywhere else.
 
+## Guardrails added 2026-08-23, round-15 fix pass (26 findings, all 9 sections, all fixed)
+
+Round 15 of the nine-section review confirmed 26 findings (see
+`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
+this pass fixed all 26 the same day, no deferrals. The non-obvious decisions:
+
+- **The weekly chart's premarket live-poke now reads a dedicated
+  `STAGE.weekPrevClose`, never `STAGE.rows[wn-2]`.** `resampleWeekly`
+  produces one row per WEEK, so indexing two back from the forming week
+  landed on the PRIOR COMPLETED week's close on every weekday except Monday
+  — `intervalDataFor` now computes the forming week's own last real daily
+  close once, threaded through `stageViewData`/`stageRender` into this one
+  field, so the poke can never accidentally read the wrong period as
+  "yesterday." The poke also folds any already-recorded weekly open/high/low
+  into its update instead of overwriting them outright.
+- **`taFreshBars()` is now capped by a new `TA_REALISTIC_MAX_BARS` map.**
+  Interval-scaled minimums (`taBarScale()`, since round 8) had no ceiling, so
+  15m/1H's scaled "fresh enough" bar count could exceed the browser's own max
+  fetch window for that interval, permanently reading "too short" no matter
+  how much real history existed — the cap is the actual max bar count the
+  browser can ever hold per interval, not a heuristic.
+- **The flag/pole lookback now anchors to a fixed `TA_FLAG_POLE_LOOKBACK`
+  window, never `win[0]`** (the edge of whichever range button happens to be
+  active) — clicking 1M vs. 1Y used to re-slice `win` from scratch and report
+  a different "run into a tight channel" percentage for the identical
+  underlying pattern.
+- **A new `yoyDenomDiscontinuous(idx)` in `renderGrowth` applies the same
+  isolation-test philosophy `robustClampMag` already uses (a point's own
+  neighbors, not just its magnitude) to YoY DENOMINATORS, not just outlier
+  values.** A YoY comparison against a denominator from a different fiscal
+  regime (a spinoff, a restated prior period) silently produced a
+  nonsensical percentage with no flag before this — nulls the YoY point and
+  appends a caption note when a quarter's revenue is 8x+ off both its
+  neighbors.
+- **A failed peer-facts BATCH fetch (TradingView returns symbols but no
+  matching `factsOf` data for any of them) now forces `source:"scan-failed"`
+  via a new `batchFailed` check in `_peersByIndustry`'s `finish()`**, instead
+  of caching a real, data-free "peer" set forever — mirrors the existing
+  single-peer-unresolved handling but at the whole-batch level, which had no
+  equivalent check.
+- **The vs-Peers zero-metric fallback now preserves `key`/`srcLine` and
+  always renders an (initially empty) `.gwrap`**, instead of replacing the
+  WHOLE section with one bare sentence. The async `ensureFund` callback that
+  patches in a late-resolving PEG chart looks for `.gwrap` specifically —
+  without it, a PEG chart that becomes drawable seconds later was silently
+  stranded with nowhere to insert.
+- **Both `pbColW` (vs Peers) and `SM.W` (Financials) now clamp to 420, not
+  460** — `.gchart`'s own CSS caps `max-width` at 420px, so a column sized to
+  460 always rendered fixed at 420 while 40px of predicted space sat unused,
+  mildly under-scaling every SVG child reading that width back into its own
+  viewBox. Same bug, same fix, two independent call sites (mirrors the
+  "one function/constant, every surface" convention, applied here to a
+  shared CSS boundary instead of a shared JS function).
+- **`fed.stale` is now computed once in `normalizeFedOdds`** (from `f.asOf`
+  age against a new `FED_ODDS_STALE_MS`, 3 hours — fed_odds is fetched
+  hourly, so 3 misses running is a real stall, not routine lag) and threaded
+  into both the rail chip's tooltip/text and the card's own `.fedsrc` line.
+  Every other rail element that can go stale gets an explicit signal
+  (`railTip`'s "NOT FROM TODAY" for railV/railB, `staleBadgeHTML` for
+  catalysts/news); this card had none, so a fetch failing for several cycles
+  running (context.py's cache-merge deliberately leaves the last good value
+  in place indefinitely) kept showing a bold, confident headline with only a
+  10px gray timestamp as the only freshness cue.
+- **`_merge_econ_aliases` now removes the matched TV row from `out` after
+  copying its fields onto the CSV anchor**, instead of leaving both rows
+  standing. `_dedup_econ`'s title-substring match and `_merge_econ_aliases`'s
+  alias-regex match are two independent mechanisms checking two different
+  things — a TV row could survive the first (no lexical overlap with the CSV
+  row's title) and still get matched and drained by the second, and nothing
+  removed it afterward. Matched by (date, title) equality against the alias
+  match, not object identity — `_dedup_econ` returns fresh dict copies, so
+  identity would never match a caller's own row. A new "Fed Chair Press
+  Conference"/"Fed Press Conference" alias pair was added alongside this fix
+  — neither existing mechanism recognized that pair as one event.
+- **The Fed-odds card's countdown gained an explicit `dLeft<0` branch.**
+  Normally unreachable on its own (`fetch_fed_odds` filters to meetings
+  `>= session_date` at fetch time) but reachable in combination with the
+  staleness bug above during an extended fetcher outage spanning the meeting
+  date itself — the fix above makes that compound failure visible instead of
+  silent, but the countdown branch needed its own explicit case regardless.
+- **`table()`'s `draw()` now captures and restores keyboard focus around its
+  own `innerHTML` rewrite**, the same pattern `renderWL` already uses for the
+  watchlist rail (keyed on `data-k` for a header `<th>`, `data-sym` for a
+  row `<tr>`). This one fix in the shared helper covers BOTH a keyboard sort
+  activation (Enter on a column header) and the 30-second live-poll redraw
+  dropping focus from a tabbed board row — every board built through
+  `table()` (Conviction, Swing, Big Orders, ETF flows) inherits it from one
+  place, the same way the round-9 tab-stop fix on sortable headers did.
+- **Conviction's RVOL column tooltip no longer claims the column "sorts on
+  the number you can see."** The freeze mechanism (round 11) deliberately
+  reuses the last real sort's row order while `rvol_shown` keeps ticking
+  between polls, to stop rows jumping under the cursor — true and
+  intentional, but the tooltip asserted the opposite. Reworded to describe
+  the freeze accurately rather than removing it.
+- **A new shared `sessionsBehind()` helper (hoisted out of the ETF board's
+  own local gap calculation) now drives BOTH the aggregate header stamp and
+  a new per-fund "Nd behind" badge**, reading each fund's own
+  `flow_session` — `build_snapshot.py` computes `flow_session` PER FUND and
+  publishes only the MAX (freshest) of them as the top-level aggregate, so a
+  single stalled fund among otherwise-current peers was invisible; the
+  header alone could never catch it by construction.
+- **ETF flow rows gained `data-sym`/`role="button"`/`tabindex="0"`**,
+  matching every other board's row exactly (`class="rw"` included) — they
+  were the one board's rows with no hook into the global row-click delegate,
+  so clicking or tabbing to a fund ticker did nothing.
+- **The fetcher now publishes `metrics.ttm_fcf_positive` alongside
+  `fcf_growth_ttm_pct`/`revenue_growth_ttm_pct` (DATA_CONTRACT.md
+  updated).** Filter 5's real rule ANDs in `ttm_fcf_now > 0` — invisible to a
+  reader seeing only the two growth percentages, both of which can look like
+  a clean PASS (CLSK: FCF growing +45.6% vs. +7.5% revenue) while the filter
+  still reads FAIL because FCF is still deeply negative. The frontend row
+  now appends "(TTM FCF still negative)" specifically when that's the real
+  reason for the FAIL; `TIPS.framework`'s plain-English description was also
+  corrected to state the two-part rule instead of just "growing faster than
+  revenue."
+- **The searched/off-desk Financials currency note now carries a distinct
+  caveat for `fund.source==="scanner"`** ("Reporting currency was not
+  checked for this searched ticker...") instead of the same unconditional
+  "Statements are filed in US dollars" the pinned, server-verified universe
+  gets. `adhocEnsureFundamentals` defaults every off-desk ticker's currency
+  to `"USD"` on purpose (round 13, to avoid a worse false-positive for the
+  far more common ordinary-US-company case) — this is a scoped mitigation
+  for the genuine-foreign-issuer case that default gets wrong, not the full
+  fix, which still needs a real per-ticker currency signal that doesn't
+  exist client-side (tracked as a deferred item in `docs/OPEN_ITEMS.md`).
+- **`fundCls("rsi", f)` now rounds before thresholding**, matching the
+  Fundamentals grid's own displayed `Math.round(f.rsi)`. A raw reading in
+  [69.5, 70) or (30, 30.5] printed the identical rounded "70"/"30" a
+  genuinely exact 70.0/30.0 gets, but only the latter triggered the
+  overbought/oversold color — the same visible number rendered two different
+  ways depending on a decimal never shown on screen. Same "one function, one
+  value" convention as `taSrSide`/`taTrendFlipped`/`fedLegPct`.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
