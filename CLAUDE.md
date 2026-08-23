@@ -1956,5 +1956,108 @@ from this pass:
   `Number(v.toFixed(n)).toFixed(n)` normalization instead, since it doesn't
   share the other four rows' signed-prefix structure.
 
+## Guardrails added 2026-08-23, Fable architect pass (14 findings, all fixed)
+
+After round 16, the automated nine-section review cycle was paused (Zach's
+call) in favor of a Fable-model architect pass — an independent read of the
+whole codebase (not scoped to what the automated rubric catches), producing
+a corrections list a Sonnet pass then executed to completion the same day.
+See `docs/OPEN_ITEMS.md` for the full per-finding writeup. The non-obvious
+decisions from this pass:
+
+- **The fetcher had ZERO market-holiday awareness anywhere before this.**
+  `market_guard.py`'s `_in_window` and `build_snapshot.py`'s own
+  `market_state` block were pure weekday+clock tests, so a weekday market
+  closure (Labor Day, Thanksgiving, Christmas) would fabricate a full
+  phantom trading session into `history.json` from stale vendor data — the
+  exact corruption `write_history` exists to prevent, defeated entirely for
+  holidays. `market_guard.py` now carries `MARKET_HOLIDAYS`/
+  `MARKET_HALF_DAYS`, mirrored EXACTLY from `index.html`'s own tables (a
+  half day shrinks the session close to noon CT while preserving each
+  window's own post-close buffer — the strict window's +5min becomes 12:05,
+  the extended window's +20min becomes 12:20, computed as an offset from
+  15:00 rather than two separately hardcoded times). `build_snapshot.py`'s
+  `market_state` block calls these helpers directly instead of reimplementing
+  the calendar logic a second time.
+- **`universe.candidates` now means every quote-resolved PINNED name,
+  TRACK_ONLY names included — a new `universe.chain_eligible` field carries
+  the OLD (TRACK_ONLY-excluded) count.** Before this, `candidates` itself
+  excluded TRACK_ONLY, so on every single healthy cycle the flow boards'
+  coverage footer computed `pinned - candidates` and asserted "5 of your 62
+  watched names resolved no live quote this cycle" — all five TRACK_ONLY
+  names resolve a quote fine; they are simply never chain-fetched by design.
+  `boardEmptyHTML`/`boardCutEmptyHTML` now compare `with_options` against
+  `chain_eligible` (falling back to `candidates` for a payload published
+  before the new field existed); `boardCoverageHTML` gained a third,
+  neutral disclosure clause ("N tracked names are quote-only by design")
+  between the existing quote-gap and chain-gap clauses. DATA_CONTRACT.md's
+  READER NOTE was rewritten in the same change, per the doc-authority rule.
+- **`fund.next_earnings.session` is normalized to the documented "AMC"/"BMO"
+  enum at the point of publication, not left to the reader to reconcile
+  three vocabularies.** The TV-timestamp fallback path (inside the Yahoo
+  leg) called `_earnings_session()`, which returns its OWN
+  "premarket"/"afterhours" vocabulary — correct for the two OTHER fields
+  that function also feeds (a catalysts row's `session`, and
+  `fund.earnings[]`'s own `session`, both correctly documented as that
+  enum), but wrong for `next_earnings.session` specifically, which
+  DATA_CONTRACT.md documents as "AMC"/"BMO". Mapped inline
+  (`{"premarket":"BMO","afterhours":"AMC"}`) only at that one call site —
+  the other two call sites of `_earnings_session()` are untouched, since
+  they feed fields with the correct, different enum. `stageNextEarnHTML`
+  and `earnPopoverHTML` (a new `nextEarnSessionLabel()` helper) both accept
+  the legacy unmapped spelling too, for a sidecar published before this fix.
+- **Swing's cross-day `swing_first_seen` baseline now tracks a `last_seen`
+  session string per entry, and is only deleted once `last_seen` falls
+  behind the PRIOR published session — never simply "absent from today's
+  board."** The round-10 fix's whole point was surviving daily resets so a
+  15-session-old baseline stays intact; the cleanup loop deleted an entry
+  the instant a ticker missed a single ~7-minute cycle (a transient CBOE
+  timeout, or no contract in the 0.30-0.60 delta band that cycle), silently
+  re-baselining the chase chip at whatever spot happened to be current when
+  it reappeared. An entry surviving any absence within the SAME session,
+  deleted only after missing a full session, matches the mechanism's own
+  stated intent without needing per-cycle bookkeeping.
+- **`stageLivePoke`'s one-time "boot race" rebuild is now keyed on an
+  explicit `STAGE.bootRebuilt` flag (`sym+"|"+iv`), not just
+  `!STAGE.synthetic`, and covers 1W as well as 1D.** The 1W chart had the
+  identical boot-race hole 1D already had a fix for — an ad-hoc ticker
+  opened straight to 1W before the first live quote landed never gained its
+  forming-week candle, because no poke branch builds a 1W chart's FIRST
+  synthetic candle, only updates one that already exists. A bare
+  `!STAGE.synthetic` reuse for 1W would have been unsafe: the ad-hoc 1W path
+  deliberately keeps `wSynth`/`STAGE.synthetic` false on a Monday with no
+  new daily bar posted yet, so an unconditional retry there would rebuild
+  every 30 seconds forever — the explicit one-shot flag (cleared in
+  `stageShow` and on every interval/window click) is what makes both the
+  1D and 1W guards provably single-shot.
+- **`fwSignedFixed`** (the framework-filter formatter round 16 itself added)
+  **and the `fcf_growth` row's own formatting now replace `toFixed`'s ASCII
+  "-" with the page's real minus sign (U+2212)**, the same fix
+  `fmtAxisPct`/`fmtAxisNum`/`numStr` already carry — a helper added in the
+  same review pass that fixed this exact class of bug elsewhere had missed
+  it in its own new code.
+- **`rowHTMLConv`'s Flow % cell now calls the shared `flowPctHTML`/
+  `flowCpMismatchHTML` helpers instead of duplicating their $100K-floor/
+  thin-basis logic inline** — pure refactor, rendered markup unchanged; the
+  duplication was itself a drift risk given the floor's own history (it was
+  "written inline in the board and simply not applied in the chart tab"
+  before an earlier round fixed that same class of gap).
+- **A new `test_sync_constants.py`, in the same deliberately-dumb regex
+  style as `test_tips_sync.py`, pins three cross-file constant pairs that
+  had no test before this:** `TRACK_ONLY` (fetcher) vs `TRACK_ONLY_SYMS`
+  (frontend), the Morning Brief's `high_conviction` threshold vs
+  `BOARD_SCORE_FLOOR`, and the two holiday/half-day tables from the calendar
+  fix above. None of these had drifted yet — the test exists so the NEXT
+  edit to any of these three pairs fails loudly instead of shipping a
+  silent mismatch, the same reasoning that produced the TIPS sync test
+  after three real drifts got through it.
+- **A pre-existing test (`test_context.py`'s
+  `test_build_fund_sidecar_yahoo_next_earnings_session_falls_back_to_stockanalysis_text`)
+  was pinning the exact bug this pass fixed** — its second assertion
+  expected the TV-timestamp path's raw `"premarket"` value, which the fix
+  above now correctly maps to `"BMO"`. Updated in step, the same
+  "a test that mirrors buggy logic keeps passing against a copy of the bug"
+  pattern CLAUDE.md documents from round 6 and round 7's own test fixes.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

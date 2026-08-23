@@ -18,18 +18,31 @@ values are `null` (never a string sentinel). All strings are already plain
   "market_state": "closed",                      // "open" | "premarket" | "afterhours" | "closed"
   "universe": {
     "watched": 35,         // size of the curated pinned list (no market screen)
-    "candidates": 35,      // of those, how many resolved a live quote
-    "with_options": 35,    // of those, how many had a usable CBOE chain
+    "candidates": 35,      // of those, how many resolved a live TV quote (TRACK_ONLY names included)
+    "chain_eligible": 30,  // of those quote-resolved names, how many were even ELIGIBLE for a CBOE
+                           // chain fetch — i.e. candidates minus TRACK_ONLY names, which are quoted/
+                           // tracked like everything else but deliberately never reach the chain fetch
+                           // (added 2026-08-23; before this, "candidates" itself excluded TRACK_ONLY,
+                           // so the coverage footer below asserted a false "N names resolved no live
+                           // quote" for names that resolve fine and are simply quote-only by design —
+                           // Fable architect pass finding 2.1)
+    "with_options": 30,    // of chain_eligible, how many had a usable CBOE chain
     "pinned": 35           // len(PINNED) — watchlist + sector ETFs
   },
-  // READER NOTE (2026-08-20): the page reads this block for two statements it
-  // could not otherwise make. The flow-board footer says "N of your M watched
-  // names had a usable option chain this cycle" whenever candidates < pinned,
-  // so "show all 57" is not read as the whole watchlist. And an EMPTY board
-  // branches on with_options: zero chains resolved is a vendor outage, not a
-  // quiet tape, and it says so. Publishers must keep these four counts honest
-  // — a with_options that mirrors candidates when no chain resolved would make
-  // the page report an outage as a calm market.
+  // READER NOTE (2026-08-20, corrected 2026-08-23): the page reads this block
+  // for two statements it could not otherwise make. The flow-board footer
+  // says "N of your M watched names resolved no live quote this cycle"
+  // whenever candidates < pinned (a genuine quote-resolution gap now that
+  // TRACK_ONLY is counted in candidates), and separately "N more resolved a
+  // quote but no usable option chain" whenever with_options < chain_eligible,
+  // plus a neutral "N tracked names are quote-only by design" whenever
+  // candidates > chain_eligible. An EMPTY board branches on candidates first,
+  // then with_options: zero quote-resolved candidates is a TradingView
+  // quote-vendor outage; zero of a nonzero chain_eligible with a chain is a
+  // CBOE chain-vendor outage. Neither is a quiet tape, and the page says so.
+  // Publishers must keep these five counts honest — a with_options that
+  // mirrors chain_eligible when no chain resolved would make the page report
+  // an outage as a calm market.
   "stats": {                 // header tiles (computed across BOTH boards' members, deduped by ticker)
     "bullish_flow": 12,
     "bearish_flow": 9,
@@ -969,10 +982,19 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
 > calls in 5 of 12 rows at adjacent strikes ($683-$687, same expiry) — an honest
 > ranking that crowded five other names off the board to say one thing five
 > times. Rows a capped ticker gives up go to the next-loudest OTHER contract, so
-> the board stays `BIG_ORDERS_CAP` long. `big_orders_capped` reports what the cap
-> cost, measured against the UNCAPPED top-`BIG_ORDERS_CAP` (not the ticker's
-> whole shortlist — a 13th-place row was never going to show, so counting it
-> would overstate the loss).
+> the board stays `BIG_ORDERS_CAP` long. `big_orders_capped.earned` reports what
+> the cap cost, measured against the ticker's rows across the WHOLE merged
+> candidate pool — NOT a naive top-`BIG_ORDERS_CAP` slice by raw dollars, which
+> the round-6 fix corrected: the greedy per-ticker-capped merge backfills past
+> that naive slice whenever an earlier ticker gets skipped for hitting its own
+> quota, so a ticker with zero rows in the naive slice can still lose a row to
+> the cap and never appear in this disclosure if measured against that slice
+> instead. The gate is `shown === BIG_ORDERS_PER_TICKER AND earned > shown` — a
+> ticker that simply never ranked onto the board at all (`shown` 0) is an
+> ordinary miss on dollars, not a per-ticker cap to confess. (Corrected
+> 2026-08-23, Fable architect pass finding 2.4 — this paragraph previously
+> described the OLD, pre-round-6 measurement, contradicting the `earned` field
+> comment below it, which already stated the current, correct rule.)
 
 ### BigOrder
 ```json

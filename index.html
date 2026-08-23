@@ -1678,7 +1678,11 @@ function ctMinutesOfDay(d){
    10:00 CT on Thanksgiving over prices that had not moved since Wednesday,
    and every quote showed its previous close as today's untagged move. Dates
    are the CT calendar day, YYYY-MM-DD. Extend each December; when bars.json
-   v4's session calendar is live, MARKET_SESSIONS below prefers it. */
+   v4's session calendar is live, MARKET_SESSIONS below prefers it.
+   fetcher/market_guard.py carries an EXACT mirror of this table
+   (MARKET_HOLIDAYS/MARKET_HALF_DAYS) so the publish loop itself skips a
+   holiday instead of fabricating a phantom session from stale vendor data --
+   extend both tables together; fetcher/test_sync_constants.py pins them. */
 var MARKET_HOLIDAYS = {
   // Back-filled across the whole two-year bars window, not just forward.
   // weekdayDatesEndingAt walks back one weekday per bar, so a closure it does
@@ -4643,6 +4647,13 @@ function boardEmptyHTML(what){
   var u = STATE.data && STATE.data.universe;
   var wo = u ? num(u.with_options) : null;
   var cand = u ? num(u.candidates) : null;
+  // chain_eligible (candidates minus TRACK_ONLY names — added 2026-08-23)
+  // falls back to candidates for an old payload that predates the field.
+  // Before this fix, "candidates" itself excluded TRACK_ONLY, which is what
+  // this comparison actually needs — reading the wrong field here would
+  // misdiagnose a partial chain outage using a count 5 names too small
+  // (Fable architect pass finding 2.1).
+  var elig = u ? (u.chain_eligible!=null ? num(u.chain_eligible) : cand) : null;
   // candidates (TradingView quote resolution) is checked BEFORE with_options
   // (the separate CBOE chain fetch, only even attempted for a name that
   // already resolved a quote) — a total TradingView scanner outage makes
@@ -4658,8 +4669,8 @@ function boardEmptyHTML(what){
     return '<div class="boardmsg">No option chains resolved this cycle, so this board has nothing to rank — '
       + 'that is the chain vendor, not a quiet tape. It retries on the next publish.</div>';
   }
-  if(wo!=null && cand!=null && cand>0 && wo < cand*0.5){
-    return '<div class="boardmsg">Only '+wo+' of '+cand+' names returned an option chain this cycle, and none of them '
+  if(wo!=null && elig!=null && elig>0 && wo < elig*0.5){
+    return '<div class="boardmsg">Only '+wo+' of '+elig+' chain-eligible names returned an option chain this cycle, and none of them '
       + 'cleared the '+what+' bar. Partial chain coverage, so read this as thin data rather than a quiet tape.</div>';
   }
   return '<div class="boardmsg">No '+what+' setups on the board right now.</div>';
@@ -4678,28 +4689,36 @@ function boardCutEmptyHTML(what){
   var u = STATE.data && STATE.data.universe;
   var wo = u ? num(u.with_options) : null;
   var cand = u ? num(u.candidates) : null;
-  if(cand===0 || wo===0 || (wo!=null && cand!=null && cand>0 && wo < cand*0.5)) return boardEmptyHTML(what);
+  var elig = u ? (u.chain_eligible!=null ? num(u.chain_eligible) : cand) : null;
+  if(cand===0 || wo===0 || (wo!=null && elig!=null && elig>0 && wo < elig*0.5)) return boardEmptyHTML(what);
   return '<div class="boardmsg">No '+what+' names score '+BOARD_SCORE_FLOOR+'+ right now — a quiet tape is information too.</div>';
 }
 function boardCoverageHTML(){
   var u = STATE.data && STATE.data.universe;
   if(!u) return "";
   var pinned = num(u.pinned!=null ? u.pinned : u.watched);
-  var cand = num(u.candidates);          // resolved a live QUOTE
-  var chain = num(u.with_options);       // ...and a usable option CHAIN
+  var cand = num(u.candidates);          // resolved a live QUOTE (TRACK_ONLY included)
+  // chain_eligible falls back to candidates for an old payload, matching
+  // boardEmptyHTML's own fallback.
+  var elig = (u.chain_eligible!=null) ? num(u.chain_eligible) : cand;
+  var chain = num(u.with_options);       // of chain_eligible, how many had a usable CHAIN
   if(pinned==null) return "";
   var bits = [];
-  // Two different counts, and the footer used to print the quote count under
-  // the chain sentence. candidates is how many resolved a quote; with_options
-  // is how many of those had a chain. Say whichever is short, in its own
-  // words, rather than one number wearing the other's label.
+  // THREE different counts now, not two — candidates (quote-resolved),
+  // chain_eligible (candidates minus TRACK_ONLY), with_options (chain-
+  // resolved). Before chain_eligible existed, candidates itself excluded
+  // TRACK_ONLY, so this footer asserted a false "N watched names resolved no
+  // live quote" on every healthy cycle for the TRACK_ONLY names, which
+  // resolve a quote fine and are simply never chain-fetched by design
+  // (2026-08-23 Fable architect pass, finding 2.1).
   if(cand!=null && pinned > cand) bits.push((pinned-cand)+' of your '+pinned+' watched names resolved no live quote this cycle');
-  if(chain!=null && cand!=null && cand > chain) bits.push((cand-chain)+' more resolved a quote but no usable option chain');
-  else if(chain!=null && cand==null && pinned > chain) bits.push((pinned-chain)+' of your '+pinned+' watched names had no usable option chain');
+  if(elig!=null && cand!=null && cand > elig) bits.push((cand-elig)+' tracked name'+((cand-elig)===1?'':'s')+' resolved a quote but '+((cand-elig)===1?'is':'are')+' quote-only by design (no usable options chain exists for '+((cand-elig)===1?'it':'them')+')');
+  if(chain!=null && elig!=null && elig > chain) bits.push((elig-chain)+' more resolved a quote but no usable option chain');
+  else if(chain!=null && elig==null && pinned > chain) bits.push((pinned-chain)+' of your '+pinned+' watched names had no usable option chain');
   if(!bits.length) return "";
   return ' <span class="m" data-tip="A name needs BOTH a resolvable quote and a usable option chain to reach either board. '
-    + 'A leveraged wrapper or a thin listing often has no options at all, and a symbol whose exchange prefix has gone stale '
-    + 'resolves no quote.">' + esc(bits.join("; ")) + '.</span>';
+    + 'A leveraged wrapper or a thin listing often has no options at all, a symbol whose exchange prefix has gone stale '
+    + 'resolves no quote, and a handful of tracked names are never chain-fetched at all by design.">' + esc(bits.join("; ")) + '.</span>';
 }
 function wireBoardCut(el, key, rerender){
   var b = el.querySelector("#showall-"+key);
@@ -4828,17 +4847,15 @@ function renderConv(data, livePoll){
     // FLOW % with the $100K display floor; the basis rides in the tooltip
     // either way. Older snapshots without flow_pct_basis skip the floor.
     var fp = num(c.flow_pct), fpSide = c.flow_side, basis = num(c.flow_pct_basis);
-    var fpHtml;
-    if(fp!=null && fpSide && basis!=null && basis < FLOWPCT_MIN_BASIS){
-      fpHtml = flowPctThinHTML(basis);
-    } else if(fp!=null && fpSide){
-      var fpCls = fpSide==="CALL" ? "u" : "d";
-      fpHtml = '<span class="'+fpCls+'"'+(basis!=null?(' data-tip="Of $'+fmtDollarsUnit(basis)+' near-money premium traded today."'):'')+'>'+fp.toFixed(0)+'% '+fpSide+'</span>';
-      // C/P's one real job: flagging when contract COUNTS and DOLLARS disagree
-      // (the MU 2026-07-24 case that motivated FLOW %). The raw ratio column is
-      // gone — the docs themselves call the count read misleading on its own.
-      fpHtml += flowCpMismatchHTML(fpSide, num(c.cp_ratio));
-    } else fpHtml = "—";
+    // Now calls the shared flowPctHTML/flowCpMismatchHTML helpers instead of
+    // duplicating their $100K-floor/thin-basis/mismatch logic inline — two
+    // copies of the same rule is exactly the drift risk that made this
+    // floor need applying to the chart tab in the first place. Rendered
+    // markup is unchanged from the old inline version (2026-08-23 Fable
+    // architect pass, finding 4.3).
+    var fpHtml = flowPctHTML(fp, fpSide, basis);
+    var fpThin = (basis!=null && basis < FLOWPCT_MIN_BASIS);
+    if(fp!=null && fpSide && !fpThin) fpHtml += flowCpMismatchHTML(fpSide, num(c.cp_ratio));
     var f = factsOf(c.ticker) || {};
     // earnCountdownDays, matching the rail's own fix — a 0-7 day boundary
     // pill judged on the uncorrected TradingView date could badge a real
@@ -6988,10 +7005,25 @@ function approxDateNoteHTML(){
     + 'so the further back the marker, the further its candle can be from the real date. The date printed above is '
     + 'the reported one and is exact.</div>';
 }
+// next_earnings.session ("AMC"/"BMO", plus legacy "premarket"/"afterhours"
+// from before the fetcher normalized the TV-timestamp path — see
+// _earnings_session's caller in context.py) printed the raw enum verbatim
+// here, so the same upcoming-earnings card read "Upcoming · AMC" for one
+// ticker and "Upcoming · afterhours" for another, two spellings of the same
+// fact depending only on which vendor leg filled the field (2026-08-23
+// Fable architect pass, finding 2.2). fund.earnings[]'s own row.session
+// (used a few lines below) is a SEPARATE, correctly-specified
+// "premarket"/"afterhours" enum and is left untouched.
+function nextEarnSessionLabel(s){
+  if(s==="AMC" || s==="afterhours") return "after the close";
+  if(s==="BMO" || s==="premarket") return "before the open";
+  return null;
+}
 function earnPopoverHTML(row, nextRow, isNext){
   if(isNext){
     if(!nextRow) return '<span class="cl" id="popclose">×</span><div class="note">no upcoming estimate</div>';
-    return '<span class="cl" id="popclose">×</span><b>Upcoming'+(nextRow.session?(" · "+esc(nextRow.session)):"")+'</b><br>'+esc(nextRow.date||"—")
+    var nsl = nextEarnSessionLabel(nextRow.session);
+    return '<span class="cl" id="popclose">×</span><b>Upcoming'+(nsl?(" · "+esc(nsl)):"")+'</b><br>'+esc(nextRow.date||"—")
       + '<div style="margin-top:4px">EPS est '+(nextRow.eps_estimate!=null?numStr(nextRow.eps_estimate):"—")+'</div>'
       + '<div>Rev est '+(nextRow.rev_estimate!=null?fmtCapDollars(nextRow.rev_estimate):"—")+'</div>';
       // No approximate-date note here: the NEXT report is deliberately not
@@ -8732,9 +8764,15 @@ var FRAMEWORK_VERDICT_CLS = {BUY_5:"u", BUY_4:"u", ADD:"", HOLD:"m", AVOID:"d", 
 // FAIL badge with a number that visually reads as flat/zero rather than
 // "very slightly negative" (2026-08-23 review round 16, Data Honesty
 // finding #1).
+// Also uses the page's real minus sign (U+2212), not toFixed's ASCII "-" —
+// missed when this helper was added in round 16, breaking the same
+// convention fmtAxisPct/fmtAxisNum/numStr already enforce elsewhere: a
+// negative framework filter number (e.g. -180 bps) printed with an ASCII
+// hyphen directly under charts/tooltips using U+2212 for the identical fact
+// (2026-08-23 Fable architect pass, finding 4.2).
 function fwSignedFixed(v, decimals){
   var r = Number(v.toFixed(decimals));
-  return (r===0 ? "" : (r>0?"+":"")) + r.toFixed(decimals);
+  return ((r===0 ? "" : (r>0?"+":"")) + r.toFixed(decimals)).replace(/^-/, "−");
 }
 var FRAMEWORK_FILTER_ROWS = [
   {key:"forward_eps_revision", label:"Forward EPS revision (6mo)", metric:"eps_revision_6m_pct",
@@ -8755,9 +8793,13 @@ var FRAMEWORK_FILTER_ROWS = [
    // (2026-08-23 review round 15, data honesty finding #1).
    // No "+"/"-" prefix by design here (unlike the four rows above), but
    // Number(v.toFixed(1)).toFixed(1) still guards the same "-0.0" bug for a
-   // tiny negative FCF-growth reading.
+   // tiny negative FCF-growth reading — and, like fwSignedFixed, replaces
+   // toFixed's ASCII "-" with the page's real minus sign for any genuinely
+   // negative value (2026-08-23 Fable architect pass, finding 4.2).
    fmt:function(v, m){ var rg = m.revenue_growth_ttm_pct;
-     return Number(v.toFixed(1)).toFixed(1)+"% FCF"+(rg!=null?(" vs. "+Number(rg.toFixed(1)).toFixed(1)+"% revenue"):"")
+     var vs = Number(v.toFixed(1)).toFixed(1).replace(/^-/, "−");
+     var rgs = rg!=null ? Number(rg.toFixed(1)).toFixed(1).replace(/^-/, "−") : null;
+     return vs+"% FCF"+(rgs!=null?(" vs. "+rgs+"% revenue"):"")
        + (m.ttm_fcf_positive===false ? " (TTM FCF still negative)" : ""); }}
 ];
 function stageFrameworkHTML(sym){
@@ -11152,7 +11194,13 @@ function stageNextEarnHTML(sym){
   // an upcoming report under an unrelated day-count.
   var days = fedDaysToMeeting(ne.date);
   if(days==null || days < 0) return "";
-  var when = (ne.session==="pre") ? " before the open" : (ne.session==="post") ? " after the close" : "";
+  // The real published values are "BMO"/"AMC" (DATA_CONTRACT.md's
+  // next_earnings.session enum) — "pre"/"post" never occur, so this branch
+  // was permanently dead code. Legacy sidecars published before the fetcher
+  // normalized the TV-timestamp path's own "premarket"/"afterhours" spelling
+  // are still accepted (2026-08-23 Fable architect pass, finding 2.2).
+  var when = (ne.session==="BMO" || ne.session==="premarket") ? " before the open"
+           : (ne.session==="AMC" || ne.session==="afterhours") ? " after the close" : "";
   return '<button class="fbtn" id="stagenextearn" data-tip="'+esc("Next earnings report: "+ne.date+when
       + ". Click for the estimates. It is NOT drawn on the chart — it has not happened, so it has no candle.")
       + '"><b style="color:var(--hi)">E</b> '+days+'d</button>';
@@ -11266,6 +11314,10 @@ function stageBar(){
     b.addEventListener("click", function(){
       if(b.dataset.iv){ STAGE.iv = b.dataset.iv; }
       else if(b.dataset.tf){ STAGE.tf = b.dataset.tf; STAGE.iv = "1D"; }
+      // A fresh view (new interval, or the 1D window reset above) has not
+      // had its own one-shot boot-race rebuild yet — see stageLivePoke's
+      // STAGE.bootRebuilt (2026-08-23 Fable architect pass, finding 4.1).
+      STAGE.bootRebuilt = null;
       // A vertical-zoom stretch from scrolling the price axis on the
       // PREVIOUS interval/window persisted onto a chart the user never
       // zoomed on that view — stageRender()'s autoscaleInfoProvider
@@ -12256,6 +12308,7 @@ function stageShow(sym, opts){
   STAGE.rows = []; STAGE.dates = []; STAGE.times = [];
   STAGE.taSummary = null; STAGE.markerByTime = {}; STAGE.ratingByTime = {};
   STAGE.synthetic = false; STAGE.hasVolume = false; STAGE.nextEarn = null;
+  STAGE.bootRebuilt = null;
   stageHeader(); stageBar(); stageTabsRender(); renderStageTab();
   stageMsg("loading chart…");
   Promise.all([ensureBars(), ensureFund(sym)]).then(function(vals){
@@ -12313,11 +12366,26 @@ function stageLivePoke(){
   // chart froze at yesterday's close forever: no later poke branch builds
   // the FIRST synthetic candle, only updates one that already exists
   // (2026-08-23 review round 16, Chart Stage finding #1).
-  if(STAGE.iv==="1D" && !STAGE.synthetic && STAGE.rows.length>=2 && STAGE.chart
-     && isTradingDay(new Date())
+  // A per-symbol/per-interval one-shot flag, not just !STAGE.synthetic —
+  // the 1W chart has the identical boot-race hole this 1D guard already
+  // covers (wSynth/STAGE.synthetic both require a live quote to be present
+  // AT RENDER TIME to mark the forming week synthetic), but no poke branch
+  // ever builds a 1W chart's FIRST synthetic candle, only updates one that
+  // already exists — an ad-hoc ticker opened straight to 1W before the
+  // first price poll landed showed no forming-week candle for as long as
+  // the view stayed untouched. The explicit flag (rather than reusing
+  // !STAGE.synthetic for 1W too) is required because the ad-hoc 1W path
+  // deliberately keeps wSynth/STAGE.synthetic false on a Monday with no new
+  // daily bar posted yet — an unconditional retry there would rebuild every
+  // 30 seconds forever (2026-08-23 Fable architect pass, finding 4.1).
+  var bootKey = STAGE.sym+"|"+STAGE.iv;
+  if((STAGE.iv==="1D" || STAGE.iv==="1W") && STAGE.bootRebuilt!==bootKey
+     && !STAGE.synthetic && STAGE.rows.length>=2 && STAGE.chart
+     && isTradingDay(new Date()) && ctMinutesOfDay(new Date()) >= 3*60
      && (quadsRaw(STAGE.sym) || (ADHOC_BARS[STAGE.sym] && ADHOC_BARS[STAGE.sym].D))
      && liveBySym(STAGE.sym) && liveBySym(STAGE.sym).px!=null
      && candleClose(liveBySym(STAGE.sym)) != null){
+    STAGE.bootRebuilt = bootKey;
     stageKeepView(stageRender);
     return;
   }
@@ -12628,8 +12696,14 @@ function palItems(q){
   var syms = paletteTickers().filter(function(s){ return !q || s.indexOf(q)!==-1 || nameFor(s).toUpperCase().indexOf(q)!==-1; })
     .slice(0,6).map(function(s){
       local[s]=true;
+      // Before this, an empty quoteHint (no price poll yet, or a scanner
+      // outage) fell back to the literal string "on the desk", which then
+      // had " · on the desk" appended unconditionally right after it,
+      // printing "on the desk · on the desk" (2026-08-23 Fable architect
+      // pass, finding 4.4).
+      var qh = quoteHint(s, null, null, null);
       return {k:"ticker", l:s+" — "+nameFor(s),
-        hint:(quoteHint(s, null, null, null) || "on the desk")+" · on the desk",
+        hint:(qh ? qh+" · " : "")+"on the desk",
         run:function(){ setFocus(s); }};
     });
   var remote = (q ? PAL_REMOTE : []).filter(function(it){ return !local[it.sym]; }).slice(0,6)

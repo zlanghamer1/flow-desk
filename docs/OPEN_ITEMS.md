@@ -44,23 +44,29 @@ approved fix, in full:
 
 ## Open — in the order they are worth doing
 
-### 1. Automated review cycle paused after round 16 — Fable architect pass next (Zach's call, 2026-08-23)
+### 1. Automated review cycle remains paused — the Fable architect pass and its follow-up fix pass are both done (2026-08-23)
 
-The round-16 fix pass below closed all 25 confirmed findings the same day
-they were found — no deferrals this round, no fetcher-side changes (frontend
-JS only), syntax-checked with `node --check`. `python3 -m pytest fetcher/`
-still passes all 306 tests (unchanged this round).
+The round-16 fix pass closed all 25 confirmed findings the same day they were
+found (see that section below). Per Zach's instruction, the automated
+round-fix-launch cycle stopped there rather than launching round 17.
 
-Zach's instruction after round 16: **stop the automated round-fix-launch
-cycle here.** The next step is a Fable-led architect pass — a thorough,
-independent read through every part of the site (not scoped to what the
-automated nine-section review's own rubric catches), producing a concrete,
-itemized corrections list with specific instructions per item. That list then
-drives one final Sonnet-executed pass to address everything to completion,
-verified the same way every round above was (syntax check, pytest, commit,
-push). Do not resume the automated round-N review cycle on your own judgment
-— wait for that list, or for Zach to explicitly ask for another automated
-round.
+A Fable-model architect pass then read CLAUDE.md, `docs/OPEN_ITEMS.md`
+(including this section's own deferred-by-judgement list) and DATA_CONTRACT.md
+in full, then the entire fetcher and the entire `index.html`, looking
+specifically for what a fixed nine-section rubric structurally misses:
+whole-pipeline calendar correctness, frontend assumptions cross-checked
+against what the fetcher actually publishes (not what a comment claims), and
+doc/payload drift. It found 14 items (one blocker) across two fetcher-only
+findings groups and three frontend/cross-file groups. **All 14 were fixed the
+same day** in the Sonnet follow-up pass — see "Shipped 2026-08-23, Fable
+architect pass" below for the full writeup. Three new test files
+(`test_market_guard.py`, plus additions to `test_flow_pct.py` and
+`test_context.py`, plus `test_sync_constants.py`) bring the fetcher suite to
+314 passing tests.
+
+The automated round-N review cycle stays paused — do not resume it on your
+own judgment. Wait for Zach to explicitly ask for another automated round, or
+for a new architect-style pass to be requested.
 
 ### 2. Deferred by judgement, not by omission
 
@@ -114,6 +120,94 @@ round.
   one sort key.
 
 ---
+
+## Shipped 2026-08-23, Fable architect pass (14 findings, all fixed)
+
+A Fable-model architect pass — the follow-up to pausing the automated
+round-N review cycle after round 16 — read the full guardrail history first,
+then did an independent, cross-file pass over the whole fetcher and the
+whole `index.html`, deliberately looking for what sixteen rounds of a
+per-section rubric structurally miss. It found 14 items (1 blocker, 2 major,
+11 minor/hardening) and none of the four already-documented deferred-by-
+judgement items were re-flagged. All 14 were fixed the same day. Summary:
+
+- **Fetcher calendar correctness (1 blocker):** the fetcher had ZERO market-
+  holiday awareness anywhere — `market_guard.py`'s `_in_window` and
+  `build_snapshot.py`'s own `market_state` block were pure weekday+clock
+  tests. On a weekday market holiday (Labor Day 2026-09-07 was 15 days from
+  this pass), the backup cron would have started the loop, `market_state`
+  would have read `"open"`, and `write_history=True` would have fabricated a
+  full phantom session into `history.json`, `iv_history`, `vol_history`,
+  `swing_first_seen`, `etf_so` and `big_orders` from stale weekend/holiday
+  vendor data — exactly the corruption the `write_history` guard exists to
+  prevent, defeated for every weekday holiday. Fixed by adding
+  `MARKET_HOLIDAYS`/`MARKET_HALF_DAYS` tables to `market_guard.py`, mirrored
+  EXACTLY from `index.html`'s own tables (`is_market_holiday`/
+  `is_market_half_day` reject a holiday outright; a half day shrinks the
+  session close to noon CT with each window's own post-close buffer
+  preserved). `build_snapshot.py`'s `market_state` block now calls these
+  helpers directly. New `test_market_guard.py` (5 tests) pins the behavior
+  at the day-boundary edges.
+- **Frontend/fetcher/contract drift (5 findings, 1 major):** `universe.candidates`
+  excluded the five TRACK_ONLY names (quote-only by design, never
+  chain-fetched), contradicting DATA_CONTRACT.md's own definition — as a
+  direct result, the flow boards' coverage footer printed a FALSE
+  vendor-failure claim ("5 of your 62 watched names resolved no live quote
+  this cycle") on every single healthy cycle. Fixed contract-first: `candidates`
+  now means every quote-resolved name (TRACK_ONLY included, matching
+  `len(quotes)`); a new `chain_eligible` field carries the old (TRACK_ONLY-
+  excluded) count for the chain-coverage comparison; `boardEmptyHTML`/
+  `boardCutEmptyHTML`/`boardCoverageHTML` all updated, with a fallback to
+  `candidates` for a payload published before `chain_eligible` existed.
+  Also fixed: `fund.next_earnings.session` was published in three different
+  vocabularies (AMC/BMO from stockanalysis, premarket/afterhours from a
+  TV-timestamp path, tested for pre/post by the chart header — a dead
+  branch); the fetcher now normalizes the TV-timestamp path's spelling to
+  the documented AMC/BMO enum, and the frontend accepts the legacy spelling
+  for already-published sidecars. The published `notes.delay` string still
+  claimed stock prices "update live," contradicting the site's loudest
+  guardrail — corrected to match DATA_CONTRACT.md's own text. DATA_CONTRACT.md
+  contradicted itself on how `big_orders_capped.earned` is measured (one
+  paragraph described the pre-round-6 naive-slice measurement, a different
+  paragraph the current whole-pool one) — the stale paragraph rewritten to
+  match the code. `etf_flows`' split-day payload published `streak: 0` and a
+  dated `baseline_session` when `flow_1d` was null, violating the contract's
+  own "both null when flow_1d is null" rule — fixed, with a new assertion in
+  `test_flow_pct.py`'s existing split test.
+- **Fetcher state integrity (1 major):** Swing's cross-day `swing_first_seen`
+  memory (the round-10 "since flagged" fix) was erased by ANY single-cycle
+  chain hiccup — the cleanup loop deleted an entry the instant a ticker was
+  absent from one cycle's board, even a transient CBOE timeout, silently
+  re-baselining the chase chip at that moment's spot instead of the name's
+  real first-flagged spot from weeks earlier. Fixed with a `last_seen`
+  timestamp per entry: an entry now survives any absence within the same
+  trading session and is only deleted once its `last_seen` falls behind the
+  prior published session (absent for a full session, not one ~7-minute
+  cycle).
+- **Frontend correctness (4 findings, all minor):** the 1W chart had no
+  boot-race rebuild equivalent to 1D's — a weekly chart rendered before the
+  first live quote landed never gained its forming-week candle. Fixed by
+  extending `stageLivePoke`'s boot-race guard to 1W and adding a per-symbol/
+  per-interval one-shot flag (`STAGE.bootRebuilt`) so both the 1D and 1W
+  guards are provably single-shot (cleared on symbol change and interval/
+  window clicks). The new `fwSignedFixed` framework-filter formatter (added
+  in round 16 itself) printed an ASCII hyphen for negatives, breaking the
+  page-wide U+2212 convention its own neighbors enforce — fixed, plus the
+  `fcf_growth` row's separate formatting. `rowHTMLConv` duplicated
+  `flowPctHTML`'s $100K-floor/thin-basis logic inline instead of calling the
+  shared helper — refactored to call it (rendered markup unchanged). The
+  command palette's ticker hint could print "on the desk · on the desk" for
+  a name with no quote yet — fixed.
+- **Hardening (3 sync tests, no live bug):** added `test_sync_constants.py`,
+  pinning three previously-untested cross-file constant pairs equal: TRACK_ONLY
+  (fetcher) vs TRACK_ONLY_SYMS (frontend), the Morning Brief's
+  high_conviction threshold vs BOARD_SCORE_FLOOR, and the two holiday tables
+  from the calendar fix above — in the same deliberately-dumb regex style as
+  the existing `test_tips_sync.py`, so the next drift in any of these three
+  pairs fails a test instead of shipping silently.
+
+`node --check` and the full pytest suite (314 passing — 306 + 5 new
+market_guard tests + 3 new sync_constants tests) both green.
 
 ## Shipped 2026-08-23, round 16 (25 findings confirmed, all fixed) — last automated round before the Fable architect pass
 

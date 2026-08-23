@@ -1848,9 +1848,15 @@ def test_build_fund_sidecar_yahoo_next_earnings_session_falls_back_to_stockanaly
 
     # A same-ticker TV earnings_ts, if available, takes priority over the
     # stockanalysis.com text (premarket here vs AMC from the text above).
+    # Normalized to "BMO" (2026-08-23 Fable architect pass, finding 2.2) —
+    # _earnings_session's own "premarket"/"afterhours" vocabulary is mapped
+    # to the "AMC"/"BMO" enum DATA_CONTRACT.md documents for this exact
+    # field before this test's earlier assertion (the stockanalysis.com
+    # fallback) — the TV-timestamp path used to publish a third, unmapped
+    # spelling of the same fact.
     premarket_ts = datetime(2026, 8, 27, 11, 0, tzinfo=timezone.utc).timestamp()   # 07:00 ET -> premarket
     payload2 = context.build_fund_sidecar("MRVL", date(2026, 8, 15), "crumbtoken", premarket_ts, _get=fake_get)
-    assert payload2["next_earnings"]["session"] == "premarket"
+    assert payload2["next_earnings"]["session"] == "BMO"
 
 
 def test_build_fund_sidecar_yahoo_leg_skipped_entirely_when_crumb_is_none():

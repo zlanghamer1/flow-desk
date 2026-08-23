@@ -2772,7 +2772,14 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
             ne = dict(yq["next_earnings"])
             if ne.get("session") is None:
                 if isinstance(earn_ts, (int, float)):
-                    ne["session"] = _earnings_session(earn_ts)
+                    # _earnings_session returns "premarket"/"afterhours"/None
+                    # (its own vocabulary); DATA_CONTRACT.md's next_earnings
+                    # schema is "AMC"/"BMO"/null (the stockanalysis.com
+                    # vocabulary this same field carries elsewhere) — mapped
+                    # here so the published field is never a third,
+                    # undocumented spelling of the same fact (2026-08-23
+                    # Fable architect pass, finding 2.2).
+                    ne["session"] = {"premarket": "BMO", "afterhours": "AMC"}.get(_earnings_session(earn_ts))
                 elif sa_next_earnings is not None:
                     ne["session"] = sa_next_earnings.get("session")
             payload["next_earnings"] = ne

@@ -219,6 +219,12 @@ def test_build_etf_flows_withholds_the_flow_on_a_split(monkeypatch):
     fund = out["funds"][0]
     assert fund["split_suppressed"] is True
     assert fund["flow_1d"] is None, "a split must never print as a flow"
+    # DATA_CONTRACT.md: both null when flow_1d is null (2026-08-23 Fable
+    # architect pass, finding 2.5) — a split day used to publish streak:0 and
+    # a real baseline_session date, contradicting the contract.
+    assert fund["baseline_session"] is None
+    assert fund["streak"] is None
+    assert fund["flow_session"] is None
 
 
 def test_build_etf_flows_still_reports_an_ordinary_day(monkeypatch):
