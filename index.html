@@ -8034,6 +8034,15 @@ var PEER_GROUPS = {
   // the pinned symbol resolved to nothing and rode along as an empty column.
   V:    [["MA","NYSE:MA"],["AXP","NYSE:AXP"],["PYPL","NASDAQ:PYPL"],["FI","NYSE:FI"]],
   TSEM: [["UMC","NYSE:UMC"],["GFS","NASDAQ:GFS"],["ASX","NYSE:ASX"],["ON","NASDAQ:ON"]],
+  // Added 2026-08-23 (Zach's ruling): the vendor's industry-scan fallback put
+  // AEHR (semiconductor wafer-level burn-in/test) next to LPL (LG Display,
+  // panels), PLUG (hydrogen fuel cells) and OLED (Universal Display, OLED
+  // materials) — none in the same market. These four sets name the actual
+  // direct competitors, the same "vendor taxonomy put X next to Y" fix
+  // pattern as CRWD/V/TSEM above.
+  LITE: [["COHR","NYSE:COHR"],["AAOI","NASDAQ:AAOI"],["FN","NYSE:FN"]],
+  MRVL: [["AVGO","NASDAQ:AVGO"],["NXPI","NASDAQ:NXPI"],["MXL","NASDAQ:MXL"]],
+  AEHR: [["TER","NASDAQ:TER"],["COHU","NASDAQ:COHU"],["FORM","NASDAQ:FORM"]],
 };
 // What each curated set IS, in words. "Curated set" alone told the reader
 // nothing about why these four names and not four others.
@@ -8042,7 +8051,10 @@ var PEER_GROUP_LABEL = {
   COHR: "optical components",
   CRWD: "cybersecurity platforms",
   V:    "payments networks",
-  TSEM: "foundries and specialty analog"
+  TSEM: "foundries and specialty analog",
+  LITE: "optical components",
+  MRVL: "custom silicon and networking chips",
+  AEHR: "semiconductor test equipment"
 };
 /* One company, one bar. TradingView lists a foreign issuer's ordinary line and
    its ADR as separate tickers with the same fundamentals, so an auto set could

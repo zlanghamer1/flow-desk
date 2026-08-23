@@ -1551,5 +1551,23 @@ pass:
   tab on every relevant resize (round 10), so only the geometry computation
   itself, not a new re-render trigger, needed the fix.
 
+## Guardrails added 2026-08-23 (Zach's direct report, curated peer sets)
+
+- **`PEER_GROUPS` gained three new curated overrides — LITE, MRVL, AEHR —
+  after Zach flagged that the vendor's industry-scan fallback (`_peersByIndustry`)
+  was putting them next to non-competitors**: AEHR (semiconductor
+  wafer-level burn-in/test) showed against LPL (LG Display, panels), PLUG
+  (hydrogen fuel cells) and OLED (Universal Display, OLED materials) — none
+  in the same market. Same root cause and same fix pattern as CRWD/V/TSEM's
+  existing curated overrides (2026-08-19: "the vendor taxonomy put
+  CrowdStrike next to a bitcoin miner"). New sets: LITE → COHR/AAOI/FN
+  (optical components — LITE was already COHR's own curated peer, this adds
+  the reverse direction), MRVL → AVGO/NXPI/MXL (custom silicon and
+  networking chips), AEHR → TER/COHU/FORM (semiconductor test equipment). A
+  curated set always wins over the industry scan for its own symbol
+  (`peersFor`'s `PEER_GROUPS[sym]` check runs first), so these three tickers
+  never reach `_peersByIndustry` again regardless of what TradingView's own
+  industry classification says.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
