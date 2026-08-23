@@ -116,6 +116,33 @@ def test_opmargin_expansion_unknown_when_a_quarter_is_null():
     assert out["filters"]["opmargin_expansion"] is None
 
 
+def test_opmargin_expansion_unknown_on_an_implausible_yoy_swing():
+    # Live MU sidecar shape: a >20pp YoY opmargin swing reads as a probable
+    # quarter-misalignment/duplicate-row artifact, not a real reading, and
+    # must not silently PASS (2026-08-22 review, data honesty finding #1).
+    revenue = [100.0, 100.0, 100.0, 100.0, 100.0]
+    opinc = [23.0, 23.0, 23.0, 23.0, 80.0]   # 23% -> 80%: +5700bps
+    fund = _fund(revenue=revenue, opinc=opinc)
+    out = context.score_framework("X", {}, fund, {"weekly": {}}, SESSION)
+    assert out["filters"]["opmargin_expansion"] is None
+    assert "opmargin_expansion_bps" not in out["metrics"]
+    # A ceiling rejection is a PERMANENT data-quality flag, not a "still
+    # building" gap that will resolve by waiting — the two must be
+    # distinguishable so the frontend never tells the reader a flagged
+    # reading might arrive next week (2026-08-22 review round 11, data
+    # honesty finding #1).
+    assert out["filter_flags"]["opmargin_expansion"] == "implausible_swing"
+
+
+def test_opmargin_expansion_still_resolves_just_inside_the_plausible_ceiling():
+    revenue = [100.0, 100.0, 100.0, 100.0, 100.0]
+    opinc = [20.0, 20.0, 20.0, 20.0, 39.9]   # +1990bps, just under the 2000bps ceiling
+    fund = _fund(revenue=revenue, opinc=opinc)
+    out = context.score_framework("X", {}, fund, {"weekly": {}}, SESSION)
+    assert out["filters"]["opmargin_expansion"] is True
+    assert out["metrics"]["opmargin_expansion_bps"] == pytest.approx(1990.0, abs=0.1)
+
+
 # ── Filter 5: FCF growth ─────────────────────────────────────────────────────
 
 def test_fcf_growth_passes_when_positive_and_faster_than_revenue():
@@ -159,6 +186,39 @@ def test_fcf_growth_unknown_with_fewer_than_8_quarters():
     fund = _fund(revenue=[100.0] * 4, fcf=[10.0] * 4)
     out = context.score_framework("X", {}, fund, {"weekly": {}}, SESSION)
     assert out["filters"]["fcf_growth"] is None
+
+
+def test_fcf_growth_unknown_on_an_implausible_ttm_swing():
+    # Live MU sidecar shape: +1291% TTM FCF growth reads as a probable
+    # quarter-alignment artifact, not a real reading (2026-08-22 review,
+    # data honesty finding #1).
+    revenue = [100.0] * 8
+    fcf = [10.0, 10.0, 10.0, 10.0, 50.0, 50.0, 50.0, 50.0]   # 40 -> 200: +400%
+    fund = _fund(revenue=revenue, fcf=fcf)
+    out = context.score_framework("X", {}, fund, {"weekly": {}}, SESSION)
+    assert out["filters"]["fcf_growth"] is None
+    assert "fcf_growth_ttm_pct" not in out["metrics"]
+    assert out["filter_flags"]["fcf_growth"] == "implausible_swing"
+
+
+def test_filter_flags_empty_when_nothing_is_flagged():
+    hist = {"weekly": {}}
+    fund = _fund(
+        revenue=[100.0] * 8, opinc=[20.0, 20.0, 20.0, 20.0, 22.0, 22.0, 22.0, 22.0],
+        fcf=[10.0, 10.0, 10.0, 10.0, 15.0, 15.0, 15.0, 15.0],
+        annual_revenue=[100.0],
+    )
+    out = context.score_framework("X", {"eps_ntm": None, "rev_ntm": 130.0}, fund, hist, SESSION)
+    assert out["filter_flags"] == {}
+
+
+def test_fcf_growth_still_resolves_just_inside_the_plausible_ceiling():
+    fcf = [10.0, 10.0, 10.0, 10.0, 39.0, 39.0, 39.0, 39.0]   # 40 -> 156: +290%, under the 300% ceiling
+    revenue = [100.0] * 8
+    fund = _fund(revenue=revenue, fcf=fcf)
+    out = context.score_framework("X", {}, fund, {"weekly": {}}, SESSION)
+    assert out["filters"]["fcf_growth"] is True
+    assert out["metrics"]["fcf_growth_ttm_pct"] == pytest.approx(290.0, abs=0.1)
 
 
 # ── Filters 1 & 3: consensus-history-dependent, and never fabricated ────────
@@ -293,6 +353,51 @@ def test_snapshot_skips_a_ticker_with_no_eps_ntm():
 ])
 def test_verdict_tiers(passed, evaluated, want):
     assert context._framework_verdict(passed, evaluated) == want
+
+
+def test_verdict_capped_when_every_unresolved_filter_is_flagged():
+    # 2 unresolved (5-3), both flagged -- this verdict can NEVER move by
+    # waiting, unlike a genuine "_BUILDING" gap (2026-08-22 review round
+    # 12, data honesty finding #2).
+    assert context._framework_verdict(3, 3, flagged=2) == "ADD_CAPPED"
+
+
+def test_verdict_still_building_when_only_some_unresolved_filters_are_flagged():
+    # 2 unresolved, only 1 flagged -- the other is genuinely still pending,
+    # so the verdict COULD still move once it reports.
+    assert context._framework_verdict(3, 3, flagged=1) == "ADD_BUILDING"
+
+
+def test_verdict_capped_never_fires_below_min_evaluated():
+    # Below FRAMEWORK_MIN_EVALUATED, the verdict is plain BUILDING regardless
+    # of how many unresolved filters are flagged.
+    assert context._framework_verdict(2, 2, flagged=3) == "BUILDING"
+
+
+def test_score_framework_verdict_is_capped_when_only_flagged_filters_remain_unresolved():
+    # Filters 1/3 (consensus-history) both resolve and pass; filters 2
+    # (revenue growth, no rev_ntm here) is unknown for an unrelated reason
+    # that keeps evaluated at 2 -- raise it to 3 by also passing filter 2,
+    # so only 4/5 and 5's ceiling-rejections are left unresolved, both
+    # flagged.
+    hist = {"weekly": {}}
+    d_6m = SESSION - timedelta(weeks=context.FRAMEWORK_WEEKS_6M)
+    d_3m = SESSION - timedelta(weeks=context.FRAMEWORK_WEEKS_3M)
+    hist["weekly"][context._iso_week_key(d_6m)] = {"X": {"eps_ntm": 8.0}}
+    hist["weekly"][context._iso_week_key(d_3m)] = {"X": {"eps_ntm": 9.0}}
+    fund = _fund(
+        revenue=[100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
+        opinc=[23.0, 23.0, 23.0, 23.0, 23.0, 23.0, 23.0, 80.0],   # +5700bps: flagged
+        fcf=[10.0, 10.0, 10.0, 10.0, 50.0, 50.0, 50.0, 50.0],     # +400%: flagged
+        annual_revenue=[100.0],
+    )
+    f = {"eps_ntm": 10.0, "rev_ntm": 130.0}
+    out = context.score_framework("X", f, fund, hist, SESSION)
+    assert out["filters"]["opmargin_expansion"] is None
+    assert out["filters"]["fcf_growth"] is None
+    assert set(out["filter_flags"].keys()) == {"opmargin_expansion", "fcf_growth"}
+    assert out["filters_passed"] == 3   # forward_eps_revision, revenue_growth, analyst_velocity
+    assert out["verdict"] == "ADD_CAPPED"
 
 
 def test_full_5_of_5_verdict_end_to_end():

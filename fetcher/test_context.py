@@ -325,6 +325,130 @@ def test_csv_and_tv_rows_on_different_days_both_survive():
     assert len(merged) == 2
 
 
+# ── forecast/prior/actual merge onto a CSV-winning row (2026-08-22, round 10) ─
+
+def test_dedup_econ_merges_tv_numbers_onto_surviving_csv_row():
+    """The CSV mirror hardcodes forecast/prior/actual to null -- winning the
+    title conflict used to mean the TV row's real numbers were discarded
+    along with its title. They must now land on the surviving CSV row."""
+    tv_row = _econ_row("2026-08-22", "PPI MoM", "HIGH")
+    tv_row["forecast"], tv_row["prior"], tv_row["actual"] = 0.2, 0.1, 0.3
+    tv_row["unit"], tv_row["scale"] = "%", None
+    csv_row = _econ_row("2026-08-22", "PPI", "HIGH", source="econ_calendar")
+    merged = context._dedup_econ([tv_row], [csv_row])
+    assert len(merged) == 1
+    assert merged[0]["source"] == "econ_calendar"
+    assert merged[0]["forecast"] == 0.2
+    assert merged[0]["prior"] == 0.1
+    assert merged[0]["actual"] == 0.3
+    assert merged[0]["unit"] == "%"
+
+
+def test_dedup_econ_never_overwrites_a_real_csv_value():
+    tv_row = _econ_row("2026-08-22", "PPI MoM", "HIGH")
+    tv_row["forecast"] = 0.9  # should NOT win
+    csv_row = _econ_row("2026-08-22", "PPI", "HIGH", source="econ_calendar")
+    csv_row["forecast"] = 0.2  # CSV already has a real value
+    merged = context._dedup_econ([tv_row], [csv_row])
+    assert merged[0]["forecast"] == 0.2
+
+
+# ── cross-vendor alias merge for differently-titled same events ─────────────
+
+def test_merge_econ_aliases_cpi_pulls_numbers_from_inflation_rate_row():
+    out = [_econ_row("2026-09-10", "CPI", "HIGH", source="econ_calendar")]
+    tv_rows = [_econ_row("2026-09-10", "Inflation Rate YoY", "HIGH")]
+    tv_rows[0]["forecast"], tv_rows[0]["prior"] = 2.9, 2.7
+    context._merge_econ_aliases(out, tv_rows)
+    assert out[0]["forecast"] == 2.9
+    assert out[0]["prior"] == 2.7
+    assert out[0]["title"] == "CPI"   # title/source untouched
+
+
+def test_merge_econ_aliases_fomc_pulls_from_fed_interest_rate_decision():
+    out = [_econ_row("2026-09-16", "FOMC Rate Decision", "HIGH", source="econ_calendar")]
+    tv_rows = [_econ_row("2026-09-16", "Fed Interest Rate Decision", "HIGH")]
+    tv_rows[0]["forecast"] = 4.25
+    context._merge_econ_aliases(out, tv_rows)
+    assert out[0]["forecast"] == 4.25
+
+
+def test_merge_econ_aliases_does_nothing_when_csv_row_already_has_a_value():
+    out = [_econ_row("2026-09-10", "CPI", "HIGH", source="econ_calendar")]
+    out[0]["forecast"] = 3.0
+    tv_rows = [_econ_row("2026-09-10", "Inflation Rate YoY", "HIGH")]
+    tv_rows[0]["forecast"] = 2.9
+    context._merge_econ_aliases(out, tv_rows)
+    assert out[0]["forecast"] == 3.0
+
+
+def test_merge_econ_aliases_ignores_non_csv_rows():
+    out = [_econ_row("2026-09-10", "CPI", "HIGH", source="tv_calendar")]  # not econ_calendar
+    tv_rows = [_econ_row("2026-09-10", "Inflation Rate YoY", "HIGH")]
+    tv_rows[0]["forecast"] = 2.9
+    context._merge_econ_aliases(out, tv_rows)
+    assert out[0]["forecast"] is None
+
+
+def test_merge_econ_aliases_cpi_picks_headline_yoy_not_core_or_monthly():
+    # Live TV feed order (2026-09-11): Core MoM, headline YoY, headline MoM,
+    # Core YoY, all on the same date/slot. A bare "inflation rate" substring
+    # match with no Core exclusion or YoY preference took whichever came
+    # first — here that would silently merge Core MoM's numbers under the
+    # CPI anchor (2026-08-22 review round 11, panels finding #1).
+    out = [_econ_row("2026-09-11", "CPI (August)", "HIGH", source="econ_calendar")]
+    core_mom = _econ_row("2026-09-11", "Core Inflation Rate MoM", "HIGH")
+    core_mom["forecast"], core_mom["prior"] = 0.3, 0.2
+    headline_yoy = _econ_row("2026-09-11", "Inflation Rate YoY", "HIGH")
+    headline_yoy["forecast"], headline_yoy["prior"] = 2.9, 2.7
+    headline_mom = _econ_row("2026-09-11", "Inflation Rate MoM", "HIGH")
+    headline_mom["forecast"], headline_mom["prior"] = 0.2, 0.1
+    core_yoy = _econ_row("2026-09-11", "Core Inflation Rate YoY", "HIGH")
+    core_yoy["forecast"], core_yoy["prior"] = 3.1, 3.0
+    tv_rows = [core_mom, headline_yoy, headline_mom, core_yoy]
+    context._merge_econ_aliases(out, tv_rows)
+    assert out[0]["forecast"] == 2.9
+    assert out[0]["prior"] == 2.7
+
+
+def test_merge_econ_aliases_pce_excludes_core_and_prefers_yoy():
+    out = [_econ_row("2026-09-26", "PCE (August)", "HIGH", source="econ_calendar")]
+    core = _econ_row("2026-09-26", "Core PCE Price Index YoY", "HIGH")
+    core["forecast"] = 2.8
+    headline = _econ_row("2026-09-26", "PCE Price Index YoY", "HIGH")
+    headline["forecast"] = 2.6
+    tv_rows = [core, headline]
+    context._merge_econ_aliases(out, tv_rows)
+    assert out[0]["forecast"] == 2.6
+
+
+def test_merge_econ_aliases_falls_back_to_mom_when_no_yoy_row_exists():
+    out = [_econ_row("2026-09-11", "CPI (August)", "HIGH", source="econ_calendar")]
+    mom_only = _econ_row("2026-09-11", "Inflation Rate MoM", "HIGH")
+    mom_only["forecast"] = 0.2
+    context._merge_econ_aliases(out, [mom_only])
+    assert out[0]["forecast"] == 0.2
+
+
+# ── MU-style memory+earnings same-day double-print (2026-08-22, round 10) ────
+
+def test_build_catalysts_folds_same_day_memory_row_into_earnings_row():
+    memory_rows = [{
+        "date": "2026-09-24", "time_ct": None, "title": "FY2026 year-end + guidance",
+        "importance": "HIGH", "kind": "memory", "ticker": "MU", "session": None,
+        "forecast": None, "prior": None, "actual": None, "anchor": False,
+        "source": "memory_events",
+    }]
+    earn_map = {"MU": {"ts": datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc).timestamp(), "days": 5}}
+    cats = context.build_catalysts([], memory_rows, earn_map, [], date(2026, 9, 20), days=28)
+    mu_rows = [c for c in cats if c.get("ticker") == "MU" or (c.get("kind") == "memory" and "MU" in (c.get("title") or ""))]
+    earnings_rows = [c for c in cats if c["kind"] == "earnings" and c["ticker"] == "MU"]
+    memory_leftover = [c for c in cats if c["kind"] == "memory" and c.get("ticker") == "MU"]
+    assert len(earnings_rows) == 1
+    assert len(memory_leftover) == 0
+    assert "FY2026 year-end + guidance" in earnings_rows[0]["title"]
+
+
 def test_build_catalysts_applies_csv_precedence_end_to_end():
     session_date = date(2026, 8, 15)
     econ_rows = [_econ_row("2026-08-17", "CPI", "MEDIUM")]
@@ -403,6 +527,19 @@ def test_opex_third_friday_across_a_month_boundary():
     assert by_date["2026-08-14"]["title"] == "Weekly options expiration"
     for r in by_date.values():
         assert r["kind"] == "market" and r["source"] == "market_calendar"
+    # Monthly rows are anchors; weekly rows are not (2026-08-22 review round
+    # 11, panels finding #3) — catIsAnchorByName's title regex already
+    # filtered monthly/quarterly rows as curated anchors, but catMetaLine's
+    # badge reads the `anchor` field directly, which stayed False for every
+    # market_calendar row regardless.
+    assert by_date["2026-07-17"]["anchor"] is True
+    assert by_date["2026-07-10"]["anchor"] is False
+
+
+def test_opex_quarterly_row_is_also_an_anchor():
+    rows = context._build_opex_rows(date(2026, 9, 1), days=28)
+    by_date = {r["date"]: r for r in rows}
+    assert by_date["2026-09-18"]["anchor"] is True
 
 
 def test_opex_quarter_end_month_gets_quadruple_witching_title():
@@ -437,6 +574,67 @@ def test_catalysts_are_sorted_by_date_then_time():
     cats = context.build_catalysts(econ_rows, memory_rows, {}, [], session_date, days=28)
     ordering = [(c["date"], c.get("time_ct") or "") for c in cats]
     assert ordering == sorted(ordering)
+
+
+# ── forward-fetch backfill (2026-08-22, round 9 finding #1) ─────────────────
+
+def test_econ_tv_looks_back_26_hours_so_todays_release_can_carry_actual():
+    """fetch_econ_tv's own from=now-only window meant a released row's
+    `actual` could never be received at all -- TV only sets `actual` on a
+    row whose time has already passed, and from=now excludes anything in
+    the past by definition. Assert the request now looks back."""
+    seen = {}
+    def fake_get(url, headers):
+        seen["url"] = url
+        return json.dumps({"result": []}).encode()
+    context.fetch_econ_tv(_get=fake_get)
+    from urllib.parse import urlparse, parse_qs
+    q = parse_qs(urlparse(seen["url"]).query)
+    frm = datetime.fromisoformat(q["from"][0].replace("Z", "+00:00"))
+    now = datetime.now(timezone.utc)
+    assert frm < now - timedelta(hours=20)   # well before now -- a real lookback, not a rounding artifact
+    assert frm > now - timedelta(hours=30)   # and bounded, not an unbounded backward window
+
+
+def test_catalyst_still_fresh_econ_row_within_6h_grace():
+    row = {"date": "2026-08-22", "time_ct": "07:30"}
+    now_ct = datetime(2026, 8, 22, 12, 0, tzinfo=context.TZ_CT)     # 4.5h after release
+    assert context._catalyst_still_fresh(row, now_ct)
+    now_ct_late = datetime(2026, 8, 22, 14, 0, tzinfo=context.TZ_CT)  # 6.5h after release
+    assert not context._catalyst_still_fresh(row, now_ct_late)
+
+
+def test_catalyst_still_fresh_no_time_row_clears_at_end_of_day():
+    row = {"date": "2026-08-22", "time_ct": None}
+    assert context._catalyst_still_fresh(row, datetime(2026, 8, 22, 23, 0, tzinfo=context.TZ_CT))
+    assert not context._catalyst_still_fresh(row, datetime(2026, 8, 23, 0, 30, tzinfo=context.TZ_CT))
+
+
+def test_merge_catalysts_forward_backfills_released_row_the_fresh_fetch_dropped():
+    """The exact bug: a from=now-only refetch no longer returns a HIGH row
+    that released an hour ago, so build_catalysts alone would silently drop
+    it. _merge_catalysts_forward must bring it back from the previous
+    cycle's cache while it's still inside its own grace period."""
+    prev = [_econ_row("2026-08-22", "Non Farm Payrolls", "HIGH", time_ct="07:30")]
+    fresh = []   # this cycle's from=now fetch no longer includes it
+    now_ct = datetime(2026, 8, 22, 9, 0, tzinfo=context.TZ_CT)   # 1.5h after release
+    merged = context._merge_catalysts_forward(fresh, prev, now_ct)
+    assert any(r["title"] == "Non Farm Payrolls" for r in merged)
+
+
+def test_merge_catalysts_forward_drops_stale_previous_row_past_grace():
+    prev = [_econ_row("2026-08-22", "Non Farm Payrolls", "HIGH", time_ct="07:30")]
+    fresh = []
+    now_ct = datetime(2026, 8, 22, 14, 0, tzinfo=context.TZ_CT)   # 6.5h after release
+    merged = context._merge_catalysts_forward(fresh, prev, now_ct)
+    assert not any(r["title"] == "Non Farm Payrolls" for r in merged)
+
+
+def test_merge_catalysts_forward_never_duplicates_a_row_still_in_the_fresh_fetch():
+    row = _econ_row("2026-08-22", "CPI", "HIGH", time_ct="07:30")
+    now_ct = datetime(2026, 8, 22, 8, 0, tzinfo=context.TZ_CT)
+    merged = context._merge_catalysts_forward([row], [dict(row)], now_ct)
+    assert len([r for r in merged if r["title"] == "CPI"]) == 1
 
 
 def test_memory_rows_are_not_bounded_by_the_display_window():
@@ -1650,9 +1848,15 @@ def test_build_fund_sidecar_yahoo_next_earnings_session_falls_back_to_stockanaly
 
     # A same-ticker TV earnings_ts, if available, takes priority over the
     # stockanalysis.com text (premarket here vs AMC from the text above).
+    # Normalized to "BMO" (2026-08-23 Fable architect pass, finding 2.2) —
+    # _earnings_session's own "premarket"/"afterhours" vocabulary is mapped
+    # to the "AMC"/"BMO" enum DATA_CONTRACT.md documents for this exact
+    # field before this test's earlier assertion (the stockanalysis.com
+    # fallback) — the TV-timestamp path used to publish a third, unmapped
+    # spelling of the same fact.
     premarket_ts = datetime(2026, 8, 27, 11, 0, tzinfo=timezone.utc).timestamp()   # 07:00 ET -> premarket
     payload2 = context.build_fund_sidecar("MRVL", date(2026, 8, 15), "crumbtoken", premarket_ts, _get=fake_get)
-    assert payload2["next_earnings"]["session"] == "premarket"
+    assert payload2["next_earnings"]["session"] == "BMO"
 
 
 def test_build_fund_sidecar_yahoo_leg_skipped_entirely_when_crumb_is_none():
@@ -1673,6 +1877,26 @@ def test_build_fund_sidecar_yahoo_leg_skipped_entirely_when_crumb_is_none():
     assert payload["earnings"] == []
     assert payload["next_earnings"] == {"date": "2026-09-01", "session": "BMO", "eps_est": None, "rev_est": None}
     assert payload["quarterly"] == {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": [], "opinc": []}
+    # The Yahoo leg (the ONLY source of a real `currency` answer) never ran
+    # here, so currency must default to USD rather than staying null and
+    # letting the page print a false "may not report in dollars" hedge for
+    # an ordinary US company (2026-08-22 review round 12, financials
+    # finding #3).
+    assert payload["currency"] == "USD"
+
+
+def test_build_fund_sidecar_currency_falls_back_to_known_foreign_reporter_when_yahoo_leg_is_skipped():
+    sa_stats_root = {
+        "shortSelling": {"data": []}, "ratios": {"data": []}, "dates": {"text": "", "data": []},
+    }
+    def fake_get(url, headers):
+        if "statistics" in url:
+            return _sa_data_json(sa_stats_root)
+        raise urllib.error.URLError("boom")
+    payload = context.build_fund_sidecar("SKHY", date(2026, 8, 15), None, None, _get=fake_get)
+    assert payload["currency"] == "KRW"
+    payload2 = context.build_fund_sidecar("TSM", date(2026, 8, 15), None, None, _get=fake_get)
+    assert payload2["currency"] == "TWD"
 
 
 def test_build_fund_universe_fetches_crumb_exactly_once_across_symbols():

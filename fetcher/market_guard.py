@@ -42,6 +42,43 @@ _CLOSE_H, _CLOSE_M = 15, 5
 _EXT_OPEN_H,  _EXT_OPEN_M  = 8, 0
 _EXT_CLOSE_H, _EXT_CLOSE_M = 15, 20
 
+# Full-day market closures. Mirrored EXACTLY from index.html's own
+# MARKET_HOLIDAYS table — the two must never drift apart (pinned by
+# fetcher/test_sync_constants.py). Before this table existed, the guard was a
+# pure weekday+clock test with no holiday awareness at all: on a weekday
+# closure (Labor Day, Thanksgiving, Christmas, ...) should_publish() returned
+# True all day, run_cycle's own market_state block computed "open", and
+# write_history=True fabricated a full phantom session into history.json,
+# iv_history, vol_history, swing_first_seen, etf_so and big_orders from
+# Friday's stale TradingView/CBOE data — exactly the corruption the
+# write_history guard exists to prevent, defeated for every weekday holiday
+# (2026-08-23 Fable architect pass, finding 1.1).
+MARKET_HOLIDAYS = {
+    "2024-01-01", "2024-01-15", "2024-02-19", "2024-03-29", "2024-05-27",
+    "2024-06-19", "2024-07-04", "2024-09-02", "2024-11-28", "2024-12-25",
+    "2025-01-01", "2025-01-09", "2025-01-20", "2025-02-17", "2025-04-18",
+    "2025-05-26", "2025-06-19", "2025-07-04", "2025-09-01", "2025-11-27",
+    "2025-12-25",
+    "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
+    "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
+    "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
+    "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
+}
+
+# Early closes — the session ends at 12:00 CT instead of 15:00 CT. Mirrored
+# from index.html's MARKET_HALF_DAYS.
+MARKET_HALF_DAYS = {"2026-11-27", "2026-12-24", "2027-11-26"}
+
+_HALF_DAY_CLOSE_H, _HALF_DAY_CLOSE_M = 12, 0
+
+
+def is_market_holiday(now: datetime) -> bool:
+    return now.date().isoformat() in MARKET_HOLIDAYS
+
+
+def is_market_half_day(now: datetime) -> bool:
+    return now.date().isoformat() in MARKET_HALF_DAYS
+
 
 def _minute_of_day(now: datetime) -> int:
     return now.hour * 60 + now.minute
@@ -51,8 +88,16 @@ def _in_window(now: datetime, open_h: int, open_m: int,
                 close_h: int, close_m: int) -> bool:
     if now.weekday() >= 5:   # Sat=5, Sun=6
         return False
+    if is_market_holiday(now):
+        return False
     open_min  = open_h * 60 + open_m
     close_min = close_h * 60 + close_m
+    if is_market_half_day(now):
+        # Shrink the close to noon, keeping the SAME post-close buffer the
+        # caller asked for (5min for the strict window, 20min for the
+        # extended one) rather than hardcoding either offset here.
+        buffer_min = close_min - (15 * 60)
+        close_min = (_HALF_DAY_CLOSE_H * 60 + _HALF_DAY_CLOSE_M) + buffer_min
     cur_min   = _minute_of_day(now)
     return open_min <= cur_min <= close_min
 
@@ -121,6 +166,30 @@ if __name__ == "__main__":
             print(f"  {status}  {desc}: strict expected={exp_strict} got={got_strict} "
                   f"| extended expected={exp_ext} got={got_ext}")
         print(f"\n{len(cases) - failed}/{len(cases)} passed")
+
+        # Explicit real-date cases for holiday/half-day handling — these use
+        # actual calendar dates rather than the weekday-relative fakes above,
+        # since holidays and half days are date-specific, not weekday-specific.
+        date_cases = [
+            # (description, date, hour, minute, expect_strict, expect_extended)
+            ("Labor Day 2026-09-07 09:00 CT → both OUT (holiday)", date(2026, 9, 7), 9, 0, False, False),
+            ("Half day 2026-11-27 11:00 CT → both IN", date(2026, 11, 27), 11, 0, True, True),
+            ("Half day 2026-11-27 12:05 CT → both IN (strict's own +5min buffer)", date(2026, 11, 27), 12, 5, True, True),
+            ("Half day 2026-11-27 12:06 CT → ext IN, strict OUT", date(2026, 11, 27), 12, 6, False, True),
+            ("Half day 2026-11-27 12:20 CT → ext IN, strict OUT", date(2026, 11, 27), 12, 20, False, True),
+            ("Half day 2026-11-27 12:21 CT → both OUT", date(2026, 11, 27), 12, 21, False, False),
+        ]
+        for desc, d, h, m, exp_strict, exp_ext in date_cases:
+            fake = datetime(d.year, d.month, d.day, h, m, 0, tzinfo=TZ_CT)
+            got_strict = _in_session(fake)
+            got_ext = in_extended_window(fake)
+            ok = (got_strict == exp_strict) and (got_ext == exp_ext)
+            status = "OK" if ok else "FAIL"
+            if not ok:
+                failed += 1
+            print(f"  {status}  {desc}: strict expected={exp_strict} got={got_strict} "
+                  f"| extended expected={exp_ext} got={got_ext}")
+        print(f"\n{len(cases) + len(date_cases) - failed}/{len(cases) + len(date_cases)} passed")
         sys.exit(0 if failed == 0 else 1)
     else:
         print(f"run={'true' if should_run() else 'false'}")

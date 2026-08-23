@@ -240,6 +240,118 @@ ROTATION_KEYWORDS = [
 
 _FOMC_RE = re.compile(r"fomc.*rate decision", re.IGNORECASE)
 _CPI_RE = re.compile(r"\bcpi\b", re.IGNORECASE)
+# Known equivalent-event aliases: the vault's hand-kept CSV names an event
+# (CPI, Jobs Report, Retail Sales, FOMC, PCE) using its own conventional
+# title, while TradingView's calendar publishes the SAME release under a
+# different title entirely (Inflation Rate YoY/MoM, Non Farm Payrolls, Fed
+# Interest Rate Decision, Core PCE Price Index MoM) — so most of these never
+# hit _dedup_econ's title-conflict path at all (only PPI's titles happen to
+# literally overlap), and survived on the rail as two separate rows: the
+# CSV-sourced anchor everyone actually sees, carrying no numbers, and a
+# same-day TV row with the real forecast/prior sitting one line away with
+# nothing tying the two together (2026-08-22 review, panels finding #1).
+# (csv-side pattern, [attempts]) — matched against each row's own title.
+# Each attempt is (include_all, exclude_any): every include pattern must
+# match and no exclude pattern may. Attempts are tried in order, first match
+# wins — CPI and PCE both need this because TradingView's econ feed carries
+# FOUR distinct Inflation Rate rows on the same date/slot (headline YoY,
+# headline MoM, Core YoY, Core MoM); the CSV anchor conventionally means the
+# headline YoY figure, and a bare "inflation rate" substring match (no Core
+# exclusion, no YoY preference) took whichever of the four came first in the
+# TV feed's own row order — verified live: the feed's actual 2026-09-11
+# order put "Core Inflation Rate MoM" first, so CPI's merged forecast/prior
+# would have silently been the wrong sub-metric entirely (2026-08-22 review
+# round 11, panels finding #1). The second attempt (Core-excluded, no YoY
+# requirement) is a fallback so a feed that only publishes MoM for a given
+# release still merges something rather than nothing.
+_ECON_ALIASES = [
+    (re.compile(r"\bcpi\b", re.IGNORECASE), [
+        ([re.compile(r"inflation rate", re.IGNORECASE), re.compile(r"\byoy\b", re.IGNORECASE)],
+         [re.compile(r"\bcore\b", re.IGNORECASE)]),
+        ([re.compile(r"inflation rate", re.IGNORECASE)], [re.compile(r"\bcore\b", re.IGNORECASE)]),
+    ]),
+    (re.compile(r"jobs report|non[\s-]*farm[\s-]*payrolls", re.IGNORECASE), [
+        ([re.compile(r"non[\s-]*farm[\s-]*payrolls|unemployment rate", re.IGNORECASE)], []),
+    ]),
+    (re.compile(r"retail sales", re.IGNORECASE), [
+        ([re.compile(r"retail sales", re.IGNORECASE)], []),
+    ]),
+    (re.compile(r"fomc.*rate decision", re.IGNORECASE), [
+        ([re.compile(r"fed interest rate decision|fomc", re.IGNORECASE)], []),
+    ]),
+    # Neither _titles_conflict (a substring test) nor the pair above catches
+    # this one — "Fed Chair Press Conference" and "Fed Press Conference"
+    # share no title-key substring relationship in either direction, so the
+    # CSV anchor and the TV row both survived as separate rows on the same
+    # FOMC day (2026-08-23 review round 15, panels finding #2).
+    (re.compile(r"fed chair press conference", re.IGNORECASE), [
+        ([re.compile(r"fed press conference", re.IGNORECASE)], []),
+    ]),
+    (re.compile(r"\bpce\b", re.IGNORECASE), [
+        ([re.compile(r"pce price index", re.IGNORECASE), re.compile(r"\byoy\b", re.IGNORECASE)],
+         [re.compile(r"\bcore\b", re.IGNORECASE)]),
+        ([re.compile(r"pce price index", re.IGNORECASE)], [re.compile(r"\bcore\b", re.IGNORECASE)]),
+    ]),
+]
+
+
+def _find_econ_alias_match(tv_rows: list[dict], date_str, attempts) -> Optional[dict]:
+    for include_all, exclude_any in attempts:
+        for t in tv_rows:
+            if t.get("date") != date_str:
+                continue
+            title = t.get("title") or ""
+            if any(ex.search(title) for ex in exclude_any):
+                continue
+            if all(inc.search(title) for inc in include_all):
+                return t
+    return None
+
+
+def _merge_econ_aliases(out: list[dict], tv_rows: list[dict]) -> None:
+    """In place: for a CSV-sourced econ row still missing forecast AND prior,
+    find a TV row on the SAME DATE whose title matches the known alias for
+    the CSV row's own event name (see _ECON_ALIASES) and copy its numeric
+    fields across. Never overwrites a value already present, never touches
+    title/importance/anchor/source — this only fills in numbers a lexical
+    title match (_dedup_econ) could never find because the two vendors name
+    the same release differently.
+
+    Also drops the matched TV row from `out` if it's present there as its
+    own independent row. _dedup_econ only drops a TV row when
+    _titles_conflict (a normalized substring test) matches it against a CSV
+    row; a TV row whose title doesn't lexically overlap the CSV row (e.g.
+    "Fed Interest Rate Decision" vs. "FOMC Rate Decision + Summary of
+    Economic Projections") survives _dedup_econ untouched, gets its numbers
+    copied onto the CSV anchor here, and then showed up a second time as a
+    duplicate row for the identical release with no numbers ever dropped
+    from either copy (2026-08-23 review round 15, panels finding #2).
+    """
+    for row in out:
+        if row.get("kind") != "econ" or row.get("source") != "econ_calendar":
+            continue
+        if row.get("forecast") is not None or row.get("prior") is not None:
+            continue
+        title = row.get("title") or ""
+        attempts = None
+        for csv_re, alias_attempts in _ECON_ALIASES:
+            if csv_re.search(title):
+                attempts = alias_attempts
+                break
+        if attempts is None:
+            continue
+        match = _find_econ_alias_match(tv_rows, row.get("date"), attempts)
+        if match is None:
+            continue
+        for field in _ECON_MERGE_FIELDS:
+            if row.get(field) is None and match.get(field) is not None:
+                row[field] = match[field]
+        match_date, match_title = match.get("date"), match.get("title")
+        out[:] = [
+            o for o in out
+            if not (o is not row and o.get("kind") == "econ" and o.get("source") != "econ_calendar"
+                    and o.get("date") == match_date and o.get("title") == match_title)
+        ]
 _PAREN_RE = re.compile(r"\([^)]*\)")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9 ]")
 _TICKER_RE = re.compile(r"^[A-Z]{1,5}$")
@@ -722,9 +834,20 @@ def fetch_econ_tv(days: int = 28, _get: Optional[Callable] = None) -> list[dict]
     previousRaw 1427000 vs previous 1.427 with scale "M"), so the renderer
     appends the suffix and never rescales. All four fields are optional and
     fail soft to None; the page's meta line degrades to the bare number.
+
+    `from` looks back 26 hours, not from=now: TV only reports a non-null
+    `actual` on a row once it has released, and a released row's time is
+    necessarily in the past — so a from=now request can NEVER receive one,
+    making DATA_CONTRACT.md's "actual is filled in once the print lands"
+    promise permanently unreachable regardless of anything downstream
+    (2026-08-22 review, panels finding #2). 26h covers a full CT session day
+    from any DST offset; build_catalysts's own _in_window filter (bounded to
+    session_date onward) still drops anything from a prior calendar day, so
+    this only ever adds TODAY's already-released rows with their real
+    `actual`, never widens what actually displays.
     """
     now = datetime.now(timezone.utc)
-    frm = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    frm = (now - timedelta(hours=26)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     to = (now + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     url = f"{TV_ECON_URL}?from={frm}&to={to}&countries=US"
     headers = {
@@ -999,10 +1122,21 @@ def _titles_conflict(a: str, b: str) -> bool:
     return ka == kb or ka in kb or kb in ka
 
 
+_ECON_MERGE_FIELDS = ("forecast", "prior", "actual", "unit", "scale", "period", "agency")
+
+
 def _dedup_econ(tv_rows: list[dict], csv_rows: list[dict]) -> list[dict]:
     """CSV rows always survive; a TV row is dropped when it conflicts
     (same date + similar title, see _titles_conflict) with a CSV row — the
-    hand-kept CSV is the verified source and wins.
+    hand-kept CSV is the verified source and wins on title/importance/time.
+
+    But the CSV mirror hardcodes forecast/prior/actual/unit/scale/period to
+    null (it exists to pin the EVENT, not carry the vendor's numbers), so a
+    conflicting TV row used to be dropped ENTIRELY — discarding real
+    forecast/prior/actual data along with the title it lost the tie-break
+    on. The surviving CSV row now inherits those numeric fields from the
+    TV row it beat, whenever the CSV row doesn't already have its own value
+    (2026-08-22 review, panels finding #1).
 
     Returns fresh dict copies (never the caller's own row objects) so later
     in-place edits (see build_catalysts's anchor promotion) can never leak
@@ -1010,11 +1144,13 @@ def _dedup_econ(tv_rows: list[dict], csv_rows: list[dict]) -> list[dict]:
     """
     out = [dict(r) for r in csv_rows]
     for tv_row in tv_rows:
-        conflict = any(
-            c["date"] == tv_row["date"] and _titles_conflict(c["title"], tv_row["title"])
-            for c in csv_rows
-        )
-        if not conflict:
+        conflicting = [c for c in out if c["date"] == tv_row["date"] and _titles_conflict(c["title"], tv_row["title"])]
+        if conflicting:
+            for c in conflicting:
+                for field in _ECON_MERGE_FIELDS:
+                    if c.get(field) is None and tv_row.get(field) is not None:
+                        c[field] = tv_row[field]
+        else:
             out.append(dict(tv_row))
     return out
 
@@ -1073,11 +1209,11 @@ def _build_opex_rows(session_date: date, days: int = ECON_WINDOW_DAYS) -> list[d
     for fri in _fridays_in_range(session_date, end):
         is_third = fri == _third_friday(fri.year, fri.month)
         if is_third and fri.month in (3, 6, 9, 12):
-            title, importance = "Quarterly options expiration (quadruple witching)", "MEDIUM"
+            title, importance, anchor = "Quarterly options expiration (quadruple witching)", "MEDIUM", True
         elif is_third:
-            title, importance = "Monthly options expiration", "MEDIUM"
+            title, importance, anchor = "Monthly options expiration", "MEDIUM", True
         else:
-            title, importance = "Weekly options expiration", "LOW"
+            title, importance, anchor = "Weekly options expiration", "LOW", False
         out.append({
             "date": fri.isoformat(),
             "time_ct": None,
@@ -1089,7 +1225,15 @@ def _build_opex_rows(session_date: date, days: int = ECON_WINDOW_DAYS) -> list[d
             "forecast": None,
             "prior": None,
             "actual": None,
-            "anchor": False,
+            # Monthly/quarterly rows were already filtered as curated anchors
+            # on the frontend (catIsAnchorByName's title regex), but the
+            # `anchor` field itself stayed False for every market_calendar
+            # row unconditionally — so catMetaLine's badge prefix, which
+            # reads `c.anchor` directly rather than re-deriving the name
+            # match, never fired for a row the curation logic had already
+            # decided was an anchor (2026-08-22 review round 11, panels
+            # finding #3). Weekly rows are never anchors — unchanged.
+            "anchor": anchor,
             "source": "market_calendar",
         })
     return out
@@ -1181,10 +1325,23 @@ def build_catalysts(econ_rows: list[dict], memory_rows: list[dict],
             edt_ct = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(TZ_CT)
         except Exception:
             continue
+        earn_date = edt_ct.date().isoformat()
+        # A memory-kind row sharing this same (ticker, date) is almost always
+        # hand-curated color about the SAME earnings report (e.g. "FY2026
+        # year-end + guidance") rather than a separate event — MU's Q4
+        # earnings printed twice on the rail, once from each source, with
+        # near-identical countdowns and nothing distinguishing them
+        # (2026-08-22 review, panels finding #2). Fold the memory row's
+        # title into the earnings row instead of emitting both.
+        dup_memory = [o for o in out if o.get("kind") == "memory" and o.get("ticker") == ticker
+                      and o.get("date") == earn_date]
+        out = [o for o in out if o not in dup_memory]
+        memory_color = dup_memory[0].get("title") if dup_memory else None
+        title = f"{ticker} earnings" + (f" ({memory_color})" if memory_color else "")
         out.append({
-            "date": edt_ct.date().isoformat(),
+            "date": earn_date,
             "time_ct": edt_ct.strftime("%H:%M"),
-            "title": f"{ticker} earnings",
+            "title": title,
             "importance": "HIGH",
             "kind": "earnings",
             "ticker": ticker,
@@ -1221,8 +1378,69 @@ def build_catalysts(econ_rows: list[dict], memory_rows: list[dict],
             promoted["anchor"] = True
             out.append(promoted)
 
+    # Cross-reference the CSV-named anchors (CPI, Jobs Report, Retail Sales,
+    # FOMC, PCE) against TV's differently-titled rows for the same release —
+    # run against the FULL (unwindowed) econ_rows so an anchor promoted above
+    # from outside the display window still gets its numbers.
+    _merge_econ_aliases(out, econ_rows)
+
     out.sort(key=lambda r: (r["date"], r.get("time_ct") or "99:99"))
     return out
+
+
+def _catalyst_key(row: dict) -> tuple:
+    return (row.get("date"), (row.get("title") or "").strip().lower())
+
+
+def _catalyst_still_fresh(row: dict, now_ct: datetime) -> bool:
+    """Mirrors index.html's catDone()/countdown() grace period exactly: a
+    row stays visible until its own release grace period elapses — a
+    same-day row with no published time, or 6h past a row with one. Used to
+    decide whether a previous cycle's catalyst can be backfilled into this
+    cycle's list (see the merge in build_context below); a row this
+    function calls "not fresh" would render "cleared" anyway, so dropping
+    it costs nothing.
+    """
+    d_str = row.get("date")
+    if not d_str:
+        return False
+    try:
+        d = date.fromisoformat(d_str)
+    except Exception:
+        return False
+    t_str = row.get("time_ct")
+    if not isinstance(t_str, str) or ":" not in t_str:
+        return d >= now_ct.date()
+    try:
+        hh, mm = t_str.split(":")
+        when_ct = datetime(d.year, d.month, d.day, int(hh), int(mm), tzinfo=TZ_CT)
+    except Exception:
+        return d >= now_ct.date()
+    return (now_ct - when_ct) < timedelta(hours=6)
+
+
+def _merge_catalysts_forward(fresh: list[dict], prev: list[dict], now_ct: datetime) -> list[dict]:
+    """fetch_econ_tv fetches from=now forward, so a release from an hour ago
+    is simply absent from the next hourly refetch — build_catalysts has no
+    memory of what it built last cycle, so a HIGH-importance print (Non
+    Farm Payrolls, an earnings report) could silently vanish from the rail
+    within an hour of releasing, well before the frontend's own 6h grace
+    period would have called it "cleared" (2026-08-22 review, panels
+    finding #1). Backfill any previous-cycle row still inside that grace
+    period that the fresh fetch no longer carries, then re-sort — the same
+    order build_catalysts itself returns.
+    """
+    fresh_keys = {_catalyst_key(r) for r in fresh if isinstance(r, dict)}
+    merged = list(fresh)
+    for row in prev or []:
+        if not isinstance(row, dict):
+            continue
+        if _catalyst_key(row) in fresh_keys:
+            continue
+        if _catalyst_still_fresh(row, now_ct):
+            merged.append(row)
+    merged.sort(key=lambda r: (r.get("date") or "", r.get("time_ct") or "99:99"))
+    return merged
 
 
 # ── Bars (Yahoo daily OHLC, at most once per day) ───────────────────────────
@@ -1888,6 +2106,16 @@ YAHOO_QUOTESUMMARY_URL = "https://query1.finance.yahoo.com/v10/finance/quoteSumm
 # both price in USD, so the page was labeling trillions of won "reported
 # dollars". No extra HTTP call — it rides the same quoteSummary request.
 YAHOO_QS_MODULES = "defaultKeyStatistics,earningsHistory,earnings,calendarEvents,upgradeDowngradeHistory,financialData"
+# currency only ever gets SET by the Yahoo leg above, gated behind a
+# once-per-run crumb handshake (fetch_yahoo_crumb) — a crumb failure blanks
+# EVERY pinned ticker's currency for that day's rebuild at once, not just
+# one unlucky symbol, and the frontend then printed a false "may not report
+# in dollars" hedge for an ordinary US company like MU or CRWD (2026-08-22
+# review round 12, financials finding #3). The only two currently-pinned
+# non-USD reporters are named here explicitly (both real US-listed ADRs);
+# every other pinned ticker defaults to USD when the Yahoo leg didn't run
+# or didn't answer, rather than "unknown."
+KNOWN_NON_USD_CURRENCY = {"SKHY": "KRW", "TSM": "TWD"}
 
 FUND_SLEEP_SEC = 0.3
 # Analyst rating CHANGES (added 2026-08-19, Zach's ask: "analyst rating updates
@@ -2493,10 +2721,12 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
         "quarterly": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": [], "opinc": []},
         "annual": {"periods": [], "revenue": [], "eps": [], "ni": [], "fcf": [], "opinc": []},
         "ratings": [],
-        # The currency the statements are REPORTED in. None means unknown, and
-        # the page says "as reported" rather than naming a currency it is
-        # guessing at. Never assume USD: a US-listed ADR files in its home
-        # currency (SKHY in KRW, TSM in TWD).
+        # The currency the statements are REPORTED in — a US-listed ADR
+        # files in its home currency (SKHY in KRW, TSM in TWD). This
+        # starts None here but is never left None in the returned payload:
+        # see the KNOWN_NON_USD_CURRENCY fallback at the end of this
+        # function, applied only after a real vendor answer (the Yahoo leg
+        # below) has had its chance.
         "currency": None,
     }
 
@@ -2542,12 +2772,21 @@ def build_fund_sidecar(sym: str, session_date: date, crumb: Optional[str],
             ne = dict(yq["next_earnings"])
             if ne.get("session") is None:
                 if isinstance(earn_ts, (int, float)):
-                    ne["session"] = _earnings_session(earn_ts)
+                    # _earnings_session returns "premarket"/"afterhours"/None
+                    # (its own vocabulary); DATA_CONTRACT.md's next_earnings
+                    # schema is "AMC"/"BMO"/null (the stockanalysis.com
+                    # vocabulary this same field carries elsewhere) — mapped
+                    # here so the published field is never a third,
+                    # undocumented spelling of the same fact (2026-08-23
+                    # Fable architect pass, finding 2.2).
+                    ne["session"] = {"premarket": "BMO", "afterhours": "AMC"}.get(_earnings_session(earn_ts))
                 elif sa_next_earnings is not None:
                     ne["session"] = sa_next_earnings.get("session")
             payload["next_earnings"] = ne
 
     _backfill_earnings_revenue(payload["earnings"], payload["quarterly"])
+    if payload["currency"] is None:
+        payload["currency"] = KNOWN_NON_USD_CURRENCY.get(sym, "USD")
     return payload
 
 
@@ -2663,6 +2902,23 @@ FRAMEWORK_WEEKS_6M = 26                 # Filter 1 lookback: ~6 months of ISO we
 FRAMEWORK_WEEKS_3M = 13                 # Filter 3 lookback: ~3 months of ISO weeks
 FRAMEWORK_WEEK_TOLERANCE = 1            # nearest-available-snapshot search radius
 FRAMEWORK_MIN_EVALUATED = 3             # filters needed before a verdict is given at all
+# Filters 4/5 (opmargin expansion, FCF growth) had no anomaly check on the
+# same fund/{SYM}.json quarterly arrays the Financials chart already guards
+# with robustClampMag and a duplicate-row detector. Live example: MU's
+# sidecar computed "+5705 bps YoY" opmargin expansion and "+1291%" FCF
+# growth, both silently PASSing (2026-08-22 review, data honesty finding
+# #1). A tight reconciliation band (trailing-4-quarter revenue vs. the prior
+# full fiscal year) was rejected per that finding's own correction — a
+# fast-growing company diverges from a year-old annual figure for genuine
+# reasons mid-fiscal-year, and a tight band would misfire on real
+# hypergrowth. These ceilings instead bound the FILTER'S OWN OUTPUT
+# magnitude: a >20-percentage-point YoY opmargin swing or >300% TTM FCF
+# growth is far more likely a quarter-alignment/duplicate-row artifact than
+# a real reading, so it reads UNKNOWN rather than a guessed PASS/FAIL —
+# same "no trustworthy data, no guessed verdict" rule this file applies
+# everywhere else.
+FRAMEWORK_OPMARGIN_MAX_PLAUSIBLE_BPS = 2000.0   # >20pp YoY swing reads UNKNOWN, not PASS/FAIL
+FRAMEWORK_FCF_GROWTH_MAX_PLAUSIBLE = 3.0        # >300% TTM FCF growth reads UNKNOWN, not PASS/FAIL
 _FRAMEWORK_VERDICTS = {5: "BUY_5", 4: "BUY_4", 3: "ADD", 2: "HOLD", 1: "AVOID", 0: "AVOID"}
 
 
@@ -2740,7 +2996,7 @@ def _ratio_matches_split(ratio: float) -> bool:
     return False
 
 
-def _framework_verdict(passed: int, evaluated: int) -> str:
+def _framework_verdict(passed: int, evaluated: int, flagged: int = 0) -> str:
     """Map filters-passed to a verdict word on the framework's own 0-5 tier
     scale. "BUILDING" while fewer than FRAMEWORK_MIN_EVALUATED filters have
     real data — the two consensus-history filters (forward EPS revision,
@@ -2755,11 +3011,24 @@ def _framework_verdict(passed: int, evaluated: int) -> str:
     "mixed record, already failing" into one chip (2026-08-22 review, data
     honesty finding #3). BUY_5 has no such variant: reaching it requires all
     5 filters to have passed, which means all 5 have resolved.
+
+    `flagged` (added 2026-08-22, round 12) is the count of unresolved
+    filters rejected by an implausibility ceiling (score_framework's
+    filter_flags, e.g. Filter 4/5's "implausible_swing") rather than
+    genuinely still gathering data. A filter flagged this way will NEVER
+    resolve by waiting — the underlying financials are what's wrong, not
+    the elapsed time — so when EVERY unresolved filter is flagged, "_BUILDING"
+    promises a resolution that structurally cannot happen; "_CAPPED" marks
+    that case instead. If at least one unresolved filter is still genuinely
+    pending, "_BUILDING" stays correct (data honesty finding #2).
     """
     if evaluated < FRAMEWORK_MIN_EVALUATED:
         return "BUILDING"
     word = _FRAMEWORK_VERDICTS.get(passed, "BUILDING")
     if evaluated < 5 and word != "BUILDING":
+        unresolved = 5 - evaluated
+        if flagged > 0 and flagged >= unresolved:
+            return word + "_CAPPED"
         return word + "_BUILDING"
     return word
 
@@ -2774,6 +3043,18 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
     """
     filters: dict[str, Optional[bool]] = {}
     metrics: dict[str, float] = {}
+    # A filter rejected by an implausibility ceiling (Filter 4/5's
+    # FRAMEWORK_OPMARGIN_MAX_PLAUSIBLE_BPS / FRAMEWORK_FCF_GROWTH_MAX_PLAUSIBLE)
+    # is a PERMANENT data-quality rejection, not a temporary data gap — it
+    # will never resolve just by waiting the way the two consensus-history
+    # filters genuinely do. Both used to collapse into the same `None`/
+    # "building…" word as "still gathering data" filters, telling the reader
+    # a ceiling-rejected reading might arrive next week when it structurally
+    # cannot (2026-08-22 review round 11, data honesty finding #1). Recorded
+    # here so the frontend can render "DATA FLAGGED" instead of "building…"
+    # for exactly these two keys, without changing the passed/failed/unknown
+    # counting a flagged filter still correctly behaves as unknown for.
+    filter_flags: dict[str, str] = {}
 
     eps_ntm = f.get("eps_ntm") if isinstance(f, dict) else None
     rev_ntm = f.get("rev_ntm") if isinstance(f, dict) else None
@@ -2836,8 +3117,12 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
         rev_now, rev_prior, oi_now, oi_prior = q_rev[-1], q_rev[-5], q_opinc[-1], q_opinc[-5]
         if all(_isnum(x) for x in (rev_now, rev_prior, oi_now, oi_prior)) and rev_now > 0 and rev_prior > 0:
             bps = (oi_now / rev_now - oi_prior / rev_prior) * 10000
-            metrics["opmargin_expansion_bps"] = round(bps, 1)
-            filters["opmargin_expansion"] = bps > FRAMEWORK_OPMARGIN_MIN_BPS
+            if abs(bps) > FRAMEWORK_OPMARGIN_MAX_PLAUSIBLE_BPS:
+                filters["opmargin_expansion"] = None
+                filter_flags["opmargin_expansion"] = "implausible_swing"
+            else:
+                metrics["opmargin_expansion_bps"] = round(bps, 1)
+                filters["opmargin_expansion"] = bps > FRAMEWORK_OPMARGIN_MIN_BPS
         else:
             filters["opmargin_expansion"] = None
     else:
@@ -2854,9 +3139,21 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
             if ttm_fcf_prior != 0 and ttm_rev_prior > 0:
                 fcf_growth = (ttm_fcf_now - ttm_fcf_prior) / abs(ttm_fcf_prior)
                 rev_growth_ttm = (ttm_rev_now - ttm_rev_prior) / ttm_rev_prior
-                metrics["fcf_growth_ttm_pct"] = round(fcf_growth * 100, 2)
-                metrics["revenue_growth_ttm_pct"] = round(rev_growth_ttm * 100, 2)
-                filters["fcf_growth"] = (ttm_fcf_now > 0) and (fcf_growth > rev_growth_ttm)
+                if abs(fcf_growth) > FRAMEWORK_FCF_GROWTH_MAX_PLAUSIBLE:
+                    filters["fcf_growth"] = None
+                    filter_flags["fcf_growth"] = "implausible_swing"
+                else:
+                    metrics["fcf_growth_ttm_pct"] = round(fcf_growth * 100, 2)
+                    metrics["revenue_growth_ttm_pct"] = round(rev_growth_ttm * 100, 2)
+                    # Published so the frontend can explain a FAIL that would
+                    # otherwise contradict its own two printed percentages — the
+                    # real rule ANDs in ttm_fcf_now>0, which is invisible on
+                    # screen if only fcf_growth_ttm_pct/revenue_growth_ttm_pct
+                    # are shown (2026-08-23 review round 15, data honesty
+                    # finding #1; DATA_CONTRACT.md's own documented rule already
+                    # names this second condition).
+                    metrics["ttm_fcf_positive"] = ttm_fcf_now > 0
+                    filters["fcf_growth"] = (ttm_fcf_now > 0) and (fcf_growth > rev_growth_ttm)
             else:
                 filters["fcf_growth"] = None
         else:
@@ -2873,7 +3170,8 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
         "filters_passed": passed,
         "filters_failed": failed,
         "filters_unknown": unknown,
-        "verdict": _framework_verdict(passed, passed + failed),
+        "filter_flags": filter_flags,
+        "verdict": _framework_verdict(passed, passed + failed, flagged=len(filter_flags)),
         "metrics": metrics,
     }
 
@@ -2965,6 +3263,9 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
             earn_map[ticker] = {"ts": ts, "days": d if d >= 0 else None}
 
         catalysts = build_catalysts(econ_rows, memory_rows, earn_map, csv_mirror, session_date)
+        # Backfill anything the previous cycle had that a from=now-only
+        # refetch would otherwise silently drop the moment it releases.
+        catalysts = _merge_catalysts_forward(catalysts, cache.get("catalysts") or [], now_utc.astimezone(TZ_CT))
 
         symbols = [q.get("tv_symbol") for q in quotes.values() if isinstance(q, dict)]
         news = fetch_news([s for s in symbols if s], _get=_get)
@@ -2974,7 +3275,19 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         cache["catalysts"] = catalysts
         cache["news"] = news
         cache["desk_private"] = desk_private
-        cache["fed_odds"] = fed_odds
+        # fetch_fed_odds returns None on ANY ordinary transient condition (an
+        # HTTP error, the nearest market's volume dipping under
+        # POLY_MIN_EVENT_VOLUME_USD, its legs summing outside 80-120%) — an
+        # unconditional overwrite wiped a genuinely good prior-hour reading
+        # for the rest of the hourly gate, unlike avg_move's own merge-not-
+        # replace pattern just above this block. Keep the previous cached
+        # value on a None result; its own `as_of` timestamp already lets the
+        # frontend show it aging (2026-08-22 review round 11, data honesty
+        # finding #2).
+        if isinstance(fed_odds, dict):
+            cache["fed_odds"] = fed_odds
+        else:
+            fed_odds = cache.get("fed_odds")
     else:
         brief = cache["brief"]
         catalysts = cache["catalysts"]

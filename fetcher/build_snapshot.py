@@ -47,7 +47,9 @@ PIPELINE (letters match the build spec)
 ────────────────────────────────────────────────────────────────────────────
 FORCED OFF-HOURS CYCLES (added 2026-07-18)
 ────────────────────────────────────────────────────────────────────────────
-When market_state == "closed" (weekend, or outside the 08:00-15:20 CT halo)
+When market_state == "closed" (weekend, a market holiday, or outside the
+08:00-15:20 CT halo — 08:00-12:20 CT on a half day, see market_guard.py's
+MARKET_HOLIDAYS/MARKET_HALF_DAYS)
 the cycle STILL writes data.json so a forced test refreshes the live site,
 but it does NOT mutate history.json: no today_sessions row, no iv_history
 append, no first_board stamping, no save_history. This keeps forced off-hours
@@ -169,6 +171,7 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import context  # sibling module: vault brief/catalysts/news/facts + bars.json
+import market_guard  # sibling module: holiday/half-day/window awareness
 
 TZ_CT = ZoneInfo("America/Chicago")
 
@@ -850,6 +853,13 @@ def analyze_ticker(ticker: str, chain: dict, session_date: date,
                 "iv": iv,
                 "premium": premium,
                 "occ": occ,
+                # This snapshot's own spot, so the page's "MOSTLY INTRINSIC"
+                # badge can cross the contract's premium against the price
+                # from the SAME moment, instead of a live poll running
+                # against a ~7-minute-old "last" premium — the badge's real
+                # detection path was published nowhere until this field
+                # existed (2026-08-22 review, flow boards finding #1).
+                "spot": float(spot) if isinstance(spot, (int, float)) else None,
             }))
 
         # ── aggressor tilt (both DTE buckets) ──────────────────────────
@@ -1206,19 +1216,26 @@ def build_etf_flows(history: dict, session_str: str,
                 series[-2][1], series[-1][1], series[-2][2], series[-1][2])
             if split_suppressed:
                 # Don't print 0 either — that asserts a flat day we didn't
-                # observe. The card shows a dash and the reason.
+                # observe. The card shows a dash and the reason. baseline_session
+                # and streak must go null too, per DATA_CONTRACT.md's own
+                # "null when flow_1d is null" rule for both fields — this used
+                # to publish streak:0 and a real baseline_session date on a
+                # split day, contradicting the contract (2026-08-23 Fable
+                # architect pass, finding 2.5).
                 flow_1d = None
+                baseline_session = None
+                streak = None
             else:
                 flow_1d = deltas[-1] * nav
-            baseline_session = series[-2][0]
-            streak = 0
-            last_sign = (deltas[-1] > 0) - (deltas[-1] < 0)
-            if last_sign != 0:
-                for dlt in reversed(deltas):
-                    if ((dlt > 0) - (dlt < 0)) == last_sign:
-                        streak += 1
-                    else:
-                        break
+                baseline_session = series[-2][0]
+                streak = 0
+                last_sign = (deltas[-1] > 0) - (deltas[-1] < 0)
+                if last_sign != 0:
+                    for dlt in reversed(deltas):
+                        if ((dlt > 0) - (dlt < 0)) == last_sign:
+                            streak += 1
+                        else:
+                            break
 
         if so_now is None and row.get("flow_1m") is None:
             continue   # nothing at all to show for this fund this cycle
@@ -1269,9 +1286,10 @@ def load_history(out_dir: Path) -> dict:
         raw.setdefault("vol_history", {})
         raw.setdefault("etf_so", {})
         raw.setdefault("big_orders", {})
+        raw.setdefault("swing_first_seen", {})
         return raw
     except Exception:
-        return {"sessions": {}, "iv_history": {}, "vol_history": {}, "etf_so": {}, "big_orders": {}}
+        return {"sessions": {}, "iv_history": {}, "vol_history": {}, "etf_so": {}, "big_orders": {}, "swing_first_seen": {}}
 
 
 def save_history(out_dir: Path, history: dict) -> None:
@@ -1496,14 +1514,21 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     session_date = now_ct.date()
     session_str = session_date.isoformat()
 
-    if now_ct.weekday() >= 5:
+    # Holiday-aware now (2026-08-23 Fable architect pass, finding 1.1) — this
+    # block used to be a pure weekday+clock test, so a weekday market closure
+    # (Labor Day, Thanksgiving, Christmas, ...) computed "open" all day and
+    # write_history=True fabricated a phantom session into history.json from
+    # stale vendor data. A half day (session closes at noon CT, not 15:00)
+    # shifts straight to "afterhours"/"closed" past the shrunk close, the
+    # same way index.html's own priceSessionNow() treats one.
+    if now_ct.weekday() >= 5 or market_guard.is_market_holiday(now_ct):
         market_state = "closed"
     else:
         open_min = 8 * 60 + 30
-        close_min = 15 * 60
+        close_min = 12 * 60 if market_guard.is_market_half_day(now_ct) else 15 * 60
         cur_min = now_ct.hour * 60 + now_ct.minute
         pre_min = 8 * 60
-        post_min = 15 * 60 + 20
+        post_min = close_min + 20
         if open_min <= cur_min <= close_min:
             market_state = "open"
         elif pre_min <= cur_min < open_min:
@@ -1685,7 +1710,16 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
                     else:
                         oi_confirm = "CHURN"
 
-        # trend: spot vs SMA20/SMA50
+        # trend: spot vs SMA20/SMA50. A ticker with no SMA data at all (the
+        # scanner's own documented gap for thinly-traded new leveraged ETFs
+        # like MUU/RAM) used to fall into the same "MIXED" value as a
+        # genuine split-above-one-average/below-the-other reading, with
+        # nothing anywhere disclosing that MIXED could also mean "no
+        # moving averages existed to compare" — and swing_score awarded the
+        # same +7 points for both cases (2026-08-22 review round 12, data
+        # honesty finding #1). None is its own tri-state now, reserved for
+        # missing data; swing_score's `trend == "MIXED"` check already
+        # excludes None with no further change needed there.
         spot = analysis["spot"]
         sma20, sma50 = quote.get("sma20"), quote.get("sma50")
         if spot and sma20 and sma50:
@@ -1696,7 +1730,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
             else:
                 trend = "MIXED"
         else:
-            trend = "MIXED"
+            trend = None
 
         # iv_rank: percentile within iv_history (including today's just-appended value)
         ivs = iv_history.get(ticker, [])
@@ -1836,15 +1870,62 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     # the capped board this cycle, and only once per ticker per day ────────
     if write_history:
         now_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-        for board_cards, key in ((conviction_cards, "first_board_conviction"),
-                                  (swing_cards, "first_board_swing")):
-            for c in board_cards:
-                ticker = c["ticker"]
-                row = today_sessions.setdefault(ticker, {})
-                if key not in row or not row[key]:
-                    row[key] = {"time": now_iso, "spot": c["spot"]}
-                fb = row[key]
-                c["spot_at_alert"] = fb.get("spot") if isinstance(fb, dict) else None
+        for c in conviction_cards:
+            ticker = c["ticker"]
+            row = today_sessions.setdefault(ticker, {})
+            if "first_board_conviction" not in row or not row["first_board_conviction"]:
+                row["first_board_conviction"] = {"time": now_iso, "spot": c["spot"]}
+            fb = row["first_board_conviction"]
+            c["spot_at_alert"] = fb.get("spot") if isinstance(fb, dict) else None
+        # Conviction's own daily reset (first_board_conviction, above) is
+        # correct — it is a short-dated board where "since flagged" inside
+        # today already matches the board's own intent. Swing persists 2
+        # weeks to 6 months, and the SAME daily-reset key reused here
+        # unmodified meant the "since flagged" chase chip could never show
+        # more than a few hours' worth of gain on a board meant to track
+        # weeks (2026-08-22 review, flow boards finding #1). Swing now
+        # tracks first-seen in a cross-day map (history["swing_first_seen"],
+        # never reset by the daily today_sessions machinery), and a ticker's
+        # entry is cleared the day it actually drops off the board so a
+        # genuine later re-flag still starts fresh.
+        # A ticker absent from swing_tickers_today used to be deleted
+        # IMMEDIATELY, every cycle — so a single transient chain hiccup (CBOE
+        # times out for this one name, or no 0.30-0.60-delta contract exists
+        # to refresh this cycle) erased the cross-day baseline this whole
+        # mechanism exists to preserve, and the very next cycle re-stamped it
+        # at TODAY's spot instead of the name's real first-flagged spot from
+        # 15 sessions ago. An entry now survives any absence within the SAME
+        # trading session, and is only deleted once its last_seen falls
+        # behind the prior published session — i.e. the ticker was absent for
+        # a full session, not one ~7-minute cycle (2026-08-23 Fable architect
+        # pass, finding 3.1).
+        swing_first_seen = history.setdefault("swing_first_seen", {})
+        swing_tickers_today = {c["ticker"] for c in swing_cards}
+        prior_swing_dates = sorted(d for d in history["sessions"].keys() if d < session_str)
+        prior_session_str = prior_swing_dates[-1] if prior_swing_dates else None
+        for ticker in list(swing_first_seen.keys()):
+            entry = swing_first_seen[ticker]
+            if ticker in swing_tickers_today:
+                if isinstance(entry, dict):
+                    entry["last_seen"] = session_str
+                continue
+            last_seen = entry.get("last_seen") if isinstance(entry, dict) else None
+            # An entry with no last_seen yet (written before this fix, or the
+            # very first cycle it was ever seen) is treated as seen today —
+            # never mass-deleted the first time this code runs.
+            if last_seen is None:
+                if isinstance(entry, dict):
+                    entry["last_seen"] = session_str
+                continue
+            if prior_session_str is not None and last_seen < prior_session_str:
+                del swing_first_seen[ticker]
+        for c in swing_cards:
+            ticker = c["ticker"]
+            if ticker not in swing_first_seen or not swing_first_seen[ticker]:
+                swing_first_seen[ticker] = {"time": now_iso, "spot": c["spot"], "last_seen": session_str}
+            fb = swing_first_seen[ticker]
+            fb["last_seen"] = session_str
+            c["spot_at_alert"] = fb.get("spot") if isinstance(fb, dict) else None
     else:
         # Closed-day cycle: no history mutation, but spot_at_alert must still
         # be present on every card (DATA_CONTRACT field shape) — the frontend
@@ -1969,8 +2050,19 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
         "market_state": market_state,
         "universe": {
             "watched": screened,          # size of the curated pinned list
-            "candidates": len(candidates),  # of those, how many resolved a quote
-            "with_options": with_options,   # of those, how many had a usable chain
+            # "candidates" is every PINNED name that resolved a live TV quote,
+            # TRACK_ONLY names included — this must equal len(quotes), NOT
+            # len(select_candidates(quotes)), or a healthy cycle prints a
+            # false vendor-failure claim: the frontend's boardCoverageHTML
+            # subtracts this from `pinned` and reports the gap as "resolved
+            # no live quote," but the five TRACK_ONLY names always resolve a
+            # quote fine — they are simply never chain-fetched by design.
+            # chain_eligible is the OLD candidates count (TRACK_ONLY
+            # excluded) for exactly that comparison (2026-08-23 Fable
+            # architect pass, finding 2.1; DATA_CONTRACT.md updated in step).
+            "candidates": len(quotes),
+            "chain_eligible": len(candidates),
+            "with_options": with_options,   # of chain_eligible, how many had a usable chain
             "pinned": len(PINNED),
         },
         "stats": {
@@ -1988,8 +2080,16 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
             "flow_proxy": ("Net flow = call premium traded minus put premium traded "
                            "(volume x last x 100). Free data can't see buy/sell side "
                            "— this is premium changing hands, not directional order flow."),
-            "delay": ("Options data is 15-minute delayed (CBOE free feed). Stock prices "
-                      "update live every 30s (TradingView Cboe One)."),
+            # Corrected 2026-08-23 (Fable architect pass, finding 2.3) to match
+            # DATA_CONTRACT.md's own text — this string still claimed stock
+            # prices "update live," contradicting the site's loudest
+            # guardrail (measured 2026-08-19: the scanner reports
+            # update_mode delayed_streaming_900 and a cross-correlation
+            # against a real-time feed put the lag at 16 minutes).
+            "delay": ("Options data is 15-minute delayed (CBOE free feed). Stock prices are "
+                      "15-minute delayed too and are re-read every 30s (TradingView scanner; it "
+                      "reports update_mode delayed_streaming_900, and a 30-sample cross-correlation "
+                      "against a real-time feed put the lag at 16 minutes on 2026-08-19)."),
             "tilt": ("Aggressor tilt classifies each contract's last trade against its "
                      "bid/ask each refresh (near ask = bought, near bid = sold) and "
                      "accumulates the day's classified premium: calls bought + puts sold "

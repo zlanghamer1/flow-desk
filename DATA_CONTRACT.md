@@ -18,18 +18,31 @@ values are `null` (never a string sentinel). All strings are already plain
   "market_state": "closed",                      // "open" | "premarket" | "afterhours" | "closed"
   "universe": {
     "watched": 35,         // size of the curated pinned list (no market screen)
-    "candidates": 35,      // of those, how many resolved a live quote
-    "with_options": 35,    // of those, how many had a usable CBOE chain
+    "candidates": 35,      // of those, how many resolved a live TV quote (TRACK_ONLY names included)
+    "chain_eligible": 30,  // of those quote-resolved names, how many were even ELIGIBLE for a CBOE
+                           // chain fetch — i.e. candidates minus TRACK_ONLY names, which are quoted/
+                           // tracked like everything else but deliberately never reach the chain fetch
+                           // (added 2026-08-23; before this, "candidates" itself excluded TRACK_ONLY,
+                           // so the coverage footer below asserted a false "N names resolved no live
+                           // quote" for names that resolve fine and are simply quote-only by design —
+                           // Fable architect pass finding 2.1)
+    "with_options": 30,    // of chain_eligible, how many had a usable CBOE chain
     "pinned": 35           // len(PINNED) — watchlist + sector ETFs
   },
-  // READER NOTE (2026-08-20): the page reads this block for two statements it
-  // could not otherwise make. The flow-board footer says "N of your M watched
-  // names had a usable option chain this cycle" whenever candidates < pinned,
-  // so "show all 57" is not read as the whole watchlist. And an EMPTY board
-  // branches on with_options: zero chains resolved is a vendor outage, not a
-  // quiet tape, and it says so. Publishers must keep these four counts honest
-  // — a with_options that mirrors candidates when no chain resolved would make
-  // the page report an outage as a calm market.
+  // READER NOTE (2026-08-20, corrected 2026-08-23): the page reads this block
+  // for two statements it could not otherwise make. The flow-board footer
+  // says "N of your M watched names resolved no live quote this cycle"
+  // whenever candidates < pinned (a genuine quote-resolution gap now that
+  // TRACK_ONLY is counted in candidates), and separately "N more resolved a
+  // quote but no usable option chain" whenever with_options < chain_eligible,
+  // plus a neutral "N tracked names are quote-only by design" whenever
+  // candidates > chain_eligible. An EMPTY board branches on candidates first,
+  // then with_options: zero quote-resolved candidates is a TradingView
+  // quote-vendor outage; zero of a nonzero chain_eligible with a chain is a
+  // CBOE chain-vendor outage. Neither is a quiet tape, and the page says so.
+  // Publishers must keep these five counts honest — a with_options that
+  // mirrors chain_eligible when no chain resolved would make the page report
+  // an outage as a calm market.
   "stats": {                 // header tiles (computed across BOTH boards' members, deduped by ticker)
     "bullish_flow": 12,
     "bearish_flow": 9,
@@ -232,8 +245,17 @@ values are `null` (never a string sentinel). All strings are already plain
 >                                     // derivable from TV's earnings timestamp
 >   "forecast": null,                 // econ rows only (TV/csv "forecast"); else null
 >   "prior": null,                    // econ rows only (TV/csv "previous"); else null
->   "actual": null,                   // econ rows only, filled in once the print
->                                     // lands; else null
+>   "actual": null,                   // econ rows only, filled in once the print lands; else
+>                                     // null. Requires fetch_econ_tv's own 26h lookback window
+>                                     // (added 2026-08-22 — a from=now request could never
+>                                     // receive a released row's actual at all, since a released
+>                                     // row's time is necessarily in the past). Only ever
+>                                     // populated on a tv_calendar row: the hand-kept
+>                                     // econ_calendar CSV mirror carries no numeric fields and
+>                                     // wins same-date+title conflicts against tv_calendar
+>                                     // regardless (see _dedup_econ), so an anchor event
+>                                     // (FOMC/CPI) sourced from the CSV shows no actual even
+>                                     // after it releases.
 >   "anchor": false,                  // true = kept past the 28-day window (see above)
 >   "source": "tv_calendar",          // "econ_calendar" | "tv_calendar" | "tv_earnings"
 >                                     // | "memory_events" | "market_calendar".
@@ -363,16 +385,46 @@ values are `null` (never a string sentinel). All strings are already plain
 >     "filters_passed": 4,      // count of true
 >     "filters_failed": 0,      // count of false
 >     "filters_unknown": 1,     // count of null — NEVER counted as a fail
+>     "filter_flags": {         // (added 2026-08-22, round 11) keys of any
+>                               // filter whose null came from a PERMANENT
+>                               // implausibility-ceiling rejection (Filter
+>                               // 4/5 only), not a temporary "still
+>                               // gathering data" gap — e.g.
+>                               // {"opmargin_expansion": "implausible_swing"}.
+>                               // Distinguishes a reading that will never
+>                               // resolve by waiting from one that genuinely
+>                               // will; the frontend renders "DATA FLAGGED"
+>                               // instead of "building…" for a flagged key.
+>                               // Omitted key = not flagged. {} when nothing
+>                               // was flagged this cycle.
 >     "verdict": "BUY_4",       // "BUY_5" | "BUY_4" | "ADD" | "HOLD" | "AVOID" |
 >                               // "BUILDING" (fewer than 3 of 5 filters have
 >                               // resolved yet — never a confident tier on a
->                               // minority of the filters)
+>                               // minority of the filters). Any tier but
+>                               // BUY_5 may carry a "_BUILDING" or "_CAPPED"
+>                               // suffix (added 2026-08-22, round 12) when
+>                               // fewer than all 5 have resolved: "_BUILDING"
+>                               // means at least one unresolved filter is
+>                               // genuinely still gathering data (could still
+>                               // move); "_CAPPED" means EVERY unresolved
+>                               // filter was permanently rejected by an
+>                               // implausibility ceiling (filter_flags) and
+>                               // this verdict will not move by waiting.
 >     "metrics": {              // only the metrics whose filter resolved; a
 >                               // key is simply absent when its filter is null
 >       "revenue_growth_ntm_pct": 24.3,
 >       "opmargin_expansion_bps": 230.0,
 >       "fcf_growth_ttm_pct": 18.5,
->       "revenue_growth_ttm_pct": 12.1
+>       "revenue_growth_ttm_pct": 12.1,
+>       "ttm_fcf_positive": true    // published alongside fcf_growth_ttm_pct so
+>                                   // the frontend can explain a FAIL whose two
+>                                   // printed percentages (FCF growing faster
+>                                   // than revenue) would otherwise look like a
+>                                   // PASS — the real filter also requires TTM
+>                                   // FCF to be positive, not just growing
+>                                   // faster than a shrinking-loss baseline
+>                                   // (2026-08-23 review round 15, data
+>                                   // honesty finding #1)
 >     }
 >   },
 >   // ── Gamma concentration levels (added 2026-08-22) — UNSIGNED options-
@@ -850,12 +902,20 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
     snapshot session-date guard.
 - `currency` — the ISO code the company FILES in, from Yahoo quoteSummary's
   `financialData.financialCurrency`, which also rides the existing
-  quoteSummary request. **Never assume USD.** A US-listed foreign company
-  reports in its home currency while its shares price in dollars: SK hynix
-  (SKHY) files in KRW and Taiwan Semi (TSM) in TWD. Before this field existed
-  the desk labeled 79 trillion won "reported dollars". `null` when the vendor
-  does not say, and the page then says it does not know rather than guessing.
-  Anything that is not a three-letter alphabetic code is dropped.
+  quoteSummary request. **Never assume USD from a real vendor answer.** A
+  US-listed foreign company reports in its home currency while its shares
+  price in dollars: SK hynix (SKHY) files in KRW and Taiwan Semi (TSM) in
+  TWD. Before this field existed the desk labeled 79 trillion won "reported
+  dollars". Anything that is not a three-letter alphabetic code is dropped.
+  (Added 2026-08-22, round 12) This field is **never `null` in the
+  published payload**: the Yahoo leg only ever runs behind a once-per-run
+  crumb handshake, so a crumb failure used to blank EVERY pinned ticker's
+  currency for that day's rebuild at once — not just one unlucky
+  symbol — and the page then printed a false "may not report in dollars"
+  hedge for an ordinary US company (MU, CRWD, ...). `build_fund_sidecar`
+  now falls back to a small, explicit `KNOWN_NON_USD_CURRENCY` table
+  (currently just SKHY/TSM) and defaults every other pinned ticker to
+  `"USD"` when the Yahoo leg didn't run or didn't answer.
   - Capped at `RATINGS_MAX` (40) rows inside `RATINGS_MAX_AGE_DAYS` (~3 years,
     the deepest window any chart shows), deduped on (date, firm, direction).
     Full histories run to 878 rows / 168 KB for a name like MU; the cap is what
@@ -922,10 +982,19 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
 > calls in 5 of 12 rows at adjacent strikes ($683-$687, same expiry) — an honest
 > ranking that crowded five other names off the board to say one thing five
 > times. Rows a capped ticker gives up go to the next-loudest OTHER contract, so
-> the board stays `BIG_ORDERS_CAP` long. `big_orders_capped` reports what the cap
-> cost, measured against the UNCAPPED top-`BIG_ORDERS_CAP` (not the ticker's
-> whole shortlist — a 13th-place row was never going to show, so counting it
-> would overstate the loss).
+> the board stays `BIG_ORDERS_CAP` long. `big_orders_capped.earned` reports what
+> the cap cost, measured against the ticker's rows across the WHOLE merged
+> candidate pool — NOT a naive top-`BIG_ORDERS_CAP` slice by raw dollars, which
+> the round-6 fix corrected: the greedy per-ticker-capped merge backfills past
+> that naive slice whenever an earlier ticker gets skipped for hitting its own
+> quota, so a ticker with zero rows in the naive slice can still lose a row to
+> the cap and never appear in this disclosure if measured against that slice
+> instead. The gate is `shown === BIG_ORDERS_PER_TICKER AND earned > shown` — a
+> ticker that simply never ranked onto the board at all (`shown` 0) is an
+> ordinary miss on dollars, not a per-ticker cap to confess. (Corrected
+> 2026-08-23, Fable architect pass finding 2.4 — this paragraph previously
+> described the OLD, pre-round-6 measurement, contradicting the `earned` field
+> comment below it, which already stated the current, correct rule.)
 
 ### BigOrder
 ```json
@@ -943,7 +1012,13 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
   "iv": 0.31,                       // decimal (0.31 = 31%); null if CBOE omits it
   "premium": 125416670.0,           // volume x last x 100 — the ranking key.
                                     // A SESSION TOTAL, not one order (see note above).
-  "occ": "AMZN260821C00250000"
+  "occ": "AMZN260821C00250000",
+  "spot": 231.40                    // the underlying's spot AT THIS SNAPSHOT, so the page's
+                                    // "MOSTLY INTRINSIC" badge can cross the contract against
+                                    // the price from the same moment, instead of a live poll
+                                    // running against this row's ~7-minute-old "last" premium.
+                                    // Added 2026-08-22 — was computed on the frontend for a
+                                    // field that did not exist on this row until now.
 }
 ```
 
@@ -1059,7 +1134,17 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
                                    // yesterday's side volume < 500
   "oi_confirm_frac": 0.41,         // (OI_today - OI_yest) / vol_yest on yesterday's direction side; null when oi_confirm is null
   "oi_confirm_side": "CALL",       // which side was checked (yesterday's direction); null when oi_confirm is null
-  "trend": "UP",                   // "UP" | "DOWN" | "MIXED"  (spot vs SMA20/SMA50)
+  "trend": "UP",                   // "UP" | "DOWN" | "MIXED" | null  (spot vs SMA20/SMA50)
+                                   // null means the scanner had no SMA20/SMA50
+                                   // to compare at all (thinly-traded new
+                                   // leveraged ETFs, e.g. MUU/RAM) — a
+                                   // DIFFERENT fact from "MIXED" (a genuine
+                                   // split-above-one-average/below-the-other
+                                   // reading). Collapsing the two into one
+                                   // MIXED value let swing_score award the
+                                   // same +7 points for "no data" as for a
+                                   // real mixed trend (2026-08-22, round 12).
+                                   // The frontend renders null as "—".
   "iv_rank": 63,                   // 0-100 percentile once >=20 sessions; else null
   "iv30": 0.98,                    // decimal; always present as fallback display
   "iv_collecting": true,           // true while <20 sessions of iv history (show "collecting history")
