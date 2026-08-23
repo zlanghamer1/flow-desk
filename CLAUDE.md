@@ -1629,5 +1629,26 @@ live against TradingView's actual scanner (not from memory):
   there is no drop-in algorithmic fix that would generically prevent the
   next one.
 
+## Guardrails added 2026-08-23 (Zach's direct request, watchlist sort options)
+
+Feature freeze explicitly lifted for this one change (Zach's call, small and
+additive, doesn't touch review-flagged code).
+
+- **Two new watchlist rail sorts: A→Z (alphabetical by ticker) and volume
+  (today's raw share volume, highest first).** Zach's choice on the volume
+  metric: raw share volume, not relative volume or dollar volume — a
+  deliberate call to keep it distinct from the existing hot/RVOL-based
+  sorts elsewhere on the page.
+- **New `volNow(sym)` helper mirrors `dispQuote`'s own pre-market
+  session-awareness** — the scanner's plain `volume` column is the REGULAR
+  session's running total (zero/stale before the bell), so during premarket
+  this reads the scanner's separate premarket-volume column instead, the
+  same "regular-session columns are yesterday's" rule the rest of the file
+  already applies to price/OHLC.
+- **Both new sorts slot into the existing `sorts` array/comparator
+  structure with no new mechanism** — the sort-button click handler already
+  sets `wlSort` generically from `data-ws`, so no enum needed updating
+  anywhere else.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

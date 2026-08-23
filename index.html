@@ -3114,6 +3114,17 @@ function hotOf(sym){
   if(am===null || am===0) return null;
   return Math.abs(d.ch)/am;
 }
+// Raw share volume for the "sort by volume" view (Zach's request, 2026-08-23).
+// Pre-market, the scanner's plain `volume` column is the REGULAR session's
+// running total — zero or stale before the bell, same fact dispQuote/
+// candleClose already guard against for price/OHLC — so this prefers the
+// scanner's separate pre-market volume column during that window instead.
+function volNow(sym){
+  var q = liveBySym(sym);
+  if(!q) return null;
+  if(priceSessionNow()==="premarket" && q.prevol!=null) return q.prevol;
+  return q.v;
+}
 // Bollinger Bands (20, 2) — watchlist-wide, added 2026-08-21 for the "alert
 // if a stock crosses" ask. Bands are computed from COMPLETED daily closes
 // only (barsOf, never today's live price) so they don't shift with every
@@ -3438,11 +3449,15 @@ function renderWL(){
   var railSyms = [];
   RAIL_GROUPS.forEach(function(g){ g.syms.forEach(function(s){ if(hidden.indexOf(s)===-1) railSyms.push(s); }); });
   customSyms.forEach(function(s){ if(railSyms.indexOf(s)===-1) railSyms.push(s); });
-  var sorts = [["groups","groups"],["range","52w ↑"],["chg","Δ%"],["hot","hot"]];
+  // "az" and "vol" added at Zach's request (2026-08-23) — alphabetical and
+  // today's raw share volume, alongside the existing 52w/Δ%/hot sorts.
+  var sorts = [["groups","groups"],["range","52w ↑"],["chg","Δ%"],["hot","hot"],["az","A→Z"],["vol","volume"]];
   var html = '<div class="wlsort">'+sorts.map(function(k){
     var tip = k[0]==="range" ? "Sort lowest-in-range first — the value-shopping view. Hot runners sink to the bottom."
       : k[0]==="hot" ? "Sort by move vs each name's own average day."
-      : k[0]==="chg" ? "Sort by today's % move." : "Grouped view.";
+      : k[0]==="chg" ? "Sort by today's % move."
+      : k[0]==="az" ? "Sort alphabetically by ticker."
+      : k[0]==="vol" ? "Sort by today's raw share volume, highest first. Pre-market, this is the pre-market session's own volume." : "Grouped view.";
     return '<button class="fbtn" data-ws="'+k[0]+'" aria-pressed="'+(wlSort===k[0])+'" data-tip="'+esc(tip)+'">'+k[1]+'</button>';
   }).join("")
   // A write failure is now visible instead of a click that silently did
@@ -3499,6 +3514,12 @@ function renderWL(){
         var va=ca.ch!=null?ca.ch:-Infinity, vb=cb.ch!=null?cb.ch:-Infinity;
         return vb-va;
       }
+      if(wlSort==="az") return a<b ? -1 : a>b ? 1 : 0;
+      if(wlSort==="vol"){
+        var wa=volNow(a), wb=volNow(b);
+        if(wa==null && wb==null) return 0;
+        return (wb==null?-Infinity:wb)-(wa==null?-Infinity:wa);
+      }
       var ha=hotOf(a), hb=hotOf(b);
       // Same explicit both-null guard the "range" comparator already has a
       // few lines below — without it, -Infinity minus -Infinity is NaN, and
@@ -3509,6 +3530,8 @@ function renderWL(){
     });
     var lab = wlSort==="range" ? "52W RANGE — LOWEST FIRST"
             : wlSort==="chg" ? ((priceSessionNow()==="premarket") ? "PRE-MARKET MOVE — BIGGEST FIRST" : "TODAY'S MOVE — BIGGEST FIRST")
+            : wlSort==="az" ? "A → Z"
+            : wlSort==="vol" ? ((priceSessionNow()==="premarket") ? "PRE-MARKET VOLUME — HIGHEST FIRST" : "TODAY'S VOLUME — HIGHEST FIRST")
             : "VS OWN AVERAGE — HOTTEST FIRST";
     html += '<div class="wg">'+lab+'</div>'+sorted.map(function(x){ return railRowHTML(x); }).join("");
     // The hidden-pinned "+ back" rows only existed in the grouped sort, so
