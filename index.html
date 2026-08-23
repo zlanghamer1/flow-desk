@@ -7722,8 +7722,15 @@ function peerBarsSVG(entries, focusedSym, fmt, opts, kind, noMedian){
           + '</title>'+esc(rTxt)+'</text>';
       }
     }
+    // Clickable/keyboard-operable, like every other ticker label on the
+    // page — a peer's name here used to be plain text with no way to open
+    // its own chart, forcing a trader to search it separately (Zach's
+    // report 2026-08-23). The existing global [data-sym][role="button"]
+    // click/keydown delegate (setFocus) covers SVG elements the same as
+    // HTML ones, so no new wiring is needed beyond these attributes.
     out += '<text x="'+cx.toFixed(1)+'" y="'+(H-10)+'" font-size="10.5" font-weight="'+(isFoc?"700":"600")
-      + '" text-anchor="middle" fill="'+col+'">'+esc(e.sym)+'</text>';
+      + '" text-anchor="middle" fill="'+col+'" data-sym="'+esc(e.sym)+'" role="button" tabindex="0" style="cursor:pointer">'
+      + '<title>Click to open '+esc(e.sym)+'’s chart and financials.</title>'+esc(e.sym)+'</text>';
     if(isFoc) out += '<line x1="'+(cx-bw/2-2).toFixed(1)+'" x2="'+(cx+bw/2+2).toFixed(1)+'" y1="'+(H-22)+'" y2="'+(H-22)
       + '" stroke="'+col+'" stroke-width="1.5"/>';
   });
@@ -11189,13 +11196,19 @@ function renderPeersInto(body, sym, res, seq){
   // curated branch never sets — so a curated set stamped "AAOI ✳" in the key
   // and left the symbol undefined anywhere on the page.
   var oobAny = Object.keys(oob).length > 0;
+  // Clickable/keyboard-operable — a peer's key chip used to be display-only,
+  // so opening a peer's own chart meant searching it separately (Zach's
+  // report 2026-08-23). data-tip and data-sym live on the SAME element
+  // (tip===row in the global click delegate's own tipBlocks test), the same
+  // pattern the four top-rail tiles already use, so the tooltip never
+  // blocks the click.
   var key = '<div class="peerkey">'+entries.map(function(e){
       var c = factsOf(e.sym) && num(factsOf(e.sym).cap);
       var vint = factsVintage(e.sym);
-      return '<span data-tip="'+esc(nameFor(e.sym)+(c!=null?(" · market cap "+fmtCompact(c)):"")
+      return '<span data-sym="'+esc(e.sym)+'" role="button" tabindex="0" style="cursor:pointer" data-tip="'+esc(nameFor(e.sym)+(c!=null?(" · market cap "+fmtCompact(c)):"")
           + (oob[e.sym]?" · more than 5× from "+sym+" in size":"")
           + (capUnk[e.sym]?" · no market cap published — size unknown":"")
-          + " · figures " + vint.word)+'">'
+          + " · figures " + vint.word + " · click to open its own chart")+'">'
         + '<i style="background:'+e.color+'"></i>'+esc(e.sym)+(e.sym===sym?" (focused)":"")
         + (oob[e.sym]?'<b class="oob"> ✳</b>':"")+(capUnk[e.sym]?'<b class="oob unk"> ?</b>':"")+'</span>';
     }).join("")+'</div>';

@@ -1569,5 +1569,65 @@ pass:
   never reach `_peersByIndustry` again regardless of what TradingView's own
   industry classification says.
 
+## Guardrails added 2026-08-23 (Zach's direct report, peer-chart click-through)
+
+- **Every peer's ticker label — the SVG bar-chart label AND the `.peerkey`
+  key chip above it — is now a real click/keyboard target
+  (`data-sym`/`role="button"`/`tabindex="0"`) wired to the same `setFocus(sym)`
+  that opens any ticker's own chart and Financials tab.** Previously both
+  were plain, non-interactive text; a trader wanting to inspect a peer had
+  to close the comparison and search it separately. Uses the page's
+  existing `[data-sym][role="button"]` click/keydown delegate — SVG
+  elements support `Element.closest()` the same as HTML ones, so no new
+  event wiring was needed, only the attributes. The `.peerkey` chip already
+  carried `data-tip`; putting `data-sym` on the SAME element (not a wrapper)
+  matters because the click delegate's own `tipBlocks` test only fires when
+  the tooltip element is a DESCENDANT of the row, not the row itself — the
+  four top-rail tiles already rely on this same "tip and row are one
+  element" pattern.
+- **Every peer that can appear in a chart — curated or industry-scanned —
+  already gets `adhocRegister`'d with its resolved TradingView ticker before
+  the chart renders** (`peersFor`'s curated branch, `finish()`'s scanned
+  branch), so `setFocus` on a peer that isn't in the pinned desk universe
+  (e.g. FN, NXPI, TER, COHU, FORM) resolves correctly on the first click —
+  no additional lookup needed for this fix.
+
+## Guardrails added 2026-08-23 (Zach's direct report, peer-selection audit)
+
+Zach asked for the peer-selection LOGIC itself to be checked for any
+ticker, not just a manual patch for the three flagged above. Investigated
+live against TradingView's actual scanner (not from memory):
+
+- **The generic algorithm (`_peersByIndustry`) is exactly what it claims to
+  be: exact-match on TradingView's own `industry` field, then rank by
+  closeness in market cap.** There is no bug in that logic — verified by
+  directly querying `scanner.tradingview.com` for AEHR's own industry
+  filter and confirming TradingView itself returns PLUG, LG Display (LPL)
+  and Universal Display (OLED) as members of "Electronic Production
+  Equipment," the same bucket as AEHR, Teradyne and Advanced Energy
+  Industries. The mismatch is a real classification problem ON THE VENDOR'S
+  SIDE, not a filtering or ranking defect in our code.
+- **There is no finer categorical field to switch to.** Queried the
+  scanner's `sub_industry` column directly for AEHR/PLUG/LPL/OLED/TER/
+  COHU/FORM — it returns `null` for all seven. TradingView's free scanner
+  API exposes exactly two classification granularities (`sector`, coarse;
+  `industry`, still coarse enough to misfire) and nothing finer. Confirmed
+  the failure mode cuts both ways: COHU and FormFactor (FORM) — genuine
+  direct competitors of AEHR in wafer-level test — are themselves
+  classified under "Semiconductors," a DIFFERENT industry bucket than
+  AEHR's own "Electronic Production Equipment," so a same-industry filter
+  would never surface them as AEHR's peers even with a stricter cap band.
+- **Conclusion: "direct competitor, same market, competing for the same
+  market share" cannot be derived reliably from the data this free vendor
+  API exposes, for any arbitrary ticker.** The existing two-tier design
+  (`PEER_GROUPS` curated override first, `_peersByIndustry` scan as
+  fallback) is the correct shape for this constraint — curation is not a
+  workaround for a bug, it is the only mechanism available once a specific
+  ticker's vendor-classified peers are known to be wrong. `PEER_GROUPS`
+  should keep growing by the same pattern (as it already has for CRWD, V,
+  TSEM, and now LITE, MRVL, AEHR) whenever a specific mismatch is flagged;
+  there is no drop-in algorithmic fix that would generically prevent the
+  next one.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
