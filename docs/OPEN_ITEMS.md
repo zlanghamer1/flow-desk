@@ -44,17 +44,13 @@ approved fix, in full:
 
 ## Open — in the order they are worth doing
 
-### 1. Round 13 verification is pending
+### 1. Round 14 verification is pending
 
-The round-12 fix pass below (2026-08-23) closed all 21 confirmed findings the
-same day they were found, including fetcher-side fixes (a KNOWN_NON_USD_CURRENCY
-fallback so a Yahoo-crumb outage no longer blanks currency for the whole
-pinned universe, a Swing-board trend tri-state distinguishing "no SMA data"
-from a genuine MIXED reading, and a "_CAPPED" framework-verdict suffix
-distinguishing a permanently-flagged filter from a genuine "still building"
-gap) covered by 6 new `fetcher/` tests (306 passing total). The JS-side fixes
-have only been read back and syntax-checked (`node --check`), not exercised
-against a running page. A later session should run round 13 against the
+The round-13 fix pass below (2026-08-23) closed all 25 confirmed findings the
+same day they were found. All 25 were frontend JS fixes — no fetcher-side
+changes this round, so the test count stays at 306 passing. The fixes have
+only been read back and syntax-checked (`node --check`), not exercised
+against a running page. A later session should run round 14 against the
 review script and fix or log whatever it finds, continuing until the "Open"
 section here is empty per the finish-line ruling above.
 
@@ -76,6 +72,120 @@ section here is empty per the finish-line ruling above.
   one sort key.
 
 ---
+
+## Shipped 2026-08-23, round 13 (25 findings confirmed, all fixed)
+
+Scores before this pass: Chart Stage 60, Auto-TA 58, Left watchlist rail 76,
+Financials 74, Sector Heatmap 66, vs Peers 62, Right rail panels 72, Flow
+boards 62, Data honesty 74.
+
+**Chart Stage (3 findings)**
+- Searched-ticker weekly chart falsely called real Friday data "CLOSE ONLY"
+  and dimmed it every weekend/holiday — `wSynth` had no `isTradingDay(today)`
+  term, unlike its three sibling code paths. Added the guard.
+- `isLastTradingDayOfWeek()` walked into next week on a Sunday (`wd===0`),
+  wrongly returning false. Special-cased Sunday to return true immediately,
+  mirroring Saturday's existing (accidental) correctness.
+- `seriesFull()` duplicated the latest close into the 50-/200-day legend on
+  every non-trading day, desyncing it from the chart's own MA line. Gated the
+  live-close append on `isTradingDay(new Date())`, matching `stageDailyData`.
+
+**Auto-TA (3 findings)**
+- `taMaxDist` read raw daily `avg_move`, never routed through
+  `taAmvForInterval` — starved every low-beta weekly-trend name (V, XLU, XLF)
+  of any 1W line at all. Fixed.
+- `TA_RETEST_NEAR`/`TA_MAX_EXT` were flat 3%/12%, mislabeling ordinary weekly
+  pullbacks/continuations on volatile names as FAILED/EXTENDED. New
+  `taRetestNear()`/`taMaxExt()` helpers scale both by `taAmvForInterval`,
+  read at both fit time (`taFitLine`) and live re-grade (`taRegrade`, via
+  `STAGE.sym`).
+- `taShapeLabel`'s flag/pole `poleThresh` used raw daily `avg_move` — routed
+  through `taAmvForInterval` per the review's own correction (the reachable
+  failure is a trading-range/descending-channel mislabel, not an ascending
+  one as originally stated).
+
+**Left watchlist rail (3 findings)**
+- Band Crosses could alert off a frozen/stale price with no staleness
+  disclosure — added a `liveStale(s)` skip inside `renderBBCrosses`'s loop.
+- Long searched-ticker company names could swallow the earnings countdown
+  inside `.meta`'s own ellipsis with zero sign one existed. Gave the
+  countdown its own flex child (`.earnb`), separate from `.meta`.
+- "Sort by hot" tie-break returned NaN when both `hotOf()` values were null.
+  Added the same explicit both-null guard the "range" comparator already had.
+
+**Financials (3 findings)**
+- Pinned ETFs (SMH, QQQ, all eleven sector SPDRs, ~22 tickers) rendered a
+  wall of 20 unexplained dashes with data-gap-flavored tooltips instead of
+  the one-line fund/wrapper explanation vs-Peers already gives. Added an
+  `isFundSym(sym)` short-circuit to `renderFundamentals`.
+- Tap-to-read readout always rendered directly over the next chart section's
+  title/axis. Re-anchored it to the BOTTOM of the tapped chart itself
+  (clamped, measured via `getBoundingClientRect`) instead of the boundary
+  just past it.
+- Margins/YoY/EPS chart's `SM.W` omitted the `.dsec` padding (32px) `bigW`
+  already subtracts, overestimating available width and column count.
+  Subtracted the same padding before computing `smCols`/`smColW`.
+
+**Sector Heatmap (3 findings)**
+- A 200-with-empty-data scanner response (the documented TradingView
+  rate-limit quirk) silently corrupted `HEAT.data[univ]` and defeated the
+  STALE badge. `heatFetchNow` now only writes the cache/timestamp when
+  `rows.length>0`, matching the equity-poll/macro-tape convention.
+- Tooltip's secondary "1D" figure lost its PRE/PREV/POST tag whenever the
+  active timeframe wasn't 1D. Added an always-computed `tag1DAlways` word to
+  that clause.
+- A universe-wide zero-weight cycle (no isolate active) fell through to a
+  blank box with no message. Widened the isolate-empty guard to
+  `sectors.length===0` regardless of `HEAT.isolate`, with isolate-aware wording.
+
+**vs Peers (2 findings)**
+- `metricReason` gated ALL six peer metrics on `FUND_CACHE`, mislabeling a
+  permanent vendor gap (AAOI's null EV/EBITDA, whose real -11.31 op margin
+  already answers it) as "still loading" forever on a peer's first
+  appearance. Scoped the gate to only pe/peg/ev_ebitda's eps-dependent
+  branches; gross_margin/op_margin/fcf_margin/ps/pb fall straight through.
+- The "?" size-unknown mark had no generic definition for a curated peer
+  set (only the industry-scan branch defined it). Added a generic,
+  always-checked sentence gated on `Object.keys(capUnk).length>0`, mirroring
+  ✳'s existing pattern.
+
+**Right rail panels (4 findings)**
+- Top-rail tiles (SPY/QQQ/DIA/IWM, VIX/crude/DXY) could print a red
+  "−0.00%" for a flat/negligible move — the exact signed-zero bug `fm1`/
+  `sign1` were written to fix elsewhere, never reused here. New `fm2`/
+  `sign2` (2-decimal, 0.005 threshold) applied to both tile builders.
+- CLOSED lamp's "next session" named tomorrow instead of today for 3 hours
+  every trading morning (00:00-03:00 CT) — `nextWeekdayName` can never
+  answer "today" by construction. `marketClosedWording`'s early-morning
+  branch now returns `"today"` directly instead of walking forward.
+- Catalysts meta line dropped forecast/prior silently for real HIGH-importance
+  tv_calendar-sourced releases (Michigan Consumer Sentiment Prel, Building
+  Permits Prel) — the fallback text only fired for `source==="econ_calendar"`.
+  Widened to any HIGH-importance econ row.
+- Cleared catalysts rendered ABOVE "This week" — moved the "Cleared" group to
+  the end of the `groups` array.
+
+**Flow boards (3 findings)**
+- Conviction's RVOL cell was a click dead-zone on nearly every row —
+  `rvTip` fired whenever both live and snapshot RVOL existed (almost
+  always), and sat on the whole `<td>` rather than a small inner span,
+  triggering the click delegate's "inner tooltip blocks row click" rule.
+  Gated `rvTip` on an actual >0.1 drift threshold and moved it to an inner
+  `<span>`.
+- Conviction and Swing boards' live prices could freeze silently with no
+  staleness signal, unlike the identical ticker's rail row. Added a
+  `liveStale(c.ticker)` check and the same STALE badge to both row builders.
+- ETF board's `m1cls` used a two-way ternary treating an exact-zero
+  `flow_1m` as bullish green, contradicting `d1cls` two lines up (built from
+  `sign()`) and the file's own "zero is never a green pill" rule. Changed to
+  `sign(m1)`.
+
+**Data honesty (1 finding)**
+- Financials tab falsely claimed "may not report in dollars" for ordinary
+  US companies (AAPL, TSLA, or a desk-pinned name whose sidecar 404s one
+  cycle) on the scanner-fallback path — `adhocEnsureFundamentals`'s returned
+  object had no `currency` field at all. Defaulted it to `"USD"`, mirroring
+  `build_fund_sidecar`'s own server-side fallback from round 12.
 
 ## Shipped 2026-08-23, round 12 (21 findings confirmed, all fixed)
 

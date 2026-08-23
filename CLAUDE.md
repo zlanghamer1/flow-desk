@@ -1388,5 +1388,80 @@ pass:
   resolution that structurally cannot happen since the underlying
   financials are what's wrong, not the elapsed time.
 
+## Guardrails added 2026-08-23, round-13 fix pass (25 findings, all 9 sections)
+
+Round 13 of the nine-section review confirmed 25 findings (see
+`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
+this pass fixed all 25 the same day, all frontend JS (no fetcher changes).
+The non-obvious decisions from this pass:
+
+- **`isLastTradingDayOfWeek` special-cases Sunday explicitly now.** Saturday
+  (`wd===6`) already returned true correctly by accident — the loop
+  `for(i=1;i<=5-wd;i++)` never executes when `wd===6`. Sunday (`wd===0`) hit
+  the opposite bug: the loop walked `now+1..now+5`, i.e. NEXT week's Mon-Fri,
+  and (almost always trading days) wrongly returned false. A bare symmetry
+  fix, not a deeper rewrite.
+- **A searched (non-pinned) ticker's ad-hoc weekly `wSynth` flag now requires
+  `isTradingDay(today)`, matching its three sibling code paths
+  (`stageDailyData`'s two branches, `seriesQuads`).** The page keeps polling
+  the open symbol's live quote all weekend (`pollTvPrices` has no weekday
+  gate), so `LIVE[sym]` holds Friday's stale quote through Saturday and
+  Sunday — without the gate, that stale-but-present quote alone was enough
+  to mark a fully real, settled week as a fabricated bracket every weekend.
+- **`taRetestNear()`/`taMaxExt()` are new helper functions reading
+  `STAGE.sym` directly**, the same convention `taBarScale()`/`taFreshBars()`
+  already use for `STAGE.iv` — added specifically so `taRegrade` (called
+  from 3 sites) didn't need a new parameter threaded through every call
+  site. `taFitLine` (which already has `sym` as a real parameter and an
+  `amv` already computed in scope) recomputes the same formula inline
+  rather than calling the STAGE-reading helpers, since fit time and
+  STAGE.sym are guaranteed to agree there anyway.
+- **The RVOL cell's tooltip is gated on an actual >0.1× drift now, and lives
+  on a small inner `<span>`, not the whole `<td>`.** It used to fire
+  whenever both a live and a snapshot RVOL value simply existed — true for
+  nearly every row — and because the tooltip sat on the whole cell, the
+  global click delegate's own "an inner explanatory span doesn't hijack a
+  row click" rule turned the entire column into a permanent mouse dead
+  zone. Mirrors `chTip`'s existing >1pp drift gate two lines up in the same
+  function.
+- **Conviction and Swing's row builders now each carry their own
+  `liveStale(c.ticker)` check and STALE badge**, rather than adding a
+  symbol parameter to `dispQuote` itself. `dispQuote` is called from many
+  sites with only a live-quote object in hand, no symbol; threading a
+  parameter through all of them was more invasive than letting the two
+  board builders (the only sites missing the disclosure) each add the same
+  three-line check the rail's `railRowHTML` already has.
+- **New `fm2`/`sign2` helpers (2-decimal near-zero formatting, 0.005
+  threshold) are separate from `fm1`/`sign1` (1-decimal, 0.05 threshold),
+  not a shared parameterized function.** The top rail's tiles print change
+  to 2 decimals; reusing `fm1`'s 1-decimal formatting would have changed
+  their display precision as a side effect of fixing the signed-zero bug.
+- **`metricReason`'s FUND_CACHE gate is now scoped to only the metrics that
+  actually read it** (pe, peg, and ev_ebitda's `ttmEpsOf`-based fallback)
+  instead of the whole function. gross_margin/op_margin/fcf_margin/ps/pb all
+  read straight off `factsOf()`, already resolved by render time — gating
+  everything on `FUND_CACHE` mislabeled a permanent vendor gap (AAOI's null
+  EV/EBITDA, whose real -11.31 op margin already answers it) as "still
+  loading" on a peer's first appearance in a session, and since only the PEG
+  chart gets repainted after fund data resolves, that false caption never
+  self-corrected.
+- **`adhocEnsureFundamentals`'s returned object now carries `currency:
+  "USD"`**, mirroring `build_fund_sidecar`'s own server-side default-USD
+  fallback from round 12 — this client-side scanner-fallback path has no
+  vendor-confirmed currency at all, and an absent field fell into the
+  Financials tab's null-cur branch, printing "may not report in dollars" for
+  an ordinary US company (AAPL, TSLA, or a desk-pinned name whose own
+  sidecar simply 404s one cycle).
+- **The Cleared catalysts group moved to the END of `renderCats`'s `groups`
+  array**, not removed or collapsed — a carried-forward cleared row (still
+  inside its own release grace period) was rendering as the literal first
+  row in the whole panel, ahead of everything actually coming up this week.
+- **`marketClosedWording`'s early-morning branch (00:00-03:00 CT on an
+  ordinary trading day) returns the literal string `"today"` for
+  `nextLabel`, not a call to `nextWeekdayName`.** `nextWeekdayName` walks
+  forward starting at `now+1` day by construction and can never answer
+  "today" — on any trading day before premarket opens (`priceSessionNow`
+  gates premarket to >=3:00 CT), the real next session is today itself.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
