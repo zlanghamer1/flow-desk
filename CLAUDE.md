@@ -2252,5 +2252,38 @@ by ruling, 2026-08-24."
   instead of an assumption. `docs/OPEN_ITEMS.md` states exactly what
   evidence would reopen either one.
 
+## Guardrails added 2026-08-24 (vertical drag-to-pan, Fable build spec)
+
+- **Vertical drag-to-pan rides the SAME `autoscaleInfoProvider` vZoom does**
+  (Zach's report: "can't drag the chart up/down the way TradingView does").
+  The library only pans price in manual (non-autoscale) price-scale mode,
+  and this page keeps autoscale ON at all times so the wheel vertical-zoom
+  feature keeps working — so `STAGE.vPan` (a price-denominated offset) is
+  applied inside the same provider, shifting `minValue`/`maxValue` AFTER the
+  existing stretch/floor math is settled on the unpanned range, never
+  feeding back into the wheel-zoom anchor test. `stageWireVerticalPan(el)`
+  only starts tracking a drag left of the price axis (the axis itself keeps
+  the library's own manual-scale drag), recomputes `coordinateToPrice` at
+  BOTH the start and current Y fresh on every move (never a cached start
+  price — a cached one created a real feedback bug where each move's delta
+  was measured against a scale the previous move had already shifted,
+  converging to roughly half the real drag distance), and never calls
+  `preventDefault`/`stopPropagation` so the library's own time-pan and
+  crosshair keep working on the same gesture. `|vPan|` clamps to 3x the
+  unpanned range span, recomputed fresh from `STAGE.vPan` every provider
+  call (never written back) so a reset always takes full effect. Resets to
+  0 at exactly the three sites `STAGE.vZoom` already resets at (axis
+  dbl-click, the interval/window click handler, `stageShow`'s symbol
+  change) — no new reset site. The `#stagevz` chip now shows on either
+  vZoom!=1 or vPan!=0, with its own "repositioned · dbl-click axis to
+  reset" wording when only panned. Two review fixes before ship: pointerdown
+  also excludes the BOTTOM time-axis strip (the library starts its own
+  time-scale stretch from a drag that begins there — running the pan on top
+  would drive two scale gestures from one drag), and the drag takes
+  `setPointerCapture` so pointermove keeps firing when the drag path leaves
+  the chart element's bounds — verified in a headless browser that capture
+  does NOT starve the library's own time-pan: one diagonal drag pans both
+  axes (time range shifted ~8.3 bars and price ~82px in the same gesture).
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
