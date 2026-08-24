@@ -2147,9 +2147,18 @@ fetcher changes, no new network calls.
 - **Rendering is a v5 series primitive** (`STAGE.s.candle.attachPrimitive`/
   `detachPrimitive`, the vendored v5.2.1 build's plugin interface — see
   `attachPrimitive`/`useBitmapCoordinateSpace` in
-  `vendor/lightweight-charts.standalone.production.js`). No text is ever
-  drawn on the canvas; the caption under the chart carries every word. The
-  handle lives on `STAGE.vpPrim`, the computed profile on `STAGE.vpData`,
+  `vendor/lightweight-charts.standalone.production.js`). Originally shipped
+  with no text ever drawn on the canvas; **revised 2026-08-24** at Zach's
+  explicit ask (mobile feedback: the bars carried no volume readout) — each
+  bin now draws a right-aligned `fmtShareCount(b.vol)` label inside its own
+  bar, in `--ink2`/`--ink` (never `--up`/`--dn`), size-gated so it can never
+  become unreadable smear: only drawn when the bin's own pixel height is
+  >=11px in media coordinates AND the bar's length clears the measured text
+  width (after setting the 10px-scaled font) plus 6px padding. The caption
+  under the chart still carries the profile's WORDS (POC/value-area/shelf
+  wording, via `vpWords`) regardless — this revision only adds a number
+  inside each bar, it does not move any wording off the caption.
+  The handle lives on `STAGE.vpPrim`, the computed profile on `STAGE.vpData`,
   and the one POC axis handle (a dashed price line, titled "most-traded
   " + its price) on `STAGE.vpLines` — all three are torn down in
   `stageTAClear()` alongside the existing `srLines`/`gammaLines` teardown,
@@ -2182,6 +2191,17 @@ fetcher changes, no new network calls.
   (`taDefaults()`/`taPrefs()`) — no new localStorage key, the existing
   generic `data-ta` click handler needed no change since it already flips
   whatever key the clicked button names.
+- **MA toggle added 2026-08-24, same day, at Zach's declutter ask** (the
+  always-on SMA 20/50/200 lines were the largest fixed clutter source on a
+  phone): a fourth `desk.stage.ta` key, `ma`, defaulting true — nothing
+  changes for anyone who doesn't touch it. Hiding the lines uses
+  `applyOptions({visible:false})`, never emptied data, so the legend's
+  printed MA values and `stageTAPoke`'s per-poll MA-last-point recompute
+  both keep working either way. The S/R and POC axis-badge collision tests
+  (`taSrBadgePick`'s `maNow`) are gated on `prefs.ma` too — a badge
+  suppressed because it "collides" with a line the reader can't see would
+  be wrong — checked inside `taSrBadgePick` itself, the one function every
+  fit-time and live-poke collision site already calls.
 
 ## Guardrails added 2026-08-24, freeze close-out pass
 

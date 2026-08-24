@@ -1514,6 +1514,7 @@ var TIPS = {
   ta_trend:"Auto trend lines, fit on the selected window: swing highs and lows (4 bars each side, 2 on short windows), then the best line through two or more pivots that price respected. A pivot counts as a touch within roughly 0.3%-3% of the line and a wick poking through by roughly 1.2%-4% kills the fit, on EVERY interval including intraday — both scale with what the name actually moves (avg_move), converted to that interval's own typical bar-to-bar range, not a flat number the vault scanner started from. On the daily and weekly views the poke is judged on CLOSES rather than wicks, because a wick's intrabar extremes could otherwise kill a genuine daily/weekly line no close ever invalidated. The anchor, containment and break rules come from that scanner, generalized to the support side; its rising-lows condition is not applied here. A line whose break is more than 12 bars old is not drawn, one price has traded back through and walked away from is captioned as failed, and one price closed through and stayed through has FLIPPED — broken support is drawn and captioned as overhead resistance. Windows under 40 bars draw no trend line. The dashed part is the line projected forward, and a failed line gets no projection. When BOTH a resistance and a support line fit, the caption also names the shape the pair draws — ascending/descending/symmetrical triangle, rising/falling wedge, ascending/descending channel, trading range, broadening formation, or bull/bear flag when a fast prior move preceded a tight channel — read off the same two lines' slopes and convergence, never a separate detector. Said only when the geometry clearly matches one of those names; otherwise nothing is claimed. Display only — never a signal, never in any score.",
   ta_sr:"Horizontal support/resistance: swing-point prices clustered inside half a 60-bar ATR (floored at 1%, capped at 5%, so a $900 stock and a $12 one both cluster sensibly); a level needs 2+ touches, strongest three drawn. A level that held as a floor often matters again as a ceiling, so highs and lows cluster together. Colored by where price sits against each level: red overhead (resistance ahead), green underneath (support below), blue when price is inside the band itself — the same three words the caption under the chart uses. Every level's price and touch count is named there too; only the one nearest price takes an axis badge, and even that is dropped when it would land on a moving-average badge. Display only.",
   ta_bb:"Bollinger Bands: a 20-period simple moving average plus/minus 2 standard deviations of the same 20 closes, in purple. Computed on the full price history (like the always-on 20/50/200-day lines), not the window selector — switching from 1M to 1Y does not change the band's shape. The caption under the chart says whether price is currently above the upper band, below the lower band, or inside them. Display only — never a signal, never in any score. The watchlist rail's Band crosses panel flags any rail ticker whose price just crossed a band, from the same daily bars, whether or not this toggle is on or its chart is even open.",
+  ta_ma:"The 20, 50 and 200-period moving average lines. On by default; turn off to declutter the chart — the legend under the chart keeps showing the values and the % gap to price either way.",
   ta_vp:"Volume profile: how much volume traded at each price over the window shown, drawn as sideways bars against the right edge. Built by spreading each bar's volume across its own high-to-low range — an approximation from daily (or intraday) bars, not true tick-by-tick data, so treat the shape as a map, not a measurement. The brightest bar is the most-traded price; the shaded band is the value area, the price range holding roughly 70% of the window's volume. Heavy shelves below price are where prior buyers sit; free data cannot see WHO traded, so nothing here is labeled institutional. Turning this on hides the dashed S/R lines — both mark horizontal levels, and two versions of the same story is clutter. Display-only: it never feeds any score.",
 };
 
@@ -9000,11 +9001,15 @@ function taAmvForInterval(amv){
   var bpd = taBarScale();
   return (bpd>0) ? amv*Math.sqrt(1/bpd) : amv;
 }
-function taDefaults(){ return {trend:true, sr:true, bb:false, vp:false}; }
+// ma:true is DEFAULT ON — the 20/50/200-day lines were always-on before this
+// toggle existed, so a stored prefs blob from before the "ma" key existed
+// (v.ma undefined) must still read true, not fall through to !!undefined's
+// false. That's why this reads `v.ma!==false` rather than `!!v.ma` below.
+function taDefaults(){ return {trend:true, sr:true, bb:false, vp:false, ma:true}; }
 function taPrefs(){
   try{
     var v = JSON.parse(read("desk.stage.ta")||"null");
-    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr, bb:!!v.bb, vp:!!v.vp};
+    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr, bb:!!v.bb, vp:!!v.vp, ma:(v.ma!==false)};
   }catch(e){}
   return taDefaults();
 }
@@ -9404,12 +9409,21 @@ function gexSide(strike, lastPx){
 // sitting on a level that used to be nearest and no longer is.
 function taSrBadgePick(lvls, lastPx){
   var maNow = [];
-  ["ma20","ma50","ma200"].forEach(function(key){
-    var sr2 = STAGE.s[key]; if(!sr2) return;
-    try{
-      var d2 = sr2.data(); if(d2 && d2.length){ var v2 = d2[d2.length-1].value; if(v2!=null) maNow.push(v2); }
-    }catch(e){}
-  });
+  // A hidden MA line (prefs.ma false) still HOLDS data (the least invasive
+  // way to keep the legend and this very collision test working off real
+  // values elsewhere) — but a badge suppressed because it "collides" with a
+  // line the reader can't see would be wrong. Gated here, the one function
+  // both the fit-time S/R/VP blocks and every live poke's re-pick already
+  // call, so a visible-vs-hidden MA can never disagree across call sites
+  // (2026-08-24, MA declutter toggle).
+  if(taPrefs().ma){
+    ["ma20","ma50","ma200"].forEach(function(key){
+      var sr2 = STAGE.s[key]; if(!sr2) return;
+      try{
+        var d2 = sr2.data(); if(d2 && d2.length){ var v2 = d2[d2.length-1].value; if(v2!=null) maNow.push(v2); }
+      }catch(e){}
+    });
+  }
   var nearestIdx = -1, nearestD = Infinity;
   (lvls||[]).forEach(function(l, i){
     if(lastPx==null) return;
@@ -9882,8 +9896,33 @@ function vpBuildPrimitive(){
         if(y0==null || y1==null) return; // off-scale — skip, per spec
         var barW = (b.vol/maxVol) * maxBarW;
         if(!(barW>0)) return;
-        ctx.fillStyle = (bi===data.pocIdx) ? hexA(cssVar("--acc"), 0.55) : hexA(cssVar("--ink3"), 0.28);
-        ctx.fillRect(paneW-barW, Math.min(y0,y1), barW, Math.max(1, Math.abs(y1-y0)));
+        var isPoc = (bi===data.pocIdx);
+        ctx.fillStyle = isPoc ? hexA(cssVar("--acc"), 0.55) : hexA(cssVar("--ink3"), 0.28);
+        var barTop = Math.min(y0,y1), barH = Math.max(1, Math.abs(y1-y0));
+        var barLeftX = paneW - barW;
+        ctx.fillRect(barLeftX, barTop, barW, barH);
+        // Per-bar volume readout (2026-08-24, Zach's mobile feedback — this
+        // REVISES the shipped "no text is ever drawn on the canvas" ruling
+        // for this primitive only; see CLAUDE.md's VP section). Size-gated
+        // so it can never become unreadable smear: only drawn when the
+        // bin's band is tall enough to hold a legible line AND the bar
+        // itself is long enough to hold the label without spilling past its
+        // own inner (left) end. Both checks are in MEDIA px (pre-pixel-
+        // ratio), matching how the gate is specified; the actual draw below
+        // is in bitmap space like the rest of this primitive.
+        var barHMedia = barH / vpr;
+        if(barHMedia >= 11){
+          var fontPx = 10 * hpr;
+          ctx.font = fontPx + "px -apple-system, system-ui, sans-serif";
+          var label = fmtShareCount(b.vol);
+          var textW = ctx.measureText(label).width;
+          if(barW >= textW + 6*hpr){
+            ctx.fillStyle = isPoc ? hexA(cssVar("--ink"), 1) : hexA(cssVar("--ink2"), 0.9);
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+            ctx.fillText(label, barLeftX + 4*hpr, barTop + barH/2);
+          }
+        }
       });
     });
   }
@@ -9905,6 +9944,17 @@ function stageTA(){
   if(!STAGE.chart) return;
   stageTAClear();
   var prefs = taPrefs();
+  // MA toggle (2026-08-24 declutter ask): applyOptions({visible:...}) only —
+  // never emptied data — so the legend's printed values, stageTAPoke's
+  // MA-last-point recompute, and taSrBadgePick's MA-collision test (gated
+  // separately, on prefs.ma, so a hidden line's values never "collide" with
+  // an invisible badge) all keep working whether the lines are shown or not.
+  // Applied here (not only in stageRender) so the toggle button — which only
+  // reruns stageTA(), not a full stageRender() — takes effect immediately.
+  ["ma20","ma50","ma200"].forEach(function(key){
+    var sr0 = STAGE.s[key];
+    if(sr0){ try{ sr0.applyOptions({visible: prefs.ma}); }catch(e){} }
+  });
   var rows = STAGE.rows, times = STAGE.times, n = rows.length;
   if(!n){ stageTALegend(prefs); return; }
   var LWC = window.LightweightCharts;
@@ -11588,7 +11638,7 @@ function stageBar(){
   // stack, so the toggle still shows its stored pressed state but the
   // tooltip discloses why the lines aren't drawing.
   var srTip = TIPS.ta_sr + (prefs.vp ? " (hidden while the volume profile is on)" : "");
-  var taBtns = [["trend","trend",taTrendTip()],["sr","S/R",srTip],["bb","BB",TIPS.ta_bb],["vp","VP",TIPS.ta_vp]]
+  var taBtns = [["ma","MA",TIPS.ta_ma],["trend","trend",taTrendTip()],["sr","S/R",srTip],["bb","BB",TIPS.ta_bb],["vp","VP",TIPS.ta_vp]]
     .map(function(t){ return '<button data-ta="'+t[0]+'" aria-pressed="'+!!prefs[t[0]]+'" data-tip="'+esc(t[2])+'">'+t[1]+'</button>'; }).join("");
   el.innerHTML = '<div class="seg" role="group" aria-label="Chart interval">'+ivBtns+'</div>'
     + '<div class="seg" role="group" aria-label="Chart range">'+tfBtns+'</div>'
