@@ -10,10 +10,22 @@ name: Refresh Loop
 # prints a "REDISPATCH" line, and the final step here re-fires this same
 # workflow via the API so the session keeps getting covered all day without a
 # human touching anything. Two backup cron starters (DST + standard time
-# variants of ~8:20am CT, just before the 8:25am CT session open per
-# fetcher/market_guard.py) exist purely as a safety net in case the
-# self-redispatch chain is ever broken by a run failing outright — the primary
-# mechanism is the redispatch chain, not the cron.
+# variants) exist purely as a safety net in case the self-redispatch chain is
+# ever broken by a run failing outright — the primary mechanism is the
+# redispatch chain, not the cron.
+#
+# Timing (moved earlier 2026-08-24): loop.py's should_publish() extended
+# window opens at 8:00am CT sharp — fire the cron any earlier and the run
+# sees "outside publish window" and exits immediately, doing nothing, so
+# 8:00am CT is the earliest a cron firing can be useful at all. The backup
+# crons target 8:03am CT (just past that floor, offset 3 minutes off the
+# top-of-hour mark GitHub's docs call out as congested/delay-prone — the
+# Morning Brief workflow uses the same offset-minute trick). That leaves the
+# maximum possible buffer, ~27 minutes, before the 8:30am CT market open.
+# This still isn't a hard guarantee: on 2026-08-24 the prior 8:20am-target
+# cron itself fired 43 minutes late (GitHub schedule triggers are
+# documented best-effort), which is what prompted moving the target earlier
+# rather than assuming any fixed lead time is safe.
 
 on:
   workflow_dispatch:
@@ -23,9 +35,9 @@ on:
         type: boolean
         default: false
   schedule:
-    # Backup starters only (see note above). UTC times = ~8:20am CT.
-    - cron: "20 13 * * 1-5"   # 08:20 CDT (UTC-5, DST)
-    - cron: "20 14 * * 1-5"   # 08:20 CST (UTC-6, standard time)
+    # Backup starters only (see note above). UTC times = ~8:03am CT.
+    - cron: "3 13 * * 1-5"    # 08:03 CDT (UTC-5, DST)
+    - cron: "3 14 * * 1-5"    # 08:03 CST (UTC-6, standard time)
 
 permissions:
   contents: write   # loop.py pushes data.json/history.json to the `data` branch

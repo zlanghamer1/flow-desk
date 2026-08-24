@@ -23,7 +23,9 @@ during the extended window (08:00–15:20 CT, Mon–Fri). The universe is a fixe
 curated watchlist plus the 11 SPDR sector ETFs — there is no market screen.
 Before GitHub's job-time limit the loop prints `REDISPATCH` and the workflow
 re-triggers itself so it covers the whole session. A daily scheduled backup
-start (~8:20 AM CT) exists in case the redispatch chain ever breaks.
+start (~8:03 AM CT — moved earlier 2026-08-24 for more buffer before the
+8:30 AM open; 8:00 AM CT is the earliest the loop will do anything at all)
+exists in case the redispatch chain ever breaks.
 
 ## Restarting
 

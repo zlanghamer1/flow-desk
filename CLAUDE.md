@@ -59,6 +59,18 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
 - Forced test runs off-hours are fine for `data.json`, but must **not** create
   weekend/closed history sessions. `build_snapshot.run_cycle` guards this
   (`write_history = market_state != "closed"`) — do not remove that guard.
+- **The refresh-loop backup cron cannot start earlier than 8:00am CT**
+  (Zach's ruling 2026-08-24, after a live incident). `market_guard.should_publish()`'s
+  extended window opens at 8:00am CT sharp; a cron fired any earlier hits
+  "outside publish window" and exits immediately, doing nothing — so 8:00am CT
+  is the true floor, not a suggestion. The backup crons in
+  `.github/workflows/refresh-loop.yml` target 8:03am CT (past that floor,
+  off the top-of-hour mark GitHub's scheduler tends to delay). On 2026-08-24
+  the prior 8:20am-target cron itself fired 43 minutes late, leaving the site
+  showing Friday's stale close for the first ~33 minutes after the 8:30am
+  open — moving the target earlier buys more buffer against that same class
+  of delay, but GitHub schedule triggers are documented best-effort and a
+  bad enough delay can still land after the open.
 
 ## Guardrails added with the 2026-08-19 trading-platform redesign
 - **The chart engine is vendored TradingView Lightweight Charts, pinned at
