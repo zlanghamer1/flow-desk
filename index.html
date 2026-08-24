@@ -9799,7 +9799,18 @@ function vpProfile(win){
     // single-bin domain would otherwise divide by zero below.
     return {reason:"window too short for a profile", usedBars:usable.length, skippedBars:skippedBars};
   }
-  var nBins = (typeof window!=="undefined" && window.innerWidth<=640) ? 24 : VP_BINS;
+  // Bin count is sized from the chart pane's REAL pixel height, not a flat
+  // constant: the per-bar volume label only draws when its bin is >=11px
+  // tall (vpBuildPrimitive's size gate), and a flat 40 bins on an ordinary
+  // ~467px desktop pane made every bin ~10.7px — one pixel under the gate,
+  // so ZERO labels drew anywhere while the code read as if they should
+  // (found live on APLD, 2026-08-24). VP_BINS is now the CEILING; the floor
+  // of pane-height/16 keeps every bin comfortably labelable, and the narrow-
+  // viewport cap keeps phones at fewer, taller bins as before.
+  var vpPaneEl = (typeof document!=="undefined") ? document.getElementById("stagechart") : null;
+  var vpPaneH = (vpPaneEl && vpPaneEl.clientHeight) ? vpPaneEl.clientHeight : 480;
+  var nBins = Math.max(12, Math.min(VP_BINS, Math.floor(vpPaneH/16)));
+  if(typeof window!=="undefined" && window.innerWidth<=640) nBins = Math.min(nBins, 24);
   var binW = (hi-lo)/nBins;
   var bins = [];
   for(var bi=0; bi<nBins; bi++) bins.push({lo:lo+bi*binW, hi:lo+(bi+1)*binW, vol:0});
@@ -9890,7 +9901,12 @@ function vpBuildPrimitive(){
       var maxVol = 0;
       data.bins.forEach(function(b){ if(b.vol>maxVol) maxVol=b.vol; });
       if(!(maxVol>0)) return;
-      var maxBarW = paneW * 0.16;
+      // Wider bar allowance on a phone: at 16% of a ~350px pane the volume
+      // label (measured text + padding) only fit the one or two longest
+      // bars, so a mobile profile carried almost no readouts — the exact
+      // complaint that added the labels (2026-08-24, verified by headless
+      // render at 390px). Desktop keeps 16%.
+      var maxBarW = paneW * ((typeof window!=="undefined" && window.innerWidth<=640) ? 0.26 : 0.16);
       data.bins.forEach(function(b, bi){
         var y0 = yOf(b.lo), y1 = yOf(b.hi);
         if(y0==null || y1==null) return; // off-scale — skip, per spec
