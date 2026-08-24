@@ -1514,6 +1514,7 @@ var TIPS = {
   ta_trend:"Auto trend lines, fit on the selected window: swing highs and lows (4 bars each side, 2 on short windows), then the best line through two or more pivots that price respected. A pivot counts as a touch within roughly 0.3%-3% of the line and a wick poking through by roughly 1.2%-4% kills the fit, on EVERY interval including intraday — both scale with what the name actually moves (avg_move), converted to that interval's own typical bar-to-bar range, not a flat number the vault scanner started from. On the daily and weekly views the poke is judged on CLOSES rather than wicks, because a wick's intrabar extremes could otherwise kill a genuine daily/weekly line no close ever invalidated. The anchor, containment and break rules come from that scanner, generalized to the support side; its rising-lows condition is not applied here. A line whose break is more than 12 bars old is not drawn, one price has traded back through and walked away from is captioned as failed, and one price closed through and stayed through has FLIPPED — broken support is drawn and captioned as overhead resistance. Windows under 40 bars draw no trend line. The dashed part is the line projected forward, and a failed line gets no projection. When BOTH a resistance and a support line fit, the caption also names the shape the pair draws — ascending/descending/symmetrical triangle, rising/falling wedge, ascending/descending channel, trading range, broadening formation, or bull/bear flag when a fast prior move preceded a tight channel — read off the same two lines' slopes and convergence, never a separate detector. Said only when the geometry clearly matches one of those names; otherwise nothing is claimed. Display only — never a signal, never in any score.",
   ta_sr:"Horizontal support/resistance: swing-point prices clustered inside half a 60-bar ATR (floored at 1%, capped at 5%, so a $900 stock and a $12 one both cluster sensibly); a level needs 2+ touches, strongest three drawn. A level that held as a floor often matters again as a ceiling, so highs and lows cluster together. Colored by where price sits against each level: red overhead (resistance ahead), green underneath (support below), blue when price is inside the band itself — the same three words the caption under the chart uses. Every level's price and touch count is named there too; only the one nearest price takes an axis badge, and even that is dropped when it would land on a moving-average badge. Display only.",
   ta_bb:"Bollinger Bands: a 20-period simple moving average plus/minus 2 standard deviations of the same 20 closes, in purple. Computed on the full price history (like the always-on 20/50/200-day lines), not the window selector — switching from 1M to 1Y does not change the band's shape. The caption under the chart says whether price is currently above the upper band, below the lower band, or inside them. Display only — never a signal, never in any score. The watchlist rail's Band crosses panel flags any rail ticker whose price just crossed a band, from the same daily bars, whether or not this toggle is on or its chart is even open.",
+  ta_vp:"Volume profile: how much volume traded at each price over the window shown, drawn as sideways bars against the right edge. Built by spreading each bar's volume across its own high-to-low range — an approximation from daily (or intraday) bars, not true tick-by-tick data, so treat the shape as a map, not a measurement. The brightest bar is the most-traded price; the shaded band is the value area, the price range holding roughly 70% of the window's volume. Heavy shelves below price are where prior buyers sit; free data cannot see WHO traded, so nothing here is labeled institutional. Turning this on hides the dashed S/R lines — both mark horizontal levels, and two versions of the same story is clutter. Display-only: it never feeds any score.",
 };
 
 /* =================== state =================== */
@@ -3157,6 +3158,9 @@ function volNow(sym){
 // state. Works for ANY rail ticker without opening its chart, the same way
 // hotOf/statsOf already do.
 var BB_PERIOD = 20, BB_MULT = 2;
+// Volume profile (2026-08-24, Zach's freeze lift): bin count for the price
+// histogram, and the value-area fraction (the standard 70% convention).
+var VP_BINS = 40, VP_VALUE_AREA = 0.70;
 function bbSide(px, upper, lower){
   if(px==null || upper==null || lower==null) return null;
   return px > upper ? "over" : px < lower ? "under" : "in";
@@ -6004,7 +6008,8 @@ var STAGE = {
   synthetic:false,           // last row is the live-appended today candle
   log:false, logManual:null, // null = auto rule decides; true/false = user override
   markerByTime:{}, ratingByTime:{}, fund:null, hovering:false,
-  gammaLines:[]              // top-K gamma strikes, drawn separate from srLines — see stageGamma()
+  gammaLines:[],             // top-K gamma strikes, drawn separate from srLines — see stageGamma()
+  vpPrim:null, vpData:null, vpLines:[]  // volume profile: series primitive + one POC price line
 };
 function cssVar(name){
   var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -6673,12 +6678,17 @@ function stageSetEmpty(msg){
 }
 function stageApplyWindow(total){
   var ts = STAGE.chart.timeScale();
+  // Right-side breathing room on EVERY interval (Zach 2026-08-24): the last
+  // candle never sits flush against the price axis, and the gap is where the
+  // volume profile draws when that overlay is on. Scales with the bar count so
+  // a 5-bar chart isn't mostly empty and a 250-bar one still shows a real gap.
+  function pad(nShown){ return Math.max(5, Math.ceil(nShown*0.07)); }
   if(STAGE.iv==="1D"){
     var N = TFN2[STAGE.tf]||63;
-    if(total <= N+2){ ts.fitContent(); return; }
-    ts.setVisibleLogicalRange({from: total-N-0.5, to: total+2.5});
+    if(total <= N+2){ ts.setVisibleLogicalRange({from:-0.5, to: total-1+pad(total)}); return; }
+    ts.setVisibleLogicalRange({from: total-N-0.5, to: total-1+pad(N)});
   } else {
-    ts.fitContent();
+    ts.setVisibleLogicalRange({from:-0.5, to: total-1+pad(total)});
   }
 }
 /* ---- earnings markers (daily view only, same anchoring as the SVG badges:
@@ -8990,11 +9000,11 @@ function taAmvForInterval(amv){
   var bpd = taBarScale();
   return (bpd>0) ? amv*Math.sqrt(1/bpd) : amv;
 }
-function taDefaults(){ return {trend:true, sr:true, bb:false}; }
+function taDefaults(){ return {trend:true, sr:true, bb:false, vp:false}; }
 function taPrefs(){
   try{
     var v = JSON.parse(read("desk.stage.ta")||"null");
-    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr, bb:!!v.bb};
+    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr, bb:!!v.bb, vp:!!v.vp};
   }catch(e){}
   return taDefaults();
 }
@@ -9728,7 +9738,161 @@ function stageTAClear(){
   (STAGE.gammaLines||[]).forEach(function(h){ try{ STAGE.s.candle.removePriceLine(h.line); }catch(e){} });
   STAGE.gammaLines = [];
   STAGE.gammaSummary = null;
+  // Volume profile: detach the series primitive and drop the one POC axis
+  // line, the same way srLines/gammaLines are torn down above — a symbol
+  // switch (stageShow -> stageRender -> stageTA -> stageTAClear) must never
+  // leave the previous ticker's profile drawn over the new one's candles
+  // (the exact class of bug "a view that changes symbol clears its data
+  // first" exists to prevent).
+  if(STAGE.vpPrim){ try{ STAGE.s.candle.detachPrimitive(STAGE.vpPrim); }catch(e){} STAGE.vpPrim = null; }
+  STAGE.vpData = null;
+  (STAGE.vpLines||[]).forEach(function(h){ try{ STAGE.s.candle.removePriceLine(h.line); }catch(e){} });
+  STAGE.vpLines = [];
   STAGE.taSummary = null;
+}
+/* Volume profile — display-only, computed once per stageTA() pass on
+   SETTLED bars only (same posture as the on-chart Bollinger Bands: a
+   profile that reshapes itself every 30 seconds on the live tick would
+   disagree with itself poll to poll, and free daily/intraday bars have no
+   real intrabar volume-at-price to begin with — this is already an
+   approximation, spreading each bar's volume evenly across its own
+   high-low range, not a measurement). Returns either a drawable profile or
+   a `{reason}` object naming why nothing drew — a feed that fails keeps
+   its slot instead of a blank chart.
+   `win` is the SAME window stageTA already sliced (the visible window on
+   1D, the full series otherwise); the caller has already stripped the
+   unsettled synthetic last bar before calling this, mirroring the BB
+   convention exactly. */
+function vpProfile(win){
+  if(!STAGE.hasVolume) return {reason:"no volume data on this feed"};
+  if(!win || win.length < 10) return {reason:"window too short for a profile"};
+  var usable = [];
+  for(var i=0;i<win.length;i++){
+    var r = win[i];
+    var o=num(r[0]), h=num(r[1]), l=num(r[2]), c=num(r[3]), v=num(r[4]);
+    if(h==null || l==null || h<l || !(v>0)) continue;
+    usable.push({h:h, l:l, v:v});
+  }
+  var skippedBars = win.length - usable.length;
+  if(usable.length < win.length*0.60 || usable.length < 10){
+    return {reason:"too few bars carry volume for a profile", usedBars:usable.length, skippedBars:skippedBars};
+  }
+  var lo = Infinity, hi = -Infinity;
+  usable.forEach(function(b){ if(b.l<lo) lo=b.l; if(b.h>hi) hi=b.h; });
+  if(!(hi>lo)){
+    // A perfectly flat window (every bar's high==low, the same price) has
+    // no price domain to bin. Genuinely rare (needs volume>0 too), but a
+    // single-bin domain would otherwise divide by zero below.
+    return {reason:"window too short for a profile", usedBars:usable.length, skippedBars:skippedBars};
+  }
+  var nBins = (typeof window!=="undefined" && window.innerWidth<=640) ? 24 : VP_BINS;
+  var binW = (hi-lo)/nBins;
+  var bins = [];
+  for(var bi=0; bi<nBins; bi++) bins.push({lo:lo+bi*binW, hi:lo+(bi+1)*binW, vol:0});
+  usable.forEach(function(b){
+    if(b.h === b.l){
+      // Zero-range bar: its whole volume goes in the single bin containing
+      // that price.
+      var bidx = Math.min(nBins-1, Math.max(0, Math.floor((b.l-lo)/binW)));
+      bins[bidx].vol += b.v;
+      return;
+    }
+    var b0 = Math.max(0, Math.floor((b.l-lo)/binW));
+    var b1 = Math.min(nBins-1, Math.floor((b.h-lo)/binW - 1e-9));
+    for(var bj=b0; bj<=b1; bj++){
+      var binLo = Math.max(b.l, bins[bj].lo), binHi = Math.min(b.h, bins[bj].hi);
+      var overlap = Math.max(0, binHi-binLo);
+      bins[bj].vol += b.v * (overlap/(b.h-b.l));
+    }
+  });
+  var total = bins.reduce(function(s,b){ return s+b.vol; }, 0);
+  if(!(total>0)) return {reason:"too few bars carry volume for a profile", usedBars:usable.length, skippedBars:skippedBars};
+  var pocIdx = 0;
+  for(var pi=1; pi<nBins; pi++) if(bins[pi].vol > bins[pocIdx].vol) pocIdx = pi;
+  // Value area: greedily grow outward from the POC, each step adding
+  // whichever adjacent bin (by volume) is larger, until 70% of total volume
+  // is enclosed.
+  var vaLoI = pocIdx, vaHiI = pocIdx, vaVol = bins[pocIdx].vol;
+  while(vaVol < total*VP_VALUE_AREA && (vaLoI>0 || vaHiI<nBins-1)){
+    var volBelow = (vaLoI>0) ? bins[vaLoI-1].vol : -1;
+    var volAbove = (vaHiI<nBins-1) ? bins[vaHiI+1].vol : -1;
+    if(volAbove >= volBelow){ vaHiI++; vaVol += bins[vaHiI].vol; }
+    else { vaLoI--; vaVol += bins[vaLoI].vol; }
+  }
+  var vaLo = bins[vaLoI].lo, vaHi = bins[vaHiI].hi;
+  var lastClose = usable.length ? num(win[win.length-1][3]) : null;
+  // "High-volume shelf below price": the largest bin below the last close
+  // AND outside the value area — the honest "buy zone" readout, a shelf of
+  // prior activity, never a verdict.
+  var shelf = null;
+  // With no last close to compare against, "below price" can't be verified
+  // for any bin — suppress the shelf entirely rather than let a bin ABOVE
+  // price through while the caption still calls it "below price".
+  if(lastClose!=null){
+    for(var si=0; si<nBins; si++){
+      if(si>=vaLoI && si<=vaHiI) continue;
+      if(bins[si].hi >= lastClose) continue;
+      if(!shelf || bins[si].vol > shelf.vol) shelf = {lo:bins[si].lo, hi:bins[si].hi, vol:bins[si].vol};
+    }
+  }
+  return {bins:bins, total:total, pocIdx:pocIdx, poc:{lo:bins[pocIdx].lo, hi:bins[pocIdx].hi},
+          vaLo:vaLo, vaHi:vaHi, shelf:shelf, usedBars:usable.length, skippedBars:skippedBars};
+}
+/* The v5 series-primitive plugin interface: an object with updateAllViews()
+   and paneViews() returning a renderer whose draw(target) paints onto the
+   candle pane's own bitmap coordinate space. Colors are re-resolved from
+   cssVar() INSIDE draw() every frame rather than cached once on STAGE.vpData
+   — two cssVar() calls per bin per frame is cheap, and it means a theme
+   flip repaints correctly with no separate vpRecolor() hook needed. */
+function vpBuildPrimitive(){
+  var data = STAGE.vpData;
+  function draw(target){
+    if(!data || !data.bins || !STAGE.s.candle) return;
+    target.useBitmapCoordinateSpace(function(scope){
+      var ctx = scope.context;
+      var vpr = scope.verticalPixelRatio, hpr = scope.horizontalPixelRatio;
+      var paneW = scope.bitmapSize.width, paneH = scope.bitmapSize.height;
+      function yOf(price){
+        var y = STAGE.s.candle.priceToCoordinate(price);
+        return (y==null) ? null : y*vpr;
+      }
+      // Value area band: full pane width, behind the candles.
+      var yVaHi = yOf(data.vaHi), yVaLo = yOf(data.vaLo);
+      if(yVaHi!=null && yVaLo!=null){
+        ctx.fillStyle = hexA(cssVar("--acc"), 0.05);
+        ctx.fillRect(0, Math.min(yVaHi,yVaLo), paneW, Math.abs(yVaLo-yVaHi));
+      }
+      // Shelf band (at most one), neutral color — volatility/liquidity
+      // information, never a directional --up/--dn verdict.
+      if(data.shelf){
+        var ySHi = yOf(data.shelf.hi), ySLo = yOf(data.shelf.lo);
+        if(ySHi!=null && ySLo!=null){
+          ctx.fillStyle = hexA(cssVar("--bb"), 0.07);
+          ctx.fillRect(0, Math.min(ySHi,ySLo), paneW, Math.abs(ySLo-ySHi));
+        }
+      }
+      // Right-anchored horizontal bars, one per bin, into the right-side
+      // gap stageApplyWindow now opens on every interval.
+      var maxVol = 0;
+      data.bins.forEach(function(b){ if(b.vol>maxVol) maxVol=b.vol; });
+      if(!(maxVol>0)) return;
+      var maxBarW = paneW * 0.16;
+      data.bins.forEach(function(b, bi){
+        var y0 = yOf(b.lo), y1 = yOf(b.hi);
+        if(y0==null || y1==null) return; // off-scale — skip, per spec
+        var barW = (b.vol/maxVol) * maxBarW;
+        if(!(barW>0)) return;
+        ctx.fillStyle = (bi===data.pocIdx) ? hexA(cssVar("--acc"), 0.55) : hexA(cssVar("--ink3"), 0.28);
+        ctx.fillRect(paneW-barW, Math.min(y0,y1), barW, Math.max(1, Math.abs(y1-y0)));
+      });
+    });
+  }
+  return {
+    updateAllViews: function(){},
+    paneViews: function(){
+      return [{ renderer: function(){ return { draw: draw }; } }];
+    }
+  };
 }
 /* Which bars the overlays are computed on, in words. A 40 on an hourly RSI is
    not a 40 on the daily one, and the pane used to say only "RSI 14". */
@@ -9751,6 +9915,10 @@ function stageTA(){
   var pivH = taPivotIdx(win, k, 1), pivL = taPivotIdx(win, k, 2);
   var summary = {res:null, sup:null, levels:[], srTried:false, winN:winN, pivotK:k,
                  tooShort:(winN < taMinWinForTrend())};
+  // VP and S/R never stack — both mark horizontal levels, and two versions
+  // of the same story is clutter (B4). Gamma lines are unaffected: a
+  // different data source, a different meaning, and its own separate array.
+  var vpOn = prefs.vp;
   if(prefs.trend && !summary.tooShort){
     // Fit both sides first: when the support fit ends up ABOVE the resistance
     // fit at the last bar the two lines cross and the caption asserted both as
@@ -9825,7 +9993,8 @@ function stageTA(){
     });
     summary.shape = taShapeLabel(summary.res, summary.sup, win, STAGE.sym);
   }
-  if(prefs.sr){
+  if(prefs.sr && vpOn) summary.srHiddenByVp = true;
+  if(prefs.sr && !vpOn){
     summary.srTried = true;
     var lvls = taLevels(win, pivH, pivL);
     var lastPx = num(rows[n-1][3]);
@@ -9916,6 +10085,42 @@ function stageTA(){
       var lastClose2 = num(rows[n-1][3]);
       summary.bb = {mid:midData[midData.length-1].value, upper:lastUp, lower:lastLo,
                     side: bbSide(lastClose2, lastUp, lastLo)};
+    }
+  }
+  if(vpOn){
+    // Same window `win` the trend/S-R fitters use (visible window on 1D,
+    // full series otherwise), minus the unsettled synthetic last bar — the
+    // exact BB convention (win is rows.slice(off), so the synthetic bar,
+    // when STAGE.synthetic is true, is always win's own last row).
+    var vpRows = (STAGE.synthetic && win.length>1) ? win.slice(0,-1) : win;
+    var vp = vpProfile(vpRows);
+    if(vp.bins){
+      STAGE.vpData = vp;
+      STAGE.vpPrim = vpBuildPrimitive();
+      try{ STAGE.s.candle.attachPrimitive(STAGE.vpPrim); }catch(e){}
+      // One axis handle: the POC price line. Dropped when it would collide
+      // with a moving average, the same one-badge collision test the S/R
+      // block uses, so VP never stacks a second badge on top of an MA's.
+      var pocMid = (vp.poc.lo+vp.poc.hi)/2;
+      var lastPxVp = num(rows[n-1][3]);
+      // taSrBadgePick's job is exactly "is this price near an MA" — S/R is
+      // off whenever VP is on, so reuse it against an empty level list (it
+      // still computes and returns maNow regardless of lvls.length), the
+      // same collision test the S/R block's own axis badge uses.
+      var vpPick = taSrBadgePick([], lastPxVp);
+      var collidesVp = (vpPick.maNow||[]).some(function(v){ return v>0 && Math.abs(pocMid-v)/v < 0.012; });
+      var vpLine = STAGE.s.candle.createPriceLine({
+        price: pocMid, color: cssVar("--acc"), lineWidth:1, lineStyle:LWC.LineStyle.Dashed,
+        axisLabelVisible: !collidesVp,
+        title: "most-traded "+fmtpx(pocMid)
+      });
+      // Kept as {price, line, collides} rather than a bare line handle so
+      // stageTAPoke can re-derive the collision verdict against the live MA
+      // values every poke, mirroring taSrBadgePick's own S/R re-pick pattern.
+      STAGE.vpLines.push({price: pocMid, line: vpLine, collides: collidesVp});
+      summary.vp = vp;
+    } else {
+      summary.vp = {reason: vp.reason, usedBars: vp.usedBars, skippedBars: vp.skippedBars};
     }
   }
   STAGE.taSummary = summary;
@@ -10012,8 +10217,28 @@ function stageTAPoke(){
   if(STAGE.taSummary && STAGE.taSummary.bb){
     STAGE.taSummary.bb.side = bbSide(lastC, STAGE.taSummary.bb.upper, STAGE.taSummary.bb.lower);
   }
+  // The POC axis badge was assigned once at fit time from an MA-collision
+  // test and never revisited, even though the MA values it was tested
+  // against move every 30-second poke — the same class of bug the S/R axis
+  // badge re-pick above this exists to fix (2026-08-22 review round 7), and
+  // the same fix: re-run the identical taSrBadgePick collision test against
+  // the CURRENT MA values every poke and only touch axisLabelVisible when
+  // the verdict changed.
+  (STAGE.vpLines||[]).forEach(function(vl){
+    var pick = taSrBadgePick([], lastC);
+    var collidesNow = (pick.maNow||[]).some(function(v){ return v>0 && Math.abs(vl.price-v)/v < 0.012; });
+    if(collidesNow !== vl.collides){
+      vl.collides = collidesNow;
+      try{ vl.line.applyOptions({axisLabelVisible: !collidesNow}); }catch(e){}
+    }
+  });
   // Redraw the caption every poke — it carries the trend-line verdict, which
-  // is what the re-grade above just changed.
+  // is what the re-grade above just changed. Volume profile: the bins/POC/
+  // value-area are frozen (settled bars), but "price is Y% above the
+  // most-traded price" is a verdict computed from price, so this rebuild is
+  // also what re-derives the VP wording on every poke (via vpWords(), the
+  // same function stageTALegend's first render calls) — no separate id-patch
+  // is needed since this call already runs on every poke.
   if(STAGE.taSummary) stageTALegend(taPrefs());
   // Gamma walls don't move intraday (positions are set once, at full
   // render), but the "nearest wall above/below spot" WORDS do — gexSide is
@@ -10094,6 +10319,39 @@ function taRegrade(fit, lastClose){
     out.excludesToday = !!STAGE.synthetic;
   }
   return out;
+}
+/* The words describing where price sits against the (frozen, settled-bar)
+   profile — the ONE thing that legitimately moves intraday, per the
+   standing "a verdict computed from price is recomputed when price moves"
+   rule. Shared by stageTALegend's first full render and stageTAPoke's
+   patch-in-place update, so the two can never disagree about the current
+   wording. The bins/POC/value-area themselves never appear here — they are
+   frozen for the session and are never recomputed by this function. */
+function vpWords(vp, last){
+  var pocMid = (vp.poc.lo+vp.poc.hi)/2;
+  var pocText;
+  if(last==null || !(pocMid>0)){
+    pocText = "Most-traded price "+fmtpx(pocMid)+".";
+  } else if(Math.abs(last-pocMid) < 1e-9){
+    pocText = "Most-traded price "+fmtpx(pocMid)+" — price is at it.";
+  } else {
+    var pocPct = Math.abs(last-pocMid)/pocMid*100;
+    pocText = "Most-traded price "+fmtpx(pocMid)+" — price is "
+      + pocPct.toFixed(1)+"% "+(last>pocMid?"above":"below")+" it.";
+  }
+  var vaText;
+  if(last==null){
+    vaText = "Value area "+fmtpx(vp.vaLo)+"–"+fmtpx(vp.vaHi)+" (≈70% of the window's volume).";
+  } else if(last>=vp.vaLo && last<=vp.vaHi){
+    vaText = "Value area "+fmtpx(vp.vaLo)+"–"+fmtpx(vp.vaHi)+" (≈70% of the window's volume); price is inside it.";
+  } else if(last>vp.vaHi){
+    vaText = "Value area "+fmtpx(vp.vaLo)+"–"+fmtpx(vp.vaHi)+" (≈70% of the window's volume); price is "
+      + ((last-vp.vaHi)/vp.vaHi*100).toFixed(1)+"% above it.";
+  } else {
+    vaText = "Value area "+fmtpx(vp.vaLo)+"–"+fmtpx(vp.vaHi)+" (≈70% of the window's volume); price is "
+      + ((vp.vaLo-last)/vp.vaLo*100).toFixed(1)+"% below it.";
+  }
+  return {pocText:pocText, vaText:vaText};
 }
 function stageTALegend(prefs){
   var el = document.getElementById("staget");
@@ -10214,7 +10472,11 @@ function stageTALegend(prefs){
       }
     }
   }
-  if(prefs.sr){
+  if(prefs.sr && sm && sm.srHiddenByVp){
+    // VP and S/R never stack (B4) — one line, no level list, so the reader
+    // knows why the dashed levels vanished rather than assuming a bug.
+    on.push('<span class="m">S/R lines hidden while the volume profile is on — both mark horizontal levels.</span>');
+  } else if(prefs.sr){
     // Name every level. Only the one nearest price gets an axis badge, so the
     // other two were anonymous dashed grey lines with no price anywhere.
     if(sm && sm.levels.length){
@@ -10265,7 +10527,24 @@ function stageTALegend(prefs){
       empty.push("not enough bars for a 20-period Bollinger band on this window");
     }
   }
-  if(!prefs.trend && !prefs.sr && !prefs.bb){ el.innerHTML = ""; return; }
+  if(prefs.vp){
+    if(sm && sm.vp && !sm.vp.reason){
+      var vpw = vpWords(sm.vp, last);
+      var vpBits = '<span id="tavp-poc">'+esc(vpw.pocText)+'</span> <span id="tavp-va">'+esc(vpw.vaText)+'</span>';
+      if(sm.vp.shelf){
+        vpBits += ' <span class="m">High-volume shelf '+fmtpx(sm.vp.shelf.lo)+'–'+fmtpx(sm.vp.shelf.hi)
+          + ' below price ('+(sm.vp.shelf.vol/sm.vp.total*100).toFixed(0)+'% of the window\'s volume).</span>';
+      }
+      vpBits += ' <span class="m">Profile approximated from '+sm.vp.usedBars+' bar'+(sm.vp.usedBars===1?"":"s")
+        + '\' high-low ranges — not tick data'
+        + (sm.vp.skippedBars>0 ? (', '+sm.vp.skippedBars+' bar'+(sm.vp.skippedBars===1?"":"s")+' carried no volume') : '')
+        + '.</span>';
+      on.push(vpBits);
+    } else {
+      empty.push("volume profile: " + ((sm && sm.vp && sm.vp.reason) || "no data"));
+    }
+  }
+  if(!prefs.trend && !prefs.sr && !prefs.bb && !prefs.vp){ el.innerHTML = ""; return; }
   var tail = ' <span class="m">(fit on this window — display only, never a signal)</span>';
   if(on.length){
     el.innerHTML = 'auto-TA: '+on.join(" · ")+(empty.length ? (' <span class="m">· '+esc(empty.join("; "))+'</span>') : "")+tail;
@@ -11305,7 +11584,11 @@ function stageBar(){
   var prefs = taPrefs();
   // EMA and RSI overlays were removed 2026-08-21 (Zach's call): only trend
   // lines and horizontal S/R remain as toggles.
-  var taBtns = [["trend","trend",taTrendTip()],["sr","S/R",TIPS.ta_sr],["bb","BB",TIPS.ta_bb]]
+  // S/R's own tooltip gets a suffix when VP is on (B4): VP and S/R never
+  // stack, so the toggle still shows its stored pressed state but the
+  // tooltip discloses why the lines aren't drawing.
+  var srTip = TIPS.ta_sr + (prefs.vp ? " (hidden while the volume profile is on)" : "");
+  var taBtns = [["trend","trend",taTrendTip()],["sr","S/R",srTip],["bb","BB",TIPS.ta_bb],["vp","VP",TIPS.ta_vp]]
     .map(function(t){ return '<button data-ta="'+t[0]+'" aria-pressed="'+!!prefs[t[0]]+'" data-tip="'+esc(t[2])+'">'+t[1]+'</button>'; }).join("");
   el.innerHTML = '<div class="seg" role="group" aria-label="Chart interval">'+ivBtns+'</div>'
     + '<div class="seg" role="group" aria-label="Chart range">'+tfBtns+'</div>'
