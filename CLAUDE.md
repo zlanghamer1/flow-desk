@@ -2183,5 +2183,54 @@ fetcher changes, no new network calls.
   generic `data-ta` click handler needed no change since it already flips
   whatever key the clicked button names.
 
+## Guardrails added 2026-08-24, freeze close-out pass
+
+Zach asked for the two remaining "deferred by judgement" items in
+`docs/OPEN_ITEMS.md`'s Open section to be re-investigated live rather than
+re-argued from memory, and for the three ruling-only items in that same
+section to get an explicit close. No code changed — both live probes came
+back negative. Full probe transcripts and reasoning:
+`docs/OPEN_ITEMS.md`'s "Deferred by judgement" section (item 2) and "Closed
+by ruling, 2026-08-24."
+
+- **`fundamental_currency_code` is a real TradingView scanner column, but
+  it answers the wrong question for this fix.** Probed live: `POST
+  https://scanner.tradingview.com/america/scan` with
+  `{"symbols":{"tickers":["NASDAQ:AAPL","NYSE:TM","NYSE:TSM"]},
+  "columns":["fundamental_currency_code","currency","description"]}`
+  returns `"USD"` for AAPL (correct) AND for `NYSE:TM`/`NYSE:TSM` (wrong —
+  Toyota files in JPY; TSM in TWD and SKHY in KRW per `context.py`'s own
+  `KNOWN_NON_USD_CURRENCY`), and `NASDAQ:SKHY` got the same false `"USD"`.
+  The column tracks the ADR listing's own converted currency, not the
+  underlying issuer's statement currency — the opposite of the one signal
+  this fix needs. `adhocEnsureFundamentals`'s `currency:"USD"` default and
+  the round-15 "not checked" caveat are UNCHANGED — wiring this column
+  would have REPLACED a disclosed caveat with a false "checked, it's
+  dollars" claim for the exact two non-USD tickers it exists to catch,
+  which the standing "never weaken a disclosure without a verified fact to
+  replace it with" rule forbids outright.
+- **No TradingView scanner column exposes a per-period end date for the
+  ad-hoc quarterly history arrays** (`total_revenue_fq_h` and its
+  siblings). Probed eight candidate names against `NASDAQ:AAPL`
+  (`report_period_h`, `fiscal_period_end_fq_h`, `earnings_release_date_h`,
+  `earnings_release_next_date_fq_h`, `fiscal_period_fq_h`,
+  `period_end_date_fq_h`, `report_date_fq_h`, `fiscal_period_end_ttm_h`) —
+  all eight returned `{"d":[null]}`, indistinguishable in shape from a
+  deliberately fabricated column name probed the same way
+  (`totally_fake_column_xyz` → `{"d":[null]}`). The scanner has no error
+  signal that separates "not a real column" from "a real column with no
+  data" — either way, there is nothing to validate cadence against.
+  `_adhocQuarterLabels`'s 3-month-subtraction assumption is unchanged.
+- **The three other Open items (chart attribution size, net-flow/Flow%
+  scope mismatch, Biggest Orders gross-premium ranking) are closed by
+  architect ruling, not by code**, and moved to a new "Closed by ruling,
+  2026-08-24" Shipped subsection — each is working as designed and already
+  discloses its own caveat on every surface that shows it; none is a bug.
+- **The freeze does not lift on this pass.** Its own stop condition (zero
+  unresolved confirmed findings in Open) is not met — items A (currency
+  signal) and B (quarter cadence) remain, now backed by a live measurement
+  instead of an assumption. `docs/OPEN_ITEMS.md` states exactly what
+  evidence would reopen either one.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

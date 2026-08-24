@@ -56,6 +56,33 @@ Full detail and the non-obvious decisions: CLAUDE.md's "Guardrails added
 
 ---
 
+## Closed by ruling, 2026-08-24
+
+Zach directed a freeze close-out pass over this file's Open section; the
+architect (Fable) ruled on these three, previously "deferred by judgement,"
+items directly rather than assigning them as code work — none of the three
+is a bug:
+
+- **Chart attribution link under the 24px touch minimum.** TradingView's
+  vendored Lightweight Charts library injects and sizes the in-chart
+  attribution logo itself, and the logo is a license condition (see
+  CLAUDE.md's 2026-08-19 vendoring guardrail) — restyling it is not this
+  repo's call to make.
+- **Net flow/BULL-BEAR counts every strike; Flow % counts only the
+  near-money band.** Both figures already disclose the scope difference on
+  every surface that shows them (row tooltips and the shared
+  `flowCpMismatchHTML` mismatch pill). Narrowing `net_flow` to match Flow %'s
+  band would discard a real fact — whole-chain premium — purely to make two
+  numbers agree; the fetcher's job is to publish what's true, not to make
+  two different questions share one answer.
+- **Biggest Orders ranks gross premium, so a deep-ITM contract can lead.**
+  Gross premium is the honest answer to "what traded"; ranking on extrinsic
+  value instead would answer a different question. The MOSTLY INTRINSIC
+  badge already flags the caveat rows rather than re-ranking them out of
+  sight.
+
+---
+
 ## Open — in the order they are worth doing
 
 ### 1. Automated review cycle remains paused — the Fable architect pass and its follow-up fix pass are both done (2026-08-23)
@@ -82,7 +109,13 @@ The automated round-N review cycle stays paused — do not resume it on your
 own judgment. Wait for Zach to explicitly ask for another automated round, or
 for a new architect-style pass to be requested.
 
-### 2. Deferred by judgement, not by omission
+### 2. Deferred by judgement, not by omission — both re-measured 2026-08-24, both still stand
+
+Both items below were investigated LIVE against `scanner.tradingview.com`
+during the 2026-08-24 freeze close-out pass (Zach's instruction: "address
+what is left in Open so the freeze can close"), not re-argued from memory.
+Both probes came back negative — see the exact requests/responses in each
+item. No code changed for either.
 
 - **The ad-hoc/scanner Financials fallback (`adhocEnsureFundamentals`)
   hardcodes `currency: "USD"` for every off-desk (non-pinned) ticker.** Round
@@ -90,48 +123,79 @@ for a new architect-style pass to be requested.
   flagged the far more common case (an ordinary US company reached via
   search) as "may not report in dollars." Round 14 confirmed the flip side:
   a genuine foreign issuer reached via search (an ADR like Toyota/TM) now
-  gets a false "filed in US dollars" claim instead. Both of the round-14
-  review's own proposed fixes were checked and rejected by its own
-  correction: reverting to `null` reintroduces the documented, more common
-  round-13 regression, and mirroring `context.py`'s `KNOWN_NON_USD_CURRENCY`
-  table client-side fixes nothing, since that table only covers pinned
-  tickers whose sidecars never fail into this fallback path. A real fix
-  needs a way to detect a SEARCHED ticker's actual reporting currency that
-  does not currently exist client-side — the same "no reliable signal
-  exists" problem round 12 cites for rejecting an exchange-based heuristic
-  server-side. Left as a documented, judged tradeoff until such a signal
-  exists. Round 15 added a scoped on-screen caveat ("Reporting currency was
-  not checked for this searched ticker...") for this specific path instead of
-  a silent "Statements are filed in US dollars" claim — a mitigation, not the
-  real fix described above, which still needs a genuine per-ticker signal.
+  gets a false "filed in US dollars" claim instead. Round 15 added a scoped
+  on-screen caveat ("Reporting currency was not checked for this searched
+  ticker...") for this specific path instead of a silent "Statements are
+  filed in US dollars" claim — a mitigation, not a fix.
+  **2026-08-24 measurement:** probed whether TradingView's scanner exposes a
+  `fundamental_currency_code` column that would give a real per-ticker
+  signal. It exists and returns non-null ISO codes, but the codes are
+  wrong for exactly the two cases that matter — it returns `"USD"` for
+  `NYSE:TM` (Toyota; real reporting currency is JPY) and `"USD"` for
+  `NYSE:TSM` and `NASDAQ:SKHY` (both documented in `context.py`'s
+  `KNOWN_NON_USD_CURRENCY` as TWD/KRW respectively). Live request/response:
+  `POST https://scanner.tradingview.com/america/scan` with
+  `{"symbols":{"tickers":["NASDAQ:AAPL","NYSE:TM","NYSE:TSM"]},
+  "columns":["fundamental_currency_code","currency","description"]}` →
+  `{"data":[{"s":"NASDAQ:AAPL","d":["USD","USD","Apple Inc."]},
+  {"s":"NYSE:TM","d":["USD","USD","Toyota Motor Corp. Sponsored ADR"]},
+  {"s":"NYSE:TSM","d":["USD","USD","Taiwan Semiconductor Manufacturing
+  Co., Ltd. Sponsored ADR"]}]}`; `NASDAQ:SKHY` alone returned the same
+  `["USD","USD","SK hynix Inc. Sponsored ADR"]`. The column appears to
+  report the ADR listing's own converted/normalized currency, not the
+  underlying issuer's financial-statement currency — the one fact this
+  fix needs. Wiring a column that confidently claims USD for the two known
+  non-USD probe cases would REMOVE the round-15 caveat and replace it with
+  a false "checked, and it's dollars" claim, a regression CLAUDE.md's
+  "never weaken a disclosure" rule forbids. Left open; would reopen only if
+  a different, unprobed column is found that returns JPY/TWD/KRW correctly
+  for these three names.
 - **The ad-hoc/scanner Financials fallback's quarter labels
   (`_adhocQuarterLabels`) assume a strict 3-month cadence**, mechanically
   subtracting 3 calendar months per column from a single known end-date
   scalar — there is no equivalent to the sidecar path's `periodsPerYear`
   cadence check, because TradingView's scanner columns for this path don't
-  expose each individual period's own end date to validate against. A
-  semiannual filer, a post-spinoff stub quarter, or any other off-calendar
-  cadence among off-desk searched tickers would get fabricated labels that
-  read back as a confident quarterly cadence downstream (`ttmEpsOf`,
-  `pegGrowthPctFor`). Fixing this well needs either a different TV column
-  that isn't currently fetched, or a real per-path redesign of the ad-hoc
-  quarter math — not a small patch — so it's left open rather than shipping
-  a partial fix (e.g. generic "period N" labels) that would still leave the
-  downstream TTM/YoY math wrong.
+  expose each individual period's own end date to validate against.
+  **2026-08-24 measurement:** probed for a per-period end-date/cadence
+  column on the same endpoint, against `NASDAQ:AAPL`. Tried
+  `report_period_h`, `fiscal_period_end_fq_h`, `earnings_release_date_h`,
+  `earnings_release_next_date_fq_h`, `fiscal_period_fq_h`,
+  `period_end_date_fq_h`, `report_date_fq_h`, `fiscal_period_end_ttm_h` — all
+  eight returned `{"d":[null]}`, byte-identical in shape to a deliberately
+  fake column name probed for comparison (`totally_fake_column_xyz` also
+  returned `{"d":[null]}`). The scanner gives no way to tell "this column
+  doesn't exist" from "this column exists and has no data" — either way,
+  there is no per-period date signal to validate cadence against for this
+  path. `fiscal_period_end_fq` (no `_h` suffix, already read as `endEp`)
+  remains the only date field, one scalar for the newest period only, which
+  is exactly what the existing code already uses. No new column to wire;
+  left open per the round-14 writeup's own reasoning, now backed by a
+  measurement instead of an assumption.
 - **The chart's own attribution link** is 35x11 on a phone, under the 24px
   touch minimum. Lightweight Charts injects and sizes it; restyling a vendor's
-  attribution is not ours to do. It is the only remaining under-minimum target.
+  attribution is not ours to do. **Closed by ruling, 2026-08-24** — moved to
+  Shipped below; not a code fix, a scope call.
 - **Net flow and the BULL/BEAR pill count every strike; Flow % counts only
-  strikes within 20% of spot.** They can point opposite ways on one row. Both
-  tooltips now say so. Making them agree means changing what the publisher
-  computes (`build_snapshot.py`, net_flow and direction), which is a data
-  decision, not a display one.
-- **The biggest-orders board ranks gross premium**, so deep in-the-money paper
-  can lead on money already in the strike. Those rows are badged MOSTLY
-  INTRINSIC rather than re-ranked, because the gross figure is the honest
-  answer to "what traded"; ranking on extrinsic value would answer a different
-  question. If that other question is the one worth answering, the change is
-  one sort key.
+  strikes within 20% of spot.** **Closed by ruling, 2026-08-24** — moved to
+  Shipped below.
+- **The biggest-orders board ranks gross premium**, so deep in-the-money
+  paper can lead on money already in the strike. **Closed by ruling,
+  2026-08-24** — moved to Shipped below.
+
+### Freeze status, 2026-08-24
+
+The freeze's own stop condition ("Getting to a real done" above) is **zero
+unresolved confirmed findings in this Open section.** As of this pass, Open
+holds exactly the two items above (A: currency signal, B: quarter cadence),
+both re-measured live this session and both still genuinely blocked on a
+vendor data gap, not on unstarted work — every other item that was ever
+in this section (three ruling-closed items, plus everything the round-N
+and Fable-architect passes found) is Shipped. The freeze does not lift on
+this pass: it lifts the moment either A or B gets a real signal (a
+different scanner/vendor column that returns correct non-USD currencies
+for TM/TSM/SKHY, or a real per-period date field for the quarterly
+arrays), or Zach rules the two remaining items closed the same way he
+closed C/D/E above. Nothing else is blocking "done."
 
 ---
 
