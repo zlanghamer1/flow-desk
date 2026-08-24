@@ -2071,5 +2071,117 @@ decisions from this pass:
   "a test that mirrors buggy logic keeps passing against a copy of the bug"
   pattern CLAUDE.md documents from round 6 and round 7's own test fixes.
 
+## Guardrails added 2026-08-24 (volume profile, Zach's freeze lift)
+
+Zach lifted the feature freeze explicitly for this one feature only ("Lift
+the freeze for the volume profile", 2026-08-24) — this does not close out
+the freeze itself (see "FEATURE FREEZE IN EFFECT" above and
+`docs/OPEN_ITEMS.md`'s "Getting to a real done" section, which are
+otherwise unchanged). All changes are frontend-only, in `index.html`; no
+fetcher changes, no new network calls.
+
+- **Honest vocabulary only.** The overlay and its zones are never called
+  "institutional," "smart money," "buy zone," or "sell zone." The words on
+  screen are "volume profile," "most-traded price" (the POC), "value area,"
+  and "high-volume shelf" — a shelf is a fact about where past volume
+  traded, not a verdict about who traded it or what happens next.
+- **The profile is frozen for the session, same posture as the on-chart
+  Bollinger Bands.** `vpProfile(win)` runs once per `stageTA()` pass on
+  SETTLED bars only — the same `(STAGE.synthetic && win.length>1) ?
+  win.slice(0,-1) : win` convention BB already uses to exclude the live-
+  appended "today" candle from its own math, not just its display. A
+  profile that reshaped itself every 30 seconds on the live tick would
+  disagree with itself poll to poll; free daily/intraday bars have no real
+  intrabar volume-at-price to begin with, so this was already an
+  approximation (spreading each bar's volume evenly across its own
+  high-low range) before touching the live-update question at all.
+- **Only the WORDS re-derive on a live poke, never the bins/POC/value
+  area.** "Price is Y% above the most-traded price" is a verdict computed
+  from price, so `stageTAPoke()` re-derives it from the current last close
+  on every 30-second poll — the standing "a verdict computed from price is
+  recomputed when price moves" rule. `vpWords(vp, last)` is the one
+  function both `stageTALegend`'s first render and its own every-poke
+  rebuild call, so the two can never disagree about the current wording.
+  `stageTALegend#tavp-poc`/`#tavp-va` spans keep their stable ids (useful
+  hooks), but nothing patches them directly by id any more — `stageTAPoke`'s
+  pre-existing unconditional `stageTALegend(taPrefs())` rebuild already runs
+  every poke for the trend-line caption, and that same rebuild is what
+  refreshes the VP wording, via `vpWords`. An earlier version of this fix
+  also id-patched the two spans directly before that rebuild ran; removed as
+  dead code once it was clear the rebuild immediately overwrote it with the
+  same text, so the patch had zero observable effect.
+  The POC axis badge's collision test IS re-run every poke, though (a
+  genuine bug, not the harmless-redundancy case above): it was computed
+  once at fit time against the MA values at that instant and never
+  revisited, even though those MA values move every 30 seconds — the same
+  class of bug the S/R axis badge's own re-pick exists to fix (round 7).
+  `stageTAPoke` now re-derives it from `taSrBadgePick([], lastC)`'s
+  `maNow` every poke, mirroring that precedent, and only calls
+  `applyOptions({axisLabelVisible:...})` when the verdict actually changed.
+- **VP and S/R never stack.** Both mark horizontal levels, and drawing both
+  at once is two versions of the same story. `stageTA()` computes `var vpOn
+  = prefs.vp` once; the S/R block only draws when `prefs.sr && !vpOn`, and
+  sets `summary.srHiddenByVp=true` when both stored prefs are true so the
+  caption names why the dashed levels are missing rather than leaving the
+  reader to assume a bug. The S/R toggle button's own tooltip appends "
+  (hidden while the volume profile is on)" when VP is on, so the state is
+  visible before the click, not just after. Gamma lines are UNAFFECTED —
+  a different data source, a different meaning, and their own separate
+  `gammaLines` array, exactly as they already were kept apart from
+  `srLines`.
+- **A missing reading is disclosed, never guessed — three distinct
+  reasons, not a blank chart.** `vpProfile` returns `{reason: "..."}` when
+  `!STAGE.hasVolume`, when fewer than 60% of the window's bars carry
+  volume, or when the window has fewer than 10 usable bars — worded as "no
+  volume data on this feed" / "too few bars carry volume for a profile" /
+  "window too short for a profile" respectively. The caption always prints
+  one of these in place of the profile, the same "a feed that fails keeps
+  its slot" rule every other panel on this page follows.
+- **Neutral coloring only — volume-at-price is not directional.** The bars,
+  the value-area band, and the shelf band all use `--ink3`/`--acc`/`--bb`
+  tokens through `hexA()`, never `--up`/`--dn`. Colors are re-resolved from
+  `cssVar()` inside the primitive's own `draw()` call every frame rather
+  than cached once — two cheap `cssVar()` reads per bin per frame, chosen
+  specifically so a theme flip repaints correctly with no separate
+  `vpRecolor()` hook to keep in sync with `stageTheme()`.
+- **Rendering is a v5 series primitive** (`STAGE.s.candle.attachPrimitive`/
+  `detachPrimitive`, the vendored v5.2.1 build's plugin interface — see
+  `attachPrimitive`/`useBitmapCoordinateSpace` in
+  `vendor/lightweight-charts.standalone.production.js`). No text is ever
+  drawn on the canvas; the caption under the chart carries every word. The
+  handle lives on `STAGE.vpPrim`, the computed profile on `STAGE.vpData`,
+  and the one POC axis handle (a dashed price line, titled "most-traded
+  " + its price) on `STAGE.vpLines` — all three are torn down in
+  `stageTAClear()` alongside the existing `srLines`/`gammaLines` teardown,
+  so a symbol switch can never leave the previous ticker's profile drawn
+  over the new one's candles (the exact class of bug "a view that changes
+  symbol clears its data first" exists to prevent). The POC line's own
+  axis label is dropped on collision with a moving average, reusing the
+  same `taSrBadgePick` collision test the S/R axis badge already uses (with
+  an empty level list, since S/R itself is off whenever VP is on) — the
+  standing one-badge-per-price discipline.
+- **Right-side chart spacing changed on EVERY interval, not just 1D.**
+  `stageApplyWindow(total)` used to give 1D's normal case a `+2.5`-bar gap
+  and give every other interval (1W, 15m, 1H, 4H) and 1D's own
+  short-history branch a bare `fitContent()`, leaving the last candle flush
+  against the price axis. All five paths now open with the same
+  `pad(nShown) = max(5, ceil(nShown*0.07))` gap — whole bars of empty space
+  that scales with the bar count so a 5-bar chart isn't mostly empty and a
+  250-bar one still shows a real gap. This is where the volume profile
+  draws when the overlay is on, but the gap itself is unconditional —
+  present whether or not VP is toggled on. `stageKeepView` and the
+  zoom/pan preservation paths are untouched; this only changes the DEFAULT
+  window a fresh render applies, exactly where `fitContent()`/the old
+  `+2.5` ran before.
+- **`VP_BINS` (40, halved to 24 under `window.innerWidth<=640`) and
+  `VP_VALUE_AREA` (0.70, the standard value-area convention) are top-level
+  constants next to `BB_PERIOD`/`BB_MULT`** — same disclosure posture as
+  every other first-pass heuristic constant in this file (not backtested,
+  not vendor-derived, a reasonable default for a display-only overlay).
+- **`desk.stage.ta`'s stored shape gains one key, `vp`, defaulting false**
+  (`taDefaults()`/`taPrefs()`) — no new localStorage key, the existing
+  generic `data-ta` click handler needed no change since it already flips
+  whatever key the clicked button names.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

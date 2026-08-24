@@ -42,6 +42,20 @@ approved fix, in full:
 
 ---
 
+## Scoped freeze lift, 2026-08-24 (volume profile)
+
+Zach lifted the feature freeze explicitly for one feature only ("Lift the
+freeze for the volume profile", 2026-08-24) — this does not close out the
+freeze itself; see "Getting to a real done" above, whose Open-section
+stop condition still applies to everything else in this repo. Shipped the
+same day: a volume-profile chart overlay (VP toggle, `vpProfile`/
+`vpBuildPrimitive` in `index.html`), right-side chart spacing on every
+interval (`stageApplyWindow`), and the VP-suppresses-S/R declutter rule.
+Full detail and the non-obvious decisions: CLAUDE.md's "Guardrails added
+2026-08-24 (volume profile, Zach's freeze lift)" section.
+
+---
+
 ## Open — in the order they are worth doing
 
 ### 1. Automated review cycle remains paused — the Fable architect pass and its follow-up fix pass are both done (2026-08-23)
