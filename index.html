@@ -6006,6 +6006,10 @@ var STAGE = {
   chart:null, s:{}, markersApi:null,
   rows:[], dates:[], times:[], intraday:false, hasVolume:false,
   vZoom:1,                   // vertical candle stretch, driven by the wheel over the price axis
+  vPan:0,                    // vertical drag-to-pan offset, price-denominated (2026-08-24 Fable spec)
+                              // positive = window shifted UP (dragging the mouse UP moves candles up,
+                              // matching TradingView); rides the SAME autoscaleInfoProvider vZoom does,
+                              // since the page never leaves autoscale (see stageWireVerticalPan).
   synthetic:false,           // last row is the live-appended today candle
   log:false, logManual:null, // null = auto rule decides; true/false = user override
   markerByTime:{}, ratingByTime:{}, fund:null, hovering:false,
@@ -6118,7 +6122,14 @@ function stageInit(){
   // the library's own manual scaling, and double-clicking it resets both.
   STAGE.s.candle.applyOptions({ autoscaleInfoProvider: function(original){
     var res = original();
-    if(!res || !res.priceRange || !STAGE.vZoom || STAGE.vZoom===1) return res;
+    if(!res || !res.priceRange) return res;
+    // Vertical drag-to-pan (Zach's report, 2026-08-24): the library only pans
+    // price in manual (non-autoscale) price-scale mode, and this page keeps
+    // autoscale ON at all times so the wheel vertical-zoom above keeps working
+    // through this same provider. So pan rides the identical mechanism, as a
+    // price offset applied AFTER the vZoom stretch below. Bail out early only
+    // when NEITHER zoom nor pan is active.
+    if(!STAGE.vZoom || (STAGE.vZoom===1 && !STAGE.vPan)) return res;
     var pr = res.priceRange;
     var mid = (pr.maxValue + pr.minValue)/2, half = (pr.maxValue - pr.minValue)/2;
     if(!isFinite(mid) || !isFinite(half) || half<=0) return res;
@@ -6152,9 +6163,32 @@ function stageInit(){
     // window's own real low instead of letting it run to 0.
     var floor = (STAGE.log && pr.minValue>0) ? pr.minValue/2 : 0;
     if(lo < floor){ hi += (floor-lo); lo = floor; }
+    // Vertical pan is applied LAST, after the zoom stretch and its own floor
+    // are both settled on the UNPANNED range above — so panning can never
+    // feed back into the stretch/anchor math (the wheel-zoom anchor test a
+    // few lines up reads pr.minValue/maxValue, the original unpanned range,
+    // never lo/hi). Clamp |pan| to 3x the unpanned span so the window can
+    // never be dragged entirely off the data — recomputed fresh from
+    // STAGE.vPan every call (never written back), so a reset (STAGE.vPan=0)
+    // always takes full effect immediately.
+    var pan = STAGE.vPan || 0;
+    var panSpan = pr.maxValue - pr.minValue;
+    var maxPan = panSpan * 3;
+    if(pan > maxPan) pan = maxPan; else if(pan < -maxPan) pan = -maxPan;
+    if(pan){
+      var lo2 = lo + pan;
+      // The log-scale floor applies here too (a pan below it squashes the
+      // pane exactly like a zoom below it does) — but pan CLAMPS instead of
+      // shift-back-ing the whole window: reduce how far the pan itself is
+      // allowed to push rather than resizing lo/hi the way the zoom floor
+      // above does, so panning never mutates the span.
+      if(lo2 < floor) pan -= (lo2 - floor);
+      lo += pan; hi += pan;
+    }
     return { priceRange:{ minValue: lo, maxValue: hi }, margins: res.margins };
   }});
   stageWireVerticalZoom(el);
+  stageWireVerticalPan(el);
   stageTheme();
   STAGE.chart.subscribeCrosshairMove(stageOnCrosshair);
   STAGE.chart.subscribeClick(stageOnClick);
@@ -6184,8 +6218,76 @@ function stageWireVerticalZoom(el){
     try{ axisW = STAGE.chart.priceScale("right").width() || 0; }catch(err){ axisW = 0; }
     var r = el.getBoundingClientRect();
     if(e.clientX < r.right - axisW) return;
-    STAGE.vZoom = 1; stageApplyVZoom();
+    STAGE.vZoom = 1; STAGE.vPan = 0; stageApplyVZoom();
   });
+}
+// Vertical drag-to-pan on the PANE (Zach's report, 2026-08-24: "can't drag
+// the chart up/down the way TradingView does"). Only fires when the drag
+// STARTS left of the price axis — the axis itself keeps the library's own
+// axisPressedMouseMove manual-scale drag. Rides the same
+// autoscaleInfoProvider vZoom does (see stageInit's comment above), since
+// the page never leaves autoscale. No preventDefault/stopPropagation: the
+// library must keep handling the drag's horizontal (time-pan) component and
+// the crosshair, exactly like TradingView's own combined feel.
+function stageWireVerticalPan(el){
+  var dragging = false, startY = 0, baseVPan = 0;
+  el.addEventListener("pointerdown", function(e){
+    if(!STAGE.chart || !STAGE.s.candle) return;
+    if(e.button != null && e.button !== 0) return;   // primary button/touch only
+    var axisW = 0;
+    try{ axisW = STAGE.chart.priceScale("right").width() || 0; }catch(err){ axisW = 0; }
+    var r = el.getBoundingClientRect();
+    if(e.clientX >= r.right - axisW) return;         // over the axis: that's stageWireVerticalZoom's drag
+    // Same exclusion for the BOTTOM time-axis strip: axisPressedMouseMove
+    // {time:true} means the library starts its own time-scale stretch from a
+    // drag that begins there, and running this pan on top of it would drive
+    // two scale gestures from one drag (2026-08-24 review finding #2).
+    var timeH = 0;
+    try{ timeH = STAGE.chart.timeScale().height() || 0; }catch(err){ timeH = 0; }
+    if(e.clientY >= r.bottom - timeH) return;
+    var p = null;
+    try{ p = STAGE.s.candle.coordinateToPrice(e.clientY - r.top); }catch(err){ p = null; }
+    if(p==null || !isFinite(p)) return;
+    dragging = true; startY = e.clientY; baseVPan = STAGE.vPan || 0;
+    // Capture the pointer so pointermove keeps firing when the drag path
+    // leaves the chart element's bounds — without it a mouse drag that
+    // crosses the pane edge froze the pan mid-gesture until the pointer
+    // re-entered (2026-08-24 review finding #1). The library's own handlers
+    // listen at document level, so capture does not starve its time-pan.
+    try{ el.setPointerCapture(e.pointerId); }catch(err){}
+  });
+  el.addEventListener("pointermove", function(e){
+    if(!dragging) return;
+    if(Math.abs(e.clientY - startY) < 3) return;      // a plain click isn't a pan
+    var r = el.getBoundingClientRect();
+    var pStart = null, pNow = null;
+    try{
+      // Both prices are read from the SAME live (already-panned) scale, in
+      // the same instant — whatever pan is currently applied cancels out of
+      // the subtraction below, so it must be recomputed fresh every move,
+      // never cached from pointerdown. Caching it created exactly the
+      // feedback bug this comment now warns about: with a cached start
+      // price, each move's delta was measured against a scale that had
+      // already shifted by the PREVIOUS move's pan, so the accumulated pan
+      // converged to roughly half the real drag distance instead of
+      // matching it. coordinateToPrice runs through the scale's own
+      // transform either way, so this stays correct on a log chart too.
+      pStart = STAGE.s.candle.coordinateToPrice(startY - r.top);
+      pNow = STAGE.s.candle.coordinateToPrice(e.clientY - r.top);
+    }catch(err){ pStart = null; pNow = null; }
+    if(pStart==null || pNow==null || !isFinite(pStart) || !isFinite(pNow)) return;
+    // dyPrice = price(startY) - price(currentY): dragging the mouse DOWN
+    // (currentY>startY) reads a LOWER price at currentY than at startY (price
+    // falls as pixel-y grows), so dyPrice is positive — accumulated onto
+    // baseVPan (the value at pointerdown, not += per event) so repeated
+    // moves in one drag never drift from rounding.
+    STAGE.vPan = baseVPan + (pStart - pNow);
+    stageApplyVZoom();
+  });
+  function endDrag(){ dragging = false; }
+  el.addEventListener("pointerup", endDrag);
+  el.addEventListener("pointercancel", endDrag);
+  window.addEventListener("pointerup", endDrag);       // a release off-chart still ends the drag
 }
 function stageApplyVZoom(){
   if(!STAGE.chart || !STAGE.s.candle) return;
@@ -6195,9 +6297,11 @@ function stageApplyVZoom(){
   }catch(e){}
   var el = document.getElementById("stagevz");
   if(el){
-    var on = Math.abs((STAGE.vZoom||1)-1) > 0.01;
-    el.hidden = !on;
-    if(on) el.textContent = "vertical "+(STAGE.vZoom).toFixed(1)+"× · dbl-click axis to reset";
+    var zoomed = Math.abs((STAGE.vZoom||1)-1) > 0.01;
+    var panned = !!STAGE.vPan;
+    el.hidden = !(zoomed || panned);
+    if(zoomed) el.textContent = "vertical "+(STAGE.vZoom).toFixed(1)+"× · dbl-click axis to reset";
+    else if(panned) el.textContent = "repositioned · dbl-click axis to reset";
   }
 }
 function stageTheme(){
@@ -11674,6 +11778,7 @@ function stageBar(){
       // symbol change (stageShow) or an explicit double-click on the axis
       // (2026-08-22 review round 12, chart stage finding #3).
       if(STAGE.vZoom && STAGE.vZoom!==1) STAGE.vZoom = 1;
+      if(STAGE.vPan) STAGE.vPan = 0;   // same reset as vZoom, same site (2026-08-24 vertical drag-to-pan)
       stageRender();
     });
   });
@@ -12641,6 +12746,7 @@ function stageShow(sym, opts){
   STAGE.fund = null; DRAWER_FUND = null;
   STAGE.logManual = null;
   STAGE.vZoom = 1;
+  STAGE.vPan = 0;   // same symbol-change reset as vZoom (2026-08-24 vertical drag-to-pan)
   // Persist the TV mapping too: a heatmap tile or searched name has a
   // session-only resolver entry, and restoring the bare symbol on the next
   // load would boot into a dead stage.
