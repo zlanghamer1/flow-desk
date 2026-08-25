@@ -56,6 +56,23 @@ Full detail and the non-obvious decisions: CLAUDE.md's "Guardrails added
 
 ---
 
+## Scoped freeze lift, 2026-08-24 (gamma snapshots)
+
+Zach lifted the feature freeze explicitly for one feature only ("Lift the
+freeze for gamma snapshots", 2026-08-24) — this does not close out the
+freeze itself; see "Getting to a real done" above, whose Open-section stop
+condition still applies to everything else in this repo. Shipped the same
+day: `gamma_history.json`, a new daily-snapshot file on the `data` branch
+accumulating each ticker's `facts.<TICKER>.gamma` object plus that cycle's
+spot (`build_snapshot.apply_gamma_history_cycle`/`load_gamma_history`/
+`save_gamma_history`), gated on the same `write_history` flag as
+history.json, purely to make a future combined GEX + volume-profile
+backtest possible. Fetcher-only — `index.html` is untouched, the page never
+reads this file. Full detail: CLAUDE.md's "Guardrails added 2026-08-24,
+gamma snapshots, Zach's freeze lift" section.
+
+---
+
 ## Closed by ruling, 2026-08-24
 
 Zach directed a freeze close-out pass over this file's Open section; the

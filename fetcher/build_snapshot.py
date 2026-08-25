@@ -231,6 +231,14 @@ GAMMA_DTE_HI = 45            # dte window for the gamma aggregation
 GAMMA_TOP_K = 4              # top strikes kept per ticker
 GAMMA_MIN_CONTRACTS = 20     # below this, gamma reads null (chain too thin)
 
+# gamma_history.json's daily snapshots (added 2026-08-24, Zach's freeze lift
+# "Lift the freeze for gamma snapshots") — accumulates each ticker's gamma
+# object plus that cycle's spot, one row per (ticker, session_date), so a
+# future combined GEX + volume-profile backtest can measure strike distance
+# from the close on the day the gamma was actually observed. ~1 year of daily
+# rows; the pre-registered backtest needs 60-90 minimum.
+MAX_GAMMA_HISTORY_SESSIONS = 250
+
 ACCEL_MULT = 1.5             # net_flow acceleration threshold for "firing"
 MONEYNESS_BAND = 0.20        # +/-20% of spot for 0-7DTE popular_contract
 SWING_DELTA_LO, SWING_DELTA_HI = 0.30, 0.60
@@ -1349,6 +1357,74 @@ def save_consensus_history(out_dir: Path, consensus_history: dict) -> None:
     tmp.replace(path)
 
 
+def load_gamma_history(out_dir: Path) -> dict:
+    """gamma_history.json — daily gamma-concentration snapshots per ticker
+    (added 2026-08-24). Published to the `data` branch the same way
+    history.json/consensus_history.json are (NEVER the gitignored job-local
+    fetcher/.context_cache.json) — it needs to survive months of daily
+    redeploys and mid-day redispatches, the same reasoning documented on
+    load_consensus_history above.
+    """
+    path = out_dir / "gamma_history.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("not a dict")
+        raw.setdefault("daily", {})
+        return raw
+    except Exception:
+        return {"v": 1, "daily": {}}
+
+
+def save_gamma_history(out_dir: Path, gamma_history: dict) -> None:
+    daily = gamma_history.get("daily", {})
+    if isinstance(daily, dict):
+        for ticker, rows in daily.items():
+            if isinstance(rows, dict) and len(rows) > MAX_GAMMA_HISTORY_SESSIONS:
+                for k in sorted(rows.keys())[:-MAX_GAMMA_HISTORY_SESSIONS]:
+                    del rows[k]
+    gamma_history["v"] = 1
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "gamma_history.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(gamma_history, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def apply_gamma_history_cycle(gamma_history: dict, gamma_by_ticker: dict,
+                               spot_by_ticker: dict, session_str: str,
+                               write_history: bool) -> None:
+    """Fold this cycle's gamma readings into gamma_history in place.
+
+    Mirrors the write_history gate every other history writer in this file
+    uses — a forced off-hours/closed-day cycle must never fabricate a
+    phantom session row. Only a ticker whose gamma object is a real dict
+    THIS CYCLE gets a row (an absent/None gamma is never fabricated into
+    one); a same-day re-run OVERWRITES that session's entry, since the
+    stored snapshot is meant to be the session's final picture, not its
+    first. Factored out of run_cycle so it's unit-testable on its own.
+    """
+    if not write_history:
+        return
+    gh_daily = gamma_history.setdefault("daily", {})
+    for ticker, g in gamma_by_ticker.items():
+        if not isinstance(g, dict):
+            continue
+        # A snapshot without its own spot cannot be evaluated by the future
+        # combined backtest (strike distance is measured FROM that spot), so
+        # a null/non-positive spot writes NOTHING — the review found
+        # fetch_chain's spot falls back to None when a CBOE payload carries
+        # neither current_price nor close, and a "spot": null row would sit
+        # permanently unusable while DATA_CONTRACT.md promised it can't
+        # exist. Skipping also leaves any earlier same-session entry (from a
+        # cycle that DID have a spot) untouched, per the same
+        # never-degrade-on-a-partial-cycle rule absent tickers follow.
+        spot = spot_by_ticker.get(ticker)
+        if not isinstance(spot, (int, float)) or not spot > 0:
+            continue
+        gh_daily.setdefault(ticker, {})[session_str] = {**g, "spot": spot}
+
+
 def load_prev_cycle() -> dict:
     """Load the prior cycle's cache: {"session", "flows", "vols"}.
 
@@ -1553,6 +1629,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     iv_history = history["iv_history"]
     vol_history = history["vol_history"]
     consensus_history = load_consensus_history(out_dir)
+    gamma_history = load_gamma_history(out_dir)
     prev_cycle = load_prev_cycle()
     same_session = prev_cycle["session"] == session_str
     new_prev_cycle: dict = {"session": session_str, "flows": {}, "vols": {}}
@@ -1561,6 +1638,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     swing_cards = []
     big_orders_pool: list[dict] = []   # every ticker's shortlist, merged below
     gamma_by_ticker: dict[str, dict | None] = {}  # merged into facts after context.build_context
+    spot_by_ticker: dict[str, float | None] = {}  # this cycle's spot, for gamma_history rows
     with_options = 0
 
     for i, ticker in enumerate(candidates):
@@ -1579,6 +1657,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
             prev_vols = None
         analysis = analyze_ticker(ticker, chain, session_date, prev_vols=prev_vols)
         gamma_by_ticker[ticker] = analysis["gamma"]
+        spot_by_ticker[ticker] = analysis["spot"]
         direction = analysis["direction"]
         net_flow = analysis["net_flow"]
         new_prev_cycle["flows"][ticker] = net_flow
@@ -2037,6 +2116,10 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
             if _t in _facts:
                 _facts[_t]["gamma"] = _g
 
+    # ── gamma_history accumulation (added 2026-08-24) ───────────────────────
+    apply_gamma_history_cycle(gamma_history, gamma_by_ticker, spot_by_ticker,
+                               session_str, write_history)
+
     bullish_flow = sum(1 for v in by_ticker.values() if v["direction"] == "BULL")
     bearish_flow = sum(1 for v in by_ticker.values() if v["direction"] == "BEAR")
     firing_count = sum(1 for v in by_ticker.values() if v.get("firing"))
@@ -2182,6 +2265,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     if write_history:
         save_history(out_dir, history)
         save_consensus_history(out_dir, consensus_history)
+        save_gamma_history(out_dir, gamma_history)
     save_prev_cycle(new_prev_cycle)
 
     log(f"wrote {data_path} ({data_path.stat().st_size} bytes)")

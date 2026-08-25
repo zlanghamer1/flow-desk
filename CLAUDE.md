@@ -2346,5 +2346,64 @@ fetcher changes, no new network calls.
   decomposition and fell back to the daily smear rather than distributing
   volume against an incomplete intraday session.
 
+## Guardrails added 2026-08-24, gamma snapshots, Zach's freeze lift
+
+Zach lifted the feature freeze explicitly for this one change ("Lift the
+freeze for gamma snapshots", 2026-08-24) — a scoped lift, not a close-out;
+the freeze itself (see "FEATURE FREEZE IN EFFECT" above) is unchanged and
+still governs everything else in this repo. Purpose: accumulate daily
+snapshots of each ticker's `facts.<TICKER>.gamma` object so a future
+combined GEX + volume-profile backtest becomes possible. Fetcher-only — no
+`index.html` change, the page never reads this file.
+
+- **`gamma_history.json` is published to the `data` branch, never
+  `fetcher/.context_cache.json`.** Same reasoning as `consensus_history.json`
+  (2026-08-21): the job-local cache is gitignored and does not survive a
+  mid-day redispatch or a new day's job, and this file needs to survive
+  months of those. `load_gamma_history`/`save_gamma_history` mirror
+  `load_consensus_history`/`save_consensus_history`'s shape exactly
+  (tmp-file-then-replace, `v:1`).
+- **Write is gated on the SAME `write_history` flag as history.json** — a
+  forced off-hours or closed-day cycle must never fabricate a phantom
+  session row, the same guard every other history writer in this file
+  already respects. Factored into a standalone `apply_gamma_history_cycle`
+  function (not inlined in `run_cycle`) so the gating, overwrite, and
+  absent-gamma rules below are unit-testable on their own —
+  `fetcher/test_gamma_history.py` pins all of them.
+- **A same-day re-run OVERWRITES that session's entry.** The stored
+  snapshot is meant to be the session's final picture, not its first —
+  same posture `today_sessions` already takes for its own same-day fields.
+- **Only a ticker whose gamma object is a real dict THIS CYCLE gets a
+  row.** An absent/None gamma (a thin chain, `GAMMA_MIN_CONTRACTS` not met,
+  or no chain fetched at all) writes nothing for that ticker that day — a
+  missing reading is never fabricated into a fake row, the same rule this
+  file states everywhere else a reading can be absent.
+- **`spot` is required alongside every stored gamma object, not optional.**
+  The published `facts.<TICKER>.gamma` object already carries its own
+  `spot` key, but `apply_gamma_history_cycle` explicitly re-stamps it from
+  that cycle's own resolved spot (`{**gamma, "spot": spot_by_ticker[ticker]}`)
+  rather than assuming the two always agree — the pre-registered backtest
+  measures strike distance from the close, and a snapshot without its own
+  spot can't be evaluated later. The review pass found the claim wasn't
+  enforced — `fetch_chain`'s spot falls back to None when a CBOE payload
+  carries neither `current_price` nor `close`, and `analyze_ticker` builds
+  the gamma object without gating on spot — so `apply_gamma_history_cycle`
+  now SKIPS a ticker whose cycle spot is null/non-positive (leaving any
+  earlier same-session entry alone) instead of writing a permanently
+  unevaluable `"spot": null` row the contract promised couldn't exist.
+- **`load_gamma_history` shares `load_consensus_history`'s known fail-soft
+  weakness on purpose** (a transient read error returns an empty structure,
+  and the next save overwrites the remote file) — parity with the existing
+  precedent, named here rather than silently inherited; hardening either
+  means hardening both in one change.
+- **Retention: `MAX_GAMMA_HISTORY_SESSIONS` (250) keys kept per ticker**,
+  oldest pruned first on save — roughly a year of daily rows, well past the
+  backtest's stated 60-90 session minimum.
+- DATA_CONTRACT.md gained a `gamma_history.json` section (doc-authority
+  rule: the shape is documented before the code that produces it is
+  trusted) stating the shape, the write/overwrite/absent-gamma rules above,
+  retention, and that this is analysis-side reference data the page never
+  reads.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

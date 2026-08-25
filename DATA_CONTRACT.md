@@ -1321,6 +1321,71 @@ instead of flickering in and out every hour; `avg_move` does the same job for
 Fail-soft: a missing or corrupt file reads as "never fetched, never built,
 never signed" — worst case one extra fetch/rebuild that cycle, never a crash.
 
+## gamma_history.json (published beside data.json on the `data` branch,
+added 2026-08-24, Zach's freeze lift "Lift the freeze for gamma snapshots")
+
+```json
+{
+  "v": 1,
+  "daily": {
+    "MU": {
+      "2026-08-24": {
+        "spot": 210.35,
+        "dte_hi": 45,
+        "levels": [ {"strike": 210.0, "gamma_oi": 1234567.8, "oi": 8421, "pct": 34.2} ],
+        "peak_strike": 210.0,
+        "total_gamma_oi": 3609846.2,
+        "expiries_used": 6,
+        "contracts_used": 2841,
+        "computed_from": "cboe_delayed_chain"
+      }
+    }
+  }
+}
+```
+One row per (ticker, session_date), keyed exactly like `facts.<TICKER>.gamma`
+(see the `## facts` gamma shape above) with one added field, `spot` — the
+same spot price the fetcher resolved for that ticker that cycle. Purpose:
+accumulate daily gamma snapshots so a future combined GEX + volume-profile
+backtest can measure strike distance from the close on the day the gamma was
+actually observed; a snapshot without its own spot cannot be evaluated
+later, so `spot` is required alongside every row, never optional — and the
+writer ENFORCES it: a cycle whose resolved spot is null or non-positive
+(CBOE can serve a chain carrying neither `current_price` nor `close`)
+writes NOTHING for that ticker that cycle, leaving any earlier
+same-session entry that did have a spot untouched, rather than persisting
+a permanently unevaluable `"spot": null` row.
+
+**Write rule:** guarded by the SAME `write_history` flag as
+history.json/consensus_history.json — a forced off-hours or closed-day
+cycle must never fabricate a phantom session row. Only a ticker whose gamma
+object is a real dict THIS CYCLE gets a row; an absent/null gamma (chain too
+thin, `GAMMA_MIN_CONTRACTS` not met, or no chain fetched at all) writes
+nothing for that ticker that day — a missing reading is never fabricated
+into a fake row. **A same-day re-run (a mid-day redispatch) OVERWRITES that
+session's entry** rather than keeping the first one — a deliberate choice:
+the stored snapshot is meant to be the session's final picture, the same
+posture `today_sessions` already takes for its own same-day fields, not a
+first-write-wins archival record.
+
+**Retention:** `MAX_GAMMA_HISTORY_SESSIONS` (250) session keys kept per
+ticker, oldest pruned first on save — roughly a year of daily rows, well
+past the pre-registered backtest's stated 60-90 session minimum.
+
+**Why this lives on the `data` branch and not `fetcher/.context_cache.json`:**
+same reasoning as consensus_history.json above — the job-local cache is
+gitignored and does not survive a mid-day redispatch or a new day's job
+(each re-clones `data` fresh — see DEPLOY.md), and this needs to survive
+months of those. Same publish mechanism as history.json/consensus_history.json:
+`build_snapshot.save_gamma_history` writes it with the tmp-file-then-replace
+pattern, and `loop.py`'s `git add -A` over `OUT_DIR` picks it up with no
+`loop.py` change.
+
+**Display posture:** this is analysis-side reference data only. The page
+never reads it — `index.html` is unchanged by this feature, and nothing on
+any board, chart, or panel is affected. It exists purely so a later,
+separate backtest has the daily gamma history it needs.
+
 ## Symbol hygiene (fetcher)
 Skip TV tickers containing `/`, `.`, `-` (preferred shares, warrants, units).
 Root for OCC = the plain ticker (strip exchange prefix). Skip CBOE 404s.
