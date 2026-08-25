@@ -2136,7 +2136,13 @@ fetcher changes, no new network calls.
   volume data on this feed" / "too few bars carry volume for a profile" /
   "window too short for a profile" respectively. The caption always prints
   one of these in place of the profile, the same "a feed that fails keeps
-  its slot" rule every other panel on this page follows.
+  its slot" rule every other panel on this page follows. **The 60% coverage
+  fraction is DAILY/WEEKLY-only (fixed 2026-08-24, Zach's report):** on
+  15m/1H/4H, zero-volume bars are ordinary extended-hours bars, not missing
+  data — measured live, 77 of MU's 139 15m bars — so the fraction test
+  silently vetoed every intraday profile for everyone since the feature
+  shipped. Intraday gates only on the 10-usable-bars floor; the caption's
+  skippedBars disclosure still names what was left out.
 - **Neutral coloring only — volume-at-price is not directional.** The bars,
   the value-area band, and the shelf band all use `--ink3`/`--acc`/`--bb`
   tokens through `hexA()`, never `--up`/`--dn`. Colors are re-resolved from

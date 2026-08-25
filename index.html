@@ -9966,7 +9966,15 @@ function vpProfile(win, intraByDay, dates){
     usable.push({h:h, l:l, v:v, idx:i});
   }
   var skippedBars = win.length - usable.length;
-  if(usable.length < win.length*0.60 || usable.length < 10){
+  // The 60%-coverage fraction applies to DAILY/WEEKLY bars only, where a
+  // zero-volume bar means missing vendor data. On 15m/1H/4H, zero-volume
+  // bars are ORDINARY extended-hours bars (measured live: 77 of MU's 139
+  // 15m bars, 2026-08-24) — a fraction test there vetoed a perfectly
+  // healthy feed and the profile never drew on any intraday view for
+  // anyone. Intraday gates on having enough volume-carrying bars instead;
+  // the caption's skippedBars disclosure still names what was left out.
+  var fracOK = STAGE.intraday ? true : (usable.length >= win.length*0.60);
+  if(!fracOK || usable.length < 10){
     return {reason:"too few bars carry volume for a profile", usedBars:usable.length, skippedBars:skippedBars};
   }
   var lo = Infinity, hi = -Infinity;
