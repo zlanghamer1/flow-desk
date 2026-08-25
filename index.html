@@ -1515,7 +1515,7 @@ var TIPS = {
   ta_sr:"Horizontal support/resistance: swing-point prices clustered inside half a 60-bar ATR (floored at 1%, capped at 5%, so a $900 stock and a $12 one both cluster sensibly); a level needs 2+ touches, strongest three drawn. A level that held as a floor often matters again as a ceiling, so highs and lows cluster together. Colored by where price sits against each level: red overhead (resistance ahead), green underneath (support below), blue when price is inside the band itself — the same three words the caption under the chart uses. Every level's price and touch count is named there too; only the one nearest price takes an axis badge, and even that is dropped when it would land on a moving-average badge. Display only.",
   ta_bb:"Bollinger Bands: a 20-period simple moving average plus/minus 2 standard deviations of the same 20 closes, in purple. Computed on the full price history (like the always-on 20/50/200-day lines), not the window selector — switching from 1M to 1Y does not change the band's shape. The caption under the chart says whether price is currently above the upper band, below the lower band, or inside them. Display only — never a signal, never in any score. The watchlist rail's Band crosses panel flags any rail ticker whose price just crossed a band, from the same daily bars, whether or not this toggle is on or its chart is even open.",
   ta_ma:"The 20, 50 and 200-period moving average lines. On by default; turn off to declutter the chart — the legend under the chart keeps showing the values and the % gap to price either way.",
-  ta_vp:"Volume profile: how much volume traded at each price over the window shown, drawn as sideways bars against the right edge. Built by spreading each bar's volume across its own high-to-low range — an approximation from daily (or intraday) bars, not true tick-by-tick data, so treat the shape as a map, not a measurement. The brightest bar is the most-traded price; the shaded band is the value area, the price range holding roughly 70% of the window's volume. Heavy shelves below price are where prior buyers sit; free data cannot see WHO traded, so nothing here is labeled institutional. Turning this on hides the dashed S/R lines — both mark horizontal levels, and two versions of the same story is clutter. Display-only: it never feeds any score.",
+  ta_vp:"Volume profile: how much volume traded at each price over the window shown, drawn as sideways bars against the right edge. Built by spreading each bar's volume across its own high-to-low range — an approximation from daily (or intraday) bars, not true tick-by-tick data, so treat the shape as a map, not a measurement. The brightest bar is the most-traded price; the shaded band is the value area, the price range holding roughly 70% of the window's volume. Heavy shelves below price are where prior buyers sit; free data cannot see WHO traded, so nothing here is labeled institutional. Turning this on hides the dashed S/R lines — both mark horizontal levels, and two versions of the same story is clutter. Display-only: it never feeds any score. On the daily view, a tracked desk name's recent sessions place their volume against 15-minute or hourly bars instead of the whole day's range when that intraday history is available — the caption says how many sessions got the finer treatment.",
 };
 
 /* =================== state =================== */
@@ -6014,7 +6014,8 @@ var STAGE = {
   log:false, logManual:null, // null = auto rule decides; true/false = user override
   markerByTime:{}, ratingByTime:{}, fund:null, hovering:false,
   gammaLines:[],             // top-K gamma strikes, drawn separate from srLines — see stageGamma()
-  vpPrim:null, vpData:null, vpLines:[]  // volume profile: series primitive + one POC price line
+  vpPrim:null, vpData:null, vpLines:[], // volume profile: series primitive + one POC price line
+  vpIntraKey:null            // one-shot guard for the async intraday-precision refine (2026-08-24)
 };
 function cssVar(name){
   var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -9868,6 +9869,49 @@ function stageTAClear(){
   STAGE.vpLines = [];
   STAGE.taSummary = null;
 }
+/* Groups a tracked symbol's own intraday bars by CT session date, for
+   vpProfile's optional intraday-precision decomposition (2026-08-24 spec).
+   `win`/`dates` are the SAME (trimmed) daily window vpProfile itself will
+   receive, so this only builds entries for sessions actually on screen.
+   Prefers 15m; a session 15m doesn't cover but 1H does falls back to 1H —
+   finer wins per session, never mixed within one session. Excludes today's
+   still-forming session the same way vpProfile's own caller already strips
+   the synthetic daily bar (a belt-and-suspenders check: intraRaw's own file
+   only covers the last week at 15m / a few weeks at 1H, so "today" is
+   usually simply absent, but a stale file left over from a prior fetch
+   could still carry a partial one). Returns null when INTRA_CACHE isn't
+   loaded yet — the caller decides whether to kick off ensureIntra(). */
+function vpIntraByDay(sym, win, dates){
+  if(!INTRA_CACHE) return null;
+  var todayKey = ctDayKey(new Date());
+  function group(rows){
+    var byKey = {};
+    rows.forEach(function(r){
+      if(!r || r.length<6) return;
+      var t = num(r[0]);
+      if(t==null) return;
+      var key = ctDayKey(new Date(t*1000));
+      if(key===todayKey) return;
+      var o=num(r[1]), h=num(r[2]), l=num(r[3]), c=num(r[4]), v=num(r[5]);
+      if(h==null || l==null || h<l || !(v>0)) return;
+      if(!byKey[key]) byKey[key] = [];
+      byKey[key].push([o,h,l,c,v]);
+    });
+    return byKey;
+  }
+  var g15 = group(intraRaw(sym, "i15") || []);
+  var g60 = group(intraRaw(sym, "i60") || []);
+  var out = {};
+  for(var i=0;i<win.length;i++){
+    var d = dates && dates[i];
+    if(!d) continue;
+    var key = ctDayKey(d);
+    if(out[key]) continue;
+    if(g15[key] && g15[key].length){ out[key] = {precision:"15m", rows:g15[key]}; }
+    else if(g60[key] && g60[key].length){ out[key] = {precision:"1h", rows:g60[key]}; }
+  }
+  return out;
+}
 /* Volume profile — display-only, computed once per stageTA() pass on
    SETTLED bars only (same posture as the on-chart Bollinger Bands: a
    profile that reshapes itself every 30 seconds on the live tick would
@@ -9880,8 +9924,38 @@ function stageTAClear(){
    `win` is the SAME window stageTA already sliced (the visible window on
    1D, the full series otherwise); the caller has already stripped the
    unsettled synthetic last bar before calling this, mirroring the BB
-   convention exactly. */
-function vpProfile(win){
+   convention exactly.
+
+   `intraByDay` (optional, 1D-only — see vpIntraByDay) is a map from a daily
+   row's CT session-date key to {precision:"15m"|"1h", rows:[[o,h,l,c,v],...]}
+   for that session's own intraday bars. `dates` (optional) is the Date
+   array aligned index-for-index with `win`, needed to look a row's date key
+   up in `intraByDay`. When a day has a usable entry AND its own intraday
+   bars' summed volume falls within 0.5x-2.0x of that day's own daily-bar
+   volume (a vendor mismatch — a partial session, missing bars — outside
+   that band keeps the daily smear: a missing reading is never guessed),
+   that day's volume is placed against each intraday bar's own tight
+   high-low range instead of smeared across the whole day. Volume is
+   additive, so mixing precisions in one histogram is sound (2026-08-24
+   Fable build spec, "intraday-precision volume profile"). */
+function vpDistributeBar(bins, lo, binW, nBins, h, l, v){
+  if(h === l){
+    // Zero-range bar: its whole volume goes in the single bin containing
+    // that price.
+    var bidx = Math.min(nBins-1, Math.max(0, Math.floor((l-lo)/binW)));
+    bins[bidx].vol += v;
+    return;
+  }
+  var b0 = Math.max(0, Math.floor((l-lo)/binW));
+  var b1 = Math.min(nBins-1, Math.floor((h-lo)/binW - 1e-9));
+  for(var bj=b0; bj<=b1; bj++){
+    var binLo = Math.max(l, bins[bj].lo), binHi = Math.min(h, bins[bj].hi);
+    var overlap = Math.max(0, binHi-binLo);
+    bins[bj].vol += v * (overlap/(h-l));
+  }
+}
+var VP_INTRA_SANITY_LO = 0.5, VP_INTRA_SANITY_HI = 2.0;
+function vpProfile(win, intraByDay, dates){
   if(!STAGE.hasVolume) return {reason:"no volume data on this feed"};
   if(!win || win.length < 10) return {reason:"window too short for a profile"};
   var usable = [];
@@ -9889,7 +9963,7 @@ function vpProfile(win){
     var r = win[i];
     var o=num(r[0]), h=num(r[1]), l=num(r[2]), c=num(r[3]), v=num(r[4]);
     if(h==null || l==null || h<l || !(v>0)) continue;
-    usable.push({h:h, l:l, v:v});
+    usable.push({h:h, l:l, v:v, idx:i});
   }
   var skippedBars = win.length - usable.length;
   if(usable.length < win.length*0.60 || usable.length < 10){
@@ -9918,21 +9992,29 @@ function vpProfile(win){
   var binW = (hi-lo)/nBins;
   var bins = [];
   for(var bi=0; bi<nBins; bi++) bins.push({lo:lo+bi*binW, hi:lo+(bi+1)*binW, vol:0});
+  // Per-day intraday decomposition (2026-08-24 intraday-precision spec):
+  // tracked separately from the caption's plain "bars" count so the caption
+  // can say how many sessions got the finer treatment.
+  var fine15Days = 0, fine1hDays = 0;
   usable.forEach(function(b){
-    if(b.h === b.l){
-      // Zero-range bar: its whole volume goes in the single bin containing
-      // that price.
-      var bidx = Math.min(nBins-1, Math.max(0, Math.floor((b.l-lo)/binW)));
-      bins[bidx].vol += b.v;
-      return;
+    var decomposed = false;
+    if(intraByDay && dates && dates[b.idx]){
+      var dayKey = ctDayKey(dates[b.idx]);
+      var entry = intraByDay[dayKey];
+      if(entry && entry.rows && entry.rows.length){
+        var sumV = entry.rows.reduce(function(s,r){ return s + (num(r[4])||0); }, 0);
+        if(sumV>0 && b.v>0 && sumV >= b.v*VP_INTRA_SANITY_LO && sumV <= b.v*VP_INTRA_SANITY_HI){
+          entry.rows.forEach(function(r){
+            var ih=num(r[1]), il=num(r[2]), iv=num(r[4]);
+            if(ih==null || il==null || ih<il || !(iv>0)) return;
+            vpDistributeBar(bins, lo, binW, nBins, ih, il, iv);
+          });
+          decomposed = true;
+          if(entry.precision==="15m") fine15Days++; else fine1hDays++;
+        }
+      }
     }
-    var b0 = Math.max(0, Math.floor((b.l-lo)/binW));
-    var b1 = Math.min(nBins-1, Math.floor((b.h-lo)/binW - 1e-9));
-    for(var bj=b0; bj<=b1; bj++){
-      var binLo = Math.max(b.l, bins[bj].lo), binHi = Math.min(b.h, bins[bj].hi);
-      var overlap = Math.max(0, binHi-binLo);
-      bins[bj].vol += b.v * (overlap/(b.h-b.l));
-    }
+    if(!decomposed) vpDistributeBar(bins, lo, binW, nBins, b.h, b.l, b.v);
   });
   var total = bins.reduce(function(s,b){ return s+b.vol; }, 0);
   if(!(total>0)) return {reason:"too few bars carry volume for a profile", usedBars:usable.length, skippedBars:skippedBars};
@@ -9965,7 +10047,8 @@ function vpProfile(win){
     }
   }
   return {bins:bins, total:total, pocIdx:pocIdx, poc:{lo:bins[pocIdx].lo, hi:bins[pocIdx].hi},
-          vaLo:vaLo, vaHi:vaHi, shelf:shelf, usedBars:usable.length, skippedBars:skippedBars};
+          vaLo:vaLo, vaHi:vaHi, shelf:shelf, usedBars:usable.length, skippedBars:skippedBars,
+          fineDays: fine15Days+fine1hDays, fine15Days:fine15Days, fine1hDays:fine1hDays};
 }
 /* The v5 series-primitive plugin interface: an object with updateAllViews()
    and paneViews() returning a renderer whose draw(target) paints onto the
@@ -10263,7 +10346,36 @@ function stageTA(){
     // exact BB convention (win is rows.slice(off), so the synthetic bar,
     // when STAGE.synthetic is true, is always win's own last row).
     var vpRows = (STAGE.synthetic && win.length>1) ? win.slice(0,-1) : win;
-    var vp = vpProfile(vpRows);
+    var vpDates = STAGE.dates.slice(off);
+    if(STAGE.synthetic && vpDates.length>1) vpDates = vpDates.slice(0,-1);
+    // Intraday-precision decomposition (2026-08-24 spec): 1D only, and only
+    // for a tracked name (quadsRaw resolves — an ad-hoc/searched ticker has
+    // no bars_intraday.json coverage at all). When the intraday file is
+    // already loaded this cycle, decompose right now; otherwise render the
+    // daily-precision profile first and kick off ensureIntra() in the
+    // background, one-shot per sym|iv so a failing fetch can't loop, then
+    // re-run this same TA pass — guarded on (sym, iv, vp pref) being
+    // unchanged since the call, the standing "an async render captures the
+    // state it was called for" rule.
+    var vpIntraMap = null;
+    if(STAGE.iv==="1D" && quadsRaw(STAGE.sym)){
+      if(INTRA_CACHE!==null){
+        vpIntraMap = vpIntraByDay(STAGE.sym, vpRows, vpDates);
+      } else if(!(INTRA_FAILED && Date.now() < INTRA_RETRY_AFTER)){
+        var vpiKey = STAGE.sym+"|"+STAGE.iv;
+        if(STAGE.vpIntraKey !== vpiKey){
+          STAGE.vpIntraKey = vpiKey;
+          (function(sym0, iv0){
+            ensureIntra().then(function(){
+              if(STAGE.sym===sym0 && STAGE.iv===iv0 && taPrefs().vp){
+                stageKeepView(stageTA);
+              }
+            });
+          })(STAGE.sym, STAGE.iv);
+        }
+      }
+    }
+    var vp = vpProfile(vpRows, vpIntraMap, vpDates);
     if(vp.bins){
       STAGE.vpData = vp;
       STAGE.vpPrim = vpBuildPrimitive();
@@ -10709,6 +10821,21 @@ function stageTALegend(prefs){
         + '\' high-low ranges — not tick data'
         + (sm.vp.skippedBars>0 ? (', '+sm.vp.skippedBars+' bar'+(sm.vp.skippedBars===1?"":"s")+' carried no volume') : '')
         + '.</span>';
+      // Intraday-precision decomposition (2026-08-24 spec): only appended
+      // when at least one session actually got the finer treatment; the
+      // plain approximation sentence above stands unchanged otherwise.
+      if(sm.vp.fineDays>0){
+        var precBits;
+        if(sm.vp.fine15Days>0 && sm.vp.fine1hDays>0){
+          precBits = sm.vp.fine15Days+" session"+(sm.vp.fine15Days===1?"":"s")+" at 15-minute, "
+            + sm.vp.fine1hDays+" at hourly precision";
+        } else if(sm.vp.fine15Days>0){
+          precBits = "Last "+sm.vp.fine15Days+" session"+(sm.vp.fine15Days===1?"":"s")+" placed with 15-minute precision";
+        } else {
+          precBits = "Last "+sm.vp.fine1hDays+" session"+(sm.vp.fine1hDays===1?"":"s")+" placed with hourly precision";
+        }
+        vpBits += ' <span class="m">'+precBits+'; earlier sessions spread across each day\'s range.</span>';
+      }
       on.push(vpBits);
     } else {
       empty.push("volume profile: " + ((sm && sm.vp && sm.vp.reason) || "no data"));
@@ -11771,6 +11898,7 @@ function stageBar(){
       // had its own one-shot boot-race rebuild yet — see stageLivePoke's
       // STAGE.bootRebuilt (2026-08-23 Fable architect pass, finding 4.1).
       STAGE.bootRebuilt = null;
+      STAGE.vpIntraKey = null;    // a fresh interval/window gets its own one-shot refine
       // A vertical-zoom stretch from scrolling the price axis on the
       // PREVIOUS interval/window persisted onto a chart the user never
       // zoomed on that view — stageRender()'s autoscaleInfoProvider
@@ -12764,6 +12892,7 @@ function stageShow(sym, opts){
   STAGE.taSummary = null; STAGE.markerByTime = {}; STAGE.ratingByTime = {};
   STAGE.synthetic = false; STAGE.hasVolume = false; STAGE.nextEarn = null;
   STAGE.bootRebuilt = null;
+  STAGE.vpIntraKey = null;    // a new symbol gets its own one-shot refine
   stageHeader(); stageBar(); stageTabsRender(); renderStageTab();
   stageMsg("loading chart…");
   Promise.all([ensureBars(), ensureFund(sym)]).then(function(vals){

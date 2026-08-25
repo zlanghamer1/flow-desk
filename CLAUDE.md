@@ -2285,5 +2285,66 @@ by ruling, 2026-08-24."
   does NOT starve the library's own time-pan: one diagonal drag pans both
   axes (time range shifted ~8.3 bars and price ~82px in the same gesture).
 
+## Guardrails added 2026-08-25 (intraday-precision volume profile, Zach's approval)
+
+Zach approved this upgrade ("Approved to build 15m update") on top of the
+existing volume-profile freeze lift — frontend-only, `index.html`, no
+fetcher changes, no new network calls.
+
+- **`vpProfile(win, intraByDay, dates)` decomposes a day's volume against its
+  own intraday bars instead of smearing it across the whole day's high-low
+  range, whenever that day's own bars_intraday.json coverage passes a sanity
+  check.** `vpIntraByDay(sym, win, dates)` groups a tracked symbol's 15m/1H
+  bars by CT session date (`ctDayKey`, the same key `slot4H`/`resample4H`
+  already use — never a UTC-based day key, that bug class is documented
+  elsewhere in this file) and prefers 15m over 1H per session, never mixing
+  the two within one session. Per day, the decomposition is used ONLY when
+  the summed intraday volume falls within 0.5x-2.0x of that day's own daily
+  bar volume (`VP_INTRA_SANITY_LO`/`HI`) — a vendor mismatch (a partial
+  session, missing bars) outside that band keeps the plain daily smear for
+  that one day: a missing reading is never guessed. This is 1D-only and only
+  for a tracked name (`quadsRaw(STAGE.sym)` resolves) — 1W and the intraday
+  views themselves are untouched, and a searched/off-desk ticker (no
+  bars_intraday.json coverage) always keeps the plain daily-smear caption.
+- **The per-bar distribution math is factored into one `vpDistributeBar`
+  helper**, called identically for a plain daily bar and for each of a
+  decomposed day's own intraday bars — daily and intraday rows go through
+  the exact same overlap-against-bins math, only the bar's own h/l/v differ.
+- **Loading is async but the profile is never blank while it waits.** When
+  `INTRA_CACHE` is already loaded this cycle, the decomposition runs
+  synchronously inside the same `stageTA()` pass. When it isn't,
+  `stageTA()` renders the plain daily-precision profile immediately, then
+  calls `ensureIntra()` in the background and re-runs the SAME `stageTA()`
+  pass (via `stageKeepView`, the same wrapper the TA toggle buttons already
+  use) once it resolves — guarded on `(STAGE.sym, STAGE.iv, taPrefs().vp)`
+  being unchanged since the call (the standing "an async render captures
+  the state it was called for" rule) and one-shot per `sym|iv` via a new
+  `STAGE.vpIntraKey` field (mirrors `STAGE.bootRebuilt`'s own one-shot
+  pattern), reset at the same two sites `bootRebuilt` already resets at
+  (`stageShow`'s symbol change, the interval/window click handler) — so a
+  failing intraday fetch can retry on the next real state change but can
+  never loop.
+- **Disclosure: the caption gains one sentence only when at least one
+  session actually got the finer treatment** (`vp.fineDays>0`), naming how
+  many sessions were placed at which precision ("N sessions at 15-minute, M
+  at hourly precision" when both occur, or the single-precision phrasing
+  otherwise) — the existing plain "approximated from N bars' high-low
+  ranges" sentence stands unchanged either way, and unchanged entirely when
+  `fineDays===0`. `TIPS.ta_vp` gained one sentence stating the same fact.
+  Frozen-per-session posture is unchanged: this only recomputes on a full
+  `stageTA()` pass (interval/window/toggle/symbol/async-resolve), never on
+  the 30-second poke.
+- **Observed live against MU (1D, 1M window, VP on, this session's fetch of
+  `data`'s real `bars_intraday.json`):** 17 of the 21 on-screen sessions
+  decomposed (1 at 15-minute precision, 16 at hourly — 15m's file only
+  covers roughly the last week, so most of a 1-month window falls back to
+  1H). Of the remaining 4: 3 sessions (2026-07-24/27/28) had no intraday
+  coverage at all and kept the plain daily smear, and 1 session
+  (2026-08-20) HAD 15m coverage but its summed intraday volume was only
+  0.31x the daily bar's own volume — a genuine partial-session gap in the
+  15m file for that day — so the sanity band correctly rejected the
+  decomposition and fell back to the daily smear rather than distributing
+  volume against an incomplete intraday session.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
