@@ -19,14 +19,20 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
 - **Haiku** — mechanical grunt work.
 
 ## Hard guardrails
-- **FEATURE FREEZE IN EFFECT (Zach's ruling, 2026-08-22) — see
-  `docs/OPEN_ITEMS.md`'s "Getting to a real 'done'" section.** Eight review
-  rounds have not closed the nine-section review with zero open findings;
-  every feature added mid-stabilization (gamma levels, between rounds 7 and
-  8) reopened fresh review surface area and reset progress. **Do not add new
-  features to this repo** until `docs/OPEN_ITEMS.md`'s "Open" section is
-  empty, or Zach explicitly lifts the freeze in so many words. Bug fixes
-  from the review rounds are the only work permitted.
+- **FEATURE FREEZE LIFTED (Zach, 2026-08-26: "Unfreeze & merge").** The
+  2026-08-22 freeze is over — Zach lifted it in so many words, with the two
+  remaining vendor-blocked Open items (the ad-hoc currency signal and the
+  ad-hoc quarter cadence, see `docs/OPEN_ITEMS.md`) still open; they stay
+  documented there as vendor-data gaps, no longer as freeze gates. The same
+  ruling RESUMED the automated review cycle with a numeric finish line:
+  **Sonnet-agent nine-section review rounds continue until every one of the
+  nine sections scores 80 or higher in a single round** ("Continue sonnet
+  agents review to 80+ score on all") — this restores the numeric bar the
+  2026-08-22 ruling had replaced with the zero-open-findings condition.
+  Every round's confirmed findings still get fixed the same day, same as
+  all sixteen prior rounds. The freeze's lesson stands as judgement, not
+  law: a feature added mid-round still reopens review surface area — time
+  feature work accordingly.
 - **Never** push the `data` branch by hand — the loop force-pushes it every
   cycle; a manual push will be clobbered or will fight the loop.
 - **Never** flip Settings → Pages to "GitHub Actions" mode. Branch mode from

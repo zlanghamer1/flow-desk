@@ -100,9 +100,28 @@ is a bug:
 
 ---
 
+## Freeze lifted and review cycle resumed, 2026-08-26 (Zach's ruling)
+
+Zach: **"Unfreeze & merge. Continue sonnet agents review to 80+ score on
+all."** Three effects, all applied 2026-08-26:
+
+1. **The feature freeze is lifted in so many words.** The two remaining
+   Open items (A: ad-hoc currency signal, B: ad-hoc quarter cadence) stay
+   open below as genuine vendor-data gaps — they no longer gate anything.
+2. **The 2026-08-26 declutter branch merged to main** (full-width desktop,
+   BB-only chart defaults, quick-read recaps, collapsible explainers — see
+   CLAUDE.md's 2026-08-26 guardrails section).
+3. **The automated nine-section review cycle resumed**, run with
+   Sonnet-model reviewer/verifier agents, with a NEW finish line replacing
+   the 2026-08-22 zero-open-findings condition: **every one of the nine
+   sections scores 80+ in a single round.** Confirmed findings still get
+   fixed the same day they're found, every round, as before.
+
+---
+
 ## Open — in the order they are worth doing
 
-### 1. Automated review cycle remains paused — the Fable architect pass and its follow-up fix pass are both done (2026-08-23)
+### 1. Automated review cycle RESUMED 2026-08-26 (paused 2026-08-23 → Fable architect pass → resumed at Zach's explicit ask)
 
 The round-16 fix pass closed all 25 confirmed findings the same day they were
 found (see that section below). Per Zach's instruction, the automated
@@ -122,9 +141,12 @@ architect pass" below for the full writeup. Three new test files
 `test_context.py`, plus `test_sync_constants.py`) bring the fetcher suite to
 314 passing tests.
 
-The automated round-N review cycle stays paused — do not resume it on your
-own judgment. Wait for Zach to explicitly ask for another automated round, or
-for a new architect-style pass to be requested.
+The automated round-N review cycle stayed paused from 2026-08-23 until
+Zach's explicit ask on 2026-08-26 ("Continue sonnet agents review to 80+
+score on all") — see "Freeze lifted and review cycle resumed" above. Rounds
+run `docs/review/nine-section-review.js` with Sonnet agents and continue
+until all nine sections clear 80 in one round; per-round results are
+recorded below as before.
 
 ### 2. Deferred by judgement, not by omission — both re-measured 2026-08-24, both still stand
 
@@ -199,7 +221,7 @@ item. No code changed for either.
   paper can lead on money already in the strike. **Closed by ruling,
   2026-08-24** — moved to Shipped below.
 
-### Freeze status, 2026-08-24
+### Freeze status, 2026-08-24 — SUPERSEDED 2026-08-26 (Zach lifted the freeze outright; see "Freeze lifted and review cycle resumed" above)
 
 The freeze's own stop condition ("Getting to a real done" above) is **zero
 unresolved confirmed findings in this Open section.** As of this pass, Open

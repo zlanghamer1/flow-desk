@@ -25,6 +25,13 @@
  * variable name below is legacy from before that ruling; the threshold it
  * filters on is 80.
  *
+ * SONNET AGENTS (Zach's 2026-08-26 ruling, "Continue sonnet agents review
+ * to 80+ score on all"): every review and verify agent below pins
+ * model:'sonnet' explicitly, matching the repo's model-role convention
+ * (Sonnet builds and reviews; Fable architects). The same ruling restored
+ * the numeric finish line: rounds continue until all nine sections score
+ * 80+ in a single round.
+ *
  * PLACEHOLDER-GARBAGE RETRY (added 2026-08-22, round 9): a section reviewer
  * agent can return schema-VALID content that is actually a placeholder —
  * `section:"test"`, a two-sentence lorem-ipsum-style summary, a finding
@@ -55,7 +62,7 @@ const REPO = (args && args.repoRoot) || '/home/user/flow-desk'
 const FILE = REPO + '/index.html'
 
 const COMMON = `
-You are reviewing a single-file trading dashboard at ${FILE} (about 8,700 lines: CSS in a
+You are reviewing a single-file trading dashboard at ${FILE} (about 14,000 lines: CSS in a
 <style> block, all JS in one inline <script>). Supporting files: ${REPO}/DATA_CONTRACT.md
 (the payload contract), ${REPO}/fetcher/context.py (the publisher), and
 ${REPO}/data/*.json (real published payloads you can read to see actual shapes and values).
@@ -158,6 +165,7 @@ const results = await pipeline(
     for (let attempt = 0; attempt < 4; attempt++) {
       review = await agent(COMMON + '\n\n' + s.prompt, {
         label: 'review:' + s.key + '-attempt' + attempt, phase: 'Review', schema: SCHEMA, effort: 'high',
+        model: 'sonnet',
       })
       if (!looksLikePlaceholder(review)) break
       log(s.key + ' review attempt ' + (attempt + 1) + ' looked like placeholder garbage (section="' +
@@ -186,7 +194,7 @@ real=false when you are not sure. It is NOT real if:
 
 It IS real only if you can trace the exact path from code to the stated failure. If it is partly
 right, set real=true and put the accurate version in "correction".`,
-      { label: 'verify:' + s.key, phase: 'Verify', schema: VERDICT, effort: 'high' })
+      { label: 'verify:' + s.key, phase: 'Verify', schema: VERDICT, effort: 'high', model: 'sonnet' })
       .then(v => ({ finding: f, verdict: v }))
     )).then(verdicts => ({ review, verdicts: verdicts.filter(Boolean) }))
   }
