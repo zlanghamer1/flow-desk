@@ -119,6 +119,50 @@ all."** Three effects, all applied 2026-08-26:
 
 ---
 
+## Round 17 — 2026-08-26, first Sonnet-agent round after the unfreeze (24 confirmed, all fixed same day)
+
+Run via `docs/review/nine-section-review.js` (39 agents: 9 Sonnet reviewers
+at high effort with the placeholder-garbage retry — it fired three times
+this round and caught all three — plus one Sonnet adversarial verifier per
+finding). Scores, per the standing caveat that they are not comparable
+round to round:
+
+| Section | Score | Confirmed |
+|---|---|---|
+| Chart Stage | 76 | 3 (1 blocker) |
+| Auto-TA | 55 | 3 |
+| Left watchlist rail | 70 | 4 |
+| Financials | 68 | 3 (1 blocker) |
+| Sector Heatmap | 78 | 3 |
+| vs Peers | **80** | 1 |
+| Right rail panels | 74 | 2 |
+| Flow boards | 79 | 2 |
+| Data Honesty | 70 | 3 (1 blocker) |
+
+Eight of nine below the 80 bar; 24 confirmed findings, 4 refuted by the
+adversarial pass. Five of the 24 were regressions from the same-day
+declutter redesign (the stale quick-read on an empty chart, its focus
+drop, the swing recap's scope and "multi-week" wording, the sector-dots
+expander dying on sort, the money chart stretching past its viewBox once
+the shell cap came off) — the freeze's own lesson, accepted knowingly
+under the unfreeze ruling. The standouts among the rest: V's Fiserv peer
+pin dead on the scanner (re-verified live, FISV again — the pin has now
+flipped twice); the FOMC/CPI catalyst duplicates live in production
+(root-caused to `_merge_econ_aliases`'s skip guard, NOT the reviewer's
+proposed `_catalyst_still_fresh` cause — the verifier's correction was
+right, and the latent future-date backfill bug got fixed alongside);
+`TA_BREAK_CONF` never volatility-scaled (an ordinary AAOG wiggle graded
+as a confirmed BREAKOUT); and `isLeveraged()`'s bare "ultra" false-tagging
+Ultra Clean Holdings — the third real-company false positive from that
+regex. All 24 fixed the same day (fetcher: 2 fixes + 2 new tests, 333
+passing; the rest frontend). One finding closed by documented ruling
+rather than code: TA_SR_MAX_DIST's flat 20% vs the scaled trend-line
+distance is a deliberate design difference (a level is a measured shelf;
+a trend line is a projection) — now stated at the constant and in
+TIPS.ta_sr. Non-obvious decisions: CLAUDE.md's round-17 section.
+
+---
+
 ## Open — in the order they are worth doing
 
 ### 1. Automated review cycle RESUMED 2026-08-26 (paused 2026-08-23 → Fable architect pass → resumed at Zach's explicit ask)

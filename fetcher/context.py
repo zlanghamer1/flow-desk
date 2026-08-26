@@ -309,13 +309,25 @@ def _find_econ_alias_match(tv_rows: list[dict], date_str, attempts) -> Optional[
 
 
 def _merge_econ_aliases(out: list[dict], tv_rows: list[dict]) -> None:
-    """In place: for a CSV-sourced econ row still missing forecast AND prior,
-    find a TV row on the SAME DATE whose title matches the known alias for
-    the CSV row's own event name (see _ECON_ALIASES) and copy its numeric
-    fields across. Never overwrites a value already present, never touches
-    title/importance/anchor/source — this only fills in numbers a lexical
-    title match (_dedup_econ) could never find because the two vendors name
-    the same release differently.
+    """In place: for every CSV-sourced econ row, find a TV row on the SAME
+    DATE whose title matches the known alias for the CSV row's own event
+    name (see _ECON_ALIASES), copy any numeric fields the CSV row is still
+    missing, and drop the TV duplicate. Never overwrites a value already
+    present, never touches title/importance/anchor/source — the field copy
+    fills in numbers a lexical title match (_dedup_econ) could never find
+    because the two vendors name the same release differently.
+
+    The alias search runs UNCONDITIONALLY per CSV row — never gated on the
+    row already having forecast/prior. The old gate (`forecast is not None
+    or prior is not None: continue`) skipped the whole step for any anchor
+    whose CSV feed ships its OWN prior (CPI carries the raw index level,
+    FOMC the current funds rate), so the TV duplicate ('Inflation Rate
+    YoY', 'FOMC Economic Projections') was never removed and both rows
+    rendered side by side for the identical release, deterministically,
+    every cycle (2026-08-26 review round 17, panels finding #1 — verified
+    against the live 2026-08-26 data.json). "Do we still need numbers" and
+    "has the duplicate TV row been reconciled" are two different questions;
+    the per-field guard below already answers the first one.
 
     Also drops the matched TV row from `out` if it's present there as its
     own independent row. _dedup_econ only drops a TV row when
@@ -329,8 +341,6 @@ def _merge_econ_aliases(out: list[dict], tv_rows: list[dict]) -> None:
     """
     for row in out:
         if row.get("kind") != "econ" or row.get("source") != "econ_calendar":
-            continue
-        if row.get("forecast") is not None or row.get("prior") is not None:
             continue
         title = row.get("title") or ""
         attempts = None
@@ -1393,13 +1403,25 @@ def _catalyst_key(row: dict) -> tuple:
 
 
 def _catalyst_still_fresh(row: dict, now_ct: datetime) -> bool:
-    """Mirrors index.html's catDone()/countdown() grace period exactly: a
-    row stays visible until its own release grace period elapses — a
-    same-day row with no published time, or 6h past a row with one. Used to
-    decide whether a previous cycle's catalyst can be backfilled into this
-    cycle's list (see the merge in build_context below); a row this
-    function calls "not fresh" would render "cleared" anyway, so dropping
-    it costs nothing.
+    """A previous-cycle row qualifies for backfill ONLY when its release
+    already happened and is still inside index.html's catDone()/countdown()
+    grace period — a same-day row with no published time, or within 6h past
+    a row with one. Used to decide whether a previous cycle's catalyst can
+    be backfilled into this cycle's list (see the merge in build_context
+    below); a row this function calls "not fresh" would render "cleared"
+    anyway, so dropping it costs nothing.
+
+    A FUTURE-dated row is never "fresh" here (2026-08-26 review round 17,
+    panels finding — a real latent defect the verifier isolated even though
+    the live FOMC/CPI duplication traced to _merge_econ_aliases instead):
+    the old `(now_ct - when_ct) < 6h` comparison is trivially true for any
+    negative delta, and the no-time branch used `d >= today`, so every
+    future-dated placeholder the current build STOPPED producing (a
+    rescheduled event, a retitled row, a duplicate an alias fix now merges
+    away) got re-spliced from the cache every cycle until its own date
+    passed — undeletable. The backfill's entire purpose is releases that
+    dropped out of a from=now-forward refetch; future rows are served by
+    the fresh fetch by construction and need no backfill.
     """
     d_str = row.get("date")
     if not d_str:
@@ -1410,13 +1432,13 @@ def _catalyst_still_fresh(row: dict, now_ct: datetime) -> bool:
         return False
     t_str = row.get("time_ct")
     if not isinstance(t_str, str) or ":" not in t_str:
-        return d >= now_ct.date()
+        return d == now_ct.date()
     try:
         hh, mm = t_str.split(":")
         when_ct = datetime(d.year, d.month, d.day, int(hh), int(mm), tzinfo=TZ_CT)
     except Exception:
-        return d >= now_ct.date()
-    return (now_ct - when_ct) < timedelta(hours=6)
+        return d == now_ct.date()
+    return timedelta(0) <= (now_ct - when_ct) < timedelta(hours=6)
 
 
 def _merge_catalysts_forward(fresh: list[dict], prev: list[dict], now_ct: datetime) -> list[dict]:

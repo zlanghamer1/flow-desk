@@ -2511,5 +2511,128 @@ calls. The non-obvious decisions:
   expander round-trip working, heatmode hiding the new elements, and zero
   console errors beyond the sandbox's expected blocked-network fetches.
 
+## Guardrails added 2026-08-26, round-17 fix pass (24 findings, all 9 sections, all fixed)
+
+Round 17 — the first Sonnet-agent round after Zach's unfreeze ruling, and
+the first to review the same-day declutter redesign (see
+`docs/OPEN_ITEMS.md` for scores and the full table). Five of the 24 were
+declutter regressions, caught one round later exactly as the freeze's
+lesson predicts. The non-obvious decisions:
+
+- **`#stagerecap` joins every clear path the other under-chart captions
+  ride** — `stageSetEmpty` and `stageShow` both blank it (and reset
+  `STAGE._recapHtml`), so a dead search can never show "no US listing
+  resolves for X" above the PREVIOUS ticker's "Leaning bullish". The
+  quick-read line also rewrites only when its text actually CHANGED
+  (`STAGE._recapHtml`, tracked as the source string, never read back from
+  innerHTML — serialization differs), with focus capture/restore on a real
+  rewrite: both halves of the same innerHTML-rebuild discipline the file
+  already applies everywhere else.
+- **`taBreakConfFor(amv)` scales the break-confirmation margin** (quarter
+  of a typical bar move, floor at the old flat 0.5%, cap 3%) — the ONE
+  taFitLine threshold never routed through taAmvForInterval, so an
+  ordinary AAOG (16.3 avg_move) wiggle graded as a confirmed BREAKOUT.
+  Three call sites, one formula: taFitLine inline (round-13 convention),
+  `taBreakConfNow()` for taRegrade's live-break and the caption's
+  "at the line" test.
+- **A fit whose hug/containment tolerances hit their hard ceiling now says
+  so** (`fit.atCeiling` → one caption clause) — MU/COHR/TSEM all sit past
+  the hug ceiling in the live universe, and their captions read
+  byte-identical to a tightly-calibrated LLY line. Disclosure, not
+  re-tuning: the ceilings were calibrated on live measurements and moving
+  them without new measurement would trade a known distortion for an
+  unknown one.
+- **`TA_SR_MAX_DIST` stays flat at 20% BY RULING, now documented at the
+  constant and in TIPS.ta_sr**: an S/R level is a measured shelf (pivots
+  that actually traded there), a trend line's current value is a
+  projection — different epistemics, different leash. The round-8
+  %-distance caption is what keeps a far level honest.
+- **`LEV_NAME_RE` lost its bare `ultra`** (Ultra Clean Holdings — the
+  regex's THIRD real-company false positive) — `ultra` now anchors to an
+  index/asset name exactly like `short`, sharing one alternation. The
+  plural boundary bite (`semiconductors?` — "Ultra SemiconductorS") is the
+  same trailing-\b class round 12 fixed for "Short S&P500"; the full
+  ProShares name set is unit-verified in a browser. Accepted tradeoff,
+  stated in the comment: an Ultra fund named for an unlisted asset falls
+  back to the multiple ("2x") alternatives — a false negative there
+  mislabels one wrapper's range bar, where the false positive asserted a
+  reverse-split warning against a real company.
+- **The chg and default-hot rail sorts got the stale-sinks-to-bottom guard
+  the vol sort already had** — the round-16 comment claimed chg had it; it
+  never did. MOVERS' "+N more" overflow now gates and counts off `hot`,
+  the array the visible list is actually sliced from — gating on
+  `hotFresh` silently cut a genuinely fresh mover whenever a stale name
+  sat in the top 8. The shopping list prints "new low" (same test as
+  rangeBarHTML's own tag) instead of the clamped "0%" that made a fresh
+  breakdown read identical to an ordinary near-low.
+- **`peerStat` returns `pairSyms` so `peerAnnotate` can append
+  `vintageNote` to the Fundamentals-grid badge tooltip** — the identical
+  2-snapshot/2-live peer mix the vs-Peers tab already disclosed, ranked on
+  the Overview tab with no note at all (blocker).
+- **`.gwrap .gfull{max-width:1000px}`** — BIG.W's authored viewBox
+  ceiling. `max-width:none` was harmless under the 1560px shell and became
+  a real ~1.25x text-scale stretch at 1920px the day the cap came off:
+  a reminder that removing a container bound re-opens every "geometry
+  authored for the width it renders at" assumption downstream of it.
+- **`periodsPerYear`'s null is finally honored by its real-math callers**:
+  `ttmEpsOf` returns null, `pegGrowthPctFor` returns a new
+  "unresolved cadence" reason (METRIC_REASON_LONG entry included), and
+  renderGrowth suppresses the YoY chart outright (`ppyRaw` gate) — the
+  `|| 4` quarterly guess reproduced the exact CBRS-class wrong-TTM bug the
+  function's own header promised its callers would never make.
+- **Heatmap: DOM emission re-sorts by (y, x) after squarify** so tab order
+  follows the layout, not input weight; bare tiles ≥9px get a centered
+  +/− direction glyph and ticker-only tiles get it beside the symbol
+  (contrast-picked ink — hue was the ONLY direction signal on ~77% of a
+  populated S&P map, unreadable colorblind); the "(a fund: no market
+  cap)" tooltip now requires `isFund && byVol` — what a ticker IS and
+  whether a cap reading existed THIS CYCLE are two facts, the mirror of
+  round 12's conflation fix.
+- **`PEER_GROUPS.V`'s Fiserv pin is NASDAQ:FISV again — verified live
+  against the exact scanner call the page makes** (NYSE:FI returns
+  totalCount:0). The pin has now flipped TWICE; the comment carries the
+  twice-learned lesson: an exchange:ticker pin is a live fact, re-probe it
+  when a curated peer reads "did not resolve" for days, and never trust a
+  dated comment over a fresh probe.
+- **Fetcher, catalysts (2 fixes, 2 new tests):** `_merge_econ_aliases` no
+  longer skips a CSV anchor that carries its OWN prior (CPI ships the raw
+  index level, FOMC the funds rate) — the skip conflated "still needs
+  numbers" with "duplicate reconciled", leaving 'FOMC Economic
+  Projections' and 'Inflation Rate YoY' rendering beside their anchors
+  deterministically every cycle. The reviewer's proposed root cause
+  (`_catalyst_still_fresh`) was WRONG and the adversarial verifier's
+  correction right — but that function's future-date bug was real and
+  latent (`(now-when) < 6h` is trivially true for any future row, so a
+  stale future placeholder was undeletable from the cache), fixed
+  alongside: backfill now requires the release to have HAPPENED
+  (`0 <= delta < 6h`; no-time rows: same-day only).
+- **GEX peak axis badge joins the one-badge-per-price discipline** via
+  `gexBadgeCollides` — MAs, the one badged S/R level, the VP POC line —
+  checked at fit AND re-checked every poke (`STAGE.gammaPeak`, torn down
+  in stageTAClear). The design doc had named this a known simplification;
+  it was never revisited when VP formalized the collision rule.
+- **The swing quick-read now counts `cut.rows`** (the rows the table
+  actually renders — SwingCard has no firing exemption, so that set is
+  exact) **and its lead says "today's options money on this board's
+  names"** — the shipped "multi-week options money" described the 0-7 DTE
+  net-flow direction as long-dated positioning (data-honesty blocker),
+  and its counts covered 58 names over a 34-row table. The recap's BB
+  clause is 1D-only: the lean is a daily 50/200-day read on every
+  interval, but taSummary.bb recomputes per active interval — a 20-HOUR
+  band clause on a daily-lean sentence blended two timeframes in one
+  breath. TIPS.ta_bb now states the per-interval recompute outright and
+  dropped its "always-on 20/50/200-day lines" cross-reference, which the
+  same-day MA-default flip had turned false.
+- **`table()`'s `foot.html` accepts a function, evaluated per draw** — a
+  foot carrying live state (a collapsible explainer's open flag) was
+  re-appended as a string frozen at section-render time on every sort
+  click. The sector-dots explainer moved INTO that foot mechanism from
+  `insertAdjacentHTML` on table()'s own element, where the first sort
+  destroyed it — the exact table-owned-element mistake the havensbox
+  comment two lines above it documents. Big Orders' capped/coverage foot
+  got `.bfoot` (sticky-left, same properties as `.boardcut`) so a
+  horizontal scroll can't carry the one "rows were capped" disclosure off
+  the left edge.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

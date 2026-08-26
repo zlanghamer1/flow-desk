@@ -373,13 +373,40 @@ def test_merge_econ_aliases_fomc_pulls_from_fed_interest_rate_decision():
     assert out[0]["forecast"] == 4.25
 
 
-def test_merge_econ_aliases_does_nothing_when_csv_row_already_has_a_value():
+def test_merge_econ_aliases_never_overwrites_a_value_already_present():
     out = [_econ_row("2026-09-10", "CPI", "HIGH", source="econ_calendar")]
     out[0]["forecast"] = 3.0
     tv_rows = [_econ_row("2026-09-10", "Inflation Rate YoY", "HIGH")]
     tv_rows[0]["forecast"] = 2.9
     context._merge_econ_aliases(out, tv_rows)
     assert out[0]["forecast"] == 3.0
+
+
+def test_merge_econ_aliases_removes_tv_duplicate_even_when_anchor_has_own_prior():
+    """The live 2026-08-26 duplication (round 17, panels finding #1): the
+    CSV anchor ships its OWN prior (CPI's raw index level, FOMC's current
+    funds rate), which the old skip guard read as 'already has data' — so
+    the alias step never ran and the TV duplicate rendered as a second box
+    for the identical release, every cycle. The alias search must run
+    regardless; the per-field guard alone decides what gets copied."""
+    fomc = _econ_row("2026-09-16", "FOMC Rate Decision + Summary of Economic Projections (dot plot)",
+                     "HIGH", source="econ_calendar")
+    fomc["prior"] = 3.75   # the CSV feed's own value, present from the start
+    tv_dup = _econ_row("2026-09-16", "FOMC Economic Projections", "HIGH")
+    out = [fomc, tv_dup]
+    context._merge_econ_aliases(out, [tv_dup])
+    assert len(out) == 1 and out[0]["title"].startswith("FOMC Rate Decision")
+    assert out[0]["prior"] == 3.75   # own value untouched
+
+    cpi = _econ_row("2026-09-11", "CPI (August)", "HIGH", source="econ_calendar")
+    cpi["prior"] = 332.81   # raw index level from the CSV feed
+    tv_yoy = _econ_row("2026-09-11", "Inflation Rate YoY", "HIGH")
+    tv_yoy["forecast"] = 2.9
+    out2 = [cpi, tv_yoy]
+    context._merge_econ_aliases(out2, [tv_yoy])
+    assert len(out2) == 1 and out2[0]["title"] == "CPI (August)"
+    assert out2[0]["prior"] == 332.81      # never overwritten by the alias row
+    assert out2[0]["forecast"] == 2.9      # missing field still filled in
 
 
 def test_merge_econ_aliases_ignores_non_csv_rows():
@@ -608,6 +635,24 @@ def test_catalyst_still_fresh_no_time_row_clears_at_end_of_day():
     row = {"date": "2026-08-22", "time_ct": None}
     assert context._catalyst_still_fresh(row, datetime(2026, 8, 22, 23, 0, tzinfo=context.TZ_CT))
     assert not context._catalyst_still_fresh(row, datetime(2026, 8, 23, 0, 30, tzinfo=context.TZ_CT))
+
+
+def test_catalyst_still_fresh_future_dated_rows_are_never_backfilled():
+    """Round 17 (2026-08-26): (now - when) < 6h is trivially true for any
+    future timestamp, and the no-time branch used d >= today — so a stale
+    future-dated placeholder the current build stopped producing was
+    re-spliced from the cache every cycle until its own date passed. The
+    backfill exists for RELEASED rows a from=now refetch dropped; a future
+    row is served by the fresh fetch by construction."""
+    now_ct = datetime(2026, 8, 26, 9, 0, tzinfo=context.TZ_CT)
+    timed_future = {"date": "2026-09-16", "time_ct": "13:00"}
+    assert not context._catalyst_still_fresh(timed_future, now_ct)
+    no_time_future = {"date": "2026-09-11", "time_ct": None}
+    assert not context._catalyst_still_fresh(no_time_future, now_ct)
+    later_today = {"date": "2026-08-26", "time_ct": "13:00"}   # not released yet
+    assert not context._catalyst_still_fresh(later_today, now_ct)
+    released = {"date": "2026-08-26", "time_ct": "07:30"}      # 1.5h ago
+    assert context._catalyst_still_fresh(released, now_ct)
 
 
 def test_merge_catalysts_forward_backfills_released_row_the_fresh_fetch_dropped():
