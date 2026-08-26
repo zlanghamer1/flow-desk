@@ -40,7 +40,9 @@ The page used to open charts in a popup. Now the chart is the page:
   daily bars every poll, whether or not that ticker's chart is open. RSI and
   EMA panes were removed 2026-08-21 (the fundamentals grid still carries a
   daily RSI(14) reading). All of this is display-only. Nothing here scores
-  or signals.
+  or signals. Since the 2026-08-26 declutter, Bollinger Bands are the only
+  overlay on by default — moving averages, trend lines, S/R levels, the
+  volume profile and the gamma lines are one click away on the overlay bar.
 - **Unusual options activity.** Both flow boards flag a name whose 0-7 day
   options volume is running well above its OWN normal level (3× its trailing
   20-session average, not just whichever name traded the most), and label
@@ -71,6 +73,34 @@ The page used to open charts in a popup. Now the chart is the page:
 - **Position Guard is gone** (removed 2026-08-19 at Zach's direction). The
   trade-stops math and the Morning Brief's own guard section live on
   outside this page.
+
+## The 2026-08-26 declutter, in plain terms
+
+The desk now uses the whole desktop window instead of stopping at a fixed
+width, and it leads with plain sentences instead of walls of small text:
+
+- **A quick read under the chart.** One sentence says whether the open name
+  is leaning bullish, leaning bearish, or mixed, and why — computed from
+  the price against its own 50-day and 200-day averages, nothing else. It
+  is a description of the chart, not advice, and it never feeds any score.
+  The full moving-average legend, the auto-TA caption and the gamma caption
+  sit behind a **chart notes** button next to it.
+- **Bollinger Bands are the only chart overlay on by default.** Moving
+  averages, trend lines, support/resistance levels, the volume profile and
+  the gamma lines are one click away on the overlay bar. The gamma lines
+  used to draw on every desk name unconditionally; they are a GEX toggle
+  now.
+- **Each flow board opens with a quick read too** — "the fast options money
+  today leans bullish — 36 of 57 tracked names…" — restating the header
+  counts as a sentence a newer trader can follow, with the calls/puts
+  basics one hover away.
+- **"How to read this" text collapses behind small buttons** across the
+  page. What never collapses: anything that dates or doubts the data —
+  as-of stamps, STALE badges, "this feed did not answer" reasons, currency
+  warnings, clipped-outlier notes. Those stay printed, always.
+
+Warnings about the data itself never hide behind a click. Explanations of
+how to read a panel do.
 
 ## The URL
 

@@ -94,7 +94,11 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 a{color:var(--acc);text-decoration:none}
 :focus-visible{outline:2px solid var(--acc);outline-offset:1px;border-radius:3px}
 .u{color:var(--up)} .d{color:var(--dn)} .m{color:var(--ink2)}
-.shell{max-width:1560px;margin:0 auto;border-left:1px solid var(--edge2);border-right:1px solid var(--edge2);background:var(--srf);min-height:100vh}
+/* Full-width shell (Zach's declutter ruling, 2026-08-26): the desk uses the
+   whole desktop window. The old 1560px cap left dead gutters either side on
+   any larger monitor; the side rails hold their fixed widths (see .cols), so
+   all the reclaimed space goes to the middle column — the chart and boards. */
+.shell{max-width:none;margin:0 auto;border-left:1px solid var(--edge2);border-right:1px solid var(--edge2);background:var(--srf);min-height:100vh}
 
 /* ============ rolling news ticker (2026-08-19, Zach's ask) ============ */
 .newsticker{position:relative;overflow:hidden;border-bottom:1px solid var(--edge);background:var(--srf2);height:26px}
@@ -447,6 +451,25 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .scoretrack i{display:block;height:100%;border-radius:2px;background:var(--acc)}
 .note{font-size:10.5px;color:var(--ink3);margin-top:8px;max-width:96ch}
 .note b{color:var(--ink2)}
+/* ============ collapsible explainers (Zach's declutter ruling, 2026-08-26) ============
+   Static "how to read this" prose lives behind a small button; only DYNAMIC
+   status — as-of stamps, STALE badges, failure reasons, counts — stays
+   printed unconditionally. The open/closed state lives in EXP_OPEN (JS, not
+   localStorage) so it survives the 30-second innerHTML redraws but every
+   fresh page load starts decluttered. Same ▼-rotate affordance the section
+   headers use. */
+.expbtn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--edge);border-radius:5px;
+  background:var(--srf2);color:var(--ink3);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  font-weight:700;padding:2px 8px;margin-top:8px;cursor:pointer}
+.expbtn:hover{color:var(--ink2);border-color:var(--acc)}
+.expbtn .car2{font-size:8px;transition:transform .15s;transform:rotate(-90deg)}
+.expbtn[aria-expanded="true"] .car2{transform:rotate(0deg)}
+@media (prefers-reduced-motion: reduce){ .expbtn .car2{transition:none} }
+.expbody[hidden]{display:none}
+/* Board quick-read line. Sticky-left like .xhint so it never scrolls away
+   with a wide board inside .xwrap. */
+.brecap{font-size:11.5px;color:var(--ink2);padding:6px 0 2px;position:sticky;left:0;width:max-content;max-width:100%}
+.brecap b{font-weight:700}
 .boardmsg{padding:14px 2px;text-align:center;color:var(--ink3);font-size:11.5px}
 .xwrap{overflow-x:auto}
 /* A board wider than its column used to cut its last column with no
@@ -566,6 +589,11 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
   color:var(--ink3);font-size:12px;z-index:3;background:var(--srf);padding:20px}
 .stagemsg[hidden]{display:none}
 #stageleg{padding:5px 14px 0}
+/* The quick-read line under the chart (Zach's declutter ruling, 2026-08-26):
+   one plain-English sentence, always visible; the full legend/auto-TA/gamma
+   captions live behind its "chart notes" button (#exp-stagedetail). */
+#stagerecap{display:block;font-size:11.5px;color:var(--ink2);padding:7px 14px 0}
+#stagerecap .expbtn{margin-top:0;margin-left:8px;vertical-align:1px}
 .stagetabs{display:flex;gap:2px;padding:6px 14px 0;border-bottom:1px solid var(--edge);overflow-x:auto}
 @media (max-width:640px){ .stagetabs{flex-wrap:wrap;overflow-x:visible} }
 .stagetabs button{font-size:10px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;color:var(--ink3);
@@ -577,6 +605,7 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .viewseg{display:flex;gap:8px;align-items:center;padding:8px 14px 0}
 #s-stage.heatmode .stagehead, #s-stage.heatmode .stagebar, #s-stage.heatmode .stagechart,
 #s-stage.heatmode #stageleg, #s-stage.heatmode #staget, #s-stage.heatmode .stagetabs,
+#s-stage.heatmode #stagerecap, #s-stage.heatmode #exp-stagedetail,
 #s-stage.heatmode .stagetab{display:none}
 #heatbar{display:none}
 #stageheat{display:none}
@@ -1039,9 +1068,17 @@ footer b{color:var(--ink2)}
           <div class="stagemsg" id="stagemsg">loading chart…</div>
           <div class="pop" id="earnpop"></div>
         </div>
-        <div class="leg" id="stageleg"></div>
-        <div class="leg" id="staget"></div>
-        <div class="leg" id="stagegex"></div>
+        <div class="leg" id="stagerecap"></div>
+        <!-- The moving-average legend, the auto-TA caption and the gamma
+             caption collapsed behind the recap line's "chart notes" button
+             (Zach's declutter ruling, 2026-08-26). Data-honesty disclosures
+             about the PRICE itself (STALE, CLOSE ONLY, pre-market) live in
+             the header above the chart and are NOT in here. -->
+        <div class="expbody" id="exp-stagedetail" hidden>
+          <div class="leg" id="stageleg"></div>
+          <div class="leg" id="staget"></div>
+          <div class="leg" id="stagegex"></div>
+        </div>
         <div class="stagetabs" id="stagetabs"></div>
         <div class="stagetab" id="stagetabbody"></div>
         <!-- Tap/click readout for the financial and peer charts. Their exact
@@ -1514,7 +1551,11 @@ var TIPS = {
   ta_trend:"Auto trend lines, fit on the selected window: swing highs and lows (4 bars each side, 2 on short windows), then the best line through two or more pivots that price respected. A pivot counts as a touch within roughly 0.3%-3% of the line and a wick poking through by roughly 1.2%-4% kills the fit, on EVERY interval including intraday — both scale with what the name actually moves (avg_move), converted to that interval's own typical bar-to-bar range, not a flat number the vault scanner started from. On the daily and weekly views the poke is judged on CLOSES rather than wicks, because a wick's intrabar extremes could otherwise kill a genuine daily/weekly line no close ever invalidated. The anchor, containment and break rules come from that scanner, generalized to the support side; its rising-lows condition is not applied here. A line whose break is more than 12 bars old is not drawn, one price has traded back through and walked away from is captioned as failed, and one price closed through and stayed through has FLIPPED — broken support is drawn and captioned as overhead resistance. Windows under 40 bars draw no trend line. The dashed part is the line projected forward, and a failed line gets no projection. When BOTH a resistance and a support line fit, the caption also names the shape the pair draws — ascending/descending/symmetrical triangle, rising/falling wedge, ascending/descending channel, trading range, broadening formation, or bull/bear flag when a fast prior move preceded a tight channel — read off the same two lines' slopes and convergence, never a separate detector. Said only when the geometry clearly matches one of those names; otherwise nothing is claimed. Display only — never a signal, never in any score.",
   ta_sr:"Horizontal support/resistance: swing-point prices clustered inside half a 60-bar ATR (floored at 1%, capped at 5%, so a $900 stock and a $12 one both cluster sensibly); a level needs 2+ touches, strongest three drawn. A level that held as a floor often matters again as a ceiling, so highs and lows cluster together. Colored by where price sits against each level: red overhead (resistance ahead), green underneath (support below), blue when price is inside the band itself — the same three words the caption under the chart uses. Every level's price and touch count is named there too; only the one nearest price takes an axis badge, and even that is dropped when it would land on a moving-average badge. Display only.",
   ta_bb:"Bollinger Bands: a 20-period simple moving average plus/minus 2 standard deviations of the same 20 closes, in purple. Computed on the full price history (like the always-on 20/50/200-day lines), not the window selector — switching from 1M to 1Y does not change the band's shape. The caption under the chart says whether price is currently above the upper band, below the lower band, or inside them. Display only — never a signal, never in any score. The watchlist rail's Band crosses panel flags any rail ticker whose price just crossed a band, from the same daily bars, whether or not this toggle is on or its chart is even open.",
-  ta_ma:"The 20, 50 and 200-period moving average lines. On by default; turn off to declutter the chart — the legend under the chart keeps showing the values and the % gap to price either way.",
+  ta_ma:"The 20, 50 and 200-period moving average lines — the price's own average over those many bars, the most common way traders read trend. Off by default to keep the chart clean (Zach's 2026-08-26 ruling); turn on to draw them. The chart notes under the chart keep showing the values and the % gap to price either way.",
+  "recap-conv":"A plain-English restatement of this board's own header counts — same numbers, in a sentence. A name counts as bullish when more option dollars moved through its calls (contracts that profit if the stock rises) than its puts (contracts that profit if it falls) in the 0-7 day bucket. That is dollars changing hands, not confirmed buying — the same caveat as the Net flow column. Firing = flow unusually loud versus that name's own normal day. A description of today's tape, never advice.",
+  "recap-swing":"A plain-English restatement of this board. A name counts as bullish when its options money has leaned toward calls (contracts that profit if the stock rises) rather than puts (contracts that profit if it falls), persistently over recent sessions — this board rewards the lean holding for days, not one loud afternoon. Dollars changing hands, not confirmed buying. A description of the tape, never advice.",
+  ta_gex:"Gamma levels: dotted lines at the option strikes where the most gamma-weighted open interest sits — prices that can act like magnets or speed bumps as dealers hedge around them. From settled open interest, refreshed once per session, desk names only. Off by default; a positioning map, never a direction call, never in any score.",
+  recap:"A quick plain-English read of the open chart, and nothing more. Leaning bullish = the price is trading above its own recent averages (buyers have been paying up versus the recent past). Leaning bearish = below them. Mixed = the medium-term (50-day) and long-term (200-day) reads disagree — many traders treat that as a wait. The lean is computed only from the price against its own 50-day and 200-day averages; a purple note about the Bollinger bands may follow when price is outside them, and that is a volatility fact, never part of the lean. This is a description of the chart, not advice or a prediction, and it never feeds any score.",
   ta_vp:"Volume profile: how much volume traded at each price over the window shown, drawn as sideways bars against the right edge. Built by spreading each bar's volume across its own high-to-low range — an approximation from daily (or intraday) bars, not true tick-by-tick data, so treat the shape as a map, not a measurement. The brightest bar is the most-traded price; the shaded band is the value area, the price range holding roughly 70% of the window's volume. Heavy shelves below price are where prior buyers sit; free data cannot see WHO traded, so nothing here is labeled institutional. Turning this on hides the dashed S/R lines — both mark horizontal levels, and two versions of the same story is clutter. Display-only: it never feeds any score. On the daily view, a tracked desk name's recent sessions place their volume against 15-minute or hourly bars instead of the whole day's range when that intraday history is available — the caption says how many sessions got the finer treatment.",
 };
 
@@ -2153,6 +2194,39 @@ function ageStampHTML(dateLabel, stale){
   var p = prettyStamp(dateLabel);
   return p ? (' <span class="bc" data-tip="When this panel\u2019s data was published. It refreshes with the loop; outside 8:00-15:20 CT the last publish stands.">as of '+esc(p)+'</span>') : '';
 }
+
+/* =================== collapsible explainers (declutter, 2026-08-26) ===================
+   Static "how to read this" prose collapses behind a small button so each
+   panel leads with its data. RULES: only STATIC methodology text goes in
+   here \u2014 a dynamic disclosure (as-of stamp, STALE badge, a feed's failure
+   reason, a clamp/cap/coverage note about THIS cycle's data) stays printed
+   unconditionally, per this file's standing data-honesty conventions.
+   Open state lives in EXP_OPEN keyed by id, NOT in the DOM alone: the flow
+   boards and rail rewrite their innerHTML every 30 seconds, and a panel the
+   reader just opened must not snap shut under them (the same reason table()
+   preserves focus and hover across its own redraws). Deliberately not
+   persisted to localStorage \u2014 every fresh load starts decluttered. */
+var EXP_OPEN = {};
+function expHTML(id, label, bodyHTML){
+  var open = !!EXP_OPEN[id];
+  return '<button type="button" class="expbtn" data-exp="'+esc(id)+'" aria-expanded="'+open
+    + '" aria-controls="exp-'+esc(id)+'"><span class="car2" aria-hidden="true">\u25bc</span>'+esc(label)+'</button>'
+    + '<div class="expbody" id="exp-'+esc(id)+'"'+(open?'':' hidden')+'>'+bodyHTML+'</div>';
+}
+document.addEventListener("click", function(e){
+  var b = e.target && e.target.closest ? e.target.closest(".expbtn") : null;
+  if(!b) return;
+  // An expander can sit inside a clickable region (the stage, a board
+  // footer) \u2014 opening notes must never double as a row/section click.
+  e.stopPropagation();
+  var id = b.dataset.exp;
+  var open = !EXP_OPEN[id];
+  EXP_OPEN[id] = open;
+  // Every button for this id (a redraw can leave only one, but be exact).
+  $$('.expbtn[data-exp="'+id+'"]').forEach(function(btn){ btn.setAttribute("aria-expanded", String(open)); });
+  var body = document.getElementById("exp-"+id);
+  if(body) body.hidden = !open;
+}, true);
 
 /* =================== data fetch =================== */
 function cacheBust(url){ return url + (url.indexOf("?")===-1?"?":"&") + "t=" + Date.now(); }
@@ -3727,7 +3801,12 @@ function renderWL(){
                     ? (' <span class="m" data-tip="'+esc("The box shows the "+3+" closest to their 52-week low so it stays a short list. Sort the rail by “range” to see the rest in order.")+'">+'+(withPos.length-3)+' more — sort by range</span>')
                     : ""))
     + '</div>'
-    + '<div class="note" style="margin-top:6px">the (n) in the tab title = names moving ≥1.8× their own average day</div>';
+    // Static explainer behind a button (declutter, 2026-08-26) — the
+    // readings above it stay printed; only the "how to read this" prose
+    // collapses. Failure/stale wording above is dynamic and stays visible.
+    + expHTML("wl-alerts", "what these mean",
+        '<div class="note" style="margin-top:6px">MOVERS = names moving well beyond their own average day, freshest first. '
+        + 'SHOPPING LIST = names closest to their own 52-week low. The (n) in the browser tab title = names moving ≥1.8× their own average day.</div>');
   $("#alerts").innerHTML = alertsHtml;
   document.title = hotFresh.length ? ("("+hotFresh.length+") The Desk") : "The Desk";
   renderBBCrosses(railSyms);
@@ -3781,8 +3860,11 @@ function renderBBCrosses(syms){
       }).join(" · ")
     + (rows.length > MOVERS_CAP
         ? (' <span class="m">+'+(rows.length-MOVERS_CAP)+' more</span>') : "")
-    + '<div class="note" style="margin-top:6px">price vs. a 20-day mean ± 2 standard deviations, from settled daily '
-      + 'closes. NEW = crossed since yesterday’s close; the rest were already outside. Not a signal.</div>';
+    // Static explainer behind a button (declutter, 2026-08-26).
+    + expHTML("bbx", "what this means",
+        '<div class="note" style="margin-top:6px">price vs. a 20-day mean ± 2 standard deviations, from settled daily '
+        + 'closes. NEW = crossed since yesterday’s close; the rest were already outside. A cross means an unusually '
+        + 'stretched move, not a buy or sell call. Not a signal.</div>');
 }
 
 /* =================== ticker search (TV scanner name-match, CORS-open) =================== */
@@ -4477,10 +4559,13 @@ function renderSectorSection(data){
         +'<td class="'+sign1(r.m)+'">'+fm1(r.m)+'</td>'
         +'<td class="'+sign(r.flow_1w)+'">'+fmB(r.flow_1w)+'</td></tr>';
     }, "rel");
+    // Static explainer behind a button (declutter, 2026-08-26) \u2014 the dots
+    // and their per-row tooltips stay; only the how-to-read prose collapses.
     el.insertAdjacentHTML("beforeend",
+      expHTML("secdots", "how to read the dots",
       '<div class="note">A filled dot is the week\u2019s money direction — green in, red out — the sign of the $1w column. '
       + 'A hollow ring dot means no $1w flow reading published this cycle; it falls back to price strength vs SPY instead, '
-      + 'a different fact from money direction. Hover any dot for the one-month dollar figure.</div>');
+      + 'a different fact from money direction. Hover any dot for the one-month dollar figure.</div>'));
   }
   if(havens.length){
     var hv = document.getElementById("havensbox");
@@ -4762,6 +4847,39 @@ function chaseChipHTML(c, px, board){
   return ' <span class="chasef '+(big?"warn2":"")+' tn" data-tip="Move since '+whenWord+' ('+fmtpx(sa)+' → '+fmtpx(px)+'). A big number means the move the flow pointed at has already happened — a late entry is a chase.">'+fm1(since)+'% since flagged</span>';
 }
 
+/* =================== board quick-reads (declutter, 2026-08-26) ===================
+   One plain-English sentence above each flow board, derived from the SAME
+   bull/bear counts already computed in that board's own render — one set of
+   numbers, two surfaces, so the sentence and the header chips can never
+   disagree. Display-only, a restatement of what is already on screen. */
+function boardRecapHTML(board, bulls, bears, firing, total){
+  if(!total) return "";
+  var word, cls;
+  if(bulls > bears){ word = "leans bullish"; cls = "u"; }
+  else if(bears > bulls){ word = "leans bearish"; cls = "d"; }
+  else { word = "is split down the middle"; cls = "m"; }
+  var isSwing = (board==="swing");
+  var lead = isSwing ? "the multi-week options money" : "the fast options money today";
+  var noun = isSwing ? "names on this board lean" : "tracked names lean";
+  var tip = TIPS[isSwing ? "recap-swing" : "recap-conv"];
+  return '<span class="m">Quick read:</span> <span data-tip="'+esc(tip)+'">'
+    + lead+' <b class="'+cls+'">'+word+'</b>'
+    + ' <span class="m">— '+bulls+' of '+total+' '+noun+' bullish (more dollars in calls than puts)'
+    + (firing ? ('; '+firing+' unusually loud right now') : '')+'.</span></span>';
+}
+/* The recap line sits ABOVE the table but table() and the empty-state
+   branches rewrite their target's innerHTML on every refresh — so each
+   board gets a two-node scaffold built once (recap div + body div) and
+   every later render writes into the body only. */
+function boardScaffold(el, key){
+  var body = document.getElementById(key+"-body");
+  if(!body || !el.contains(body)){
+    el.innerHTML = '<div class="brecap" id="'+key+'-recap"></div><div id="'+key+'-body"></div>';
+    body = document.getElementById(key+"-body");
+  }
+  return {recap: document.getElementById(key+"-recap"), body: body};
+}
+
 /* =================== Conviction board (0-7 DTE) =================== */
 function renderConv(data, livePoll){
   var arr = (data && Array.isArray(data.conviction)) ? data.conviction : [];
@@ -4798,7 +4916,11 @@ function renderConv(data, livePoll){
     // One stamp, always present. Printing generated_at_ct AND the badge read
     // as two different times.
     + ' · CBOE 15-min delayed' + ageStampHTML(data && data.generated_at_ct, stale);
-  if(arr.length===0){ el.innerHTML = boardEmptyHTML("conviction"); return; }
+  // Scaffold: the quick-read line above, the table/empty-state below —
+  // every branch from here renders into sc.body so the recap survives.
+  var sc = boardScaffold(el, "conv");
+  sc.recap.innerHTML = boardRecapHTML("conv", bulls, bears, firing, arr.length);
+  if(arr.length===0){ sc.body.innerHTML = boardEmptyHTML("conviction"); return; }
   // The cell prints the LIVE rvol and the header sorted the SNAPSHOT one, so
   // "RVOL ▼" produced a visibly unsorted column — 24 order breaks in 57 rows.
   // Give each row the number the cell shows and sort on that.
@@ -4808,18 +4930,18 @@ function renderConv(data, livePoll){
   });
   var rerender = function(){ renderConv(STATE.data); };
   if(cut.rows.length===0){
-    el.innerHTML = boardCutEmptyHTML("conviction")
+    sc.body.innerHTML = boardCutEmptyHTML("conviction")
       + boardCutNoteHTML(cut, "conv");
-    wireBoardCut(el, "conv", rerender);
+    wireBoardCut(sc.body, "conv", rerender);
     return;
   }
-  table(el, "t-conv", [
+  table(sc.body, "t-conv", [
     {l:"Name",key:"ticker"},{l:"Score",key:"score",tip:TIPS["tip-score-conviction"]},{l:"Net flow",key:"net_flow",tip:TIPS["tip-netflow"]},
     {l:"Flow %",tip:TIPS["tip-flowpct"]},
     {l:"RVOL",key:"rvol_shown",tip:"Today's stock volume vs this name's own 10-day average, LIVE from the 30-second poll. Row order freezes at whichever reading was current the moment you last clicked this header — it does not resort itself as the number ticks, so rows never jump out from under your cursor; click the header again to re-sort on the latest values. The score beside it used the reading at the last publish, so the two can differ during the session; hover a cell for the number the score actually used."},
     {l:"Loudest contract",tip:TIPS["tip-loudest"]}
   ], cut.rows, rowHTMLConv, "score",
-  {html: boardCutNoteHTML(cut, "conv"), wire: function(){ wireBoardCut(el, "conv", rerender); }},
+  {html: boardCutNoteHTML(cut, "conv"), wire: function(){ wireBoardCut(sc.body, "conv", rerender); }},
   // liveKeys/freeze: RVOL is the one Conviction column whose value ticks
   // every 30-second price poll rather than only every data.json fetch —
   // resorting by it on that cadence moved rows out from under the cursor
@@ -4922,16 +5044,22 @@ function renderSwing(data){
   var stale = isStaleFlow(data);
   document.getElementById("swingstat").innerHTML = "persistence-weighted" + ageStampHTML(data.generated_at_ct, stale);
   var el = document.getElementById("swing");
-  if(arr.length===0){ el.innerHTML = boardEmptyHTML("swing"); return; }
+  // Same quick-read + scaffold pattern as Conviction (declutter, 2026-08-26).
+  // Swing rows carry the same direction field (DATA_CONTRACT.md, SwingCard).
+  var swBulls = arr.filter(function(c){ return c.direction==="BULL"; }).length;
+  var swBears = arr.filter(function(c){ return c.direction==="BEAR"; }).length;
+  var sc = boardScaffold(el, "swing");
+  sc.recap.innerHTML = boardRecapHTML("swing", swBulls, swBears, 0, arr.length);
+  if(arr.length===0){ sc.body.innerHTML = boardEmptyHTML("swing"); return; }
   var cut = boardCutApply(arr, "swing");
   var rerender = function(){ renderSwing(STATE.data); };
   if(cut.rows.length===0){
-    el.innerHTML = boardCutEmptyHTML("swing")
+    sc.body.innerHTML = boardCutEmptyHTML("swing")
       + boardCutNoteHTML(cut, "swing");
-    wireBoardCut(el, "swing", rerender);
+    wireBoardCut(sc.body, "swing", rerender);
     return;
   }
-  table(el, "t-swing", [
+  table(sc.body, "t-swing", [
     {l:"Name",key:"ticker"},{l:"Score",key:"score",tip:TIPS["tip-score-swing"]},{l:"Persist",key:"persist",tip:TIPS["tip-persist"]},
     {l:"5d flow",key:"flow_5d",tip:TIPS["tip-flow5d"]},{l:"OI-confirm",tip:TIPS["tip-oiconfirm"]},{l:"Trend",tip:TIPS["tip-trend"]},
     {l:"IV rank",key:"iv_rank",tip:TIPS["tip-ivrank"]},{l:"Suggested contract",tip:TIPS["tip-suggested"]}
@@ -4992,7 +5120,7 @@ function renderSwing(data){
       +'<td class="m">'+esc(trendStr)+'</td><td>'+ivrStr+'</td>'
       +'<td class="m" style="font-size:10.5px">'+suggestedContractLine(c.suggested_contract, spot)+'</td></tr>';
   }, "score",
-  {html: boardCutNoteHTML(cut, "swing"), wire: function(){ wireBoardCut(el, "swing", rerender); }});
+  {html: boardCutNoteHTML(cut, "swing"), wire: function(){ wireBoardCut(sc.body, "swing", rerender); }});
 }
 
 /* =================== Biggest orders today =================== */
@@ -5222,7 +5350,10 @@ function renderETF(data){
         +'<td class="'+r.m1cls+'">'+r.m1Str+'</td></tr>';
     },
     "d1",
-    {html:'<div class="note">Slower money — funds, advisors, retail — versus the fast options tape above.</div>'});
+    // Static explainer behind a button (declutter, 2026-08-26).
+    {html: expHTML("etfnote", "what this shows",
+      '<div class="note">Slower money — funds, advisors, retail — versus the fast options tape above. A day of inflows '
+      + 'means more dollars entered these funds than left; a streak means it has held for several sessions.</div>')});
 }
 
 /* =================== catalysts =================== */
@@ -8422,8 +8553,72 @@ function renderGrowth(sym, fund){
       + esc(curWord)+'</div>'+arow+'</div>';
   }
   if(!out) return '<div id="growthbox"></div>';
-  out += '<div class="note">'
-    + (fund.source==="scanner"
+  // Declutter split (Zach's ruling, 2026-08-26): DYNAMIC data-honesty
+  // caveats — staleness, a non-USD or unverified reporting currency, dropped
+  // years, clamp/anomaly/duplicate-row disclosures, all facts about THIS
+  // render's data — stay printed unconditionally; the STATIC how-to-read
+  // methodology collapses behind an "about these figures" button. Never move
+  // a sentence from the visible half to the collapsed half without checking
+  // it against this file's "a missing reading gets a stated reason" and
+  // "never weaken a disclosure" rules.
+  // Fwd P/E, short % float and next earnings in the fundamentals grid
+  // already carry this STALE badge off the same fund.built date (2026-08-22
+  // review, financials finding #4) — hoisted out of the methodology sentence
+  // so collapsing the methodology can never hide it.
+  var finStale = (function(){
+      var d = fundBuiltStaleDays(fund);
+      return (d!=null && d > FUND_BUILT_STALE_DAYS)
+        ? ('Figures come from a sidecar built '+esc(fund.built||"")+' <span class="sess" data-tip="This sidecar has not rebuilt in '+d+' days — the figures above may be out of date.">STALE '+d+'d</span>. ')
+        : '';
+    })();
+  var curWarn = (cur
+      ? (cur==="USD"
+          ? (fund && fund.source==="scanner"
+              // A searched/off-desk ticker's fund object defaults currency to
+              // "USD" client-side (adhocEnsureFundamentals) purely so an
+              // ordinary US company doesn't wrongly trip the foreign-currency
+              // hedge below — but that default reads identically to the
+              // pinned universe's server-verified currency for a genuine
+              // foreign filer (e.g. a searched Toyota or Alibaba), with
+              // nothing on screen saying this one was never actually checked
+              // (2026-08-23 review round 15, data honesty finding #1).
+              ? 'Reporting currency was not checked for this searched ticker — a foreign filer would show USD here by default. Verify before assuming these are US dollars. '
+              // Verified US dollars is the unremarkable case — stated in
+              // the collapsed methodology, not warned about here.
+              : '')
+          : 'Statements are filed in '+esc(cur)+' and are NOT converted — the share price above is in dollars, these figures are not. ')
+      : 'The source did not name the reporting currency for this company. A US-listed foreign company files in its home currency, so do not assume dollars. ');
+  var visCaveats = finStale + curWarn
+    + (yearsDropped.length ? ('Annual charts show only the unbroken run of years ending at the newest one; '
+        + esc(yearsDropped.join(", "))+' sat behind a gap in the vendor data and would have plotted as if adjacent. ') : '')
+    // A company that files fewer than 4 periods a year (a semiannual filer
+    // like CBRS) has no complete 4-quarter fiscal year to sum, so the whole
+    // Annual section never renders — the stated reason stays VISIBLE per
+    // "a missing reading gets a stated reason" (2026-08-23 review round 15,
+    // financials finding #3).
+    + (!hasAnnual && qPPY!=null && qPPY!==4
+        ? ('This company files '+qPPY+' period'+(qPPY===1?"":"s")+' a year, not 4 — there is no complete 4-quarter fiscal year to sum, so no Annual section is shown. ')
+        : '')
+    + (clampedAny
+        ? 'One or more charts above clip an outlier period’s value (far beyond the others) so the rest stay '
+          + 'readable — an arrow marks the clipped point, and hovering or tapping it still shows its real figure. '
+        : '')
+    + (uncorrectedAny
+        ? 'At least one period looks like an isolated data anomaly, but a DIFFERENT period in the same chart is a genuine, '
+          + 'sustained reading of comparable size — clamping one would have misrepresented the other, so neither is clipped here. '
+          + 'Read the small periods against their own neighbors rather than assuming the axis alone tells the full story. '
+        : '')
+    + (dupPeriods && dupPeriods.length
+        // "and/or" described the OLD, OR-based check round 8 deliberately
+        // replaced with an AND (both revenue AND EPS must match exactly) to
+        // stop a revenue-differs/EPS-coincidentally-matches case like ONTO's
+        // real Q2/Q3 24 from false-flagging — the wording never caught up
+        // (2026-08-23 review round 16, Financials finding #2).
+        ? ('The vendor reports the exact same revenue AND EPS figure across back-to-back periods ('
+           + esc(dupPeriods.join("; "))+') — almost certainly a duplicated row from its fetch, not two genuinely '
+           + 'identical quarters. Treated as reported here; do not rely on those periods without checking the filing.')
+        : '');
+  var finMethod = (fund.source==="scanner"
         ? 'Reported figures from TradingView’s quarterly history for this symbol — '
           + (railHasSym(sym)
               ? 'this name IS on the desk’s watchlist, but its daily sidecar did not answer this cycle, so the tab fell back to the scanner. '
@@ -8431,36 +8626,9 @@ function renderGrowth(sym, fund){
           + 'Periods are labeled by the month the quarter ENDED, because the vendor supplies no fiscal '
           + 'labels and fiscal years are not calendar years. Annual rows and earnings-surprise history need the sidecar and are not shown here. '
         : 'Reported figures from the daily fundamentals sidecar (stockanalysis.com income and cash-flow statements)'
-          + (fund.built ? (', built '+esc(fund.built)
-              // Fwd P/E, short % float and next earnings in the fundamentals
-              // grid already carry this STALE badge off the same fund.built
-              // date; this "built" mention sat right next to the same stale
-              // sidecar with no warning at all (2026-08-22 review,
-              // financials finding #4).
-              + (function(){
-                  var d = fundBuiltStaleDays(fund);
-                  return (d!=null && d > FUND_BUILT_STALE_DAYS)
-                    ? (' <span class="sess" data-tip="This sidecar has not rebuilt in '+d+' days — the figures above may be out of date.">STALE '+d+'d</span>')
-                    : '';
-                })()) : '')
+          + (fund.built ? (', built '+esc(fund.built)) : '')
           + '. Fiscal quarters are labeled on each axis. Annual rows sum complete 4-quarter years. ')
-    + (cur
-        ? (cur==="USD"
-            ? (fund && fund.source==="scanner"
-                // A searched/off-desk ticker's fund object defaults currency to
-                // "USD" client-side (adhocEnsureFundamentals) purely so an
-                // ordinary US company doesn't wrongly trip the foreign-currency
-                // hedge below — but that default reads identically to the
-                // pinned universe's server-verified currency for a genuine
-                // foreign filer (e.g. a searched Toyota or Alibaba), with
-                // nothing on screen saying this one was never actually checked
-                // (2026-08-23 review round 15, data honesty finding #1).
-                ? 'Reporting currency was not checked for this searched ticker — a foreign filer would show USD here by default. Verify before assuming these are US dollars. '
-                : 'Statements are filed in US dollars. ')
-            : 'Statements are filed in '+esc(cur)+' and are NOT converted — the share price above is in dollars, these figures are not. ')
-        : 'The source did not name the reporting currency for this company. A US-listed foreign company files in its home currency, so do not assume dollars. ')
-    + (yearsDropped.length ? ('Annual charts show only the unbroken run of years ending at the newest one; '
-        + esc(yearsDropped.join(", "))+' sat behind a gap in the vendor data and would have plotted as if adjacent. ') : '')
+    + (cur==="USD" && !(fund && fund.source==="scanner") ? 'Statements are filed in US dollars. ' : '')
     + (qPPY!=null
         ? ('The year-over-year chart compares each '+(qPPY===4?"quarter":qPPY===2?"half-year period":qPPY===1?"year":"period")
            + ' against the same one a year earlier — this company reports '+qPPY+' period'+(qPPY===1?"":"s")
@@ -8469,43 +8637,16 @@ function renderGrowth(sym, fund){
     + (hasAnnual
         ? ('Annual EPS is the four quarters added up, so it can differ by a couple of percent from the diluted EPS the company files, '
            + 'which uses a share count weighted across the year. ')
-        // A company that files fewer than 4 periods a year (a semiannual
-        // filer like CBRS) never has a complete 4-quarter fiscal year to
-        // sum, so _build_annual_series' complete_years is permanently
-        // empty and the whole Annual section silently never renders —
-        // with nothing on screen saying why, breaking this file's own
-        // "a missing reading gets a stated reason" convention (2026-08-23
-        // review round 15, financials finding #3).
-        : (qPPY!=null && qPPY!==4
-            ? ('This company files '+qPPY+' period'+(qPPY===1?"":"s")+' a year, not 4 — there is no complete 4-quarter fiscal year to sum, so no Annual section is shown. ')
-            : ''))
+        : '')
     + 'Margins are derived per quarter only where both legs reported. A missing quarter is marked with a dash at the baseline on the '
     + 'chart, never drawn as a zero. Where several series miss the same period, each gets its own dash'
     + (hasAnnual
         ? (' — and an annual slot is blank when any quarter in that year is missing the figure, which is why a year can draw on one '
            + 'chart and not the one beside it')
         : '')
-    + '. Hover any point or bar for its exact value, or tap a period on the chart to print that period\u2019s figures underneath it.'
-    + (clampedAny
-        ? ' One or more charts above clip an outlier period\u2019s value (far beyond the others) so the rest stay '
-          + 'readable \u2014 an arrow marks the clipped point, and hovering or tapping it still shows its real figure.'
-        : '')
-    + (uncorrectedAny
-        ? ' At least one period looks like an isolated data anomaly, but a DIFFERENT period in the same chart is a genuine, '
-          + 'sustained reading of comparable size \u2014 clamping one would have misrepresented the other, so neither is clipped here. '
-          + 'Read the small periods against their own neighbors rather than assuming the axis alone tells the full story.'
-        : '')
-    + (dupPeriods && dupPeriods.length
-        // "and/or" described the OLD, OR-based check round 8 deliberately
-        // replaced with an AND (both revenue AND EPS must match exactly) to
-        // stop a revenue-differs/EPS-coincidentally-matches case like ONTO's
-        // real Q2/Q3 24 from false-flagging — the wording never caught up
-        // (2026-08-23 review round 16, Financials finding #2).
-        ? (' The vendor reports the exact same revenue AND EPS figure across back-to-back periods ('
-           + esc(dupPeriods.join("; "))+') \u2014 almost certainly a duplicated row from its fetch, not two genuinely '
-           + 'identical quarters. Treated as reported here; do not rely on those periods without checking the filing.')
-        : '')
-    + '</div>';
+    + '. Hover any point or bar for its exact value, or tap a period on the chart to print that period’s figures underneath it.';
+  out += (visCaveats ? ('<div class="note">'+visCaveats+'</div>') : '')
+    + expHTML("finsrc", "about these figures", '<div class="note">'+finMethod+'</div>');
   return '<div class="dsec" id="growthbox"><h3>Financials</h3>'+out+'</div>';
 }
 
@@ -8990,13 +9131,16 @@ function stageFrameworkHTML(sym){
       + buildingCount+' building'
       + (flagCount ? (' · '+flagCount+' data flagged') : '')+'</b></div>'
     + rows
-    + '<div class="note">Display-only reference for theses, independent of the conviction/swing scores above — it never '
+    // Static explainer behind a button (declutter, 2026-08-26) — the verdict,
+    // filter rows and STALE badge above are the dynamic surface and stay put.
+    + expHTML("fwnote", "how to read this",
+      '<div class="note">Display-only reference for theses, independent of the conviction/swing scores above — it never '
       + 'moves either board. Two filters need 3-6 months of accumulated weekly history before they can resolve; with fewer '
       + 'than 3 in, the verdict says BUILDING HISTORY rather than guessing. Once 3 or 4 have resolved, a tier verdict carries '
       + 'a "(building)" qualifier when at least one remaining filter is genuinely still gathering data — it could still move '
       + 'once that filter reports, unlike the same tier reached with all 5 in. A "(capped)" qualifier instead means every '
       + 'remaining filter was rejected as an implausible reading, not pending — this verdict will not move on its own; it '
-      + 'needs the underlying vendor data corrected.</div></div>';
+      + 'needs the underlying vendor data corrected.</div>')+'</div>';
 }
 /* =================== auto technical analysis (display-only) ===================
    The pivot/trendline geometry is a JS port of the vault's tuned research
@@ -9106,19 +9250,27 @@ function taAmvForInterval(amv){
   var bpd = taBarScale();
   return (bpd>0) ? amv*Math.sqrt(1/bpd) : amv;
 }
-// ma:true is DEFAULT ON — the 20/50/200-day lines were always-on before this
-// toggle existed, so a stored prefs blob from before the "ma" key existed
-// (v.ma undefined) must still read true, not fall through to !!undefined's
-// false. That's why this reads `v.ma!==false` rather than `!!v.ma` below.
-function taDefaults(){ return {trend:true, sr:true, bb:false, vp:false, ma:true}; }
+// Bollinger Bands are the ONE overlay on by default (Zach's declutter
+// ruling, 2026-08-26): trend lines, S/R levels, moving averages, the volume
+// profile and the gamma lines all start OFF and are one click away on the
+// overlay bar. gex is new in this shape — the gamma lines drew
+// unconditionally before this ruling made every overlay a toggle.
+// The storage key moved desk.stage.ta -> desk.stage.ta2 ON PURPOSE: this is
+// a deliberate default change, and reading the old blob would have silently
+// kept every existing browser (Zach's included) on the old always-on set —
+// the one-time cost is that pre-ruling toggle choices re-baseline once.
+// bb reads `v.bb!==false` (not `!!v.bb`) for the same reason the old ma key
+// did when IT was the default-on one: a stored blob missing the key must
+// fall to the key's default, not to undefined's false.
+function taDefaults(){ return {trend:false, sr:false, bb:true, vp:false, ma:false, gex:false}; }
 function taPrefs(){
   try{
-    var v = JSON.parse(read("desk.stage.ta")||"null");
-    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr, bb:!!v.bb, vp:!!v.vp, ma:(v.ma!==false)};
+    var v = JSON.parse(read("desk.stage.ta2")||"null");
+    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr, bb:(v.bb!==false), vp:!!v.vp, ma:!!v.ma, gex:!!v.gex};
   }catch(e){}
   return taDefaults();
 }
-function taSave(p){ store("desk.stage.ta", JSON.stringify(p)); }
+function taSave(p){ store("desk.stage.ta2", JSON.stringify(p)); }
 function taPivotIdx(rows, k, leg){ // leg: 1=high, 2=low
   var out = [];
   var ranges = [];
@@ -9751,6 +9903,15 @@ function gammaObjFor(sym){
 // caption's above/below wording, re-derived every poke by stageGammaLegend.
 function stageGamma(){
   if(!STAGE.chart) return;
+  // Toggleable since 2026-08-26 (Zach's declutter ruling) — off means the
+  // reader switched the overlay off, so no lines and no caption; the GEX
+  // button itself is the visible slot. Every ON-state behavior below,
+  // including the fail-reason caption, is unchanged.
+  if(!taPrefs().gex){
+    STAGE.gammaSummary = null;
+    stageGammaLegend();
+    return;
+  }
   var g = gammaObjFor(STAGE.sym);
   if(!g || !Array.isArray(g.levels) || !g.levels.length){
     STAGE.gammaSummary = null;
@@ -9786,6 +9947,10 @@ function stageGamma(){
 function stageGammaLegend(){
   var el = document.getElementById("stagegex");
   if(!el) return;
+  // Overlay off by the reader's own toggle = an empty slot, not a hidden
+  // failure — "a feed that fails keeps its slot" governs the ON state only,
+  // where the reason wording below is unchanged.
+  if(!taPrefs().gex){ el.innerHTML = ""; return; }
   var sym = STAGE.sym;
   var reason = gammaReasonFor(sym);
   if(reason){
@@ -10643,7 +10808,70 @@ function vpWords(vp, last){
   }
   return {pocText:pocText, vaText:vaText};
 }
+/* =================== quick read under the chart (declutter, 2026-08-26) ===================
+   One plain-English sentence a first-week trader can read: leaning bullish,
+   leaning bearish, or mixed, and why — computed ONLY from the price against
+   its own 50-day and 200-day averages (statsOf, daily bars, so the read is
+   the same on every interval button). DISPLAY ONLY, never a signal, never in
+   any score — the same posture as every other verdict word on this page.
+   A verdict computed from price is recomputed when price moves: this is
+   rebuilt from stageTALegend, which already runs at every full render AND
+   every 30-second poke. The Bollinger clause is deliberately NEUTRAL purple
+   and worded as volatility — a band cross is never bullish or bearish (this
+   file's standing rule), so it can color the sentence but never the lean. */
+function stageRecapHTML(){
+  var sym = STAGE.sym;
+  if(!sym || !STAGE.rows.length) return "";
+  var open = !!EXP_OPEN["stagedetail"];
+  var btn = '<button type="button" class="expbtn" data-exp="stagedetail" aria-expanded="'+open
+    + '" aria-controls="exp-stagedetail"><span class="car2" aria-hidden="true">▼</span>chart notes</button>';
+  var st = statsOf(sym);
+  var v50 = num(st.v50), v200 = num(st.v200);
+  // Price within ±0.3% of an average is ON it — sitting on the line has not
+  // chosen a side (same reasoning as the trend caption's "at the line").
+  var DEAD = 0.3;
+  function sideOf(v){ return v==null ? null : (v > DEAD ? 1 : v < -DEAD ? -1 : 0); }
+  function whereWord(v){ return v > DEAD ? "above" : v < -DEAD ? "below" : "right on"; }
+  var s50 = sideOf(v50), s200 = sideOf(v200);
+  var word=null, cls="m", why;
+  if(s50==null && s200==null){
+    why = "not enough daily history yet for a quick read — it needs at least 50 sessions";
+  } else if(s200==null){
+    // Young listing: only the 50-day exists. Say so instead of grading on one leg silently.
+    if(s50===1){ word="Leaning bullish"; cls="u"; }
+    else if(s50===-1){ word="Leaning bearish"; cls="d"; }
+    else word="Mixed";
+    why = "the price is "+whereWord(v50)+" its 50-day average; this name is too new for a 200-day read";
+  } else if(s50===1 && s200===1){
+    word="Leaning bullish"; cls="u";
+    why = "the price is above both its 50-day and 200-day averages — trading higher than its own recent and longer-run past";
+  } else if(s50===-1 && s200===-1){
+    word="Leaning bearish"; cls="d";
+    why = "the price is below both its 50-day and 200-day averages — trading lower than its own recent and longer-run past";
+  } else if(s50===0 && s200===0){
+    word="Mixed";
+    why = "the price is sitting right on both its 50-day and 200-day averages — neither side has control";
+  } else {
+    word="Mixed";
+    why = "the price is "+whereWord(v50)+" its 50-day average but "+whereWord(v200)
+      + " its 200-day — the recent stretch and the longer trend disagree, which many traders treat as a wait";
+  }
+  var lean = word
+    ? ('<b class="'+cls+'">'+esc(word)+'</b> <span class="m">— '+esc(why)+'.</span>')
+    : ('<span class="m">'+esc(why)+'.</span>');
+  // Volatility note, not a direction: only when price is outside the bands,
+  // and only when the BB overlay is on (its side is computed in stageTA).
+  var bb = STAGE.taSummary && STAGE.taSummary.bb;
+  var bbClause = (bb && (bb.side==="over" || bb.side==="under"))
+    ? ' <span style="color:var(--bb)" data-tip="'+esc(TIPS.ta_bb)+'">Price is outside its Bollinger bands — an unusually stretched move, in either direction; not a buy or sell call.</span>'
+    : '';
+  return '<span class="m">Quick read:</span> <span data-tip="'+esc(TIPS.recap)+'">'+lean+'</span>'+bbClause+btn;
+}
 function stageTALegend(prefs){
+  // The quick-read line rides this function's own cadence (full render +
+  // every poke), so the lean can never freeze while the caption updates.
+  var recapEl = document.getElementById("stagerecap");
+  if(recapEl) recapEl.innerHTML = stageRecapHTML();
   var el = document.getElementById("staget");
   if(!el) return;
   var sm = STAGE.taSummary;
@@ -11893,7 +12121,10 @@ function stageBar(){
   // stack, so the toggle still shows its stored pressed state but the
   // tooltip discloses why the lines aren't drawing.
   var srTip = TIPS.ta_sr + (prefs.vp ? " (hidden while the volume profile is on)" : "");
-  var taBtns = [["ma","MA",TIPS.ta_ma],["trend","trend",taTrendTip()],["sr","S/R",srTip],["bb","BB",TIPS.ta_bb],["vp","VP",TIPS.ta_vp]]
+  // gex joined the toggle row 2026-08-26 (Zach's declutter ruling: BB is the
+  // only overlay on by default) — the gamma lines drew unconditionally for
+  // every desk name before that.
+  var taBtns = [["ma","MA",TIPS.ta_ma],["trend","trend",taTrendTip()],["sr","S/R",srTip],["bb","BB",TIPS.ta_bb],["vp","VP",TIPS.ta_vp],["gex","GEX",TIPS.ta_gex]]
     .map(function(t){ return '<button data-ta="'+t[0]+'" aria-pressed="'+!!prefs[t[0]]+'" data-tip="'+esc(t[2])+'">'+t[1]+'</button>'; }).join("");
   el.innerHTML = '<div class="seg" role="group" aria-label="Chart interval">'+ivBtns+'</div>'
     + '<div class="seg" role="group" aria-label="Chart range">'+tfBtns+'</div>'
@@ -12452,13 +12683,12 @@ function renderPeersInto(body, sym, res, seq){
     if(r.clipped) clipped = true;
     drew++;
   });
-  html += '</div><div class="note">Peers: '+srcLine+'. One company per bar — a foreign issuer’s ordinary line and its ADR '
-    + 'are the same company, and only one of them appears. Each company keeps one color across every chart here, and every bar is '
-    + 'labeled with its ticker, so color is never the only way to tell them apart. '
-    + 'Bars are scanner trailing-twelve-month figures, the same fields the fundamentals grid shows; the dashed line is the median of the '
-    + 'PEERS, with '+esc(sym)+' left out of it. A dash carries its own reason underneath — "loss-making" is the page’s own reading, '
-    + 'not a vendor gap. PEG falls back to P/E divided by TTM EPS growth when the vendor omits it, and stays blank when growth or '
-    + 'earnings are negative. '
+  // Declutter split (Zach's ruling, 2026-08-26): the source line, the data
+  // vintages and the marker legends (✳/?/clip — they explain marks that are
+  // actually on screen this render) stay visible in .peercaveats; the static
+  // how-this-comparison-works prose collapses behind a button. The async PEG
+  // patch below appends its clip sentence to .peercaveats specifically.
+  html += '</div><div class="note peercaveats">Peers: '+srcLine+'. '
     + vintageNote(entries.map(function(e){ return e.sym; }))
     + (oobAny ? ('\u2733 marks a peer more than 5× from '+esc(sym)+' in size — read the gap, not the rank. ') : '')
     // Previously only defined inside the industry-scan srcLine branch, so a
@@ -12468,7 +12698,16 @@ function renderPeersInto(body, sym, res, seq){
     // any peer carries it (2026-08-23 review round 13, vs peers finding #2).
     + (Object.keys(capUnk).length>0 ? ('? marks a peer whose size relative to '+esc(sym)+' is unknown — the scanner published no market cap for it this cycle. ') : '')
     + (clipped ? 'Where one name runs far off the scale, its bar is clipped with a break mark and its true value stays printed above it. ' : '')
-    + 'Display only — none of this scores anything.</div></div>';
+    + '</div>'
+    + expHTML("peersnote", "about this comparison",
+      '<div class="note">One company per bar — a foreign issuer’s ordinary line and its ADR '
+      + 'are the same company, and only one of them appears. Each company keeps one color across every chart here, and every bar is '
+      + 'labeled with its ticker, so color is never the only way to tell them apart. '
+      + 'Bars are scanner trailing-twelve-month figures, the same fields the fundamentals grid shows; the dashed line is the median of the '
+      + 'PEERS, with '+esc(sym)+' left out of it. A dash carries its own reason underneath — "loss-making" is the page’s own reading, '
+      + 'not a vendor gap. PEG falls back to P/E divided by TTM EPS growth when the vendor omits it, and stays blank when growth or '
+      + 'earnings are negative. Display only — none of this scores anything.</div>')
+    + '</div>';
   // A zero-metric set used to replace the WHOLE section (key, srcLine, the
   // curated/scan-source note) with one bare sentence, and left no .gwrap for
   // the async ensureFund callback below to insert a PEG chart into once
@@ -12509,9 +12748,12 @@ function renderPeersInto(body, sym, res, seq){
       // per-bar (2026-08-22 review round 11, vs Peers finding #2).
       var CLIP_NOTE_TXT = 'Where one name runs far off the scale, its bar is clipped with a break mark and its true value stays printed above it. ';
       if(pegR && pegR.clipped){
-        var noteEl = body.querySelector(".note");
+        // .peercaveats, not the first .note — the methodology note now lives
+        // collapsed behind a button (declutter, 2026-08-26) and a clip mark
+        // is a fact about THIS render's chart, which stays visible.
+        var noteEl = body.querySelector(".peercaveats") || body.querySelector(".note");
         if(noteEl && noteEl.innerHTML.indexOf(CLIP_NOTE_TXT)===-1){
-          noteEl.innerHTML = noteEl.innerHTML.replace("Display only", CLIP_NOTE_TXT+"Display only");
+          noteEl.innerHTML = noteEl.innerHTML + CLIP_NOTE_TXT;
         }
       }
     }
@@ -12582,9 +12824,10 @@ function renderPeersInto(body, sym, res, seq){
         el2.className = "dsec";
         el2.innerHTML = '<h3>Revenue growth, indexed — first shown quarter = 100</h3>'
           + '<div class="gchart gfull" style="max-width:640px">'+svg2+chartLegendHTML(lines, fmtAxisNum)+'</div>'
-          + '<div class="note">Aligned by report recency, not by calendar: fiscal years differ across companies, so read this as growth shape, '
-          + 'not same-quarter timing. The axis counts quarters back from each company’s own latest report; hover a point for that '
-          + 'company’s own period. ' + sidecarSrcNote
+          // Declutter split (2026-08-26): the per-render disclosures (which
+          // lines came from which source, the clip, the skipped names) stay
+          // visible; the static how-to-read prose collapses.
+          + '<div class="note">' + sidecarSrcNote
           + (runaway.length ? ('The axis is clipped so the rest stay readable — '+esc(runaway.join(", "))+' runs past the top, and the legend carries its real value. ') : '')
           // `skipped` used to be built and then only ever read in the OTHER
           // branch (fewer than 2 series succeeding) — once 2+ series
@@ -12594,7 +12837,11 @@ function renderPeersInto(body, sym, res, seq){
           // even though the same disclosure text was already sitting in
           // `skipped` (2026-08-22 review round 11, vs Peers finding #1).
           + (skipped.length ? ('Did not have enough quarterly history to plot: '+esc(skipped.join("; "))+'. ') : '')
-          + 'Each line is labeled at its right end.</div>';
+          + '</div>'
+          + expHTML("peersgrowth", "how to read this chart",
+            '<div class="note">Aligned by report recency, not by calendar: fiscal years differ across companies, so read this as growth shape, '
+            + 'not same-quarter timing. The axis counts quarters back from each company’s own latest report; hover a point for that '
+            + 'company’s own period. Each line is labeled at its right end.</div>');
         body.appendChild(el2);
       }
     } else if(skipped.length){

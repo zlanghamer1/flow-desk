@@ -2411,5 +2411,99 @@ combined GEX + volume-profile backtest becomes possible. Fetcher-only — no
   retention, and that this is analysis-side reference data the page never
   reads.
 
+## Guardrails added 2026-08-26 (declutter redesign, Zach's direct ask)
+
+Zach's ask, verbatim intent: use the maximum desktop screen space while
+staying usable on mobile; consolidate the small text clusters behind
+clickable buttons; only Bollinger Bands on by default in the chart views,
+everything else click-to-enable; the text under the chart is a quick recap
+of why it's bullish/bearish/hold; the same quick-recap principle for other
+sections; and the bar for every sentence is "can a person just getting into
+trading understand this?" A direct ask, same scoped-freeze-lift pattern as
+the watchlist sorts and the volume profile — the freeze itself is unchanged.
+Frontend-only (`index.html` + README), no fetcher changes, no new network
+calls. The non-obvious decisions:
+
+- **`.shell`'s 1560px cap is gone (`max-width:none`).** The side columns
+  keep their fixed widths (`.cols`), so all reclaimed width goes to the
+  middle column. Chart geometry was already measured from real host widths
+  (rounds 12/14/15), so nothing else needed re-authoring.
+- **`taDefaults()` is `{trend:false, sr:false, bb:true, vp:false, ma:false,
+  gex:false}` and the storage key moved `desk.stage.ta` → `desk.stage.ta2`
+  ON PURPOSE.** Reading the old blob would have silently kept every
+  existing browser — Zach's included — on the old always-on set; the
+  one-time cost is that pre-ruling toggle choices re-baseline once. `bb`
+  reads `v.bb!==false` (missing key falls to the key's default), the same
+  pattern the old `ma` key carried when IT was the default-on one.
+- **The gamma lines became a toggle (`gex`, GEX button), off by default.**
+  They drew unconditionally for every desk name before this. "A feed that
+  fails keeps its slot" governs the ON state only — toggled off is the
+  reader's own choice, the GEX button is the visible slot, and the
+  fail-reason captions (`GAMMA_REASON`) are unchanged when it's on. Gating
+  lives inside `stageGamma`/`stageGammaLegend` (the two choke points), so
+  the generic `data-ta` click handler needed zero changes.
+- **The quick read under the chart (`stageRecapHTML` → `#stagerecap`) is
+  computed ONLY from price vs. its own 50-day/200-day averages (`statsOf`,
+  daily bars — the same read on every interval button).** Both above →
+  leaning bullish; both below → leaning bearish; disagree or on-the-line
+  (±0.3% dead zone, same reasoning as the trend caption's "at the line") →
+  mixed. Display-only, never in any score. It rebuilds inside
+  `stageTALegend`, which already runs at full render AND every 30-second
+  poke — "a verdict computed from price is recomputed when price moves"
+  for free, no new timer. The Bollinger clause it can append is NEUTRAL
+  purple and worded as volatility ("stretched move, either direction") —
+  a band cross is never bullish or bearish (standing rule), so it can
+  color the sentence but never the lean. A young listing grades on the
+  50-day alone and says so; under 50 sessions it says there's no read.
+- **The MA legend, auto-TA caption and gamma caption collapsed behind the
+  recap line's "chart notes" button (`#exp-stagedetail`).** INVARIANT: the
+  price-honesty disclosures — STALE, CLOSE ONLY, pre-market, the fabricated-
+  candle captions — live in the chart HEADER, not in the collapsed block;
+  never move one into it. The heatmode CSS hide-list gained the two new ids.
+- **The collapsible-explainer mechanism (`expHTML`/`EXP_OPEN`) holds its
+  open state in a JS object, deliberately NOT localStorage.** The boards
+  and rail rewrite innerHTML every 30 seconds, so DOM state alone would
+  snap a just-opened panel shut (the same class of bug table()'s
+  focus/hover restores exist for) — but a fresh page load starting
+  decluttered is the feature, so it doesn't persist. Its click delegate
+  runs in CAPTURE phase with stopPropagation, so an expander inside a
+  clickable region can never double as a row/section click. RULE: only
+  STATIC methodology prose goes behind a button — a dynamic disclosure
+  (as-of stamp, STALE badge, a failure reason, a clamp/cap/coverage note
+  about this cycle's data) stays printed unconditionally.
+- **The board quick-reads (`boardRecapHTML`) restate each board's own
+  header counts — same variables, computed in the same render — so the
+  sentence and the header chips can never disagree** ("one set of numbers,
+  two surfaces"). Swing counts its own rows' `direction` field (present on
+  SwingCard per DATA_CONTRACT.md). Each board renders through a one-time
+  `boardScaffold` (recap div + body div) because `table()` and the
+  empty-state branches rewrite their target's innerHTML — every branch in
+  `renderConv`/`renderSwing` now writes into the body node only.
+- **The Financials and vs-Peers footnotes split into a visible-caveats
+  half and a collapsed-methodology half.** Visible (never collapse
+  these): the sidecar STALE badge (hoisted out of the methodology sentence
+  it used to be embedded in), the non-USD / unverified-currency warnings,
+  dropped annual years, the semiannual-filer "no Annual section" reason,
+  clamp/uncorrected-anomaly/duplicated-row disclosures, the peers source
+  line + vintage note + ✳/?/clip marker legends. Collapsed: how periods
+  are labeled, how YoY windows work, how the median is computed, hover
+  instructions. The async PEG clip patch now targets `.peercaveats`
+  (falling back to `.note`), since the methodology `.note` it used to
+  string-replace into lives inside the collapsed block now.
+- **The verified-USD "Statements are filed in US dollars." sentence moved
+  INTO the collapsed methodology** — it's the unremarkable case; both
+  actual warnings (non-USD filer, unchecked searched ticker) stay visible.
+  This weakens no disclosure: the sentence was reassurance, not a caveat.
+- **`TIPS.ta_ma` was rewritten for the new default** ("Off by default…"),
+  and three new TIPS entries carry the beginner-facing explanations:
+  `recap`, `recap-conv`/`recap-swing` (which spell out what a call and a
+  put are in one clause each), and `ta_gex`. The recap tooltips state
+  outright that the words are a description, never advice — keep that.
+- Verified before commit: all 331 fetcher tests pass (tips/constants sync
+  included); headless Chromium at 1920px and 390px shows full-width shell,
+  no horizontal scroll at either width, BB-only pressed defaults, the
+  expander round-trip working, heatmode hiding the new elements, and zero
+  console errors beyond the sandbox's expected blocked-network fetches.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
