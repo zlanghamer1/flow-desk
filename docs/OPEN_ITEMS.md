@@ -213,6 +213,45 @@ CLAUDE.md's round-18 section.
 
 ---
 
+## Round 19 — 2026-08-26 (21 confirmed across 8 sections, all fixed same day; Auto-TA re-run pending)
+
+First round scored anchored end-to-end by the script itself. One verify
+agent died at the structured-output retry cap and nulled the Auto-TA
+section out of the report; the run was resumed (`resumeFromRunId`, cached
+prefix) to recover it — its findings fold into this same pass when it
+lands.
+
+| Section | Anchored | Confirmed |
+|---|---|---|
+| Chart Stage | **87** | 1 major, 1 minor |
+| Flow boards | **87** | 1 major, 1 minor |
+| Left watchlist rail | 77 | 2 major, 1 minor |
+| Financials | 77 | 2 major, 1 minor |
+| Sector Heatmap | 77 | 2 major, 1 minor |
+| vs Peers | 77 | 2 major, 1 minor |
+| Data Honesty | 75 | 1 blocker |
+| Right rail panels | 67 | 3 major, 1 minor |
+| Auto-TA | — | re-run in flight |
+
+Two sections clear 80; 21 confirmed, the trend still converging (R17: 24
+with 3 blockers → R18: 22 with 4 → R19: 21 with 1). The one blocker:
+framework Filter 2 (NTM revenue growth) had no implausibility ceiling and
+was PASSing MU live at "+246.18%" — a two-vendor fiscal-alignment
+artifact, the exact failure mode Filters 4/5 got ceilings for in round
+12; Filters 1/3 shared the unguarded design and got the same fix before
+ever firing (they need months of consensus history to activate). The
+other standouts: a scanner failure made the heatmap poll 4x FASTER
+(success-only lastFetch gate) instead of backing off; staleWindowActive
+had no half-day awareness, so the loop's designed noon shutdown on Black
+Friday/Christmas Eve would read as a dead feed for hours; the news ticker
+skipped round 18's issuer-linkage caveat that the panel below it carried
+for the identical headline; and the "$MU" bulk-paste case reported a
+real, listed ticker as "dropped (nothing listed)". All 21 fixed the same
+day (fetcher: the ceiling fix + 4 new tests, 337 passing; the rest
+frontend). Non-obvious decisions: CLAUDE.md's round-19 section.
+
+---
+
 ## Open — in the order they are worth doing
 
 ### 1. Automated review cycle RESUMED 2026-08-26 (paused 2026-08-23 → Fable architect pass → resumed at Zach's explicit ask)

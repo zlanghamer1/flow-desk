@@ -2769,5 +2769,113 @@ architecture, no notifications, no persisted state. Frontend-only.
   documented MOVERS asymmetry stands; the header gains a "N at the lower
   band" count when any exist.
 
+## Guardrails added 2026-08-26, round-19 fix pass (21 findings, 8 sections, all fixed; Auto-TA re-run pending)
+
+Round 19 confirmed 21 findings across 8 sections (the Auto-TA reviewer's
+verify agent died at the structured-output retry cap and nulled that
+section; the run was resumed via `resumeFromRunId` to recover it — see
+`docs/OPEN_ITEMS.md` for scores). All 21 fixed the same day. The
+non-obvious decisions:
+
+- **All five framework filters now carry an implausibility ceiling, not
+  just 4/5.** The round's one blocker: Filter 2 (NTM revenue growth) was
+  PASSing MU live at "+246.18%" — `rev_ntm` (TV's next-FY consensus)
+  against a stockanalysis.com-derived last-annual figure, two vendors
+  whose fiscal-year alignment is unverified, so an extreme ratio is a
+  period-alignment artifact, not a real near-quadrupling.
+  `FRAMEWORK_REV_GROWTH_MAX_PLAUSIBLE` (3.0) and
+  `FRAMEWORK_EPS_REVISION_MAX_PLAUSIBLE` (3.0, Filters 1/3) follow the
+  Filter 4/5 constants exactly: past the ceiling the filter reads
+  UNKNOWN with `filter_flags[...]="implausible_swing"` (the frontend's
+  DATA FLAGGED path already renders it). Filters 1/3 were fixed before
+  ever firing — they need months of consensus history to activate — and
+  their test values had to route around the split guard: 4.5x snaps to a
+  clean split factor within SPLIT_SNAP_TOL, so the only testable
+  non-split band above 2.5x is between 50 and 100 (the tests use 70x).
+- **The intraday live-quote-artifact filter now has a second detection
+  mode for all-zero-volume series.** VIX/US10Y/DXY report volume 0 on
+  every stored i60 row (measured live), so the zero-volume half of the
+  signature was permanently satisfied and the test collapsed to "is this
+  bar flat." For a series with NO volume anywhere, a flat trailing row is
+  only dropped when it also sits off the series' own dominant
+  timestamp-grid remainder — per-series, because grid position is
+  symbol-dependent (equities land at :30 past the hour, VIX/DXY/CRUDE at
+  :00, US10Y at :20 — no single shared anchor works, which is why the
+  round-9 fixed-modulus check was wrong in the first place).
+- **The 1H view keeps its 160-bar cap (TA thresholds are calibrated to
+  it) and now DISCLOSES it** — a `newest 160 hours shown` stageBar chip
+  (mirror of the 1D "only N sessions" chip) whenever more bars are on
+  file, naming that 4H is built from the same file uncapped, which is why
+  it reaches further back on the same ticker.
+- **`HEAT` gained `lastAttempt`/`fails`, and `lastFetch` is keyed per
+  universe.** tick()'s refetch gate reads the current universe's own
+  last-ATTEMPT (stamped on every try), never the success-only timestamp —
+  a scanner failure used to leave lastFetch behind so the gate refired
+  every 30-second tick, polling a failing vendor 4x faster than the
+  healthy 2-minute cadence with no cap. While failing, retries back off
+  30s→60s→…→5min, mirroring FETCH_STATE's backoff; heatMeasureHead/Foot
+  now run on every heatRender exit path (failure branches included) so a
+  first-load failure can't leave the expanded map on the flat 210px
+  fallback offsets round 16 replaced.
+- **`staleWindowActive()` is half-day aware** — the afterhours cutoff is
+  `ctSessionCloseMinute()+20`, never a fixed 15:20, so the loop's
+  designed noon shutdown on a MARKET_HALF_DAYS date no longer paints
+  STALE badges over a working system for the rest of the afternoon.
+- **`newsIssuerNoteHTML(tickers, title)` is the one issuer-linkage
+  disclosure helper**, called by BOTH the Tagged headlines panel and the
+  top news ticker — round 18's caveat existed only on the panel, so the
+  identical BMO/NRGU headline scrolled the marquee unqualified.
+- **`renderBrief`'s backdrop block gates on `brief.backdrop`, not
+  `readings.length`** — a total 0-of-7 fetch failure now prints seven "no
+  data" chips and "Graded on 0 of 7" instead of showing a bold grade with
+  no visible basis.
+- **`boardCutNoteHTML` speaks in short sentences** (the declutter bar),
+  with the round-11/12 counts (scored/lowFiring/strong) byte-identical —
+  only sentence boundaries moved. `rvTip`/`chTip`'s "Live now" wording is
+  gated on the same `frozen` flag the row's STALE badge reads ("Feed not
+  responding — last reading X, may be stale"), so one row's two
+  disclosures can never contradict each other.
+- **`wlIoApply` strips a leading `$` from every pasted symbol** (the
+  `_tsVariants` rule applied at the bulk entry point), and
+  `adhocEnsureFacts`'s search-match compares against the stripped form
+  too — "$MU" was reported as "dropped (nothing listed)", a false claim
+  that MU isn't real. The chg comparator got the both-null NaN guard its
+  three siblings had (with wlSort persisted, a reload into "chg" ran
+  every pair null/null before the first poll). `volNow` returns null
+  during premarket when no premarket print exists — never `q.v`, the
+  exact value its own comment calls unreliable in that window.
+- **`fcellPeer` tooltips carry `metricReason`'s real missing-figure
+  sentence** (the same METRIC_REASON_LONG text the vs-Peers tab uses)
+  whenever the focused name's own value is null, instead of only a market
+  rule of thumb about a figure that isn't there; P/S and P/B (previously
+  tooltip-less `fcell`s) route through a new `fcellReason`, giving
+  metricReason's "no cap" branch its first live call site.
+- **The Financials clamp/anomaly disclosures name their charts.**
+  `clampedAny`/`latestClippedAny`/`uncorrectedAny` are arrays of chart
+  names now, not booleans — worst for the uncorrected-glitch case, which
+  draws no clip arrow on the affected chart at all, so the blanket
+  sentence gave no way to locate it. The money chart's pooled
+  no-clamp-when-trend-vetoes behavior itself is unchanged (an accepted,
+  documented round-12 tradeoff, per the verifier's correction) — the fix
+  is attribution, not re-clamping.
+- **The indexed-revenue chart's clamp runs the same `robustClampMag`
+  whole-series isolation test the money/margin/EPS charts use**, taking
+  the tighter of it and the old endpoint-only ratio — an anomalous
+  MID-series point (both endpoints ordinary) used to widen the domain and
+  squash every well-behaved line with zero disclosure; the runaway-names
+  note now checks every point against the clamp, not just endpoints. A
+  peer whose oldest shown quarter is exactly $0 gets its own skip message
+  (a divide-by-zero guard, not a quarter-count shortfall — the old shared
+  message stated a count of 8 and called it under the 5 floor in the same
+  breath).
+- **A curated peer set whose focused name's own cap hasn't resolved says
+  "size comparison unavailable"** in the visible caveats instead of
+  silently omitting every ✳/? mark (curated sets get those marks ONLY
+  from the live recompute; AVGO at 7.9× MRVL rendered unmarked in that
+  window).
+- **Macro tape tiles carry a normal-case tooltip** (symbol, name, price,
+  change, "Click to chart it."), matching the four index tiles beside
+  them — only the no-quote branch had one before.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

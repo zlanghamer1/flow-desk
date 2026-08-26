@@ -2941,6 +2941,18 @@ FRAMEWORK_MIN_EVALUATED = 3             # filters needed before a verdict is giv
 # everywhere else.
 FRAMEWORK_OPMARGIN_MAX_PLAUSIBLE_BPS = 2000.0   # >20pp YoY swing reads UNKNOWN, not PASS/FAIL
 FRAMEWORK_FCF_GROWTH_MAX_PLAUSIBLE = 3.0        # >300% TTM FCF growth reads UNKNOWN, not PASS/FAIL
+# The other three filters got the same ceiling one round later (2026-08-26
+# review round 19, the round's one blocker): MU's live sidecar was PASSing
+# Filter 2 at "+246.18% NTM revenue growth" — rev_ntm (TV's next-FY
+# consensus) against a last-annual figure from stockanalysis.com's derived
+# annual series, two vendors whose fiscal-year alignment is unverified, so
+# an extreme ratio is more likely a period-alignment artifact than a real
+# consensus doubling. Filters 1/3 compare two eps_ntm snapshots from the
+# SAME vendor, but a consensus that appears to triple in 3-6 months is the
+# same class of artifact (a vendor rebasing the estimate, a missed split
+# the ratio guard's clean-factor test didn't catch) — bounded the same way.
+FRAMEWORK_REV_GROWTH_MAX_PLAUSIBLE = 3.0        # >300% NTM-vs-last-annual revenue growth reads UNKNOWN
+FRAMEWORK_EPS_REVISION_MAX_PLAUSIBLE = 3.0      # >300% consensus-EPS swing (either way) reads UNKNOWN
 _FRAMEWORK_VERDICTS = {5: "BUY_5", 4: "BUY_4", 3: "ADD", 2: "HOLD", 1: "AVOID", 0: "AVOID"}
 
 
@@ -3102,6 +3114,9 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
         eps_ratio_6m = eps_ntm / eps_6m_ago
         if not (1.0 / SPLIT_BREAK_MIN < eps_ratio_6m < SPLIT_BREAK_MIN) and _ratio_matches_split(eps_ratio_6m):
             filters["forward_eps_revision"] = None
+        elif abs((eps_ntm - eps_6m_ago) / abs(eps_6m_ago)) > FRAMEWORK_EPS_REVISION_MAX_PLAUSIBLE:
+            filters["forward_eps_revision"] = None
+            filter_flags["forward_eps_revision"] = "implausible_swing"
         else:
             metrics["eps_revision_6m_pct"] = round((eps_ntm - eps_6m_ago) / abs(eps_6m_ago) * 100, 2)
             filters["forward_eps_revision"] = eps_ntm > eps_6m_ago
@@ -3114,8 +3129,12 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
     last_annual_rev = next((v for v in reversed(a_rev) if _isnum(v)), None)
     if _isnum(rev_ntm) and _isnum(last_annual_rev) and last_annual_rev > 0:
         rev_growth = (rev_ntm - last_annual_rev) / last_annual_rev
-        metrics["revenue_growth_ntm_pct"] = round(rev_growth * 100, 2)
-        filters["revenue_growth"] = rev_growth > FRAMEWORK_REV_GROWTH_MIN
+        if abs(rev_growth) > FRAMEWORK_REV_GROWTH_MAX_PLAUSIBLE:
+            filters["revenue_growth"] = None
+            filter_flags["revenue_growth"] = "implausible_swing"
+        else:
+            metrics["revenue_growth_ntm_pct"] = round(rev_growth * 100, 2)
+            filters["revenue_growth"] = rev_growth > FRAMEWORK_REV_GROWTH_MIN
     else:
         filters["revenue_growth"] = None
 
@@ -3127,6 +3146,9 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
         eps_ratio_3m = eps_ntm / eps_3m_ago
         if not (1.0 / SPLIT_BREAK_MIN < eps_ratio_3m < SPLIT_BREAK_MIN) and _ratio_matches_split(eps_ratio_3m):
             filters["analyst_velocity"] = None
+        elif abs((eps_ntm - eps_3m_ago) / abs(eps_3m_ago)) > FRAMEWORK_EPS_REVISION_MAX_PLAUSIBLE:
+            filters["analyst_velocity"] = None
+            filter_flags["analyst_velocity"] = "implausible_swing"
         else:
             metrics["eps_velocity_3m_pct"] = round((eps_ntm - eps_3m_ago) / abs(eps_3m_ago) * 100, 2)
             filters["analyst_velocity"] = eps_ntm > eps_3m_ago

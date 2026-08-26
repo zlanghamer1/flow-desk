@@ -76,6 +76,29 @@ def test_revenue_growth_unknown_with_no_rev_ntm():
     assert "revenue_growth_ntm_pct" not in out["metrics"]
 
 
+def test_revenue_growth_unknown_on_an_implausible_ntm_swing():
+    # Live MU shape (2026-08-26 review round 19, the round's one blocker):
+    # rev_ntm (TV next-FY consensus) vs. a stockanalysis.com-derived last
+    # annual figure PASSed at "+246.18% NTM revenue growth" — two vendors
+    # whose fiscal-year alignment is unverified, so an extreme ratio reads
+    # as a period-alignment artifact, never a confident PASS. This test
+    # uses a value past the 300% ceiling.
+    fund = _fund(annual_revenue=[100.0])
+    f = {"eps_ntm": None, "rev_ntm": 450.0}   # +350%
+    out = context.score_framework("X", f, fund, {"weekly": {}}, SESSION)
+    assert out["filters"]["revenue_growth"] is None
+    assert "revenue_growth_ntm_pct" not in out["metrics"]
+    assert out["filter_flags"]["revenue_growth"] == "implausible_swing"
+
+
+def test_revenue_growth_still_resolves_just_inside_the_plausible_ceiling():
+    fund = _fund(annual_revenue=[100.0])
+    f = {"eps_ntm": None, "rev_ntm": 390.0}   # +290%, under the 300% ceiling
+    out = context.score_framework("X", f, fund, {"weekly": {}}, SESSION)
+    assert out["filters"]["revenue_growth"] is True
+    assert out["metrics"]["revenue_growth_ntm_pct"] == pytest.approx(290.0)
+
+
 def test_revenue_growth_unknown_with_no_fund_annual():
     f = {"eps_ntm": None, "rev_ntm": 121.0}
     out = context.score_framework("X", f, None, {"weekly": {}}, SESSION)
@@ -275,6 +298,34 @@ def test_forward_eps_revision_not_flagged_for_an_ordinary_large_revision():
     out = context.score_framework("X", f, None, hist, SESSION)
     assert out["filters"]["forward_eps_revision"] is True
     assert out["metrics"]["eps_revision_6m_pct"] == pytest.approx(80.0)
+
+
+def test_forward_eps_revision_unknown_on_an_implausible_non_split_swing():
+    # 1.0 -> 70.0 is a 70x ratio — the one band above 2.5x where nothing
+    # sits within SPLIT_SNAP_TOL of a clean factor (between 50 and 100), so
+    # the split guard passes it through — but it's a consensus swing far
+    # past the 300% plausibility ceiling: a vendor rebasing or a data error
+    # the clean-factor test can't catch, so it reads UNKNOWN with the
+    # permanent flag (2026-08-26 review round 19).
+    hist = {"weekly": {}}
+    d_6m_ago = SESSION - timedelta(weeks=context.FRAMEWORK_WEEKS_6M)
+    hist["weekly"][context._iso_week_key(d_6m_ago)] = {"X": {"eps_ntm": 1.0}}
+    f = {"eps_ntm": 70.0, "rev_ntm": None}
+    out = context.score_framework("X", f, None, hist, SESSION)
+    assert out["filters"]["forward_eps_revision"] is None
+    assert "eps_revision_6m_pct" not in out["metrics"]
+    assert out["filter_flags"]["forward_eps_revision"] == "implausible_swing"
+
+
+def test_analyst_velocity_unknown_on_an_implausible_non_split_swing():
+    hist = {"weekly": {}}
+    d_3m_ago = SESSION - timedelta(weeks=context.FRAMEWORK_WEEKS_3M)
+    hist["weekly"][context._iso_week_key(d_3m_ago)] = {"X": {"eps_ntm": 1.0}}
+    f = {"eps_ntm": 70.0, "rev_ntm": None}
+    out = context.score_framework("X", f, None, hist, SESSION)
+    assert out["filters"]["analyst_velocity"] is None
+    assert "eps_velocity_3m_pct" not in out["metrics"]
+    assert out["filter_flags"]["analyst_velocity"] == "implausible_swing"
 
 
 def test_lookback_tolerates_a_one_week_gap():
