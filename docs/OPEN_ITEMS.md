@@ -179,6 +179,40 @@ TIPS.ta_sr. Non-obvious decisions: CLAUDE.md's round-17 section.
 
 ---
 
+## Round 18 — 2026-08-26, first round scored on the ANCHORED ruler (22 confirmed, all fixed same day)
+
+Same 39-agent shape as round 17 (the run itself launched before the
+anchored-scoring script change, so anchored scores below were computed from
+its confirmed lists by hand — identical arithmetic):
+
+| Section | Anchored | Raw (reviewer) | Confirmed |
+|---|---|---|---|
+| Sector Heatmap | **87** | 84 | 2 major |
+| Left watchlist rail | **80** | 80 | 2 major |
+| Flow boards | 77 | 76 | 3 major |
+| Data Honesty | 75 | 62 | 1 blocker |
+| vs Peers | 74 | 77 | 4 major |
+| Auto-TA | 72 | 45 | 1 blocker, 1 minor* |
+| Chart Stage | 65 | 73 | 1 blocker, 1 major |
+| Right rail panels | 62 | 55 | 1 blocker, 2 major |
+| Financials | 62 | 62 | 1 blocker, 2 major |
+
+(*Auto-TA's second confirmed item was graded major by the reviewer and
+carries a verifier correction narrowing its mechanism; deductions follow
+the reviewer's stated severities.) Two sections clear 80; 22 confirmed,
+1 refuted. The blockers: the MA toggle lit "on" and drew nothing on 4 of 5
+intervals; trend/S-R fitting ran on the live unsettled candle (BB/VP
+already excluded it); the overlay failure reasons were collapsed behind
+"chart notes" with no visible signal; catDone() buried a just-released
+HIGH print the instant its `actual` populated (a regression from round
+9's own lookback fix); and the financials outlier clamp compressed a real
+newest-period extreme (scoped by the verifier: the true legend value and
+clip arrow already print — the fix is a sharper latest-period caption).
+All 22 fixed same day; 333 fetcher tests pass. Non-obvious decisions:
+CLAUDE.md's round-18 section.
+
+---
+
 ## Open — in the order they are worth doing
 
 ### 1. Automated review cycle RESUMED 2026-08-26 (paused 2026-08-23 → Fable architect pass → resumed at Zach's explicit ask)

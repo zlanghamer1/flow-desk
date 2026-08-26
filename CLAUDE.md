@@ -2643,5 +2643,101 @@ lesson predicts. The non-obvious decisions:
   horizontal scroll can't carry the one "rows were capped" disclosure off
   the left edge.
 
+## Guardrails added 2026-08-26, round-18 fix pass (22 findings, all fixed)
+
+First round scored on the anchored ruler (see `docs/OPEN_ITEMS.md` for the
+table). The non-obvious decisions:
+
+- **The trend/S-R fitting window now excludes the live/synthetic last bar
+  (`nFit`), the SAME settled-bars convention BB and VP already followed in
+  the same function.** taFitLine could set `bo` on the still-moving bar
+  from one intraday tick; with bo non-null, taRegrade's live-break branch
+  (the designed sole source of "broke today" language) never fired, so
+  captions asserted CLOSED breaks on sessions still trading, and two
+  chart-opens on a chopping day could fit different lines from identical
+  settled history. `edgeX` keeps the dashed projection reaching today's
+  candle without today's candle entering the fit; VP's own second slice
+  was REMOVED in the same change (win already excludes the bar — slicing
+  twice would drop a real settled bar).
+- **The MA button is DISABLED off 1D, with a stated reason in the legend
+  and a corrected TIPS.ta_ma** — stageViewData only computes the
+  day-denominated 20/50/200 lines on 1D, so the toggle lit "on" and drew
+  nothing on 4 of 5 intervals. Disabled + disclosed was chosen over
+  computing per-interval MAs: a "20-day line" on an hourly axis is a
+  different indicator, not a rescale, and inventing one mid-stabilization
+  is feature work.
+- **VP's histogram bars anchor to `timeToCoordinate(lastBarTime)` re-read
+  every frame, never `paneW - barW`** — canvas-pinned bars stayed glued to
+  physical pixels while pan/zoom slid older candles underneath them. When
+  the last bar is panned out of the visible range the bars are withheld
+  (no honest anchor); the price-anchored bands still draw.
+- **The quick-read line now NAMES any toggled-on overlay that produced
+  nothing to draw** ("· nothing to draw for Bollinger band — why: see
+  chart notes") — collapsing the auto-TA caption behind chart notes had
+  also collapsed its failure REASONS, so a pressed default-on BB over an
+  11-bar listing (STLL) was indistinguishable from "nothing to see."
+  stageTALegend's recap write moved to its END so `failedOv` exists; the
+  full sentences stay in chart notes.
+- **catDone() no longer lets a populated `actual` short-circuit the
+  6-hour release grace.** Round 9's 26h-lookback fetch made `actual` real;
+  the old `if(hasActual) return true` then buried every just-released HIGH
+  print (live: the morning's hot PCE) dimmed in Cleared behind weeks of
+  future events, the instant it printed — and would have done the same to
+  the Sept-16 FOMC decision. countdown()'s stale "actual is always null"
+  comment corrected in step.
+- **The financials outlier clamp discloses when the clipped point IS the
+  newest period** (`clampHitsLatest`, all five clamp sites, one loud
+  visible sentence). Scoped per the verifier's correction: the true value
+  already prints in the legend with a clip arrow, so this is disclosure —
+  unclamping a real 15.9x cash-burn spike (NBIS Q2'26) would flatten every
+  other bar. The isolation test structurally can't protect endpoints; the
+  caption now says so where it matters.
+- **wlIoApply merges against a FRESH wlCustom() read inside its .then,
+  never overwrites with the click-time snapshot** — an add/remove made
+  during the async lookups was silently reverted, invisible even to the
+  summary (same stale snapshot). A mid-flight removal beats a pasted
+  mention of the same symbol (later intent). "N added" counts only
+  genuinely new names; Apply renders disabled ("resolving…") while in
+  flight via WLIO_BUSY.
+- **kPiv threads the caller's actual pivot spacing into taFitLine/taLevels'
+  merge tests** — the fixed TA_PIVOT_K*2 separation merged distinct
+  k=2-detected visits on short windows; per the verifier's correction the
+  reachable appear/disappear failure was taLevels' 2-visit floor, not the
+  trend fit's touches<1 gate (first touch always counts).
+- **contractLine gained suggestedContractLine's vol/OI fragment** — XLE's
+  live 0DTE popular contract had volume 161 against ZERO open interest
+  and Conviction's cell was the one builder that never read either field.
+- **Orders and ETF got quick-reads with their OWN shapes, not
+  boardRecapHTML's** — big-orders rows carry side, not direction, and
+  gross premium is not a directional claim (2026-08-24 ruling), so the
+  Orders sentence counts calls/puts NEUTRALLY (no lean word, no lean
+  color, caveats in the tooltip); ETF counts funds in/out from the same
+  rows the table renders.
+- **The heatmap direction glyph moved AHEAD of the ticker** — .hm-tile b's
+  trailing-ellipsis truncated the glyph first on exactly the mid-size
+  tiles it was added for (GOOGL at the 7px floor). Leading, the cue always
+  survives; the ticker ellipsizes per the existing clipped-label
+  convention. The tile-cap footer stops telling a phone to "make the
+  window wider" (per the verifier's own math, rotation doesn't fix it
+  either) and points at the Desk universe/a desktop instead.
+- **"unresolved cadence" is wired end-to-end** (metricReason's map,
+  metricValue's vendor-PEG gate — round 17 shipped the code and its long
+  sentence but the map's fallthrough re-asserted the retired "vendor
+  publishes no growth rate" claim), the loss-P/E tooltip words its TTM
+  window by periodsPerYear instead of a hardcoded "four reported
+  quarters" (CBRS files twice a year), renderGrowth suppresses YoY math
+  outright on a null cadence, the curated-empty peers message branches on
+  unresolvedScanFailed like the partial branch has since round 16, the
+  one reporting peer is named WITH its value instead of "nothing to
+  compare", peerFmtFor's collision-bump formatter gets the U+2212 fix
+  (fourth formatter caught by this class), catMetaLine's anchor badge
+  reads `c.anchor || catIsAnchorByName(c)` (the same OR curation uses),
+  Swing's Trend column is colored u/d/m like every sibling signal, and
+  issuer-linked analyst headlines on wrapper tickers (BMO price targets
+  tagged to NRGU/OILU) carry an "(about the fund's issuing bank, not its
+  market)" disclosure — the payload has no relation field to filter on,
+  so it's a disclosure gated on all-wrapper tickers + a rating-note title
+  shape, never a drop.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
