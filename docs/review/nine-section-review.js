@@ -14,12 +14,23 @@
  * default to real=false when unsure, so the confirmed list is short by design:
  * round 5's pass refuted 70 of 72 because the fixes had already landed.
  *
- * WHAT THE SCORES MEAN. They are not comparable between rounds. Each round's
- * reviewer opens a page whose previous faults are gone and digs further, so a
- * section that genuinely improved can score lower. Read the finding LISTS, not
- * the numbers. If you want the number itself to track quality, give the
- * reviewer a fixed rubric carried between rounds — that is a change to this
- * prompt, not to the page.
+ * ANCHORED SCORING (Zach's 2026-08-26 ruling, after round 17: "the
+ * adversarial agents have a moving goalpost for each review"). The header
+ * note this replaces admitted the reviewer-assigned scores were not
+ * comparable between rounds — a fresh harsh reviewer with an 8-finding
+ * budget calibrates its number to how much it found, so the score measured
+ * review depth, not page quality, and "80+ on all nine" could never
+ * terminate honestly. The score is now COMPUTED, not opined:
+ *
+ *     score = 100 − 25·(confirmed blockers) − 10·(confirmed majors)
+ *                 −  3·(confirmed minors),  floored at 0
+ *
+ * counted AFTER the adversarial verify stage, so a refuted finding costs
+ * nothing. Same ruler every round: reviewers find, verifiers gate,
+ * arithmetic scores. The reviewer's own 0-100 impression is still recorded
+ * as `reviewerScore` for trend-reading, but the pass bar reads the computed
+ * number only. 80+ therefore means concretely: zero blockers AND at most
+ * two majors (or one major plus up to three minors, or six minors).
  *
  * THE PASS BAR IS 80, not 90 (Zach's 2026-08-21 ruling) — the `below90`
  * variable name below is legacy from before that ruling; the threshold it
@@ -200,23 +211,37 @@ right, set real=true and put the accurate version in "correction".`,
   }
 )
 
-const report = results.filter(Boolean).map((r, i) => ({
-  // All 4 retry attempts can still fail — say so explicitly rather than
-  // reporting "unknown" with no indication the section's score is missing,
-  // not merely unlabeled.
-  section: r.review ? r.review.section : (SECTIONS[i].key + ' (all 4 review attempts returned placeholder garbage — re-run this section)'),
-  score: r.review ? r.review.score : null,
-  summary: r.review ? r.review.summary : '',
-  confirmed: r.verdicts.filter(v => v.verdict && v.verdict.real).map(v => ({
+// Anchored score from CONFIRMED findings only — see the header's 2026-08-26
+// ruling. Fixed deductions, same ruler every round.
+const DEDUCT = { blocker: 25, major: 10, minor: 3 }
+function anchoredScore(confirmed) {
+  const loss = confirmed.reduce((s, f) => s + (DEDUCT[f.severity] || 3), 0)
+  return Math.max(0, 100 - loss)
+}
+
+const report = results.filter(Boolean).map((r, i) => {
+  const confirmed = r.verdicts.filter(v => v.verdict && v.verdict.real).map(v => ({
     title: v.finding.title, lines: v.finding.lines, severity: v.finding.severity,
     failure: v.finding.failure, fix: v.finding.fix,
     confidence: v.verdict.confidence, correction: v.verdict.correction || null,
-  })),
-  refuted: r.verdicts.filter(v => !v.verdict || !v.verdict.real).map(v => v.finding.title),
-}))
+  }))
+  return {
+    // All 4 retry attempts can still fail — say so explicitly rather than
+    // reporting "unknown" with no indication the section's score is missing,
+    // not merely unlabeled. A failed review scores null, never a clean 100:
+    // no findings because nothing was reviewed is not a pass.
+    section: r.review ? r.review.section : (SECTIONS[i].key + ' (all 4 review attempts returned placeholder garbage — re-run this section)'),
+    score: r.review ? anchoredScore(confirmed) : null,
+    reviewerScore: r.review ? r.review.score : null,   // the raw impression, trend-reading only
+    summary: r.review ? r.review.summary : '',
+    confirmed,
+    refuted: r.verdicts.filter(v => !v.verdict || !v.verdict.real).map(v => v.finding.title),
+  }
+})
 
-// PASS BAR IS 80 (Zach's 2026-08-21 ruling) — see the file header note.
+// PASS BAR IS 80 (Zach's 2026-08-21 ruling), read on the ANCHORED score —
+// see the file header note.
 const below = report.filter(r => r.score !== null && r.score < 80).map(r => r.section + ' ' + r.score)
-log('below 80: ' + (below.length ? below.join(', ') : 'none'))
+log('below 80 (anchored): ' + (below.length ? below.join(', ') : 'none'))
 
 return { report, below80: below }

@@ -117,6 +117,22 @@ all."** Three effects, all applied 2026-08-26:
    sections scores 80+ in a single round.** Confirmed findings still get
    fixed the same day they're found, every round, as before.
 
+**Anchored scoring (Zach's follow-up ruling, same day, after round 17):**
+"the adversarial agents have a moving goalpost for each review." Correct —
+the reviewer-assigned 0-100 was self-calibrated to whatever that round's
+fresh reviewer dug up, so it measured review depth, not page quality (the
+script's own header had admitted the numbers weren't comparable between
+rounds). From round 18's report onward the score is COMPUTED from
+adversarially-CONFIRMED findings only: 100 − 25/blocker − 10/major −
+3/minor, floored at 0. Refuted findings cost nothing; the reviewer's raw
+impression is kept as `reviewerScore` for trend-reading only. The 80 bar
+(unchanged since 2026-08-21) now means concretely: zero blockers and at
+most two majors' worth of confirmed defects in a section. Recomputed
+under this ruler, round 17 would have read: Peers 90, Panels 87, Heatmap
+84, Auto-TA 77, Watchlist 67, Chart Stage 62, Financials 62, Data
+Honesty 62 — three over the bar, and every fixed finding now raises the
+next round's floor instead of resetting it.
+
 ---
 
 ## Round 17 — 2026-08-26, first Sonnet-agent round after the unfreeze (24 confirmed, all fixed same day)

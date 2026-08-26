@@ -29,6 +29,15 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   nine sections scores 80 or higher in a single round** ("Continue sonnet
   agents review to 80+ score on all") — this restores the numeric bar the
   2026-08-22 ruling had replaced with the zero-open-findings condition.
+  **The score is ANCHORED, not reviewer-opined (Zach's same-day follow-up
+  after round 17: "the adversarial agents have a moving goalpost"):**
+  computed as 100 − 25/blocker − 10/major − 3/minor over adversarially
+  CONFIRMED findings only, floored at 0 — see
+  `docs/review/nine-section-review.js`'s header and `docs/OPEN_ITEMS.md`'s
+  anchored-scoring ruling. Never revert the score to a reviewer-assigned
+  impression: a fresh harsh reviewer with a finding budget calibrates its
+  number to its own dig depth, which is the moving goalpost by
+  construction.
   Every round's confirmed findings still get fixed the same day, same as
   all sixteen prior rounds. The freeze's lesson stands as judgement, not
   law: a feature added mid-round still reopens review surface area — time
