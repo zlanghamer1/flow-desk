@@ -1572,7 +1572,7 @@ var TIPS = {
   stale:"This section is older than expected for its usual refresh cadence — showing the last good read.",
   ta_trend:"Auto trend lines, fit on the selected window: swing highs and lows (4 bars each side, 2 on short windows), then the best line through two or more pivots that price respected. A pivot counts as a touch within roughly 0.3%-3% of the line and a wick poking through by roughly 1.2%-4% kills the fit, on EVERY interval including intraday — both scale with what the name actually moves (avg_move), converted to that interval's own typical bar-to-bar range, not a flat number the vault scanner started from. On the daily and weekly views the poke is judged on CLOSES rather than wicks, because a wick's intrabar extremes could otherwise kill a genuine daily/weekly line no close ever invalidated. The anchor, containment and break rules come from that scanner, generalized to the support side; its rising-lows condition is not applied here. A line whose break is more than 12 bars old is not drawn, one price has traded back through and walked away from is captioned as failed, and one price closed through and stayed through has FLIPPED — broken support is drawn and captioned as overhead resistance. Windows under 40 bars draw no trend line. The dashed part is the line projected forward, and a failed line gets no projection. When BOTH a resistance and a support line fit, the caption also names the shape the pair draws — ascending/descending/symmetrical triangle, rising/falling wedge, ascending/descending channel, trading range, broadening formation, or bull/bear flag when a fast prior move preceded a tight channel — read off the same two lines' slopes and convergence, never a separate detector. Said only when the geometry clearly matches one of those names; otherwise nothing is claimed. Display only — never a signal, never in any score.",
   ta_sr:"Horizontal support/resistance: swing-point prices clustered inside half a 60-bar ATR (floored at 1%, capped at 5%, so a $900 stock and a $12 one both cluster sensibly); a level needs 2+ touches, strongest three drawn. A level that held as a floor often matters again as a ceiling, so highs and lows cluster together. Colored by where price sits against each level: red overhead (resistance ahead), green underneath (support below), blue when price is inside the band itself — the same three words the caption under the chart uses. Every level's price and touch count is named there too; only the one nearest price takes an axis badge, and even that is dropped when it would land on a moving-average badge. Levels up to 20% from price are kept on purpose — a level is a measured shelf where price actually traded, unlike a projected trend line, which is held to a tighter, volatility-scaled distance — and each level's caption prints its own %-distance so a far one reads as far. Display only.",
-  ta_bb:"Bollinger Bands: a 20-period simple moving average plus/minus 2 standard deviations of the same 20 closes, in purple. The 20 periods are whichever interval is active — 20 daily bars on the 1D view, but 20 HOURLY bars on 1H (about two and a half trading days), so on intraday views the band is a different, much faster signal than the daily one. On any one interval it is computed on the full price history, not the window selector — switching from 1M to 1Y does not change the band's shape. The caption under the chart says whether price is currently above the upper band, below the lower band, or inside them. Display only — never a signal, never in any score. The watchlist rail's Band crosses panel flags any rail ticker whose price just crossed a band, from the same daily bars, whether or not this toggle is on or its chart is even open.",
+  ta_bb:"Bollinger Bands: a 20-period simple moving average plus/minus 2 standard deviations of the same 20 closes, in purple. The 20 periods are whichever interval is active — 20 daily bars on the 1D view, but 20 HOURLY bars on 1H (about two and a half trading days), so on intraday views the band is a different, much faster signal than the daily one. On any one interval it is computed on the full price history, not the window selector — switching from 1M to 1Y does not change the band's shape. The caption under the chart says whether price is currently above the upper band, below the lower band, or inside them. Display only — never a signal, never in any score. The watchlist rail's Band crosses panel flags any rail ticker whose price just crossed a band — and, first in the list, any that TOUCHED its LOWER band today, sits at/below it, or is within 1% above it (Zach's 2026-08-26 alert ask) — from the same daily bars, whether or not this toggle is on or its chart is even open.",
   ta_ma:"The 20, 50 and 200-DAY moving average lines — the price's own average over those many days, the most common way traders read trend. Off by default to keep the chart clean (Zach's 2026-08-26 ruling); turn on to draw them. They are computed from daily bars, so they draw on the 1D view only — the button is disabled on intraday and weekly views. On 1D, the chart notes keep showing the values and the % gap to price whether the lines are drawn or not.",
   "recap-conv":"A plain-English restatement of this board's own header counts — same numbers, in a sentence. A name counts as bullish when more option dollars moved through its calls (contracts that profit if the stock rises) than its puts (contracts that profit if it falls) in the 0-7 day bucket. That is dollars changing hands, not confirmed buying — the same caveat as the Net flow column. Firing = flow unusually loud versus that name's own normal day. A description of today's tape, never advice.",
   "recap-swing":"A plain-English restatement of the rows shown in the table below — the count covers exactly those rows, nothing off-screen. A name counts as bullish when TODAY'S option dollars leaned toward its calls (contracts that profit if the stock rises) rather than its puts (contracts that profit if it falls), in the same 0-7 day bucket the Conviction board reads. What makes this board multi-week is its SELECTION, not this count: a name earns its row by holding the same lean across sessions (the Persist column) — but the bull/bear split here is today's flow, not a longer-dated position. Dollars changing hands, not confirmed buying. A description of the tape, never advice.",
@@ -3257,6 +3257,10 @@ function volNow(sym){
 // state. Works for ANY rail ticker without opening its chart, the same way
 // hotOf/statsOf already do.
 var BB_PERIOD = 20, BB_MULT = 2;
+// Lower-band alert proximity (Zach, 2026-08-26 follow-up: "or within 1% of
+// the bottom band") — a name whose live price sits within this fraction
+// ABOVE the lower band alerts as approaching it, before any touch.
+var BB_LOWER_NEAR_PCT = 0.01;
 // Volume profile (2026-08-24, Zach's freeze lift): bin count for the price
 // histogram, and the value-area fraction (the standard 70% convention).
 var VP_BINS = 40, VP_VALUE_AREA = 0.70;
@@ -3293,7 +3297,27 @@ function bollingerOf(sym){
     var sidePrev = bbSide(hist[prevIdx], upperPrev, lowerPrev);
     crossed = (sideNow==="over" && sidePrev!=="over") || (sideNow==="under" && sidePrev!=="under");
   }
-  return {mid:ma[lastIdx], upper:upperNow, lower:lowerNow, price:live, side:sideNow, crossed:crossed};
+  // Lower-band TOUCH detection (Zach's ask, 2026-08-26: "alerts for any
+  // that touch or go below lower band"). bbSide's "under" is strictly
+  // below; a touch is today's LOW reaching the band — including a name
+  // that dipped to it intraday and bounced back inside, which the
+  // side-only test could never see. The day low is only a TODAY reading
+  // during/after the regular session — pre-market, q.l still describes
+  // YESTERDAY (this file's standing regular-session-columns rule), so the
+  // intraday-low leg is withheld then and only the live price leg tests.
+  var dayLow = (q && q.l!=null && priceSessionNow()!=="premarket") ? num(q.l) : null;
+  var atOrBelow = (live!=null && live <= lowerNow);
+  var touchedIntraday = (dayLow!=null && dayLow <= lowerNow);
+  // Zach's same-day follow-up: "or within 1% of the bottom band" — an
+  // approach alert, fired before any touch, from the live price alone.
+  var lowNear = (!atOrBelow && !touchedIntraday && live!=null && lowerNow>0
+                 && live <= lowerNow*(1+BB_LOWER_NEAR_PCT));
+  var lowTouch = atOrBelow || touchedIntraday || lowNear;
+  // Touched intraday but the current price is back inside the band — a
+  // different, weaker fact than sitting at/below it now, worded apart.
+  var touchOnly = touchedIntraday && !atOrBelow;
+  return {mid:ma[lastIdx], upper:upperNow, lower:lowerNow, price:live, side:sideNow, crossed:crossed,
+          lowTouch:lowTouch, touchOnly:touchOnly, lowNear:lowNear};
 }
 /* build_snapshot.TRACK_ONLY — full members of the pinned universe that
    select_candidates() deliberately excludes from CBOE chain fetches, because
@@ -3939,24 +3963,39 @@ function renderBBCrosses(syms){
     // apply (2026-08-23 review round 13, left rail finding #1).
     if(liveStale(s)) return;
     var bb = bollingerOf(s);
-    if(bb && bb.side && bb.side!=="in") rows.push({sym:s, bb:bb});
+    // lowTouch rows are included even when the price is back INSIDE the
+    // band — Zach's 2026-08-26 alert ask covers "touch or go below", and a
+    // dip to the band that bounced is a touch the side-only test missed.
+    if(bb && bb.side && (bb.side!=="in" || bb.lowTouch)) rows.push({sym:s, bb:bb});
   });
   if(!rows.length){ el.hidden = true; el.innerHTML=""; return; }
-  // A fresh cross (the actual alert moment) before an already-settled one;
-  // within each group, furthest outside the band first.
+  // Lower-band events lead (Zach's 2026-08-26 alert ask) — within each
+  // group, a fresh cross (the actual alert moment) before an already-
+  // settled one, then furthest outside the band first.
   rows.sort(function(a,b){
+    var la = a.bb.lowTouch?1:0, lb = b.bb.lowTouch?1:0;
+    if(la !== lb) return lb - la;
     if(a.bb.crossed !== b.bb.crossed) return a.bb.crossed ? -1 : 1;
     return bbDistPct(b.bb) - bbDistPct(a.bb);
   });
+  var nLower = rows.filter(function(r){ return r.bb.lowTouch; }).length;
   el.hidden = false;
-  el.innerHTML = '<b data-tip="'+esc(TIPS.ta_bb)+'">BAND CROSSES · BOLLINGER(20,2)</b>'
+  el.innerHTML = '<b data-tip="'+esc(TIPS.ta_bb)+'">BAND CROSSES · BOLLINGER(20,2)'
+    + (nLower ? (' · <span style="color:var(--bb)">'+nLower+' at or near the lower band</span>') : '')+'</b>'
     + rows.slice(0, MOVERS_CAP).map(function(r){
-        var word = r.bb.side==="over" ? "above upper" : "below lower";
+        // Three distinct facts, three wordings: at/below the lower band NOW,
+        // touched it intraday but back inside, or above the upper band.
+        var word = r.bb.lowTouch
+          ? (r.bb.lowNear ? "within 1% of lower band"
+             : r.bb.touchOnly ? "touched lower band today (back inside)" : "at/below lower band")
+          : (r.bb.side==="over" ? "above upper" : "below lower");
         // Deliberately ONE color for both directions — a band cross describes
         // volatility (an outsized move either way), not a bullish or bearish
         // verdict, so painting "above" green and "below" red would claim a
-        // directional read this indicator does not support.
-        return '<span style="color:var(--bb)">'+esc(r.sym)+' '+word+'</span>'
+        // directional read this indicator does not support. The lower-band
+        // rows get emphasis WEIGHT (Zach asked to be alerted on exactly
+        // them), never a green "buy" ink.
+        return '<span style="color:var(--bb)'+(r.bb.lowTouch?';font-weight:700':'')+'">'+esc(r.sym)+' '+word+'</span>'
           + (r.bb.crossed ? ' <span class="pill h">NEW</span>' : '');
       }).join(" · ")
     + (rows.length > MOVERS_CAP
@@ -3964,8 +4003,10 @@ function renderBBCrosses(syms){
     // Static explainer behind a button (declutter, 2026-08-26).
     + expHTML("bbx", "what this means",
         '<div class="note" style="margin-top:6px">price vs. a 20-day mean ± 2 standard deviations, from settled daily '
-        + 'closes. NEW = crossed since yesterday’s close; the rest were already outside. A cross means an unusually '
-        + 'stretched move, not a buy or sell call. Not a signal.</div>');
+        + 'closes. Lower-band rows lead and are bolded (Zach’s alert ask, 2026-08-26): “at/below lower band” means the '
+        + 'current price sits on or under it; “touched lower band today” means the day’s low reached it and price is back '
+        + 'inside; “within 1% of lower band” means the price is approaching it but has not touched yet. NEW = crossed since yesterday’s close; the rest were already outside. A touch or cross means an '
+        + 'unusually stretched move, not a buy or sell call. Not a signal.</div>');
 }
 
 /* =================== ticker search (TV scanner name-match, CORS-open) =================== */

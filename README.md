@@ -36,8 +36,13 @@ The page used to open charts in a popup. Now the chart is the page:
   wedge, ascending/descending channel, trading range, or bull/bear flag.
   A third toggle draws Bollinger Bands (20-period average, ±2 standard
   deviations). The watchlist rail's **Band crosses** box separately flags
-  any rail ticker whose price just crossed its own band — checked from the
-  daily bars every poll, whether or not that ticker's chart is open. RSI and
+  any rail ticker whose price just crossed its own band — and, listed first
+  and bolded, any name that touched or sits at/below its LOWER band today, or whose
+  price is within 1% above it (Zach's alert ask, 2026-08-26), including a
+  dip that bounced back inside.
+  Checked from the daily bars every poll, whether or not that ticker's
+  chart is open. A touch is a fact about a stretched move, never a buy
+  call, so the rows stay the panel's neutral purple. RSI and
   EMA panes were removed 2026-08-21 (the fundamentals grid still carries a
   daily RSI(14) reading). All of this is display-only. Nothing here scores
   or signals. Since the 2026-08-26 declutter, Bollinger Bands are the only

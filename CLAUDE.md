@@ -2739,5 +2739,35 @@ table). The non-obvious decisions:
   so it's a disclosure gated on all-wrapper tickers + a rating-note title
   shape, never a drop.
 
+## Guardrails added 2026-08-26 (lower-band touch alerts, Zach's direct ask)
+
+Zach: "I need bollinger bands alerts for any that touch or go below lower
+band." Extends the existing Band-crosses rail panel (the 2026-08-21
+client-side alerting mechanism) — same stateless recomputed-every-poll
+architecture, no notifications, no persisted state. Frontend-only.
+
+- **`bollingerOf` gained `lowTouch`/`touchOnly`/`lowNear`.** `lowNear`
+  (Zach's same-day follow-up, "or within 1% of the bottom band",
+  `BB_LOWER_NEAR_PCT`) fires from the live price alone when it sits within
+  1% ABOVE the band — an approach alert, worded "within 1% of lower band",
+  distinct from a touch. A touch is today's LOW
+  reaching the lower band — including a dip that bounced back inside,
+  which `side==="under"` (strictly-below on the current price) could never
+  see. The day-low leg reads `q.l` ONLY outside pre-market — before the
+  bell that column is yesterday's low (the standing regular-session-
+  columns rule), so pre-market the test falls back to the live price leg
+  alone.
+- **Lower-band rows lead the panel and are bolded — WEIGHT, never a green
+  ink.** The standing "a Bollinger cross reads volatility, never bullish
+  or bearish" rule is untouched: Zach asked to be ALERTED on the
+  condition, not for the page to call it a buy; the rows stay `--bb`
+  purple and the explainer says "not a buy or sell call." Three wordings
+  for three facts: "at/below lower band" (current price on/under it),
+  "touched lower band today (back inside)" (day low reached it), "above
+  upper" (unchanged).
+- **The panel still hides when nothing crossed or touched** — the
+  documented MOVERS asymmetry stands; the header gains a "N at the lower
+  band" count when any exist.
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
