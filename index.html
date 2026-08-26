@@ -2155,12 +2155,19 @@ function staleWindowActive(){
   // slice a fresh read is genuinely expected. Earlier pre-market it isn't
   // (the newest data is legitimately yesterday's), so no badge.
   if(s==="premarket") return ctMinutesOfDay(new Date()) >= 8*60 + 15;
-  // The loop keeps publishing until 15:20 CT, 20 minutes past the close —
-  // the page's own tooltips say so ("8:00-15:20 CT"). Without this branch a
-  // fetcher stall at 15:05 (session already flipped to "afterhours") drew no
-  // STALE badge on any flow board for the 15 minutes a trader watches the
-  // close most closely (2026-08-22 review, data honesty finding #2).
-  return s==="afterhours" && ctMinutesOfDay(new Date()) < 15*60 + 20;
+  // The loop keeps publishing until 20 minutes past the close — the page's
+  // own tooltips say so ("8:00-15:20 CT"). Without this branch a fetcher
+  // stall at 15:05 (session already flipped to "afterhours") drew no STALE
+  // badge on any flow board for the 15 minutes a trader watches the close
+  // most closely (2026-08-22 review, data honesty finding #2).
+  // Half-day aware: on a MARKET_HALF_DAYS date the session (and the
+  // fetcher's own market_guard window, mirrored from these same tables)
+  // ends at noon CT, so the cutoff is close+20, never a fixed 15:20 —
+  // otherwise the loop's designed noon shutdown read as a dead feed, STALE
+  // badges included, from ~12:35pm (flow boards) and ~2:15pm (catalysts/
+  // news) until 3:20pm on Black Friday and Christmas Eve (2026-08-26
+  // review round 19, panels finding #3).
+  return s==="afterhours" && ctMinutesOfDay(new Date()) < ctSessionCloseMinute(new Date()) + 20;
 }
 function isStaleFlow(data){
   if(!staleWindowActive()) return false;
@@ -2833,7 +2840,12 @@ function adhocEnsureFacts(sym){
   // vendor gap that is really a missing prefix.
   if(!tv){
     return tsSearch(sym).then(function(items){
-      var hit = items.filter(function(it){ return it.sym===sym; })[0];
+      // Match against the $-stripped form too: tsSearch strips a leading
+      // "$" internally (_tsVariants) so its results carry the REAL ticker,
+      // which a literal "$MU" comparison could never equal (2026-08-26
+      // review round 19, watchlist finding #1).
+      var bare = sym.replace(/^\$+/, "");
+      var hit = items.filter(function(it){ return it.sym===sym || it.sym===bare; })[0];
       if(!hit){ delete ADHOC_FACTS_FAILED[sym]; return null; }   // search answered: genuinely not listed
       adhocRegister(sym, hit.tv, hit.name);
       return adhocEnsureFacts(sym);
@@ -3088,7 +3100,15 @@ function macroTileHTML(m){
         + "Last real read " + ((d && d.at) ? ctTimeShort(new Date(d.at).toISOString())
                                : (MACRO_LAST_OK ? ctTimeShort(new Date(MACRO_LAST_OK).toISOString()) : "earlier")) + " CT.")
       +'">FROZEN</span>' : '';
-  return '<div class="tp" data-sym="'+esc(m.bk||m.s)+'" role="button" tabindex="0">'
+  // The normal-case tile explains itself on hover, same as mainTileHTML's
+  // four index tiles right beside it — before this, only the no-quote branch
+  // carried a data-tip, so SPY's tile explained itself while VIX's said
+  // nothing (2026-08-26 review round 19, panels finding #4).
+  var tip = m.s+" · "+m.n+" — "+priceStr+", "
+    + (changeStr==="—" ? "no change reading" : changeStr+" on the day")
+    + (frozen ? ". This reading has not refreshed — see the FROZEN tag." : "")
+    + " Click to chart it.";
+  return '<div class="tp" data-sym="'+esc(m.bk||m.s)+'" role="button" tabindex="0" data-tip="'+esc(tip)+'">'
     +'<span class="s"><span class="t">'+esc(m.s)+' · '+esc(m.n)+'</span>'+ftag+'</span>'
     +'<span class="p">'+priceStr+'</span><span class="c '+cls+'">'+changeStr+'</span></div>';
 }
@@ -3241,7 +3261,17 @@ function hotOf(sym){
 function volNow(sym){
   var q = liveBySym(sym);
   if(!q) return null;
-  if(priceSessionNow()==="premarket" && q.prevol!=null) return q.prevol;
+  if(priceSessionNow()==="premarket"){
+    // No pre-market print yet: return null — never fall through to q.v,
+    // the exact value the comment above calls unreliable in this window.
+    // A thin name with no pre-market trade used to rank under the
+    // "PRE-MARKET VOLUME — HIGHEST FIRST" header on a zero or leftover
+    // prior-session total, with no tag saying so; null lets the vol
+    // comparator's existing null handling sink it to the bottom the same
+    // way a genuinely absent reading already sinks (2026-08-26 review
+    // round 19, watchlist finding #3).
+    return q.prevol!=null ? q.prevol : null;
+  }
   return q.v;
 }
 // Bollinger Bands (20, 2) — watchlist-wide, added 2026-08-21 for the "alert
@@ -3447,7 +3477,14 @@ var WLIO_BUSY = false;
 // which rendered a permanently dead "NKE | NKE | — | —" row on the very
 // device the export string was supposed to serve.
 function wlIoApply(text){
-  var raw = String(text||"").toUpperCase().split(/[\s,]+/).filter(Boolean);
+  // Strip a leading "$" — "$MU" is how traders paste a ticker from
+  // Twitter/StockTwits, the exact reason _tsVariants already strips it for
+  // single search. Without this, tsSearch("$MU") FINDS MU but the match
+  // test below compares against the literal "$MU" and reports a real,
+  // listed ticker as "dropped (nothing listed)" (2026-08-26 review round
+  // 19, watchlist finding #1).
+  var raw = String(text||"").toUpperCase().split(/[\s,]+/)
+    .map(function(s){ return s.replace(/^\$+/, ""); }).filter(Boolean);
   var had = wlCustom();
   if(!raw.length && had.length){
     var names = had.map(function(r){ return r.sym; }).join(", ");
@@ -3726,6 +3763,13 @@ function renderWL(){
         // a list headed TODAY'S MOVE. Sink those to the bottom rather than
         // ranking yesterday's leaders as this morning's.
         if(!!ca.prev !== !!cb.prev) return ca.prev ? 1 : -1;
+        // Same explicit both-null guard the range/vol/hot comparators carry
+        // — without it, -Infinity minus -Infinity is NaN, and with wlSort
+        // persisted a reload into a "chg" sort ran EVERY pair as null/null
+        // before the first poll resolved, leaving the list unsorted under a
+        // header claiming biggest-first (2026-08-26 review round 19,
+        // watchlist finding #2).
+        if(ca.ch==null && cb.ch==null) return 0;
         var va=ca.ch!=null?ca.ch:-Infinity, vb=cb.ch!=null?cb.ch:-Infinity;
         return vb-va;
       }
@@ -4471,7 +4515,13 @@ function renderBrief(data){
   html += fedAlarmHTML(fed);
   if(brief.gap_note) html += '<p class="q">'+esc(brief.gap_note)+'</p>';
   var readings = (brief.backdrop && Array.isArray(brief.backdrop.readings)) ? brief.backdrop.readings : [];
-  if(readings.length){
+  // Gate on the backdrop OBJECT, not on readings.length — a total 0-of-7
+  // fetch failure used to skip this whole block, so the bold grade rendered
+  // above/beside it with literally no visible basis: no chips, no "graded
+  // on N of 7" note, violating "a grade says how many inputs it had" for
+  // the one case where the disclosure matters most (2026-08-26 review
+  // round 19, panels finding #2).
+  if(brief.backdrop){
     var got = {};
     readings.forEach(function(r){ got[String(r.label||"")] = true; });
     var missing = BACKDROP_ALL.filter(function(l){ return !got[l]; });
@@ -4885,13 +4935,20 @@ function boardCutNoteHTML(cut, key){
   // That sentence used to fire anyway, asserting in the same breath that
   // those firing names are "below the line" and that "every tracked name
   // clears the bar" (2026-08-22 review round 12, flow boards finding #1).
+  // Short sentences, one fact each — the old single clause packed the
+  // scored count, the firing-exempt count, the shown total and the show-all
+  // prompt into one comma-and-em-dash run-on, live on the real payload
+  // (2026-08-26 review round 19, flow boards finding #2). The counts
+  // themselves (scored/lowFiring/strong, which took rounds 11-12 to get
+  // right) are unchanged; only the sentence boundaries moved.
   var restNote = (cut.strong < cut.total)
-    ? (' — the rest of the watchlist sits below the line. '+btn+'show all '+cut.total+'</button>')
-    : (cut.lowFiring>0 ? (' — every tracked name is shown ('+cut.lowFiring+' firing below the '+BOARD_SCORE_FLOOR+' line).')
-       : ' — every tracked name clears the bar.');
-  return '<div class="boardcut">'+scored+' of '+cut.total+' names score '+BOARD_SCORE_FLOOR+'+'
-    + (cut.lowFiring ? (', plus '+cut.lowFiring+' firing below the line (a firing name is never hidden) — '
-                        + cut.strong+' rows shown') : '')
+    ? (' The rest of the watchlist sits below the line. '+btn+'show all '+cut.total+'</button>')
+    : (cut.lowFiring>0 ? (' Every tracked name is shown ('+cut.lowFiring+' firing below the '+BOARD_SCORE_FLOOR+' line).')
+       : ' Every tracked name clears the bar.');
+  return '<div class="boardcut">'+scored+' of '+cut.total+' names score '+BOARD_SCORE_FLOOR+' or higher today.'
+    + (cut.lowFiring ? (' '+cut.lowFiring+' more '+(cut.lowFiring===1?'is':'are')+' shown because '
+                        +(cut.lowFiring===1?'it is':'they are')+' firing (unusually loud right now) — a firing name is never hidden. '
+                        + cut.strong+' rows shown.') : '')
     + restNote + boardCoverageHTML()+'</div>';
 }
 /* "show all 57" reads as the whole watchlist. The payload says 62 names are
@@ -5182,8 +5239,15 @@ function renderConv(data, livePoll){
     // beside them was computed on the snapshot's %. When they have drifted
     // apart, say both instead of letting one stand in for the other.
     var snapCh = num(c.change_pct);
+    // "Live now" is a claim about freshness, so it is gated on the SAME
+    // frozen flag the price span's STALE badge reads — the two disclosures
+    // sit on one row and used to contradict each other whenever the
+    // scanner's entry for this symbol went stale mid-drift (2026-08-26
+    // review round 19, flow boards finding #1).
     var chTip = (ch!=null && snapCh!=null && Math.abs(ch-snapCh) > 1)
-      ? ("Live now "+fm1(ch)+"% · the score used "+fm1(snapCh)+"% from the last publish.") : "";
+      ? ((frozen ? ("Feed not responding — last reading "+fm1(ch)+"%, may be stale")
+                 : ("Live now "+fm1(ch)+"%"))
+         + " · the score used "+fm1(snapCh)+"% from the last publish.") : "";
     // Gated on an actual drift threshold now, matching chTip's own >1pp
     // gate a few lines up — it used to fire on the mere PRESENCE of both a
     // live and a snapshot reading, true for nearly every row, not just the
@@ -5195,7 +5259,9 @@ function renderConv(data, livePoll){
     // flow boards finding #1).
     var rvDrift = (q.rvol!=null && snapRv!=null && Math.abs(q.rvol-snapRv) > 0.1);
     var rvTip = rvDrift
-      ? ("Live now "+q.rvol.toFixed(2)+"× · the score used "+snapRv.toFixed(2)+"× from the last publish.")
+      ? ((frozen ? ("Feed not responding — last reading "+q.rvol.toFixed(2)+"×, may be stale")
+                 : ("Live now "+q.rvol.toFixed(2)+"×"))
+         + " · the score used "+snapRv.toFixed(2)+"× from the last publish.")
       : (rv==null && snapRv!=null ? ("The score used "+snapRv.toFixed(2)+"× from the last publish.") : "");
     return '<tr class="rw" data-sym="'+esc(c.ticker||"")+'" role="button" tabindex="0">'
       +'<td><span class="sy2">'+esc(c.ticker||"?")+'</span> <span class="pill '+(c.direction==="BULL"?"b":"s")+'">'+(c.direction==="BULL"?"BULL":"BEAR")+'</span>'
@@ -5918,6 +5984,19 @@ function dedupeNews(items){
   });
   return out;
 }
+// Issuer-linkage disclosure, ONE helper for every surface news renders on
+// (2026-08-26 review round 19, panels finding #1 — the top marquee scrolled
+// "BMO Price Target Raised — NRGU" with zero caveat while the same row three
+// panels down carried it). TradingView's per-symbol news call links an
+// ETN/ETF headline through its ISSUING BANK; fires only when EVERY tagged
+// ticker is a leveraged/fund wrapper AND the title reads as an analyst
+// rating/price-target note — a shape that can only be about the issuer,
+// since a wrapper has no analyst coverage of its own.
+function newsIssuerNoteHTML(tickers, title){
+  if(!(tickers && tickers.length && tickers.every(function(t){ return isLeveraged(t); }))) return "";
+  if(!/price target|raised to|cut to|upgraded to|downgraded to|initiated (at|with)/i.test(title||"")) return "";
+  return ' <span class="m" data-tip="This fund is an exchange-traded note/product, and its issuing bank is what links this headline to it in the vendor’s per-symbol feed. The analyst note is about the BANK’s stock, not this fund’s underlying market.">(about the fund’s issuing bank, not its market)</span>';
+}
 function renderNewsTicker(data){
   var el = document.getElementById("newsticker");
   if(!el) return;
@@ -5947,7 +6026,8 @@ function renderNewsTicker(data){
   function itemHTML(n){
     var href = safeHref(n.url);
     var tks = (n.tickers && n.tickers.length) ? n.tickers.join(" · ") : (n.ticker||"MKT");
-    var inner = '<span class="tk">'+esc(tks)+'</span><span>'+esc(n.title||"")+'</span>'
+    var inner = '<span class="tk">'+esc(tks)+'</span><span>'+esc(n.title||"")
+      + newsIssuerNoteHTML(n.tickers, n.title)+'</span>'
       + '<span class="tm tn"'+(n.ts?(' data-ts="'+esc(n.ts)+'" title="'+esc(ctWhenLong(n.ts))+'"'):'')+'>'
       + esc(elapsedShort(n.ts) || ctTimeShort(n.ts))+'</span>';
     return (href ? '<a class="nt-item" href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">' : '<span class="nt-item">')
@@ -6025,11 +6105,9 @@ function renderNews(){
     // leveraged/fund wrapper AND the title reads as an analyst rating/price-
     // target note — a shape that can only be about the issuer, since a
     // wrapper has no analyst coverage of its own.
-    var issuerNote = "";
-    if(n.tickers && n.tickers.length && n.tickers.every(function(t){ return isLeveraged(t); })
-       && /price target|raised to|cut to|upgraded to|downgraded to|initiated (at|with)/i.test(n.title||"")){
-      issuerNote = ' <span class="m" data-tip="This fund is an exchange-traded note/product, and its issuing bank is what links this headline to it in the vendor’s per-symbol feed. The analyst note is about the BANK’s stock, not this fund’s underlying market.">(about the fund’s issuing bank, not its market)</span>';
-    }
+    // Shared with renderNewsTicker via newsIssuerNoteHTML — one function,
+    // every surface (2026-08-26 review round 19, panels finding #1).
+    var issuerNote = newsIssuerNoteHTML(n.tickers, n.title);
     var body = href
       ? ('<a href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">'+esc(n.title||"")+'</a>')
       : esc(n.title||"");
@@ -6266,22 +6344,53 @@ function intervalDataFor(sym, iv){
     // ordinary candle it read as a real 15-minute bar in which nothing traded.
     // Drop it; the header quote is where the live price belongs.
     // Detected by its own signature (zero range, zero volume) now, NOT by a
-    // fixed-hour grid modulus — a real hourly bar is anchored to the 08:30 CT
-    // open, so EVERY regular-session hourly timestamp lands at :30 past the
-    // hour (t%3600===1800, never 0, in UTC epoch seconds, DST or not). The
-    // old check unconditionally deleted that genuine, most-recently-completed
-    // hourly candle on every symbol whose fetch cycle caught it before the
-    // next live-quote row got appended — verified live on MU/CRWD/COHR/V's
-    // i60 series (2026-08-22 review, chart stage finding #1).
+    // fixed-hour grid modulus — the old fixed check unconditionally deleted
+    // the genuine, most-recently-completed hourly candle on every symbol
+    // whose fetch cycle caught it before the next live-quote row got
+    // appended — verified live on MU/CRWD/COHR/V's i60 series (2026-08-22
+    // review, chart stage finding #1). Grid position is SYMBOL-DEPENDENT
+    // (measured live 2026-08-26: equities land at :30 past the hour,
+    // VIX/DXY/CRUDE at :00, US10Y at :20), which is exactly why no single
+    // shared modulus anchor works.
+    // For a symbol whose EVERY stored bar reports zero volume (VIX, US10Y,
+    // DXY on this feed — measured 100% zero across all live i60 rows), the
+    // zero-volume half of the signature is permanently satisfied and the
+    // test collapses to "is this bar flat" — a genuinely quiet index/FX
+    // hour (open==high==low==close) would be deleted as a fake artifact.
+    // For those, fall back to the series' OWN dominant timestamp grid: a
+    // flat trailing row only reads as the live-quote artifact when it ALSO
+    // sits off the remainder every real bar in the same series lands on
+    // (2026-08-26 review round 19, chart stage finding #2).
     if(raw.length>1){
       var lastRow = raw[raw.length-1];
       var zeroRange = lastRow[2]===lastRow[3];   // high === low
       var zeroVol = !lastRow[5];                  // 0, null or undefined
-      if(zeroRange && zeroVol) raw = raw.slice(0, -1);
+      var anyVol = false;
+      for(var zi=0; zi<raw.length-1; zi++){ if(raw[zi][5]){ anyVol=true; break; } }
+      var dropLast;
+      if(anyVol){ dropLast = zeroRange && zeroVol; }
+      else {
+        var gridSec = key==="i15" ? 900 : 3600;
+        var mods={}, bestMod=null, bestModN=0;
+        for(var zj=0; zj<raw.length-1; zj++){
+          var zm = raw[zj][0]%gridSec; mods[zm]=(mods[zm]||0)+1;
+          if(mods[zm]>bestModN){ bestModN=mods[zm]; bestMod=zm; }
+        }
+        dropLast = zeroRange && bestMod!=null && (lastRow[0]%gridSec)!==bestMod;
+      }
+      if(dropLast) raw = raw.slice(0, -1);
     }
     var is4H = (iv==="4H");
     if(is4H) raw=resample4H(raw);
-    if(iv==="1H") raw=raw.slice(-160);
+    // The 160-bar 1H cap is deliberate (TA_REALISTIC_MAX_BARS' 1H threshold
+    // math is calibrated to it), but the fetcher ships up to INTRA_MAX
+    // (320) hourly bars — silently discarding the older half told a trader
+    // reading a "2-month" 1H level they were looking at 1 month
+    // (2026-08-26 review round 19, chart stage finding #1). Count what the
+    // cap drops so stageBar can disclose it, same posture as the 1D "only
+    // N sessions" chip.
+    var hourCapDropped = 0;
+    if(iv==="1H" && raw.length>160){ hourCapDropped = raw.length-160; raw=raw.slice(-160); }
     rows=raw.map(function(r){ return [r[1],r[2],r[3],r[4],r[5]]; });
     dates=raw.map(function(r){ return new Date(r[0]*1000); });
     // The 4H bucket's own row[6] (last real hourly bar merged in, see
@@ -6298,6 +6407,7 @@ function intervalDataFor(sym, iv){
   return {slice:rows, m20:empty, m50:empty, m200:empty, pct:pct, n:rows.length,
           hasVolume:hasVolume, dates:dates, iv:iv, weekOpen:(iv==="1W" && weekOpen),
           lastUpdate: (typeof lastUpdate!=="undefined" ? lastUpdate : null),
+          hourCapDropped: (typeof hourCapDropped!=="undefined" ? hourCapDropped : 0),
           // Carried so the weekly readout can wear the same CLOSE ONLY and
           // pre-market tags the daily one does.
           synthetic: (iv==="1W" ? !!(typeof qinfo!=="undefined" && qinfo.synthetic) : false),
@@ -7072,6 +7182,7 @@ function stageRender(){
   // row[6] (2026-08-23 review round 16, Chart Stage finding #2). null on
   // every other interval, where the bucket's own last date IS its update.
   STAGE.lastBarUpdate = d.lastUpdate || null;
+  STAGE.hourCapDropped = d.hourCapDropped || 0;
   STAGE.hasVolume=d.hasVolume; STAGE.synthetic=d.synthetic; STAGE.premarketBar=!!d.premarketBar;
   STAGE.syntheticReal=!!d.syntheticReal;
   STAGE.weekRealDays=d.weekRealDays||0;
@@ -7665,9 +7776,36 @@ function peerAnnotate(sym, key, fmt){
 }
 function fcellPeer(label, key, rawText, sym, fmt, fallbackCls){
   var a = peerAnnotate(sym, key, fmt);
+  var tip = a.tip;
+  // A blank cell's tooltip carries the REAL reason the figure is missing
+  // (metricReason — the same already-written sentences the vs-Peers tab
+  // uses), never just a market rule of thumb about a figure that isn't
+  // there. AAOI's null EV/EBITDA hovered as "10-14x is a typical large-cap
+  // range" while the real answer ("no EBITDA — losing money at the
+  // operating line") sat unused in METRIC_REASON_LONG (2026-08-26 review
+  // round 19, financials finding #2). The P/E and PEG cells' own
+  // hand-built reason spans inside rawText are unchanged — this only
+  // replaces the generic outer tip.
+  if(metricValue(sym, key)==null){
+    var rsn = metricReason(sym, key);
+    var longRsn = METRIC_REASON_LONG[rsn] || rsn;
+    if(longRsn && longRsn!=="vendor n/a"){
+      tip = sym+": "+longRsn+(METRIC_MARKET_NOTE[key] ? (" "+METRIC_MARKET_NOTE[key]) : "");
+    }
+  }
   var cls = a.cls || fallbackCls || "";
-  var body = a.tip ? ('<span data-tip="'+esc(a.tip)+'">'+rawText+'</span>') : rawText;
+  var body = tip ? ('<span data-tip="'+esc(tip)+'">'+rawText+'</span>') : rawText;
   return fcell(label, body, cls, a.sub);
+}
+// P/S and P/B used plain fcell with no tooltip mechanism at all, so a blank
+// cell got literally zero explanation while metricReason's own ps/pb "no
+// cap" branch sat dead (never called from anywhere) — same round-19
+// finding #2. A resolved value renders exactly as before.
+function fcellReason(label, key, val, text, sym){
+  if(val!=null) return fcell(label, text);
+  var rsn = metricReason(sym, key);
+  var longRsn = METRIC_REASON_LONG[rsn] || rsn || "the vendor publishes no figure";
+  return fcell(label, '<span data-tip="'+esc(sym+": "+longRsn)+'">'+text+'</span>');
 }
 // Tape-only symbols (VIX, US10Y, CRUDE, DXY, and the index ETFs) have no
 // `facts` row and no fund sidecar — they are not in the pinned universe, which
@@ -7784,8 +7922,8 @@ function renderFundamentals(sym, fund){
     fcellPeer("P/E (ttm)", "pe", peText, sym, fmtAxisNum),
     fcell("Fwd P/E", fwdPe + fundStaleSub),
     fcellPeer("PEG", "peg", pegText, sym, fmtAxisNum, pegCls),
-    fcell("P/S", numStr(f.ps,1)),
-    fcell("P/B", numStr(f.pb,1)),
+    fcellReason("P/S", "ps", num(f.ps), numStr(f.ps,1), sym),
+    fcellReason("P/B", "pb", num(f.pb), numStr(f.pb,1), sym),
     fcellPeer("EV/EBITDA", "ev_ebitda", numStr(f.ev_ebitda,1), sym, fmtAxisNum),
     fcellPeer("Gross margin", "gross_margin", pctStr(f.gross_margin), sym, fmtAxisPct),
     fcellPeer("Oper margin", "op_margin", pctStr(f.op_margin), sym, fmtAxisPct),
@@ -8724,17 +8862,24 @@ function renderGrowth(sym, fund){
     // makes sense across companies reporting in dollars vs. won vs. NT$, so
     // floorMag is 0: the median-vs-max ratio test in robustClampMag is what
     // actually decides whether anything is clamped.
-    var clampedAny = false;
-    var latestClippedAny = false;   // the clipped point is the newest period (see clampHitsLatest)
+    // Arrays of CHART NAMES now, not booleans — the disclosure sentences at
+    // the bottom of the tab used to be one blanket note for the whole tab,
+    // so a reader had to guess-and-check 5+ charts to find which one a
+    // sentence described; worst for the uncorrected-glitch case, which
+    // (unlike a clamp) draws no clip arrow on the affected chart at all
+    // (2026-08-26 review round 19, financials findings #1/#3).
+    var clampedAny = [];
+    var latestClippedAny = [];   // the clipped point is the newest period (see clampHitsLatest)
     // A genuine glitch that robustClampMag recognized but could NOT clamp
     // (a real trend value shares its over-threshold set) is otherwise
     // invisible — nothing on screen said the clamp was even considered
     // (2026-08-22 review round 12, financials finding #1).
-    var uncorrectedAny = false;
+    var uncorrectedAny = [];
     var moneyMag = robustClampMag(money.map(function(d){ return d.values; }), 0, 6);
-    if(moneyMag!=null) clampedAny = true;
-    if(clampHitsLatest(money.map(function(d){ return d.values; }), moneyMag)) latestClippedAny = true;
-    if(moneyMag==null && robustClampHasUncorrectedGlitch(money.map(function(d){ return d.values; }), 0, 6)) uncorrectedAny = true;
+    var MONEY_CHART_NAME = "Revenue/net income/free cash flow";
+    if(moneyMag!=null) clampedAny.push(MONEY_CHART_NAME);
+    if(clampHitsLatest(money.map(function(d){ return d.values; }), moneyMag)) latestClippedAny.push(MONEY_CHART_NAME);
+    if(moneyMag==null && robustClampHasUncorrectedGlitch(money.map(function(d){ return d.values; }), 0, 6)) uncorrectedAny.push(MONEY_CHART_NAME);
     var moneySvg = axisChartSVG(q.labels, money, {kind:"money", zeroLine:true, W:BIG.W, H:BIG.H,
         clamp: moneyMag, clampLo: moneyMag!=null ? -moneyMag : null});
     if(moneySvg){
@@ -8761,9 +8906,9 @@ function renderGrowth(sym, fund){
       // ceiling, so it fires on NBIS's -4588% stub quarter and stays out of
       // the way of an ordinary name's -50%-to-+50% swings alike.
       var marginMag = robustClampMag(margins.map(function(d){ return d.values; }), 200, 6);
-      if(marginMag!=null) clampedAny = true;
-      if(clampHitsLatest(margins.map(function(d){ return d.values; }), marginMag)) latestClippedAny = true;
-      if(marginMag==null && robustClampHasUncorrectedGlitch(margins.map(function(d){ return d.values; }), 200, 6)) uncorrectedAny = true;
+      if(marginMag!=null) clampedAny.push("Margins");
+      if(clampHitsLatest(margins.map(function(d){ return d.values; }), marginMag)) latestClippedAny.push("Margins");
+      if(marginMag==null && robustClampHasUncorrectedGlitch(margins.map(function(d){ return d.values; }), 200, 6)) uncorrectedAny.push("Margins");
       row2 += '<div class="gchart"><h4>Margins</h4>'
         + axisChartSVG(q.labels, margins, {kind:"pct", W:SM.W, H:SM.H, zeroLine:true,
             clamp: marginMag, clampLo: marginMag!=null ? -marginMag : null})
@@ -8818,9 +8963,9 @@ function renderGrowth(sym, fund){
       var yoyDef = [{name:"Revenue YoY", color:seriesColor(0), values:yoy, type:"bar"}];
       var ppyWord = (ppy===4) ? "quarter" : (ppy===2) ? "half-year period" : (ppy===1) ? "year" : "period";
       var yoyMag = robustClampMag([yoy], 200, 6);
-      if(yoyMag!=null) clampedAny = true;
-      if(clampHitsLatest([yoy], yoyMag)) latestClippedAny = true;
-      if(yoyMag==null && robustClampHasUncorrectedGlitch([yoy], 200, 6)) uncorrectedAny = true;
+      if(yoyMag!=null) clampedAny.push("Revenue growth YoY");
+      if(clampHitsLatest([yoy], yoyMag)) latestClippedAny.push("Revenue growth YoY");
+      if(yoyMag==null && robustClampHasUncorrectedGlitch([yoy], 200, 6)) uncorrectedAny.push("Revenue growth YoY");
       row2 += '<div class="gchart"><h4>Revenue growth, year over year'
         + (ppy!==4 ? (' <span class="m" style="font-weight:400">· each '+esc(ppyWord)+' vs the same one a year earlier</span>') : '')
         + '</h4>'
@@ -8833,9 +8978,9 @@ function renderGrowth(sym, fund){
     if(Array.isArray(q.eps) && q.eps.some(function(v){ return num(v)!=null; })){
       var epsDef = [{name:"Diluted EPS", color:seriesColor(3), values:q.eps, type:"bar"}];
       var epsMag = robustClampMag([q.eps], 0, 6);
-      if(epsMag!=null) clampedAny = true;
-      if(clampHitsLatest([q.eps], epsMag)) latestClippedAny = true;
-      if(epsMag==null && robustClampHasUncorrectedGlitch([q.eps], 0, 6)) uncorrectedAny = true;
+      if(epsMag!=null) clampedAny.push("Earnings per share");
+      if(clampHitsLatest([q.eps], epsMag)) latestClippedAny.push("Earnings per share");
+      if(epsMag==null && robustClampHasUncorrectedGlitch([q.eps], 0, 6)) uncorrectedAny.push("Earnings per share");
       row2 += '<div class="gchart"><h4>Earnings per share'+(cur?(' · '+esc(cur)):'')+'</h4>'
         + axisChartSVG(q.labels, epsDef, {kind:"num", W:SM.W, H:SM.H,
             clamp: epsMag, clampLo: epsMag!=null ? -epsMag : null})
@@ -8879,9 +9024,9 @@ function renderGrowth(sym, fund){
       // separate chart (unlike quarterly's combined money chart), so each
       // gets its own independent clamp.
       var aMag = robustClampMag([vals], 0, 6);
-      if(aMag!=null) clampedAny = true;
-      if(clampHitsLatest([vals], aMag)) latestClippedAny = true;
-      if(aMag==null && robustClampHasUncorrectedGlitch([vals], 0, 6)) uncorrectedAny = true;
+      if(aMag!=null) clampedAny.push(t[1]+" (annual)");
+      if(clampHitsLatest([vals], aMag)) latestClippedAny.push(t[1]+" (annual)");
+      if(aMag==null && robustClampHasUncorrectedGlitch([vals], 0, 6)) uncorrectedAny.push(t[1]+" (annual)");
       arow += '<div class="gchart"><h4>'+esc(t[1])+' — annual</h4>'
         + axisChartSVG(a.labels, def, {kind:t[3], W:SM.W, H:SM.H, xEvery:1,
             clamp: aMag, clampLo: aMag!=null ? -aMag : null})
@@ -8937,18 +9082,21 @@ function renderGrowth(sym, fund){
     + (!hasAnnual && qPPY!=null && qPPY!==4
         ? ('This company files '+qPPY+' period'+(qPPY===1?"":"s")+' a year, not 4 — there is no complete 4-quarter fiscal year to sum, so no Annual section is shown. ')
         : '')
-    + (clampedAny
-        ? 'One or more charts above clip an outlier period’s value (far beyond the others) so the rest stay '
-          + 'readable — an arrow marks the clipped point, and hovering or tapping it still shows its real figure. '
+    + (clampedAny.length
+        ? ('The '+esc(clampedAny.join(", "))+' chart'+(clampedAny.length===1?' clips':'s clip')
+          + ' an outlier period’s value (far beyond the others) so the rest stay '
+          + 'readable — an arrow marks the clipped point, and hovering or tapping it still shows its real figure. ')
         : '')
-    + (latestClippedAny
-        ? 'THE CLIPPED POINT INCLUDES THE MOST RECENT PERIOD: the newest bar is pinned at the chart’s edge far below its '
-          + 'true scale — read the bold legend figure under that chart for the real number before judging the trend. '
+    + (latestClippedAny.length
+        ? ('THE CLIPPED POINT INCLUDES THE MOST RECENT PERIOD on the '+esc(latestClippedAny.join(", "))
+          + ' chart'+(latestClippedAny.length===1?'':'s')+': the newest bar is pinned at the chart’s edge far below its '
+          + 'true scale — read the bold legend figure under that chart for the real number before judging the trend. ')
         : '')
-    + (uncorrectedAny
-        ? 'At least one period looks like an isolated data anomaly, but a DIFFERENT period in the same chart is a genuine, '
-          + 'sustained reading of comparable size — clamping one would have misrepresented the other, so neither is clipped here. '
-          + 'Read the small periods against their own neighbors rather than assuming the axis alone tells the full story. '
+    + (uncorrectedAny.length
+        ? ('On the '+esc(uncorrectedAny.join(", "))+' chart'+(uncorrectedAny.length===1?'':'s')
+          + ', at least one period looks like an isolated data anomaly, but a DIFFERENT period in the same chart is a genuine, '
+          + 'sustained reading of comparable size — clamping one would have misrepresented the other, so neither is clipped there. '
+          + 'Read the small periods against their own neighbors rather than assuming the axis alone tells the full story. ')
         : '')
     + (dupPeriods && dupPeriods.length
         // "and/or" described the OLD, OR-based check round 8 deliberately
@@ -11652,7 +11800,15 @@ function stageTALegend(prefs){
 // lastFetchFailed is keyed per universe (like data/inflight), not a single
 // shared boolean — see heatFetchNow's own comment (2026-08-23 review
 // round 16, Sector Heatmap finding #0).
-var HEAT = { univ:"SPX", tf:"1D", isolate:null, data:{}, lastFetch:0, inflight:{}, lastFetchFailed:{} };
+// lastFetch is keyed per universe too now (2026-08-26 review round 19,
+// heatmap finding #3) — a single shared timestamp let a fresh DESK success
+// suppress the periodic refetch for an S&P map that had NEVER loaded.
+// lastAttempt/fails drive the failure backoff (finding #1): a scanner
+// failure never advances lastFetch, so the old success-only gate made the
+// map retry every 30-second tick — 4x FASTER than its healthy 2-minute
+// cadence, the opposite of the exponential backoff the data.json fetch
+// already has (FETCH_STATE.backoffUntil) for the identical failure class.
+var HEAT = { univ:"SPX", tf:"1D", isolate:null, data:{}, lastFetch:{}, lastAttempt:{}, fails:{}, inflight:{}, lastFetchFailed:{} };
 var HEAT_UNIVERSES = {
   SPX: {label:"S&P 500", symbolset:"SYML:SP;SPX"},
   NDX: {label:"Nasdaq 100", symbolset:"SYML:NASDAQ;NDX"},
@@ -11766,6 +11922,10 @@ function heatFetch(force){
 }
 function heatFetchNow(univ){
   var cfg = HEAT_UNIVERSES[univ];
+  // Stamped on EVERY try, success or failure — tick()'s refetch gate reads
+  // this, never the success-only lastFetch, so a failing scanner is retried
+  // on a backoff instead of every 30-second tick (round 19, finding #1).
+  HEAT.lastAttempt[univ] = Date.now();
   // Short-circuit BEFORE the request, not just before branching on the
   // response — every name hidden from the Desk watchlist reads as an empty
   // heatDeskTickers() result, and firing the request anyway meant a self-
@@ -11800,8 +11960,8 @@ function heatFetchNow(univ){
       // in flight) as stale, even though HEAT.data and HEAT.inflight were
       // already correctly keyed by univ (2026-08-23 review round 16, Sector
       // Heatmap finding #0).
-      if(!rows.length){ HEAT.lastFetchFailed[univ] = true; return HEAT.data[univ] || null; }
-      HEAT.lastFetchFailed[univ] = false;
+      if(!rows.length){ HEAT.lastFetchFailed[univ] = true; HEAT.fails[univ] = (HEAT.fails[univ]||0)+1; return HEAT.data[univ] || null; }
+      HEAT.lastFetchFailed[univ] = false; HEAT.fails[univ] = 0;
       var out = [], dropped = [];
       // Computed ONCE for the whole map, not per row — priceSessionNow() is a
       // page-level clock read, not a per-symbol one.
@@ -11870,10 +12030,10 @@ function heatFetchNow(univ){
           industry:(typeof d[6]==="string")?d[6]:null });
       });
       HEAT.data[univ] = {rows:out, fetchedAt:Date.now(), dropped:dropped};
-      HEAT.lastFetch = Date.now();
+      HEAT.lastFetch[univ] = Date.now();
       return HEAT.data[univ];
     })
-    .catch(function(){ HEAT.inflight[univ] = null; HEAT.lastFetchFailed[univ] = true; return null; });
+    .catch(function(){ HEAT.inflight[univ] = null; HEAT.lastFetchFailed[univ] = true; HEAT.fails[univ] = (HEAT.fails[univ]||0)+1; return null; });
 }
 /* squarified treemap (Bruls et al.): items [{w:weight,...}] into rect -> adds x/y/wd/ht */
 function squarify(items, x, y, w, h){
@@ -12103,6 +12263,12 @@ function heatRender(refetch){
         // real vendor failure and a self-caused empty request used to look
         // identical here (2026-08-22 review, heatmap finding #2).
         heatMsg("no names on the Desk watchlist to map — unhide one or add a name");
+        // Measure on EVERY exit path, not only the success path — a first
+        // load whose fetch fails, immediately expanded, otherwise falls
+        // back to the flat 210px/30px CSS constants, the exact undershoot
+        // round 16 fixed for a phone whose .rail wraps to two rows
+        // (2026-08-26 review round 19, heatmap finding #2).
+        heatMeasureHead(); heatMeasureFoot();
         return;
       } else {
       heatMsg("map unreachable — TradingView's scanner didn't answer; retrying with the next refresh");
@@ -12112,6 +12278,7 @@ function heatRender(refetch){
         // underneath the "unreachable" overlay.
         ef.innerHTML = '<span>scanner unreachable — nothing on this map is current.</span>';
       }
+      heatMeasureHead(); heatMeasureFoot();   // same round-19 finding #2 as above
       return;
       }
     }
@@ -12239,6 +12406,7 @@ function heatRender(refetch){
       // (2026-08-22 review round 11, sector heatmap finding #1).
       var isoFoot = document.getElementById("heatfoot");
       if(isoFoot) isoFoot.innerHTML = "";
+      heatMeasureHead(); heatMeasureFoot();   // round-19 heatmap finding #2: measure on every exit path
       return;
     }
     var W = wrap.clientWidth, H = wrap.clientHeight;
@@ -12712,6 +12880,19 @@ function stageBar(){
       chips += '<span class="pchip tn m" data-tip="'+esc("This name has less history than the window you picked, so 1M, 3M, 6M and 1Y all "
         + "show the same bars. Every session there is, is on screen.")+'">only '+STAGE.rows.length+' sessions of history</span>';
     }
+  }
+  // The 1H mirror of the 1D "only N sessions" chip, for the opposite case:
+  // MORE history is on file than the view shows. The 160-bar cap is
+  // deliberate (TA thresholds are calibrated to it), but silently cutting
+  // the older half told a trader a "2-month" 1H level was 1 month — and 4H,
+  // resampled from the SAME file with no cap, reaches further back than 1H
+  // on the same ticker with nothing saying why (2026-08-26 review round 19,
+  // chart stage finding #1).
+  if(STAGE.sym && STAGE.iv==="1H" && STAGE.hourCapDropped>0){
+    chips += '<span class="pchip tn m" data-tip="'+esc("The 1H view shows the most recent 160 hourly bars. "
+      + STAGE.hourCapDropped + " older hourly bar" + (STAGE.hourCapDropped===1?" is":"s are") + " on file but not drawn here — "
+      + "the 4H view is built from the same file without this cap, so it reaches further back on the same ticker.")
+      + '">newest 160 hours shown</span>';
   }
   var prefs = taPrefs();
   // EMA and RSI overlays were removed 2026-08-21 (Zach's call): only trend
@@ -13222,12 +13403,22 @@ function renderPeersInto(body, sym, res, seq){
   // Curated sets are picked by what a company competes with, not by size — but
   // the size gap is a fact about the comparison either way.
   var myCapNow = num((factsOf(sym)||{}).cap);
+  var sizeCheckSkipped = false;
   if(myCapNow){
     peers.forEach(function(t){
       var c = num((factsOf(t)||{}).cap);
       if(c && (c/myCapNow > PEER_CAP_BAND || myCapNow/c > PEER_CAP_BAND)) oob[t] = true;
       if(c==null) capUnk[t] = true;
     });
+  } else if(res.source==="curated"){
+    // A curated set's ✳/? marks come ONLY from this live recompute (the
+    // industry scan's own outOfBand/capUnknown are never populated for
+    // curated) — so when the focused name's own cap hasn't resolved this
+    // cycle, every mark silently vanished with nothing saying the size
+    // check didn't run: AVGO is 7.9× MRVL's cap and rendered unmarked in
+    // that window (2026-08-26 review round 19, vs Peers finding #3). Say
+    // so instead of omitting the marks quietly.
+    sizeCheckSkipped = true;
   }
   // The footnote that DEFINES the mark used to read res.outOfBand, which the
   // curated branch never sets — so a curated set stamped "AAOI ✳" in the key
@@ -13365,6 +13556,7 @@ function renderPeersInto(body, sym, res, seq){
     // explaining it, unlike ✳ which is always defined generically once
     // any peer carries it (2026-08-23 review round 13, vs peers finding #2).
     + (Object.keys(capUnk).length>0 ? ('? marks a peer whose size relative to '+esc(sym)+' is unknown — the scanner published no market cap for it this cycle. ') : '')
+    + (sizeCheckSkipped ? ('Size comparison unavailable this cycle — '+esc(sym)+'’s own market cap hasn’t loaded, so no peer carries a size mark right now. ') : '')
     + (clipped ? 'Where one name runs far off the scale, its bar is clipped with a break mark and its true value stays printed above it. ' : '')
     + '</div>'
     + expHTML("peersnote", "about this comparison",
@@ -13436,8 +13628,18 @@ function renderPeersInto(body, sym, res, seq){
       var pairs = (g.labels||[]).map(function(L, k){ return {L:L, v:num(g.revenue[k])}; })
                                 .filter(function(x){ return x.v!=null; })
                                 .slice(-8);
-      if(pairs.length<5 || !pairs[0].v){
+      if(pairs.length<5){
         skipped.push(e.sym+" ("+pairs.length+" reported quarter"+(pairs.length===1?"":"s")+", fewer than the 5 needed)");
+        return;
+      }
+      // The indexing base (oldest shown quarter) can be exactly $0 for a
+      // pre-revenue name, a fresh IPO or a vendor 0-fill — a divide-by-zero
+      // guard, NOT a quarter-count shortfall, so it gets its own message.
+      // The old shared message stated the real count (say, 8) and then
+      // asserted in the same breath it was below the 5-quarter floor
+      // (2026-08-26 review round 19, vs Peers finding #1).
+      if(!pairs[0].v){
+        skipped.push(e.sym+" (its oldest shown quarter reported $0 revenue, so growth can’t be indexed against it)");
         return;
       }
       var revs = pairs.map(function(x){ return x.v; });
@@ -13467,6 +13669,17 @@ function renderPeersInto(body, sym, res, seq){
       var ends = lines.map(function(L){ var v=L.values.filter(function(x){return x!=null;}); return v[v.length-1]; });
       var medEnd = medianOf(ends) || 100, maxEnd = Math.max.apply(null, ends);
       var clampTo = (maxEnd/medEnd > 4) ? medEnd*4 : null;
+      // The endpoint-only ratio above can't see a single anomalous
+      // MID-series point (a duplicated vendor row, the exact class
+      // renderGrowth guards against with robustClampMag on the identical
+      // revenue arrays): both endpoints look ordinary, no clamp fires, but
+      // the plotted domain still spans the spike, squashing every
+      // well-behaved line with zero disclosure (2026-08-26 review round
+      // 19, vs Peers finding #2). Run the same whole-series isolation test
+      // here; when it clamps tighter than the endpoint ratio (or the
+      // ratio didn't fire at all), its ceiling wins.
+      var midMag = robustClampMag(lines.map(function(L){ return L.values; }), medEnd*4, 4);
+      if(midMag!=null && (clampTo==null || midMag < clampTo)) clampTo = midMag;
       // Every other chart in the kit picks its viewBox from the width it will
       // render at; this one was hard-coded to 600 and scaled to 0.59 on a
       // phone, putting its axis text at 6.5px.
@@ -13474,7 +13687,12 @@ function renderPeersInto(body, sym, res, seq){
       var svg2 = axisChartSVG(axis, lines, {kind:"num", W: narrowP?360:600, H: narrowP?250:220,
                                             endLabels:true, clamp:clampTo, perLabels:perLabels});
       if(svg2){
-        var runaway = clampTo!=null ? lines.filter(function(L, li){ return ends[li] > clampTo; }).map(function(L){ return L.name; }) : [];
+        // ANY point past the clamp (a mid-series spike included), not just
+        // the endpoint — the mid-series clamp above can fire on a line
+        // whose endpoint looks ordinary (round 19, vs Peers finding #2).
+        var runaway = clampTo!=null ? lines.filter(function(L){
+          return L.values.some(function(v){ return v!=null && v>clampTo; });
+        }).map(function(L){ return L.name; }) : [];
         // `sources` was computed above (sidecar vs scanner per peer) but this
         // note stayed the generic "sidecar where the desk has one" sentence
         // regardless of what actually got used — a chart mixing a
@@ -14631,7 +14849,21 @@ function tick(){
   attemptMacroTiles();
   // The heatmap refreshes on the same 2-minute cadence as data.json, and
   // only while it is actually on screen — a hidden map polls nothing.
-  if(STAGE.view==="heat" && now - HEAT.lastFetch >= DATA_POLL_MS - 500) heatRender(true);
+  // The gate reads the CURRENT universe's own last-attempt timestamp, never
+  // the shared success-only one: a failure used to leave lastFetch behind
+  // so this refired on every 30-second tick (4x the healthy cadence, with
+  // no cap), and one universe's success timestamp suppressed another's
+  // recovery (2026-08-26 review round 19, heatmap findings #1/#3). While
+  // failing, retries back off 30s→60s→…→5min, mirroring FETCH_STATE's own
+  // backoff for the identical vendor-failing-repeatedly problem; a success
+  // resets to the normal 2-minute cadence.
+  if(STAGE.view==="heat"){
+    var hU = HEAT.univ, hAtt = HEAT.lastAttempt[hU]||0;
+    var hWait = HEAT.lastFetchFailed[hU]
+      ? Math.min(300000, 30000*Math.pow(2, Math.max(0,(HEAT.fails[hU]||1)-1)))
+      : DATA_POLL_MS - 500;
+    if(now - hAtt >= hWait) heatRender(true);
+  }
   // Same rule for the intraday file: refetch it only while an intraday view
   // is actually on screen, and only once its five-minute window has passed.
   if(STAGE.view==="chart" && STAGE.sym && INTRA_CACHE
