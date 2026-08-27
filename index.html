@@ -6632,12 +6632,15 @@ function stageInit(){
   // lastValueVisible off (2026-08-19): the three MA badges stacked on the
   // right edge over the S/R title, the next-earnings marker and an axis tick.
   // Their values already sit in the legend under the chart, with the % vs
-  // price the badge never carried.
-  var maOpts = { priceLineVisible:false, crosshairMarkerVisible:false, lastValueVisible:false,
+  // price the badge never carried. title is blank too (2026-08-27, Zach's
+  // mobile report on AAOI): lastValueVisible:false only drops the NUMBER —
+  // the library still floats a plain title-only pill ("20d"/"50d"/"200d")
+  // onto the pane for any titled series, same bug the BB bands carried.
+  var maOpts = { priceLineVisible:false, crosshairMarkerVisible:false, lastValueVisible:false, title:"",
                  autoscaleInfoProvider: function(){ return null; } };
-  STAGE.s.ma20 = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({ lineWidth:1, title:"20d" }, maOpts));
-  STAGE.s.ma50 = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({ lineWidth:1, title:"50d" }, maOpts));
-  STAGE.s.ma200 = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({ lineWidth:2, title:"200d" }, maOpts));
+  STAGE.s.ma20 = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({ lineWidth:1 }, maOpts));
+  STAGE.s.ma50 = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({ lineWidth:1 }, maOpts));
+  STAGE.s.ma200 = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({ lineWidth:2 }, maOpts));
   STAGE.markersApi = LWC.createSeriesMarkers(STAGE.s.candle, []);
   // Vertical zoom (Zach 2026-08-19: "scrolling over the price to the far right
   // should expand/contract the candles vertically"). The library has no
@@ -11167,11 +11170,18 @@ function stageTA(){
       loData.push({time:times[bi], value:maBB[bi]-BB_MULT*sdBB[bi]});
     }
     if(midData.length){
+      // title is deliberately blank on all three (2026-08-27, Zach's mobile
+      // report on AAOI): lastValueVisible:false only suppresses the NUMERIC
+      // last-value box, but the library still floats a plain title-only pill
+      // ("BB mid"/"BB upper"/"BB lower") onto the pane wherever a titled
+      // series has one — even with no value attached and no axis label
+      // requested. The dotted band lines themselves are unaffected; only the
+      // stray title pills are gone.
       var bbLineOpts = {color:cssVar("--bb"), lineWidth:1, priceLineVisible:false,
-        crosshairMarkerVisible:false, lastValueVisible:false, autoscaleInfoProvider:function(){ return null; }};
-      STAGE.s.bbMid = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({lineStyle:LWC.LineStyle.Dotted, title:"BB mid"}, bbLineOpts));
-      STAGE.s.bbUpper = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({title:"BB upper"}, bbLineOpts));
-      STAGE.s.bbLower = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({title:"BB lower"}, bbLineOpts));
+        crosshairMarkerVisible:false, lastValueVisible:false, title:"", autoscaleInfoProvider:function(){ return null; }};
+      STAGE.s.bbMid = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({lineStyle:LWC.LineStyle.Dotted}, bbLineOpts));
+      STAGE.s.bbUpper = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({}, bbLineOpts));
+      STAGE.s.bbLower = STAGE.chart.addSeries(LWC.LineSeries, Object.assign({}, bbLineOpts));
       STAGE.s.bbMid.setData(midData);
       STAGE.s.bbUpper.setData(upData);
       STAGE.s.bbLower.setData(loData);
