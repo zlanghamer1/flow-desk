@@ -1855,7 +1855,18 @@ function preMarketBar(live, prevClose){
 function dispQuote(q){
   if(!q) return {px:null, ch:null, tag:null, ext:null, prev:false};
   var s = priceSessionNow();
-  if(s==="premarket" && q.prepx!=null && q.prech!=null) return {px:q.prepx, ch:q.prech, tag:"PRE", ext:null, prev:false};
+  // Gated on prepx ALONE, matching candleClose/preMarketBar — the three
+  // functions read the same LIVE object and candleClose's own comment
+  // asserts they test the same condition, but this branch additionally
+  // required prech, so a prepx-without-prech quote (a vendor shape that
+  // can occur when the prior close needed to derive the percentage is
+  // itself missing) made a ticker's own chart draw a real pre-market
+  // candle while its rail row said "no pre-market print yet" and fed PREV
+  // into MOVERS/the sorts (2026-08-26 review round 19 resumed run,
+  // watchlist finding #1). A null prech renders as a price with no
+  // percentage — "change unavailable" — never yesterday's change beside
+  // this morning's price.
+  if(s==="premarket" && q.prepx!=null) return {px:q.prepx, ch:(q.prech!=null?q.prech:null), tag:"PRE", ext:null, prev:false};
   if(s==="premarket"){
     // No pre-market print — a thin wrapper, an index, or simply no trade yet.
     // The only percentage available is YESTERDAY's regular session, and shown
@@ -3913,7 +3924,12 @@ function renderWL(){
         // multiple that stopped moving with no sign it is frozen (2026-08-22
         // review, watchlist finding #1).
         var stale = liveStale(s);
-        return '<span class="hm2">'+esc(s)+' '+hotOf(s).toFixed(1)+'×</span> <span class="m">('
+        // data-sym triad on the ticker mention itself — MOVERS and the
+        // shopping list were the one remaining place on the page a ticker
+        // mention wasn't a click/keyboard target, while the identical
+        // symbol two inches below in the row list was a working button
+        // (2026-08-26 review round 19 resumed run, watchlist finding #2).
+        return '<span class="hm2" data-sym="'+esc(s)+'" role="button" tabindex="0" style="cursor:pointer">'+esc(s)+' '+hotOf(s).toFixed(1)+'×</span> <span class="m">('
           +(d.tag?esc(d.tag)+" ":"")+fm1(d.ch)+'% vs '+(f.avg_move!=null?f.avg_move:"—")+'% usual)</span>'
           + (stale ? ' <span class="m" data-tip="price feed for this name has not answered recently — this reading may be frozen">STALE</span>' : '');
       // The overflow note is gated and counted off `hot` — the SAME array
@@ -3959,7 +3975,9 @@ function renderWL(){
                     var reading = (st4.px!=null && st4.lo!=null && st4.px < st4.lo)
                       ? '<b class="d" data-tip="Trading below the vendor’s published 52-week low right now — a new low, not just near the old one.">new low</b>'
                       : '<span class="m">'+Math.round(st4.pos*100)+'%</span>';
-                    return esc(s)+' '+reading
+                    // Same data-sym triad as MOVERS above (round 19 resumed
+                    // run, watchlist finding #2).
+                    return '<span data-sym="'+esc(s)+'" role="button" tabindex="0" style="cursor:pointer">'+esc(s)+'</span> '+reading
                       + (stale ? ' <span class="m" data-tip="price feed for this name has not answered recently — this reading may be frozen">STALE</span>' : '');
                   }).join(" · ") : "not enough range data yet")
                 // MOVERS discloses its own cap with a "+N more — sort by hot"
@@ -7867,7 +7885,10 @@ function renderFundamentals(sym, fund){
   var noEarnings = (num(f.pe)==null && ttmEps!=null && ttmEps<=0);
   var pegText = pegVal!=null ? (numStr(pegVal) + (pegDerived ? ' <span class="fsub">derived</span>' : ""))
     : (noEarnings ? '<span data-tip="'+esc("PEG cannot exist here: "+sym+"\u2019s trailing twelve-month earnings are negative ("
-        + ttmEps.toFixed(2)+" a share), so there is no P/E to divide and no growth rate to divide it by. Judge this name on revenue growth, "
+        // numStr, not toFixed \u2014 the U+2212 minus-sign convention every
+        // other formatter carries (2026-08-26 review round 19 resumed run,
+        // financials finding #2).
+        + numStr(ttmEps)+" a share), so there is no P/E to divide and no growth rate to divide it by. Judge this name on revenue growth, "
         + "margins and forward P/E instead \u2014 all on this page. A number here would be fiction.")+'">— <span class="fsub">no trailing earnings</span></span>'
       : '<span data-tip="'+esc("TradingView reports no PEG for "+sym+" and the desk could not derive one: that needs a positive P/E and positive "
         + "trailing-twelve-month EPS growth from the reported quarters.")+'">—</span>');
@@ -7886,7 +7907,8 @@ function renderFundamentals(sym, fund){
                  : (pePpy===1) ? "reported year"
                  : (pePpy!=null && pePpy!==4) ? (pePpy+" reported periods")
                  : "four reported quarters";
-    peText = '<span data-tip="'+esc("No trailing P/E: "+sym+" earned "+ttmEps.toFixed(2)+" a share over the last "+peWindow+". "
+    // numStr, not toFixed — same round-19 minus-sign fix as the PEG tooltip.
+    peText = '<span data-tip="'+esc("No trailing P/E: "+sym+" earned "+numStr(ttmEps)+" a share over the last "+peWindow+". "
       + "A P/E on negative earnings is meaningless, so the vendor omits it. The forward P/E beside this cell is the analyst estimate for next year.")
       + '">— <span class="fsub">loss-making (ttm)</span></span>';
   }
@@ -8838,6 +8860,15 @@ function renderGrowth(sym, fund){
     // EPS-only check flagged that as a duplicate (2026-08-22 review,
     // financials finding #1, round-8 correction).
     var dupPeriods = [];
+    // Index set alongside the label list: the YoY chart below nulls any
+    // value whose DENOMINATOR is one of these periods. The duplicate bug
+    // duplicates its own "trend neighbor," so robustClampMag's isolation
+    // test structurally can't catch the fabricated YoY spikes it produces
+    // (CBRS live: two dup pairs, both YoY bars computing +1474% next to
+    // real 45-95% ones), and yoyDenomDiscontinuous can't either — the
+    // duplicate makes the neighbor ratio exactly 1.0 (2026-08-26 review
+    // round 19 resumed run, financials finding #1).
+    var dupIdx = {};
     if(Array.isArray(q.revenue) && Array.isArray(q.eps)){
       var dupLen = Math.min(q.revenue.length, q.eps.length);
       for(var di=1; di<dupLen; di++){
@@ -8846,6 +8877,7 @@ function renderGrowth(sym, fund){
         if(ra!=null && rb!=null && ra===rb && ea!=null && eb!=null && ea===eb){
           var lbl = (q.labels[di-1]||"?")+" / "+(q.labels[di]||"?");
           if(dupPeriods.indexOf(lbl)===-1) dupPeriods.push(lbl);
+          dupIdx[di-1] = true; dupIdx[di] = true;
         }
       }
     }
@@ -8950,12 +8982,20 @@ function renderGrowth(sym, fund){
       return nb.every(function(n){ var r = ad/Math.abs(n); return r>8 || r<0.125; });
     }
     var yoyDiscontinuity = false;
+    var yoyDupDenom = false;
     // No YoY math at all when the filing cadence never resolved — a
     // year-over-year comparison against a guessed year length is a wrong
     // number, not a chart (2026-08-26 review round 17, financials
     // finding #3). The cadenceWord header above already says why.
     var yoyAll = (ppyRaw==null) ? [] : q.labels.map(function(_, i){
       if(i>=ppy && yoyDenomDiscontinuous(i-ppy)){ yoyDiscontinuity = true; return null; }
+      // A denominator that is one half of a detected duplicated vendor row
+      // is compromised: the growth it implies (CBRS's +1474%) is a fetch
+      // artifact, and no clamp can catch it because the duplicate vouches
+      // for itself as a "trend neighbor" (round 19 resumed run, financials
+      // finding #1). Null, never guessed — same posture as
+      // yoyDenomDiscontinuous one line up.
+      if(i>=ppy && dupIdx[i-ppy]){ yoyDupDenom = true; return null; }
       return yoyPct(revNums, i, ppy);
     });
     var yoy = yoyAll.slice(ppy), yoyLabels = q.labels.slice(ppy);
@@ -8973,6 +9013,7 @@ function renderGrowth(sym, fund){
             clamp: yoyMag, clampLo: yoyMag!=null ? -yoyMag : null})
         + chartLegendHTML(yoyDef, fmtAxisPct, yoyLabels)
         + (yoyDiscontinuity ? '<div class="note">One or more quarters here are compared against a prior-year quarter whose revenue scale is wildly out of line with its own neighbors — likely a different business scope (a spinoff or restructuring) rather than a real move. Left blank instead of shown as a number.</div>' : '')
+        + (yoyDupDenom ? '<div class="note">One or more quarters here would be compared against a prior-year period the vendor appears to have DUPLICATED in its fetch (identical revenue and EPS across back-to-back periods — see the note at the bottom of this tab). The growth number that comparison implies is an artifact, so it is left blank instead of shown.</div>' : '')
         + '</div>';
     }
     if(Array.isArray(q.eps) && q.eps.some(function(v){ return num(v)!=null; })){
@@ -10072,7 +10113,21 @@ function taFitLine(rows, piv, side, sym, kPiv){
       if(age != null && age > taFreshBars()){ gate.stale++; continue; }
       var rank = {BREAKOUT:5, RETEST:4, INTACT:3, FAILED:1}[status];
       var score = rank*10 + touches*3 + (xb-xa)/20 - (N-1-xb)/40;
-      if(!best || score>best.score) best={xa:xa,xb:xb,ya:ya,yb:yb,slope:slope,touches:touches,
+      // A FAILED line never displaces a currently-valid candidate, whatever
+      // its touch count: touches*3 could overcome FAILED's 20-point rank
+      // gap to INTACT at roughly +7 touches, so a heavily-touched
+      // historical level whose break already failed could be the ONLY line
+      // shown for its side while a fresh, tradeable INTACT/BREAKOUT line
+      // was silently discarded. FAILED still wins when it is the sole
+      // candidate for the side — "here's the level that broke" has caption
+      // value on its own (2026-08-26 review round 19 resumed run, auto-TA
+      // finding #2).
+      var bestFailed = !!(best && best.status==="FAILED");
+      var candFailed = (status==="FAILED");
+      var better = !best
+        || (bestFailed && !candFailed)
+        || ((bestFailed===candFailed) && score>best.score);
+      if(better) best={xa:xa,xb:xb,ya:ya,yb:yb,slope:slope,touches:touches,
                                           score:score, bo:bo, dist:dist, lineNow:lineNow,
                                           status:status, age:age, side:side,
                                           backAfter:backAfter, sinceBars:sinceBars,
@@ -11391,7 +11446,33 @@ function taRegrade(fit, lastClose){
   var near = (side===1) ? (lastClose >= fit.lineNow*(1-retestNear))
                         : (lastClose <= fit.lineNow*(1+retestNear));
   if(backOver && age <= taFreshBars() && near) out.status = "RETEST";
-  else if(backOver) out.status = "FAILED";
+  else if(backOver){
+    out.status = "FAILED";
+    // Settled vs live: the FAILED caption's "then closed back ... the
+    // break failed" is a past-tense, settled claim, but lastClose here is
+    // the live-patched intraday price whenever the last bar is still
+    // forming — mid-session, a gap back through the line read as "closed
+    // back" with 5 hours left to reverse, while the BREAKOUT branch two
+    // cases down already carried liveBreak/excludesToday care for the
+    // identical live-vs-settled distinction (2026-08-26 review round 19
+    // resumed run, auto-TA finding #1). failedLive is true when only the
+    // live unsettled price is back over — the last SETTLED close was
+    // still on the break side — so the caption can say "is trading back
+    // ... the break is failing" instead.
+    out.failedLive = false;
+    if(STAGE.synthetic && Array.isArray(STAGE.rows) && STAGE.rows.length>=2 && fit.winOff!=null){
+      var sIdx = STAGE.rows.length-2;
+      var sClose = num(STAGE.rows[sIdx] && STAGE.rows[sIdx][3]);
+      var sLine = fit.ya + fit.slope*((sIdx - fit.winOff) - fit.xa);
+      if(sClose!=null && sLine>0){
+        var settledBack = (side===1) ? (sClose <= sLine) : (sClose >= sLine);
+        out.failedLive = !settledBack;
+      } else {
+        // Can't prove a settled reversal — never claim one.
+        out.failedLive = true;
+      }
+    }
+  }
   else if(past > maxExt || age > taFreshBars()) out.status = "EXTENDED";
   else out.status = "BREAKOUT";
   // The session counters were computed once, at fit time, and printed
@@ -11599,8 +11680,15 @@ function stageTALegend(prefs){
       // and the outcome.
       var thru = (fit.side===2) ? "down through" : "up through";
       var back = (fit.side===2) ? "back above it" : "back below it";
+      // failedLive: only the live, unsettled price is back over the line
+      // (the last settled close was still on the break side) — present
+      // tense, mirroring the BREAKOUT branch's own liveBreak wording; the
+      // session could still close back on the break side (2026-08-26
+      // review round 19 resumed run, auto-TA finding #1).
       bits += ', broke '+thru+' '+fmtpx(fit.lineNow)+' on '+(fit.breakLabel||"an earlier bar")
-            + ', then closed '+back+' — the break failed'
+            + (fit.failedLive
+                ? (', and is trading '+back+' — the break is failing (the session has not closed)')
+                : (', then closed '+back+' — the break failed'))
             + (fit.dist!=null ? (' (now '+Math.abs(fit.dist*100).toFixed(1)+'% '
                 + (overhead ? "overhead" : "below")+')') : '');
     } else if(fit.status === "EXTENDED"){
@@ -12088,7 +12176,16 @@ function heatClampFrom(rows, tf){
   rows.forEach(function(r){ var v=num(r.chg[tf]); if(v!=null) mags.push(Math.abs(v)); });
   if(mags.length < 8) return floor;
   mags.sort(function(a,b){ return a-b; });
-  var p90 = mags[Math.min(mags.length-1, Math.floor(mags.length*0.90))];
+  // Real interpolated percentile, never a bare floor() index —
+  // floor(n*0.90) IS the maximum index for n of 8-10, so a Desk map
+  // trimmed to that many valid readings (hide most names via wlHidden)
+  // set "full color" to the single biggest mover and rendered every
+  // ordinary tile near-neutral (2026-08-26 review round 19 resumed run,
+  // heatmap finding #2). Index (n-1)*0.90, linear between the two
+  // straddling sorted values.
+  var pIdx = (mags.length-1)*0.90;
+  var pLo = Math.floor(pIdx), pHi = Math.ceil(pIdx);
+  var p90 = mags[pLo] + (mags[pHi]-mags[pLo])*(pIdx-pLo);
   var c = Math.max(floor, p90);
   var step = c>=50 ? 10 : c>=20 ? 5 : c>=8 ? 2 : 1;
   return Math.max(floor, Math.round(c/step)*step);
@@ -12584,6 +12681,13 @@ function heatRender(refetch){
       var a = document.activeElement;
       if(!a || !wrap.contains(a)) return null;
       if(a.dataset && a.dataset.hsec!=null) return '.hm-sechead[data-hsec="'+a.dataset.hsec.replace(/"/g,'\\"')+'"]';
+      // A focused TILE, not just a sector header — the 2-minute background
+      // refetch, a resize, or a theme flip rebuilds this wrap, and a
+      // keyboard user 20+ tab stops into the map was silently kicked back
+      // to <body> while a focused sector header survived the identical
+      // rebuild (2026-08-26 review round 19 resumed run, heatmap
+      // finding #1).
+      if(a.dataset && a.dataset.sym!=null) return '.hm-tile[data-sym="'+a.dataset.sym.replace(/"/g,'\\"')+'"]';
       return null;
     })();
     wrap.innerHTML = '<div class="heatmsg" id="heatmsg" hidden></div>' + html;
