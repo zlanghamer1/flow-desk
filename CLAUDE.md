@@ -2877,5 +2877,72 @@ non-obvious decisions:
   change, "Click to chart it."), matching the four index tiles beside
   them — only the no-quote branch had one before.
 
+## Guardrails added 2026-08-27, round-19 resumed run (8 verified findings, all fixed) — REVIEW CYCLE CLOSED
+
+The `resumeFromRunId` recovery of round 19's dead Auto-TA section re-ran
+all nine reviewers against the already-fixed code — effectively a fresh
+scoring pass. **Every completed section scored 87-100 anchored; the
+script's own verdict was "below 80: none," meeting Zach's 2026-08-26
+finish line.** Zach then closed the cycle (2026-08-27: "after this pass
+stop, approaching weekly limits") — **do not launch round 20 without a
+fresh ask.** Caveat recorded in `docs/OPEN_ITEMS.md`: 12 verify agents
+died on the org usage limit, so 11 findings across vs Peers / panels /
+flow boards / data honesty were never adversarially verified; those four
+sections' 100s mean "no VERIFIED findings," and the unverified list is
+preserved there for a future session. The 8 verified findings were all
+fixed same day. Non-obvious decisions:
+
+- **`taRegrade`'s FAILED verdict distinguishes a settled reversal from a
+  live one (`fit.failedLive`).** `lastClose` is the live-patched intraday
+  price whenever the last bar is forming, so "then closed back above it —
+  the break failed" was a past-tense settled claim printed mid-session
+  about a move with hours left to reverse — while the BREAKOUT branch two
+  cases down already carried liveBreak/excludesToday care for the
+  identical distinction. failedLive is true when the last SETTLED close
+  was still on the break side (checked against the line's value at that
+  bar, the same formula the session recount uses); the caption then reads
+  present-tense "is trading back above/below it — the break is failing
+  (the session has not closed)". When the settled close can't be read,
+  failedLive defaults TRUE — never claim a settled reversal you can't
+  prove.
+- **A FAILED line never displaces a currently-valid candidate in
+  `taFitLine`'s selection, whatever its touch count.** touches*3 could
+  overcome FAILED's 20-point rank gap to INTACT at roughly +7 touches, so
+  a heavily-touched historical level whose break already failed could be
+  the ONLY line shown for its side while a fresh tradeable line was
+  silently discarded. FAILED still wins as the sole candidate — "here's
+  the level that broke" has caption value on its own.
+- **`dispQuote`'s PRE branch gates on `prepx` alone now, matching
+  candleClose/preMarketBar** — it additionally required `prech`, so a
+  prepx-without-prech vendor shape made a ticker's own chart draw a real
+  pre-market candle while its rail row said "no print yet" and fed PREV
+  into MOVERS/the sorts. A null prech renders as a price with no
+  percentage — never yesterday's change beside this morning's price.
+  (Verifier's note: the reachability of that vendor shape is unproven
+  live — the fix removes an internal contradiction between two functions
+  whose own comments claim parity.)
+- **MOVERS and shopping-list ticker mentions carry the data-sym/role/
+  tabindex triad** — the one remaining place on the page a ticker mention
+  wasn't a click/keyboard target.
+- **A YoY value whose DENOMINATOR is half of a detected duplicated vendor
+  row is nulled (`dupIdx`), with its own caption note.** CBRS live: two
+  dup pairs producing two +1474% bars next to real 45-95% ones.
+  Structurally uncatchable by the clamps: the duplicate vouches for
+  itself as robustClampMag's "trend neighbor," and yoyDenomDiscontinuous
+  reads the neighbor ratio as exactly 1.0. Same null-never-guess posture
+  as yoyDenomDiscontinuous, one line up.
+- **The loss-making P/E and PEG tooltips route `ttmEps` through
+  `numStr()`** — the fifth formatter site caught printing a raw ASCII
+  hyphen where the page's U+2212 convention applies.
+- **`_wrapFocusKey` restores a focused heatmap TILE by `data-sym`, not
+  just a sector header** — the 2-minute background refetch rebuilt the
+  wrap and kicked a keyboard user 20+ tab stops back to <body>.
+- **`heatClampFrom` uses an interpolated percentile (index (n-1)*0.90,
+  linear between straddling values)** — `floor(n*0.90)` IS the maximum
+  index for n of 8-10, so a Desk map trimmed that far via wlHidden set
+  "full color" to the single biggest mover and rendered every ordinary
+  tile near-neutral. Reachable on the Desk universe only (the index maps
+  always carry hundreds of readings).
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.

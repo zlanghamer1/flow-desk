@@ -250,6 +250,48 @@ real, listed ticker as "dropped (nothing listed)". All 21 fixed the same
 day (fetcher: the ceiling fix + 4 new tests, 337 passing; the rest
 frontend). Non-obvious decisions: CLAUDE.md's round-19 section.
 
+### Round 19 resumed run (same day) — every completed section 87-100, NONE below 80
+
+The `resumeFromRunId` recovery re-ran all nine reviewers live against the
+ALREADY-FIXED code (only one agent replayed from cache), so it is
+effectively a fresh scoring pass on the post-fix page:
+
+| Section | Anchored | Confirmed (verified) |
+|---|---|---|
+| Chart Stage | **100** | 0 (both round-19 findings re-verified as fixed) |
+| vs Peers | **100** | 0* |
+| Right rail panels | **100** | 0* |
+| Flow boards | **100** | 0* |
+| Data Honesty | **100** | 0* (the Filter-2 blocker re-verified as fixed) |
+| Auto-TA | **87** | 1 major, 1 minor |
+| Left watchlist rail | **87** | 1 major, 1 minor |
+| Financials | **87** | 1 major, 1 minor |
+| Sector Heatmap | **87** | 1 major, 1 minor |
+
+The script's own verdict: **below 80 (anchored): none** — Zach's
+2026-08-26 finish line ("80+ score on all") is met on this run. All 8
+verified-confirmed findings were fixed the same day (all frontend; 337
+fetcher tests still pass): the FAILED-break caption's past-tense "closed"
+on a live unsettled price, taFitLine preferring a FAILED line over a
+valid one, dispQuote's stricter-than-candleClose pre-market gate,
+unclickable MOVERS/shopping-list tickers, CBRS's duplicated-vendor-row
++1474% YoY bar, the raw-hyphen loss-making tooltips, heatmap tile focus
+lost on the 2-minute rebuild, and heatClampFrom's percentile degenerating
+to the maximum at 8-10 readings.
+
+(*) Asterisked sections: 12 verify agents died on the org usage limit
+mid-run, so 11 reviewer findings in those four sections were never
+adversarially verified — under the anchored ruling (confirmed findings
+only) they score 100, but the honest reading is "no VERIFIED findings,"
+not "no findings." They are listed in the run output
+(`nine-section-review.js` journal, run wf_51a14fa6-13f) if a future
+session wants to re-verify: bars.json staleness disclosure,
+boardCoverageHTML's explanation, PEERS_INFLIGHT hang recovery, ROE peer
+wiring, backdrop-reading jargon, the lamp's double tooltip, and five
+more. Zach called the review cycle DONE after this pass (2026-08-27,
+"after this pass stop, approaching weekly limits") — do not launch
+round 20 without a fresh ask.
+
 ---
 
 ## Open — in the order they are worth doing
