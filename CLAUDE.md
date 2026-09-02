@@ -2846,5 +2846,90 @@ the list is preserved in `docs/OPEN_ITEMS.md`.
   tile near-neutral. Reachable on the Desk universe only (the index maps
   always carry hundreds of readings).
 
+## UX-laws redesign (2026-09-02)
+
+Zach's ask: evaluate the Desk against the "20 UX laws" cheat sheet, redesign
+to implement them, and have adversarial agents scrutinize the result. Plan
+and law-by-law audit: `docs/superpowers/plans/2026-09-02-ux-laws-redesign.md`.
+Frontend-only (`index.html`), no fetcher change, no payload change, no
+disclosure moved or softened. Rules the pass produced:
+
+- **A type floor of 10px, 10.5px for anything that labels data.** The live
+  page carried 114 text elements at 9-10px on one 1440px screen. Eyebrows,
+  section titles, table headers, chips and notes all moved up; no WORD sits
+  under 9.5px (pills and the catalyst weekday label are 9.5px; everything
+  else 10px+). Named exceptions, all icon glyphs rather than words: the
+  brand's own sub-mark (9px), the ◆ news-ticker separators and ▼ sort
+  arrows / expander carets (8px), and the ▼ section carets (9px).
+- **The chart toolbar is three LABELED groups** (`data-lbl` on `.seg`:
+  interval / range / overlays — the same words as the groups' aria-labels).
+  Interval and Range are radio groups and keep the filled pressed style;
+  Overlays is `.seg.tog` and its buttons render a small SQUARE that fills
+  when on — the checkbox convention. A circle was tried and rejected: it
+  borrows the radio convention for a multi-select group, and the page
+  already uses dots for sector flows (`.iodot`) and the market lamp. The
+  button ids, data attributes and handlers are unchanged. **`.stagebar
+  .seg` wraps** (`flex-wrap:wrap;max-width:100%`): at 390px the labeled
+  overlay group ran 26px past the screen and `.seg{overflow:hidden}` cut
+  the GEX button off with no scroll path.
+- **Direction pills are OUTLINE; FIRING and NEW are the only filled badges
+  on a board** (Von Restorff). `.pill.b/.s` keep their ink color, so the
+  color channel and the text are unchanged; only the fill went.
+- **Dotted tooltip underlines inside table cells, quick reads, footnotes and
+  key/value rows show on row hover or focus, not permanently.** Headers,
+  chips and rail labels keep the permanent underline so the affordance stays
+  learnable. Every tooltip still opens on hover and focus.
+- **`ageWordsHTML` appends "· N min ago" to every as-of chip** (Zeigarnik).
+  `stampMs` parses both stamp shapes the page prints (ISO, and the loop's
+  "YYYY-MM-DD HH:MM CT"). It is silent past 24h; a stamp up to 15 minutes
+  "in the future" reads "just now" (an unsynced viewer clock, not a future
+  stamp). `.bc{white-space:nowrap}` so the chip never breaks across two
+  lines on a crowded board header. Known and accepted: the CT wall-clock
+  parse takes Chicago's offset from NOW, so a stamp read across a DST
+  switch is off by one hour for that night.
+- **Board Name cells put the live price on its own line** (`.livepx`
+  display:block) so the Conviction table fits its column at 1440px instead
+  of cutting "Loudest contract" mid-word (closure). Chips never break
+  mid-chip (`.chasef,.pill{white-space:nowrap}`).
+- **On phones the boards' last cell keeps a 26ch floor and the board scrolls
+  inside `.xwrap`.** The 77px wrapping cell made every Swing row 181px tall.
+  Desktop Swing gets a 34ch floor for the same reason (an overflowing table
+  hands a wrapping cell its minimum width).
+- **`.wl,.rr{min-width:0}`.** Grid items default to min-width:auto, and a
+  nowrap child in a rail widened the single-column phone grid to 592px in a
+  390px screen — the page scrolled sideways on every phone. Measured before
+  and after.
+- **The watchlist sort is one native `<select>` (`#wlsel`) plus edit**
+  (Hick, Jakob). Same keys, same `desk.wl.sort` storage. **It renders into
+  `#wlsortbox`, a sibling of `#wl`, rebuilt only when its markup changes**
+  — `#wl` is rewritten every 30 seconds and a native select whose element
+  is replaced closes under the reader's thumb (adversarial review). The
+  explanation for the CURRENT sort prints in one line under the control
+  (`.wlsortnote`); a native dropdown cannot show a tooltip per option, so
+  the six explanations were not folded into one long tooltip either.
+- **Bollinger alerts render one ticker per row (`.bbl > .bbr`)**, ticker in
+  the band color, reason in plain ink, each row a `data-sym` click/keyboard
+  target (Miller). The reason is short enough for one line in the 248px
+  rail ("touched, back inside"); the full sentence is the ROW's own
+  `data-tip` (the click delegate permits a tip on the row itself, never on
+  a child). The "+N more" line is a plain status line, not a `.bbr`, so
+  nothing that looks clickable is dead. Lower-band rows still lead and
+  still carry weight; the one-color-for-both-directions rule stands.
+- **Loading states move**: `stageMsg` appends a `.busybar` for in-progress
+  strings only; boards boot with shimmer rows. Both stop under
+  `prefers-reduced-motion`.
+- **The 5-metric framework draws a five-segment `.fwstrip`** above its rows
+  (goal-gradient), `aria-hidden`, built from the same per-filter states as
+  the rows. A building segment carries an `--ink3` inset ring: flat `--edge`
+  on `--srf2` measured 1.13:1 and vanished on every all-building name.
+- **The honesty box is a three-column grid (Freshness / Sources / Limits) at
+  11.5px** with every sentence kept verbatim (peak-end). The attribution
+  line stays as its own credit row.
+- **A focused ticker's tape tile carries `.foc`** like its rail row and
+  board rows (uniform connectedness).
+- Considered and NOT done: a score-band ladder under each board; cutting
+  Swing below the score-60 shortlist (a ruling, not a default); hiding the
+  contract column on phones (the 2026-08-22 review restored it on purpose).
+
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
