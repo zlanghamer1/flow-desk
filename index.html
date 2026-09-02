@@ -116,7 +116,7 @@ a{color:var(--acc);text-decoration:none}
   color:var(--ink2);text-decoration:none;min-height:26px}
 a.nt-item:hover{color:var(--ink)}
 .nt-item .tk{font-size:9.5px;font-weight:700;color:var(--acc)}
-.nt-item .tm{font-size:9px;color:var(--ink3)}
+.nt-item .tm{font-size:10px;color:var(--ink3)}
 .nt-sep{color:var(--ink3);opacity:.5;font-size:8px;padding-right:14px}
 @media (prefers-reduced-motion: reduce){
   .nt-track{animation:none}
@@ -189,6 +189,11 @@ a.nt-item:hover{color:var(--ink)}
    the Morning Brief and the sector-rotation table, not just catalysts/news. */
 .cols{display:grid;grid-template-columns:248px minmax(0,1fr) 372px}
 .wl{border-right:1px solid var(--edge)}
+/* Grid items default to min-width:auto, so any nowrap child in either rail
+   could widen the single-column phone grid past the viewport (measured:
+   592px of layout in a 390px screen). Both rails may shrink below their
+   content's min width; .mid already did (UX-laws redesign, 2026-09-02). */
+.wl,.rr{min-width:0}
 /* The rail used to be laid out static in a 7,300px document, so the
    watchlist scrolled off after the first third of the page and the column
    sat empty while the boards were read. It now sticks under the top rail and
@@ -218,11 +223,11 @@ a.nt-item:hover{color:var(--ink)}
 /* ============ sections ============ */
 section{border-bottom:1px solid var(--edge)}
 .sh{
-  display:flex;align-items:baseline;gap:10px;padding:9px 14px 8px;cursor:pointer;user-select:none;
+  display:flex;align-items:baseline;gap:10px;padding:10px 14px 9px;min-height:36px;cursor:pointer;user-select:none;
 }
 .sh:hover{background:var(--sel)}
-.sh h2{font-size:10.5px;letter-spacing:.14em;color:var(--ink2);font-weight:700;text-transform:uppercase}
-.sh .st{margin-left:auto;font-size:10px;color:var(--ink3)}
+.sh h2{font-size:11.5px;letter-spacing:.12em;color:var(--ink2);font-weight:700;text-transform:uppercase}
+.sh .st{margin-left:auto;font-size:10.5px;color:var(--ink3)}
 .sh .car{color:var(--ink3);font-size:9px;transition:transform .15s}
 section.closed .car{transform:rotate(-90deg)}
 section.closed .sb{display:none}
@@ -230,7 +235,7 @@ section.closed .sb{display:none}
 @media (prefers-reduced-motion: reduce){ .sh .car{transition:none} }
 
 /* ============ watchlist rail ============ */
-.wg{padding:8px 14px 3px;font-size:9.5px;letter-spacing:.13em;color:var(--ink3);font-weight:700}
+.wg{padding:8px 14px 3px;font-size:10px;letter-spacing:.13em;color:var(--ink3);font-weight:700}
 .wr{display:block;padding:6px 14px 4px;cursor:pointer;border-left:2px solid transparent}
 .wr:hover{background:var(--sel)}
 .wr.foc{border-left-color:var(--acc);background:var(--sel)}
@@ -243,13 +248,13 @@ section.closed .sb{display:none}
    32px, and it is how a real watchlist reads anyway. */
 .wr .l2{display:flex;align-items:baseline;gap:6px;margin-top:1px}
 .wr .sy{font-weight:700;font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wr .meta{font-size:9px;color:var(--ink3);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wr .meta{font-size:10px;color:var(--ink3);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Its own flex child, never inside .meta's own ellipsis span — a long
    searched-ticker company name (unlike pinned names' hand-shortened
    STATIC_NAMES labels) could truncate right through the fused countdown
    text with zero sign one existed (2026-08-23 review round 13, left rail
    finding #2). */
-.wr .earnb{font-size:9px;color:var(--ink3);flex:none;white-space:nowrap}
+.wr .earnb{font-size:10px;color:var(--ink3);flex:none;white-space:nowrap}
 .wr .noq{font-size:9.5px;color:var(--hi);text-align:right;white-space:nowrap}
 .wr .px{font-size:11.5px;text-align:right;flex:none}
 .wr .ch{font-size:11px;font-weight:600;text-align:right;min-width:44px;flex:none}
@@ -260,7 +265,7 @@ section.closed .sb{display:none}
 .rb b{position:absolute;top:50%;width:7px;height:7px;background:var(--ink);transform:translate(-50%,-50%) rotate(45deg);border-radius:1px}
 .rb .lo,.rb .hi{position:absolute;top:7px;font-size:10px;color:var(--ink3)}
 .rb .hi{right:0}
-.wlnote{padding:4px 14px 8px;font-size:9.5px;color:var(--ink3)}
+.wlnote{padding:4px 14px 8px;font-size:10.5px;color:var(--ink3)}
 .wlsort{display:flex;gap:4px;padding:9px 14px 2px;flex-wrap:wrap}
 /* ============ ticker search (2026-08-19) ============ */
 .searchbox{position:relative;margin:8px 14px 4px}
@@ -278,13 +283,13 @@ section.closed .sb{display:none}
 .tsr .r2{display:flex;gap:6px;align-items:baseline;margin-top:1px}
 .tsr .sy{font-weight:700;flex:0 0 auto}
 .tsr .nm{color:var(--ink3);font-size:10.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tsr .ex{color:var(--ink3);font-size:9px;flex:none}
+.tsr .ex{color:var(--ink3);font-size:10px;flex:none}
 .tsr .px{font-size:10.5px;margin-left:auto;flex:none}
 .tsr .ch{font-size:10px;font-weight:600;flex:none;min-width:38px;text-align:right}
 .tsr .add{color:var(--acc);font-size:10px;border:1px solid var(--edge);border-radius:4px;padding:1px 6px;flex:none}
 .tsr .add.off{color:var(--ink3)}
 .tsr .add:hover{border-color:var(--acc)}
-.tsnote{padding:6px 9px;font-size:10px;color:var(--ink3)}
+.tsnote{padding:6px 9px;font-size:10.5px;color:var(--ink3)}
 /* watchlist manage mode */
 .wlmanage{padding:2px 14px 6px;font-size:9.5px;color:var(--ink3)}
 .wlmanage button{color:var(--acc);font-size:9.5px;text-decoration:underline;padding:0}
@@ -296,7 +301,7 @@ section.closed .sb{display:none}
 .wlio button{border:1px solid var(--edge);border-radius:5px;padding:3px 8px;font-size:10px;color:var(--ink2)}
 .wlio button:hover{color:var(--ink);border-color:var(--ink3)}
 .alertbox{margin:8px 14px 12px;border:1px solid var(--edge);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--ink2);background:var(--srf2)}
-.alertbox b{display:block;font-size:9.5px;letter-spacing:.12em;color:var(--ink3);margin-bottom:3px}
+.alertbox b{display:block;font-size:10px;letter-spacing:.12em;color:var(--ink3);margin-bottom:3px}
 .alertbox .hm2{color:var(--hi);font-weight:600}
 
 
@@ -365,9 +370,9 @@ section.closed .sb{display:none}
 .stat b{display:block;font-size:19px;font-weight:700}
 .stat b.hi{color:var(--hi)}
 .stat b.a{color:var(--acc)}
-.stat span{font-size:9px;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;font-weight:600}
+.stat span{font-size:10px;letter-spacing:.1em;color:var(--ink3);text-transform:uppercase;font-weight:600}
 /* "since flagged" chase chip — spot_at_alert rendered at last (2026-08-18) */
-.chasef{font-size:9px;font-weight:600;color:var(--ink3);background:var(--srf2);border:1px solid var(--edge);border-radius:3px;padding:0 4px;margin-left:6px}
+.chasef{font-size:10px;font-weight:600;color:var(--ink3);background:var(--srf2);border:1px solid var(--edge);border-radius:3px;padding:0 4px;margin-left:6px}
 .chasef.warn2{color:var(--hi);background:var(--hibg);border-color:transparent}
 /* board threshold cut line + show-all toggle */
 /* Sticky at the left edge: the board IS the horizontal scroll container, and
@@ -389,14 +394,14 @@ section.closed .sb{display:none}
 .databanner{padding:6px 16px;border-bottom:1px solid var(--edge);background:var(--dnbg);color:var(--dn);font-size:11.5px}
 .databanner[hidden]{display:none}
 /* group eyebrows: FLOW BOARDS vs CONTEXT (2026-08-18) */
-.eyebrow{padding:12px 14px 2px;font-size:9px;letter-spacing:.16em;color:var(--ink3);font-weight:700;text-transform:uppercase;border-bottom:1px solid var(--edge2)}
+.eyebrow{padding:14px 14px 4px;font-size:10.5px;letter-spacing:.14em;color:var(--ink2);font-weight:700;text-transform:uppercase;border-bottom:1px solid var(--edge2)}
 /* mobile watchlist toggle — hidden on desktop, a full-width bar on phones */
 .wltoggle{display:none}
 
 /* ============ tables ============ */
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{
-  font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink2);font-weight:600;
+  font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink2);font-weight:600;
   text-align:right;padding:5px 8px;border-bottom:1px solid var(--edge);white-space:nowrap;
 }
 th:first-child,td:first-child{text-align:left;padding-left:0}
@@ -427,8 +432,10 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
    (2026-08-22 review round 10, flow boards finding #2). */
 .deltabadge{color:var(--ink3);font-weight:400;font-size:10.5px;font-variant-numeric:tabular-nums}
 .sy2{font-weight:700}
-.pill{font-size:9px;font-weight:700;letter-spacing:.07em;border-radius:3px;padding:1.5px 5px}
-.pill.b{color:var(--up);background:var(--upbg)} .pill.s{color:var(--dn);background:var(--dnbg)}
+.pill{font-size:9.5px;font-weight:700;letter-spacing:.07em;border-radius:3px;padding:1px 5px}
+/* Plain-color ring first so a browser without color-mix() still draws a chip edge. */
+.pill.b{color:var(--up);background:transparent;box-shadow:inset 0 0 0 1px var(--up);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--up) 72%,transparent)}
+.pill.s{color:var(--dn);background:transparent;box-shadow:inset 0 0 0 1px var(--dn);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dn) 72%,transparent)}
 .pill.f{color:var(--hi);background:var(--hibg)} .pill.n{color:var(--ink2);background:var(--srf2);border:1px solid var(--edge)}
 .pill.h{color:var(--bb);background:var(--bbbg)}
 /* IN/OUT as a dot on the ticker: the pill needed a column the 372px rail does
@@ -467,8 +474,8 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
    fresh page load starts decluttered. Same ▼-rotate affordance the section
    headers use. */
 .expbtn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--edge);border-radius:5px;
-  background:var(--srf2);color:var(--ink3);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
-  font-weight:700;padding:2px 8px;margin-top:8px;cursor:pointer}
+  background:var(--srf2);color:var(--ink3);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  font-weight:700;padding:3px 9px;margin-top:8px;cursor:pointer;min-height:22px}
 .expbtn:hover{color:var(--ink2);border-color:var(--acc)}
 .expbtn .car2{font-size:8px;transition:transform .15s;transform:rotate(-90deg)}
 .expbtn[aria-expanded="true"] .car2{transform:rotate(0deg)}
@@ -496,7 +503,7 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
   background:linear-gradient(90deg, transparent, var(--srf) 82%);opacity:0;transition:opacity .15s;
 }
 .xscroll.more::after{opacity:1}
-.xhint{font-size:9.5px;color:var(--ink3);padding:3px 0 0;position:sticky;left:0;width:max-content;max-width:100%}
+.xhint{font-size:10.5px;color:var(--ink3);padding:3px 0 0;position:sticky;left:0;width:max-content;max-width:100%}
 @media (prefers-reduced-motion: reduce){ .xscroll::after{transition:none} }
 /* The reason column wraps. It used to carry a hard min-width (200px on
    conviction, 300px on swing) so that the sentence had room — but a min-width
@@ -510,14 +517,14 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 
 /* ============ catalysts ============ */
 .filters{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
-.fbtn{font-size:10px;letter-spacing:.05em;border:1px solid var(--edge);border-radius:5px;padding:3px 8px;color:var(--ink2)}
+.fbtn{font-size:11px;letter-spacing:.04em;border:1px solid var(--edge);border-radius:5px;padding:4px 9px;color:var(--ink2);min-height:24px}
 /* Coarse pointers get the 24px minimum on every control that is a real target,
    without moving anything on a mouse. Measured on a 390px viewport: 69 targets
    were under 24px, all of them these three kinds. */
 @media (pointer:coarse){
   .fbtn,.sbar button,.stabs button,#heatbar button,.wlsort button,.seg button,
   .boardcut button,.wlx,.wltoggle,
-  [data-iv],[data-tf],[data-ta],[data-tab],[data-ws]{
+  [data-iv],[data-tf],[data-ta],[data-tab],.expbtn{
     min-height:26px;
   }
   /* Source links inside a panel's footer line — small text by design, but a
@@ -531,12 +538,12 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .fbtn[aria-pressed="true"]{color:var(--acc);border-color:var(--acc);background:var(--accbg)}
 /* interactive chrome answers the cursor — none of these had a hover state */
 .fbtn:hover,.ic:hover,.kbtn:hover,.seg button:hover{color:var(--ink);border-color:var(--ink3)}
-.cg{font-size:9px;letter-spacing:.13em;color:var(--ink3);font-weight:700;text-transform:uppercase;padding:8px 0 4px;border-bottom:1px solid var(--edge2)}
+.cg{font-size:10px;letter-spacing:.13em;color:var(--ink3);font-weight:700;text-transform:uppercase;padding:8px 0 4px;border-bottom:1px solid var(--edge2)}
 .ct{display:grid;grid-template-columns:40px 1fr auto;gap:9px;padding:8px 0;border-bottom:1px solid var(--edge2);align-items:start}
 .ct:last-child{border-bottom:none}
 .ct.done{opacity:.55}
 .ct .dt{text-align:center;border:1px solid var(--edge);border-radius:5px;padding:2px 0;background:var(--srf2)}
-.ct .dt .w{font-size:8.5px;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase}
+.ct .dt .w{font-size:9.5px;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase}
 .ct .dt .n{font-size:13.5px;font-weight:700}
 /* Month abbr, rendered ONLY when the row falls outside the current month —
    the rail runs months out ("Later + anchors" reaches into 2027) and a bare
@@ -559,7 +566,7 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .nw:last-child{border-bottom:none}
 .nw .tk{font-size:10px;font-weight:700;color:var(--acc);flex:0 0 46px}
 .nw .h{font-size:11.5px}
-.nw .tm{margin-left:auto;font-size:9.5px;color:var(--ink3);flex:none}
+.nw .tm{margin-left:auto;font-size:10.5px;color:var(--ink3);flex:none}
 .rotbanner{font-size:10.5px;color:var(--ink2);padding:0 0 6px;border-bottom:1px solid var(--edge2);margin-bottom:6px}
 
 /* ============ center stage — the chart, front and center (2026-08-19) ============
@@ -591,7 +598,7 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
   .stagehead .ohlc{white-space:normal;text-align:left;min-height:30px;max-height:30px}
 }
 .stagehead .ohlc b{color:var(--ink2);font-weight:600;font-variant-numeric:tabular-nums}
-.stagebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 14px 8px}
+.stagebar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:6px 14px 8px}
 .stagechart{position:relative;height:clamp(380px,52vh,620px);border-top:1px solid var(--edge2)}
 .stagemsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;
   color:var(--ink3);font-size:12px;z-index:3;background:var(--srf);padding:20px}
@@ -604,8 +611,8 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 #stagerecap .expbtn{margin-top:0;margin-left:8px;vertical-align:1px}
 .stagetabs{display:flex;gap:2px;padding:6px 14px 0;border-bottom:1px solid var(--edge);overflow-x:auto}
 @media (max-width:640px){ .stagetabs{flex-wrap:wrap;overflow-x:visible} }
-.stagetabs button{font-size:10px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;color:var(--ink3);
-  padding:6px 10px;border-bottom:2px solid transparent;white-space:nowrap}
+.stagetabs button{font-size:11px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;color:var(--ink3);
+  padding:8px 12px;border-bottom:2px solid transparent;white-space:nowrap}
 .stagetabs button[aria-pressed="true"]{color:var(--acc);border-bottom-color:var(--acc)}
 .stagetabs button:hover{color:var(--ink)}
 @media (max-width:900px){ .stagechart{height:clamp(300px,46vh,480px)} }
@@ -762,9 +769,9 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 .heatmsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--ink3);font-size:12px;background:var(--bg);z-index:4;text-align:center;padding:20px}
 .heatmsg[hidden]{display:none}
 .dsec{padding:10px 16px;border-bottom:1px solid var(--edge2)}
-.dsec h3{font-size:9.5px;letter-spacing:.13em;color:var(--ink3);text-transform:uppercase;margin-bottom:7px}
+.dsec h3{font-size:10.5px;letter-spacing:.13em;color:var(--ink3);text-transform:uppercase;margin-bottom:7px}
 .seg{display:inline-flex;border:1px solid var(--edge);border-radius:6px;overflow:hidden}
-.seg button{font-size:10.5px;padding:3px 9px;color:var(--ink2);border-right:1px solid var(--edge)}
+.seg button{font-size:11px;padding:5px 10px;min-height:26px;color:var(--ink2);border-right:1px solid var(--edge)}
 .seg button:last-child{border-right:none}
 .seg button[aria-pressed="true"]{color:var(--acc);background:var(--accbg)}
 /* A toggle with nothing to draw on the current view (the MA button off the
@@ -786,7 +793,7 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 .pop .cl:hover{color:var(--ink)}
 /* Inset 14px like .stagehead / .stagebar / .stagetabs — with no padding the
    leading glyph of "auto-TA:" was sheared by the shell border at 900 and 390. */
-.leg{display:flex;gap:12px;font-size:9.5px;color:var(--ink3);margin-top:5px;flex-wrap:wrap;padding:0 14px}
+.leg{display:flex;gap:12px;font-size:10.5px;color:var(--ink3);margin-top:5px;flex-wrap:wrap;padding:0 14px}
 .leg i{display:inline-block;width:12px;border-top:2px solid var(--ink2);vertical-align:middle;margin-right:4px}
 .leg i.d20{border-top:2px solid var(--ink3)} /* solid — the chart strokes it solid; the swatch used to lie */
 .leg i.d50{border-top:2px solid var(--acc)}
@@ -860,7 +867,7 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 /* The new-high / new-low wording used to sit inside the .hi label and collide
    with the price at 224px of rail. It wraps under instead. */
 .rb .hi{max-width:70%;text-align:right}
-.rb .hi b{display:block;font-size:9px;font-weight:700}
+.rb .hi b{display:block;font-size:10px;font-weight:700}
 .rb.big{height:6px;margin:10px 0 16px}
 .rb.big b{width:9px;height:9px}
 .rb.big .lo,.rb.big .hi{top:9px;font-size:9.5px}
@@ -886,6 +893,17 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 .tipb{position:fixed;z-index:90;max-width:280px;background:var(--srf2);border:1px solid var(--edge);border-radius:6px;padding:7px 10px;font-size:11px;color:var(--ink2);display:none;box-shadow:0 8px 24px rgba(0,0,0,.35)}
 [data-tip]{cursor:help}
 span[data-tip],.rl[data-tip]{border-bottom:1px dotted var(--ink3)}
+/* 376 dotted underlines on one screen is no underline at all (UX-laws
+   redesign, 2026-09-02 — Von Restorff). Inside table cells, quick-read
+   lines, footnotes and key/value rows the underline is drawn only while
+   the row is hovered or holds keyboard focus; headers, chips and rail
+   labels keep it permanently so the affordance stays learnable. Tooltips
+   themselves are unchanged — every hover and focus still opens one. */
+td span[data-tip],.brecap span[data-tip],.boardcut span[data-tip],.note span[data-tip],
+.kvrow span[data-tip],.fcell span[data-tip],.bbr span[data-tip]{border-bottom-color:transparent}
+tr:hover td span[data-tip],tr:focus-within td span[data-tip],.brecap:hover span[data-tip],
+.boardcut:hover span[data-tip],.note:hover span[data-tip],.kvrow:hover span[data-tip],
+.fcell:hover span[data-tip],span[data-tip]:focus-visible{border-bottom-color:var(--ink3)}
 
 /* ============ footer ============ */
 footer{padding:12px 16px 26px;font-size:10.5px;color:var(--ink3);line-height:1.7}
@@ -1014,10 +1032,109 @@ footer b{color:var(--ink2)}
      contract" stayed nowrap and set its own width floor even after the body
      wrapped — scoped to phone width only, so the desktop header keeps its
      one-line layout. */
-  .t-conv th:last-child,.t-swing th:last-child{
-    white-space:normal;line-height:1.25;max-width:11ch;
-  }
+  /* UX-laws redesign (2026-09-02, Law of Closure + Fitts): the last column
+     used to wrap inside a 77px cell, so every Swing row stood 180px tall
+     with a 15-line sentence in it. The cell now keeps a 26ch floor and the
+     board scrolls sideways inside .xwrap — rows stay two or three lines. */
+  .t-conv th:last-child,.t-swing th:last-child{white-space:nowrap;max-width:none}
+  .t-conv td:last-child,.t-swing td:last-child{max-width:26ch;min-width:26ch}
+  .t-conv td:first-child,.t-swing td:first-child{min-width:15ch}
 }
+
+/* ============ UX-laws redesign (2026-09-02) ============
+   Audit and rationale: docs/superpowers/plans/2026-09-02-ux-laws-redesign.md.
+   Everything here is display-layer: no score, weight, payload or disclosure
+   moved. */
+/* Hick + Proximity + Similarity: the chart toolbar is three LABELED groups.
+   Bars and Window are radio groups (one pressed, filled); Overlays are
+   independent toggles and look like toggles — a dot that fills when on. */
+/* A labeled group wraps rather than clips: at 390px the six overlay toggles
+   plus their label ran 26px past the screen and .seg's overflow:hidden cut
+   the GEX button off with no scroll path (adversarial review, 2026-09-02). */
+.stagebar .seg{flex-wrap:wrap;max-width:100%}
+.seg[data-lbl]::before{content:attr(data-lbl);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink3);font-weight:700;padding:0 7px 0 9px;align-self:center;border-right:1px solid var(--edge2);line-height:26px}
+.seg.tog button{display:inline-flex;align-items:center;gap:6px}
+.seg.tog button::before{content:"";width:8px;height:8px;border-radius:2px;border:1.5px solid var(--ink3);box-sizing:border-box;flex:none}
+.seg.tog button[aria-pressed="true"]{background:transparent;color:var(--acc)}
+.seg.tog button[aria-pressed="true"]::before{background:var(--acc);border-color:var(--acc)}
+.seg.tog button[disabled]::before{border-style:dashed}
+/* Common region: the quick read under the chart sits in its own soft box. */
+#stagerecap{margin:8px 14px 0;padding:8px 12px;border-left:2px solid var(--edge);background:var(--srf2);border-radius:0 6px 6px 0}
+#stagerecap:has(b.u){border-left-color:var(--up)} #stagerecap:has(b.d){border-left-color:var(--dn)}
+/* Closure: a board's Name cell puts the live price · % on its own line under
+   the ticker and its badges, so the cell is ~90px narrower and the whole
+   table fits the column at 1440px instead of cutting its last column. The
+   badges themselves never break mid-chip. */
+.t-conv .livepx,.t-swing .livepx{display:block;margin-left:0;margin-top:2px}
+.chasef,.pill{white-space:nowrap}
+/* The Swing board overflows its column at every desktop width (eight
+   columns), and once a table overflows, auto layout hands a wrapping cell
+   its minimum width — measured 173px for a 119-character contract line,
+   five lines tall. A floor keeps it to three lines; the board already
+   scrolls sideways and says so. */
+@media (min-width:641px){ .t-swing td:last-child{min-width:34ch} }
+/* Doherty + Zeigarnik: loading states show motion, not just a word. */
+.busybar{display:block;width:120px;height:3px;margin:10px auto 0;border-radius:2px;background:var(--edge);overflow:hidden;position:relative}
+.busybar::after{content:"";position:absolute;left:-40%;top:0;bottom:0;width:40%;border-radius:2px;background:var(--acc);animation:busy 1.1s ease-in-out infinite}
+@keyframes busy{to{left:100%}}
+.stagemsg{flex-direction:column}
+.skelrows{text-align:left}
+.skelrows i{display:block;height:12px;border-radius:3px;margin:9px 0;background:linear-gradient(90deg,var(--edge2),var(--edge),var(--edge2));background-size:200% 100%;animation:shimmer 1.4s linear infinite}
+.skelrows i:nth-child(2){width:72%} .skelrows i:nth-child(3){width:86%}
+.skelrows span{display:block;text-align:center;margin-top:8px}
+@keyframes shimmer{to{background-position:-200% 0}}
+@media (prefers-reduced-motion: reduce){ .busybar::after,.skelrows i{animation:none} }
+/* Zeigarnik: the as-of chip also says how old the read is, refreshed with the
+   30-second redraws — the "as of" stamp itself is unchanged. */
+.bc .age{color:var(--ink3);font-weight:400;margin-left:4px}
+.bc{white-space:nowrap}
+/* Goal-gradient: the five framework filters as one strip — pass, fail, still
+   building, or flagged — read in a glance what the "0 pass · 0 fail · 5
+   building" line spells out. */
+.fwstrip{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;height:6px;margin:2px 0 6px}
+/* A still-building segment must read against its own panel: --edge on --srf2 was
+   1.13:1, invisible on every all-building name. The inset ring is --ink3 (≥4.5:1). */
+.fwstrip i{border-radius:2px;background:var(--edge);box-shadow:inset 0 0 0 1px var(--ink3)}
+.fwstrip i.u,.fwstrip i.d{box-shadow:none}
+.fwstrip i.u{background:var(--up)} .fwstrip i.d{background:var(--dn)}
+.fwstrip i.x{background:repeating-linear-gradient(45deg,var(--hi) 0 2px,transparent 2px 4px)}
+/* Miller + Similarity: Bollinger alerts as a scannable list — one ticker per
+   line, the ticker in the band color, the reason in plain ink — instead of a
+   bold purple paragraph. Rows are click/keyboard targets like every other
+   ticker mention on the page. */
+.bbl{display:grid;grid-template-columns:1fr;gap:1px;margin-top:5px}
+.bbr{display:flex;align-items:baseline;gap:8px;font-size:11px;padding:2px 4px;margin:0 -4px;border-radius:4px;cursor:pointer}
+.bbr:hover,.bbr:focus-visible{background:var(--sel)}
+.bbr b{color:var(--bb);font-weight:600;min-width:44px}
+.bbr[data-tip]{cursor:pointer;border-bottom:0}
+/* The NEW (just crossed) row keeps ticker + NEW on line one and its reason on
+   line two, indented under the reason column — two lines by design, never a
+   reason wrapping around a pill (verifier finding, 2026-09-02). */
+.bbr.new{flex-wrap:wrap}
+.bbr.new .w{order:3;flex-basis:100%;padding-left:52px}
+.bbr.new .pill{order:2}
+.bbmore{display:block;font-size:10.5px;padding:3px 0 0}
+.bbr.lo b{font-weight:700}
+.bbr .w{color:var(--ink2);flex:1;min-width:0}
+/* Hick + Jakob: one native sort select instead of six equal buttons. */
+.wlsortbox .wlsort{padding:9px 14px 2px}
+.wlsortnote{padding:0 14px 4px;font-size:10.5px;color:var(--ink3)}
+.wl.collapsed #wlsortbox{display:none}
+.wlsel{font:11px inherit;color:var(--ink);background:var(--srf2);border:1px solid var(--edge);border-radius:5px;padding:3px 6px;min-height:24px;max-width:150px}
+.wlsel:hover{border-color:var(--ink3)}
+/* Uniform connectedness: the focused ticker carries the same accent stripe on
+   its tape tile as on its rail row and board rows. */
+.tp.foc{box-shadow:inset 0 -2px 0 var(--acc);background:var(--sel)}
+/* Peak-end + Miller: the honesty box is a three-column reference, every
+   sentence kept, instead of a 10px paragraph the page ends on. */
+footer{font-size:11.5px;line-height:1.6}
+footer .honesty{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 28px;margin-top:6px}
+footer .honesty h4{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink2);font-weight:700;margin-bottom:3px}
+footer .honesty p{margin:0}
+footer .credit{margin-top:10px;padding-top:8px;border-top:1px solid var(--edge2)}
+@media (max-width:900px){ footer .honesty{grid-template-columns:1fr} }
+@media (pointer:coarse){ .wlsel,.bbr{min-height:28px} }
 </style>
 </head>
 <body>
@@ -1069,6 +1186,11 @@ footer b{color:var(--ink2)}
         <div class="tsdrop" id="tsdrop"></div>
       </div>
       <button class="wltoggle" id="wltoggle">watchlist ▸</button>
+      <!-- The sort control sits OUTSIDE #wl (2026-09-02): #wl is rewritten
+           wholesale every 30 seconds, and a native <select> whose element is
+           replaced closes under the reader's thumb. This box is rebuilt only
+           when the sort key or edit state changes. -->
+      <div class="wlsortbox" id="wlsortbox"></div>
       <div class="wrs" id="wl"></div>
       <div class="wlnote">leveraged wrappers included by rule (2026-08-15) · WTI here is W&amp;T Offshore, the oil producer — crude itself is the WTI tile in the tape</div>
     </aside>
@@ -1169,19 +1291,24 @@ footer b{color:var(--ink2)}
        it rendered mid-page on phones — after the ETF card and BEFORE
        catalysts/news — and read as the end of the page. -->
   <footer>
-    <b>Honesty box</b> — options data is 15-minute-delayed CBOE; stock prices are 15-minute-delayed TradingView,
-    re-read every 30 seconds (the scanner reports <code>update_mode: delayed_streaming_900</code> for every symbol the
-    desk polls, and cross-correlating 30 samples against a real-time feed puts the lag at 16 minutes on SPY, MU, CRWD
-    and NVDA alike — this page said "live" until 2026-08-19, when that was measured). History and financial statements for names off the desk come from
-    stockanalysis.com; the heatmap and the searched-name fundamentals come from the same 15-minute-delayed scanner,
-    refreshed about every 2 minutes. Net flow is premium
-    changing hands; free data can't see buyer vs seller. FLOW % describes what traded today, not what happens next.
-    Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
-    Nothing here is financial advice.<br>
-    Freshness: prices re-read every 30s (each read is 15 minutes behind the tape) · heatmap ~2 min, same delay · flow boards ~7 min (8:00–15:20 CT) ·
-    brief daily · catalysts hourly · news ticker hourly with the loop.<br>
-    Charts render with <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a>,
-    © TradingView, Inc., Apache-2.0. Auto trend lines and levels are drawn from this page's own pivot math — display only, never a signal.
+    <b>Honesty box</b> — what this page can and cannot know.
+    <div class="honesty">
+      <div><h4>Freshness</h4><p>Prices re-read every 30s (each read is 15 minutes behind the tape) · heatmap ~2 min, same delay ·
+        flow boards ~7 min (8:00–15:20 CT) · brief daily · catalysts hourly · news ticker hourly with the loop.
+        Options data is 15-minute-delayed CBOE; stock prices are 15-minute-delayed TradingView,
+        re-read every 30 seconds (the scanner reports <code>update_mode: delayed_streaming_900</code> for every symbol the
+        desk polls, and cross-correlating 30 samples against a real-time feed puts the lag at 16 minutes on SPY, MU, CRWD
+        and NVDA alike — this page said "live" until 2026-08-19, when that was measured).</p></div>
+      <div><h4>Sources</h4><p>History and financial statements for names off the desk come from
+        stockanalysis.com; the heatmap and the searched-name fundamentals come from the same 15-minute-delayed scanner,
+        refreshed about every 2 minutes.</p></div>
+      <div><h4>Limits</h4><p>Net flow is premium changing hands; free data can't see buyer vs seller. FLOW % describes what traded today, not what happens next.
+        Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
+        Auto trend lines and levels are drawn from this page's own pivot math — display only, never a signal.
+        Nothing here is financial advice.</p></div>
+    </div>
+    <div class="credit">Charts render with <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a>,
+    © TradingView, Inc., Apache-2.0.</div>
   </footer>
 </div>
 
@@ -2223,8 +2350,44 @@ function prettyStamp(label){
       hour:"numeric",minute:"2-digit"}).format(d) + " CT";
   }catch(e){ return label; }
 }
+/* Parse the stamps this page prints: ISO ("2026-09-02T18:24:07Z") or the
+   loop's CT wall-clock form ("2026-09-02 13:24 CT"). Returns epoch ms or null. */
+function stampMs(label){
+  if(!label || typeof label!=="string") return null;
+  var iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(label);
+  if(iso){
+    var d = new Date(label.endsWith("Z")||/[+-]\d{2}:?\d{2}$/.test(label) ? label : label+"Z");
+    return isNaN(d.getTime()) ? null : d.getTime();
+  }
+  var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?\s*CT$/.exec(label);
+  if(!m) return null;
+  // CT wall clock → UTC: measure Chicago's current offset off the same clock
+  // every other timestamp on the page uses (Intl), then apply it.
+  try{
+    var now = new Date();
+    var parts = {};
+    new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",hour12:false,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"})
+      .formatToParts(now).forEach(function(p){ parts[p.type]=p.value; });
+    var wall = Date.UTC(+parts.year, +parts.month-1, +parts.day, (+parts.hour)%24, +parts.minute, +parts.second);
+    var offset = wall - Math.floor(now.getTime()/1000)*1000;
+    return Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +(m[6]||0)) - offset;
+  }catch(e){ return null; }
+}
+/* Zeigarnik (UX-laws redesign, 2026-09-02): the as-of chip also says how old
+   the read is. Re-rendered with the boards' 30-second redraw, so it counts up
+   between publishes. Silent past 24h — the stamp already carries the date. */
+function ageWordsHTML(dateLabel){
+  var ms = stampMs(dateLabel);
+  if(ms==null) return "";
+  var sec = Math.round((Date.now()-ms)/1000);
+  // Up to 15 minutes "in the future" is an unsynced viewer clock, not a
+  // future stamp — print "just now" rather than nothing.
+  if(sec < -900 || sec > 86400) return "";
+  var w = sec < 60 ? "just now" : sec < 3600 ? (Math.round(sec/60)+" min ago") : (Math.round(sec/3600)+" h ago");
+  return '<span class="age">· '+w+'</span>';
+}
 function staleBadgeHTML(dateLabel){
-  return ' <span class="bc stale" data-tip="'+esc(TIPS.stale)+'">as of '+esc(prettyStamp(dateLabel)||"—")+'</span>';
+  return ' <span class="bc stale" data-tip="'+esc(TIPS.stale)+'">as of '+esc(prettyStamp(dateLabel)||"—")+ageWordsHTML(dateLabel)+'</span>';
 }
 /* Every board carries its own age, always. The stale badge is gated to
    08:15-15:00 CT, so outside the session — evenings and weekends, when the
@@ -2234,7 +2397,7 @@ function staleBadgeHTML(dateLabel){
 function ageStampHTML(dateLabel, stale){
   if(stale) return staleBadgeHTML(dateLabel);
   var p = prettyStamp(dateLabel);
-  return p ? (' <span class="bc" data-tip="When this panel\u2019s data was published. It refreshes with the loop; outside 8:00-15:20 CT the last publish stands.">as of '+esc(p)+'</span>') : '';
+  return p ? (' <span class="bc" data-tip="When this panel\u2019s data was published. It refreshes with the loop; outside 8:00-15:20 CT the last publish stands.">as of '+esc(p)+ageWordsHTML(dateLabel)+'</span>') : '';
 }
 
 /* =================== collapsible explainers (declutter, 2026-08-26) ===================
@@ -3708,20 +3871,29 @@ function renderWL(){
   // "az" and "vol" added at Zach's request (2026-08-23) — alphabetical and
   // today's raw share volume, alongside the existing 52w/Δ%/hot sorts.
   var sorts = [["groups","groups"],["range","52w ↑"],["chg","Δ%"],["hot","hot"],["az","A→Z"],["vol","volume"]];
-  var html = '<div class="wlsort">'+sorts.map(function(k){
-    var tip = k[0]==="range" ? "Sort lowest-in-range first — the value-shopping view. Hot runners sink to the bottom."
-      : k[0]==="hot" ? "Sort by move vs each name's own average day."
-      : k[0]==="chg" ? "Sort by today's % move."
-      : k[0]==="az" ? "Sort alphabetically by ticker."
-      : k[0]==="vol" ? "Sort by today's raw share volume, highest first. Pre-market, this is the pre-market session's own volume." : "Grouped view.";
-    return '<button class="fbtn" data-ws="'+k[0]+'" aria-pressed="'+(wlSort===k[0])+'" data-tip="'+esc(tip)+'">'+k[1]+'</button>';
-  }).join("")
+  // One native select instead of six equal buttons (UX-laws redesign,
+  // 2026-09-02 — Hick's and Jakob's laws). The sort keys and their meanings
+  // are unchanged; the per-sort explanations moved into one tooltip.
+  // The sort control renders into #wlsortbox, a sibling of #wl, and only
+  // when its markup changes — a native <select> rebuilt mid-gesture closes
+  // (adversarial review, 2026-09-02). The keys and their meanings are the
+  // pre-select ones; the explanation for the CURRENT sort prints under it in
+  // one line, since a native dropdown cannot show a tooltip per option.
+  var sortWhy = {groups:"The desk’s own groupings.", range:"Lowest in its 52-week range first — the value-shopping view. Hot runners sink to the bottom.",
+    chg:"Today’s % move, biggest first.", hot:"Move vs each name’s own average day.", az:"Alphabetical by ticker.",
+    vol:"Today’s raw share volume, highest first (pre-market: the pre-market session’s own volume)."};
+  var sortHtml = '<div class="wlsort"><label class="m" for="wlsel">sort</label>'
+    + '<select class="wlsel" id="wlsel" aria-label="Sort watchlist" data-tip="Change how the watchlist is ordered. The line under it says what the current order means.">'
+    + sorts.map(function(k){ return '<option value="'+k[0]+'"'+(wlSort===k[0]?' selected':'')+'>'+k[1]+'</option>'; }).join("")
+    + '</select>'
+    + '<button class="fbtn" id="wledit" aria-pressed="'+wlEdit+'" data-tip="Add or remove names. Custom adds live in this browser only; hiding a pinned name is display-only — the boards still track the full server universe.">'+(wlEdit?"done":"edit")+'</button>'
+    + '</div><div class="wlsortnote">'+esc(sortWhy[wlSort]||"")+'</div>';
+  var html = ''
   // A write failure is now visible instead of a click that silently did
   // nothing — see WL_MEM's own comment above (2026-08-23 review round 14,
   // left rail finding #2).
   + (WL_MEM.saveFailed ? '<div class="note" style="margin-top:6px;color:var(--hi)">This browser is blocking site storage, so watchlist changes (add/remove/hide) won’t survive a reload — they still work for this tab session.</div>' : "")
-  +'<button class="fbtn" id="wledit" aria-pressed="'+wlEdit+'" data-tip="Add or remove names. Custom adds live in this browser only; hiding a pinned name is display-only — the boards still track the full server universe.">'+(wlEdit?"done":"edit")+'</button>'
-  +'</div>';
+  ;
   // No silent caps: the rail says when it differs from the server universe.
   if(customSyms.length || hidden.length){
     html += '<div class="wlmanage">'
@@ -3853,6 +4025,29 @@ function renderWL(){
     });
     if(!focusKey && a.id) focusKey = "#"+a.id;
   }
+  var sortBox = document.getElementById("wlsortbox");
+  if(sortBox && sortBox.getAttribute("data-html") !== sortHtml){
+    // A keyboard sort change (arrow keys) rebuilds this box, so the select
+    // the reader is standing on is replaced — hand focus to its successor,
+    // the same restore #wl does below (adversarial review, 2026-09-02).
+    var selHadFocus = !!(document.activeElement && document.activeElement.id === "wlsel");
+    var editHadFocus = !!(document.activeElement && document.activeElement.id === "wledit");
+    sortBox.innerHTML = sortHtml;
+    sortBox.setAttribute("data-html", sortHtml);
+    var wsel = document.getElementById("wlsel");
+    if(wsel){
+      wsel.addEventListener("click", function(e){ e.stopPropagation(); });
+      wsel.addEventListener("change", function(){ wlSort = wsel.value; store("desk.wl.sort", wlSort); renderWL(); applyFocus(); });
+      if(selHadFocus){ try{ wsel.focus(); }catch(e){} }
+    }
+    if(editHadFocus){ var we0 = document.getElementById("wledit"); if(we0){ try{ we0.focus(); }catch(e){} } }
+    var we = document.getElementById("wledit");
+    if(we) we.addEventListener("click", function(e){
+      e.stopPropagation(); wlEdit=!wlEdit;
+      WLIO_DRAFT = null; WLIO_MSG = "";        // leaving edit mode discards the draft
+      renderWL(); applyFocus();
+    });
+  }
   wlEl.innerHTML = html;
   if(focusKey){
     try{
@@ -3860,13 +4055,7 @@ function renderWL(){
       if(again) again.focus();
     }catch(e){}
   }
-  $$("#wl [data-ws]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlSort=b.dataset.ws; store("desk.wl.sort", wlSort); renderWL(); applyFocus(); }); });
-  var we = document.getElementById("wledit");
-  if(we) we.addEventListener("click", function(e){
-    e.stopPropagation(); wlEdit=!wlEdit;
-    WLIO_DRAFT = null; WLIO_MSG = "";        // leaving edit mode discards the draft
-    renderWL(); applyFocus();
-  });
+  // (sort + edit handlers are wired above, on the #wlsortbox rebuild only)
   $$("#wl [data-wlx]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlRemove(b.dataset.wlx); }); });
   $$("#wl [data-wlback]").forEach(function(b){ b.addEventListener("click", function(e){ e.stopPropagation(); wlAdd(b.dataset.wlback); }); });
   var ioIn = document.getElementById("wlio-in");
@@ -4044,29 +4233,46 @@ function renderBBCrosses(syms){
   el.hidden = false;
   el.innerHTML = '<b data-tip="'+esc(TIPS.ta_bb)+'">BAND CROSSES · BOLLINGER(20,2)'
     + (nLower ? (' · <span style="color:var(--bb)">'+nLower+' at or near the lower band</span>') : '')+'</b>'
+    + '<div class="bbl">'
     + rows.slice(0, MOVERS_CAP).map(function(r){
         // Three distinct facts, three wordings: at/below the lower band NOW,
         // touched it intraday but back inside, or above the upper band.
+        // Short enough for one line in the 248px rail (adversarial review,
+        // 2026-09-02); the full sentence rides on the row's own tooltip, which
+        // the click delegate permits (tip === row).
         var word = r.bb.lowTouch
           ? (r.bb.lowNear ? "within 1% of lower band"
-             : r.bb.touchOnly ? "touched lower band today (back inside)" : "at/below lower band")
-          : (r.bb.side==="over" ? "above upper" : "below lower");
+             : r.bb.touchOnly ? "touched, back inside" : "at/below lower band")
+          : (r.bb.side==="over" ? "above upper band" : "below lower band");
+        var rowTip = r.bb.lowTouch
+          ? (r.bb.lowNear ? "The price is approaching the lower Bollinger band (within 1%) but has not touched it yet."
+             : r.bb.touchOnly ? "Today’s low reached the lower Bollinger band and the price is back inside it — a touch, not a settled break."
+             : "The price is on or under the lower Bollinger band right now.")
+          : (r.bb.side==="over" ? "The price is above the upper Bollinger band." : "The price is below the lower Bollinger band.");
+        rowTip += " A stretched move, not a buy or sell call. Click to chart it.";
         // Deliberately ONE color for both directions — a band cross describes
         // volatility (an outsized move either way), not a bullish or bearish
         // verdict, so painting "above" green and "below" red would claim a
         // directional read this indicator does not support. The lower-band
         // rows get emphasis WEIGHT (Zach asked to be alerted on exactly
         // them), never a green "buy" ink.
-        return '<span style="color:var(--bb)'+(r.bb.lowTouch?';font-weight:700':'')+'">'+esc(r.sym)+' '+word+'</span>'
-          + (r.bb.crossed ? ' <span class="pill h">NEW</span>' : '');
-      }).join(" · ")
+        // One row per ticker (UX-laws redesign, 2026-09-02 — Miller's law):
+        // ticker in the band color, reason in plain ink, and the row is a
+        // click/keyboard target like every other ticker mention on the page.
+        // A NEW row (the alert moment) is two deliberate lines: ticker + NEW,
+        // then the reason — not a reason that happens to wrap around the pill.
+        return '<span class="bbr'+(r.bb.lowTouch?' lo':'')+(r.bb.crossed?' new':'')+'" data-sym="'+esc(r.sym)+'" role="button" tabindex="0" data-tip="'+esc(rowTip)+'"><b>'+esc(r.sym)+'</b>'
+          + '<span class="w">'+word+'</span>'
+          + (r.bb.crossed ? '<span class="pill h">NEW</span>' : '')+'</span>';
+      }).join("")
     + (rows.length > MOVERS_CAP
-        ? (' <span class="m">+'+(rows.length-MOVERS_CAP)+' more</span>') : "")
+        ? ('<span class="m bbmore">+'+(rows.length-MOVERS_CAP)+' more</span>') : "")
+    + '</div>'
     // Static explainer behind a button (declutter, 2026-08-26).
     + expHTML("bbx", "what this means",
         '<div class="note" style="margin-top:6px">price vs. a 20-day mean ± 2 standard deviations, from settled daily '
         + 'closes. Lower-band rows lead and are bolded (Zach’s alert ask, 2026-08-26): “at/below lower band” means the '
-        + 'current price sits on or under it; “touched lower band today” means the day’s low reached it and price is back '
+        + 'current price sits on or under it; “touched, back inside” means the day’s low reached it and price is back '
         + 'inside; “within 1% of lower band” means the price is approaching it but has not touched yet. NEW = crossed since yesterday’s close; the rest were already outside. A touch or cross means an '
         + 'unusually stretched move, not a buy or sell call. Not a signal.</div>');
 }
@@ -6188,6 +6394,9 @@ function setFocus(sym){
 }
 function applyFocus(){
   $$(".wr").forEach(function(w){ w.classList.toggle("foc", w.dataset.sym===FOCUS); });
+  // Uniform connectedness (UX-laws redesign, 2026-09-02): the tape tile of
+  // the focused name carries the same accent as its rail row and board rows.
+  $$(".tp[data-sym]").forEach(function(t){ t.classList.toggle("foc", !!FOCUS && t.dataset.sym===FOCUS); });
   $$("tr.rw").forEach(function(tr){
     tr.classList.toggle("foc", !!FOCUS && tr.dataset.sym===FOCUS);
     tr.classList.toggle("dim", !!FOCUS && tr.dataset.sym!==FOCUS);
@@ -6554,7 +6763,17 @@ function hexA(hex, a){
 function stageMsg(txt){
   var el = document.getElementById("stagemsg");
   if(!el) return;
-  if(txt){ el.hidden = false; el.textContent = txt; }
+  if(txt){
+    el.hidden = false;
+    el.textContent = txt;
+    // A wait shows motion, not just a word (Doherty threshold, UX-laws
+    // redesign 2026-09-02). Only for in-progress states; a failure note
+    // stays a plain sentence.
+    if(/^(loading|fetching|building|resolving)/i.test(txt)){
+      var bar = document.createElement("i"); bar.className = "busybar"; bar.setAttribute("aria-hidden","true");
+      el.appendChild(bar);
+    }
+  }
   else el.hidden = true;
 }
 // Tick/crosshair time labels. Daily times are business-day objects (from
@@ -9630,11 +9849,13 @@ function stageFrameworkHTML(sym){
   // next week when it structurally cannot (2026-08-22 review round 11, data
   // honesty finding #1).
   var flags = fw.filter_flags || {};
+  var segs = [];   // one strip cell per filter, same order as the rows below
   var rows = FRAMEWORK_FILTER_ROWS.map(function(r){
     var v = filters[r.key];
     var isFlagged = v==null && flags[r.key];
     var word = v===true ? "PASS" : v===false ? "FAIL" : isFlagged ? "DATA FLAGGED" : "building…";
     var cls = v===true ? "u" : v===false ? "d" : "m";
+    segs.push(v===true ? "u" : v===false ? "d" : isFlagged ? "x" : "m");
     var mv = metrics[r.metric];
     var detail = (v!=null && mv!=null) ? (' <span class="m">'+esc(r.fmt(mv, metrics))+'</span>') : '';
     var flagTip = isFlagged
@@ -9676,6 +9897,9 @@ function stageFrameworkHTML(sym){
     + '<div class="kvrow"><span>Filters</span><b>'+fw.filters_passed+' pass · '+fw.filters_failed+' fail · '
       + buildingCount+' building'
       + (flagCount ? (' · '+flagCount+' data flagged') : '')+'</b></div>'
+    // Goal-gradient strip (UX-laws redesign, 2026-09-02): the same five
+    // states as the rows, drawn once as a bar so progress reads at a glance.
+    + '<div class="fwstrip" aria-hidden="true">'+segs.map(function(c){ return '<i class="'+c+'"></i>'; }).join("")+'</div>'
     + rows
     // Static explainer behind a button (declutter, 2026-08-26) — the verdict,
     // filter rows and STALE badge above are the dynamic surface and stay put.
@@ -13025,9 +13249,11 @@ function stageBar(){
         + (dis ? ' disabled aria-disabled="true"' : '')
         + ' data-tip="'+esc(t[2])+'">'+t[1]+'</button>';
     }).join("");
-  el.innerHTML = '<div class="seg" role="group" aria-label="Chart interval">'+ivBtns+'</div>'
-    + '<div class="seg" role="group" aria-label="Chart range">'+tfBtns+'</div>'
-    + '<div class="seg" role="group" aria-label="Overlays">'+taBtns+'</div>'+chips;
+  // Three LABELED groups (UX-laws redesign, 2026-09-02): bars and window are
+  // radio groups, overlays are independent toggles and render as toggles.
+  el.innerHTML = '<div class="seg" role="group" aria-label="Chart interval" data-lbl="interval">'+ivBtns+'</div>'
+    + '<div class="seg" role="group" aria-label="Chart range" data-lbl="range">'+tfBtns+'</div>'
+    + '<div class="seg tog" role="group" aria-label="Overlays" data-lbl="overlays">'+taBtns+'</div>'+chips;
   $$(".seg button", el).forEach(function(b){
     b.addEventListener("click", function(){
       if(b.dataset.iv){ STAGE.iv = b.dataset.iv; }
@@ -15067,7 +15293,7 @@ function start(){
   measureRailHeight();
   ["conv","swing","orders","sector","cats","news"].forEach(function(id){
     var el = document.getElementById(id);
-    if(el) el.innerHTML = '<div class="boardmsg">Loading…</div>';
+    if(el) el.innerHTML = '<div class="boardmsg skelrows" aria-busy="true"><i></i><i></i><i></i><span>Loading…</span></div>';
   });
   updatePricesTimestamp();
   renderMarketState(null);
