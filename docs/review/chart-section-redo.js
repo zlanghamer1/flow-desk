@@ -18,7 +18,8 @@ export const meta = {
   ],
 }
 
-const REPO = (args && args.repoRoot) || '/home/user/flow-desk'
+const REPO = (args && args.repoRoot)
+if (!REPO) throw new Error('pass args.repoRoot (absolute path of the flow-desk checkout)')
 const FILE = REPO + '/index.html'
 
 const COMMON = `

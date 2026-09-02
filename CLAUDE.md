@@ -11,6 +11,8 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   shape. Change a field here first, then match the code and the site.
 - **README.md** — the canonical user-facing, plain-English truth. Keep its voice.
 - **DEPLOY.md** — ops only (deploy method, loop lifecycle).
+- **docs/OPEN_ITEMS.md** — the per-round review history (findings, scores,
+  dates). This file keeps only the rules each round produced.
 
 ## Model-role convention for work on this repo
 - **Fable** — architect; rules on scope and gives final approval.
@@ -27,8 +29,9 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   ruling RESUMED the automated review cycle with a numeric finish line:
   **Sonnet-agent nine-section review rounds continue until every one of the
   nine sections scores 80 or higher in a single round** ("Continue sonnet
-  agents review to 80+ score on all") — this restores the numeric bar the
-  2026-08-22 ruling had replaced with the zero-open-findings condition.
+  agents review to 80+ score on all"). **That bar was met on 2026-08-27 and
+  Zach closed the cycle the same day — do not launch another round without a
+  fresh ask** (details in the last guardrails section below).
   **The score is ANCHORED, not reviewer-opined (Zach's same-day follow-up
   after round 17: "the adversarial agents have a moving goalpost"):**
   computed as 100 − 25/blocker − 10/major − 3/minor over adversarially
@@ -87,7 +90,7 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   of delay, but GitHub schedule triggers are documented best-effort and a
   bad enough delay can still land after the open.
 
-## Guardrails added with the 2026-08-19 trading-platform redesign
+## Trading-platform redesign (chart engine, Auto-TA, watchlist, heatmap)
 - **The chart engine is vendored TradingView Lightweight Charts, pinned at
   v5.2.1** (`vendor/lightweight-charts.standalone.production.js`,
   Apache-2.0). The in-chart attribution logo (`layout.attributionLogo`) and
@@ -131,7 +134,7 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   Do not resurrect the panel without his explicit ask; the vault's
   trade-stops engine and the Morning Brief guard section are unaffected.
 
-## Guardrails added by the 2026-08-19 review round
+## Prices, source lines, peers, and stamps
 - **STOCK PRICES ARE 15-MINUTE DELAYED. Never call them live.** The scanner
   reports `update_mode: "delayed_streaming_900"` — 900 seconds — for every
   symbol the desk polls, and cross-correlating 30 scanner samples against a
@@ -170,7 +173,7 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   gated to 08:15-15:00 CT, so gating the stamp on it left the data undated
   exactly when it was oldest.
 
-## Guardrails added by the second review round (same day)
+## Layout, feeds, grades, and chart geometry
 - **A responsive rule that rescues the narrow case gets checked at the wide
   one.** The tape's 4x2 grid started at 1160px, so the index labels were
   clipped at every desktop width from 1240 to 1920 while the phone showed
@@ -208,7 +211,7 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   snapshot, searched peers from the scanner seconds ago. `vintageNote` says
   which rows are which.
 
-## Guardrails added by the 2026-08-20 review round
+## Symbol switches, sessions, calendars, and async renders
 
 - **A view that changes symbol clears its data first.** `stageShow` empties
   `STAGE.rows`, `dates`, `times` and the marker maps before it repaints, so a
@@ -257,7 +260,7 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
 - **A network failure is never cached as a fact about the world.** A failed
   peer scan says the scan did not answer, and is not written to the cache.
 
-## Guardrails added 2026-08-21 (5-metric framework, Auto-TA, mobile watchlist)
+## 5-metric framework, Auto-TA shape labels, mobile watchlist
 
 - **The 5-metric scoring framework never uses ClaudeVault's per-ticker
   analysis numbers.** `market-data/results/desk_universe_framework_analysis_
@@ -321,7 +324,7 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   again, update the dated CSS comment in the `@media (max-width:900px)`
   block, not just the `order` values.
 
-## Guardrails added 2026-08-21, second round (unusual options activity, Bollinger Bands)
+## Unusual options activity and Bollinger Bands
 
 - **`opt_rvol`'s baseline must never include today's own reading.**
   `compute_opt_rvol` is called with `vol_history.get(ticker, [])` snapshotted
@@ -373,11 +376,7 @@ TradingView data, scores it onto two boards, and publishes `data.json` +
   any persisted alert state later, read this note: that would be new
   architecture, not an extension of what exists.
 
-## Guardrails added 2026-08-21, round-6 fix pass (26 findings, all 9 sections)
-
-Round 6 of the nine-section review confirmed 26 findings (see
-`docs/OPEN_ITEMS.md`'s history for the full list); this pass fixed all 26.
-The non-obvious decisions from that pass:
+## Review round 6 rules
 
 - **A cached session-derived flag has to track the session, not just the
   moment it was set.** `STAGE.premarketBar` was set once at full render and
@@ -462,14 +461,7 @@ The non-obvious decisions from that pass:
   monthly/quarterly/quad/triple regex above it already covers both titles
   this exception exists for.
 
-## Guardrails added 2026-08-22, round-7 fix pass (27 findings, all 9 sections)
-
-Round 7 of the nine-section review confirmed 27 findings against the new
-80-point bar (see `docs/OPEN_ITEMS.md` for the full list, scores, and the
-methodology note on catching a schema-valid-but-empty review result); this
-pass fixed all 27 the same day. Round 8, an independent re-review against
-the fixed page, has not yet run — see `docs/OPEN_ITEMS.md`'s Open section.
-The non-obvious decisions from this pass:
+## Review round 7 rules
 
 - **A trend line's role FLIPS on BREAKOUT and EXTENDED, never on RETEST or
   FAILED — one function, three call sites.** `taTrendFlipped(status)` is now
@@ -650,14 +642,7 @@ The non-obvious decisions from this pass:
   fix — a test that mirrors buggy logic keeps passing against a copy of the
   bug instead of the fetcher's real code.
 
-## Guardrails added 2026-08-22, round-8 fix pass (26 findings, all 9 sections)
-
-Round 8 of the nine-section review confirmed 26 findings (see
-`docs/OPEN_ITEMS.md` for the full list, scores, and a second occurrence of
-the "schema pass is not a content pass" methodology note — this round's
-Chart Stage reviewer returned the same placeholder-garbage failure round 7's
-Auto-TA reviewer did); this pass fixed all 26 the same day. The non-obvious
-decisions from this pass:
+## Review round 8 rules
 
 - **A synthetic "today" candle now checks `isTradingDay()`, not just
   premarket-vs-not.** `stageDailyData`'s two live-append branches and
@@ -794,12 +779,7 @@ decisions from this pass:
   cell (column 2) is never hidden at mobile and already carries the
   contract's other badges (delta, MOSTLY INTRINSIC).
 
-## Guardrails added 2026-08-22, round-9 fix pass (24 findings, all 9 sections)
-
-Round 9 of the nine-section review confirmed 24 findings (see
-`docs/OPEN_ITEMS.md` for the full list and scores) — the first round run
-under the feature freeze (see "Getting to a real done" in that same doc).
-This pass fixed all 24 the same day. The non-obvious decisions:
+## Review round 9 rules
 
 - **The 1H/4H live-quote-artifact filter now detects by SIGNATURE (zero
   range, zero volume), never by a fixed-hour grid modulus.** A real
@@ -892,12 +872,7 @@ This pass fixed all 24 the same day. The non-obvious decisions:
   `table()` helper used by every board — Conviction, Swing, Biggest Orders,
   ETF flows, and sector rotation all inherit the fix from one place.
 
-## Guardrails added 2026-08-22, round-10 fix pass (23 findings, all 9 sections)
-
-Round 10 of the nine-section review confirmed 23 findings (see
-`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
-this pass fixed all 23 the same day. The non-obvious decisions from this
-pass:
+## Review round 10 rules
 
 - **The live-poke path now recomputes the SAME extended/fabricated state
   `stageRender` computes at full-render time, on every 30-second poll, in
@@ -1051,12 +1026,7 @@ pass:
   the framework panel at all, so a stockanalysis.com outage kept printing a
   confident verdict off a days-old filing with nothing on screen saying so.
 
-## Guardrails added 2026-08-22, round-11 fix pass (25 findings, all 9 sections)
-
-Round 11 of the nine-section review confirmed 25 findings (see
-`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
-this pass fixed all 25 the same day. The non-obvious decisions from this
-pass:
+## Review round 11 rules
 
 - **A new shared `weekKeyOf(d)` function (hoisted out of `intervalDataFor`'s
   own local copy) is now the ONE place that computes "the Monday of a bar's
@@ -1231,12 +1201,7 @@ pass:
   rolled to tomorrow while it is still today in CT, producing an
   off-by-one-day STALE count in the evening.
 
-## Guardrails added 2026-08-23, round-12 fix pass (21 findings, all 9 sections)
-
-Round 12 of the nine-section review confirmed 21 findings (see
-`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
-this pass fixed all 21 the same day. The non-obvious decisions from this
-pass:
+## Review round 12 rules
 
 - **`stageNextEarnHTML` now derives its displayed day-count from
   `fund.next_earnings.date` via `fedDaysToMeeting`, the same vendor the
@@ -1415,12 +1380,7 @@ pass:
   resolution that structurally cannot happen since the underlying
   financials are what's wrong, not the elapsed time.
 
-## Guardrails added 2026-08-23, round-13 fix pass (25 findings, all 9 sections)
-
-Round 13 of the nine-section review confirmed 25 findings (see
-`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
-this pass fixed all 25 the same day, all frontend JS (no fetcher changes).
-The non-obvious decisions from this pass:
+## Review round 13 rules
 
 - **`isLastTradingDayOfWeek` special-cases Sunday explicitly now.** Saturday
   (`wd===6`) already returned true correctly by accident — the loop
@@ -1490,17 +1450,7 @@ The non-obvious decisions from this pass:
   "today" — on any trading day before premarket opens (`priceSessionNow`
   gates premarket to >=3:00 CT), the real next session is today itself.
 
-## Guardrails added 2026-08-23, round-14 fix pass (21 findings, 19 fixed, 2 deferred)
-
-Round 14 of the nine-section review confirmed 21 findings (see
-`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
-this pass fixed 19 the same day. The remaining 2 (both Financials, the
-ad-hoc/scanner currency hardcode and the ad-hoc quarter-cadence assumption)
-are documented as deliberately deferred in `docs/OPEN_ITEMS.md`'s Open
-section — both require client-side vendor-data infrastructure that doesn't
-currently exist, and both of the review's own proposed fixes were checked
-and rejected by its own correction. The non-obvious decisions from this
-pass:
+## Review round 14 rules
 
 - **A synthetic "today" candle now also checks the CLOCK, not just the
   calendar.** `stageDailyData`'s closed-branch and `seriesQuads`' identical
@@ -1578,7 +1528,7 @@ pass:
   tab on every relevant resize (round 10), so only the geometry computation
   itself, not a new re-render trigger, needed the fix.
 
-## Guardrails added 2026-08-23 (Zach's direct report, curated peer sets)
+## Curated peer sets
 
 - **`PEER_GROUPS` gained three new curated overrides — LITE, MRVL, AEHR —
   after Zach flagged that the vendor's industry-scan fallback (`_peersByIndustry`)
@@ -1596,7 +1546,7 @@ pass:
   never reach `_peersByIndustry` again regardless of what TradingView's own
   industry classification says.
 
-## Guardrails added 2026-08-23 (Zach's direct report, peer-chart click-through)
+## Peer-chart click-through
 
 - **Every peer's ticker label — the SVG bar-chart label AND the `.peerkey`
   key chip above it — is now a real click/keyboard target
@@ -1619,7 +1569,7 @@ pass:
   (e.g. FN, NXPI, TER, COHU, FORM) resolves correctly on the first click —
   no additional lookup needed for this fix.
 
-## Guardrails added 2026-08-23 (Zach's direct report, peer-selection audit)
+## Peer-selection audit
 
 Zach asked for the peer-selection LOGIC itself to be checked for any
 ticker, not just a manual patch for the three flagged above. Investigated
@@ -1656,7 +1606,7 @@ live against TradingView's actual scanner (not from memory):
   there is no drop-in algorithmic fix that would generically prevent the
   next one.
 
-## Guardrails added 2026-08-23 (Zach's direct request, watchlist sort options)
+## Watchlist sort options
 
 Feature freeze explicitly lifted for this one change (Zach's call, small and
 additive, doesn't touch review-flagged code).
@@ -1677,11 +1627,7 @@ additive, doesn't touch review-flagged code).
   sets `wlSort` generically from `data-ws`, so no enum needed updating
   anywhere else.
 
-## Guardrails added 2026-08-23, round-15 fix pass (26 findings, all 9 sections, all fixed)
-
-Round 15 of the nine-section review confirmed 26 findings (see
-`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
-this pass fixed all 26 the same day, no deferrals. The non-obvious decisions:
+## Review round 15 rules
 
 - **The weekly chart's premarket live-poke now reads a dedicated
   `STAGE.weekPrevClose`, never `STAGE.rows[wn-2]`.** `resampleWeekly`
@@ -1810,16 +1756,7 @@ this pass fixed all 26 the same day, no deferrals. The non-obvious decisions:
   ways depending on a decimal never shown on screen. Same "one function, one
   value" convention as `taSrSide`/`taTrendFlipped`/`fedLegPct`.
 
-## Guardrails added 2026-08-23, round-16 fix pass (25 findings, all 9 sections, all fixed) — last automated round before the Fable architect pass
-
-Round 16 of the nine-section review confirmed 25 findings (see
-`docs/OPEN_ITEMS.md` for the full list, scores, and per-finding write-up);
-this pass fixed all 25 the same day, no deferrals, no fetcher changes. **Zach
-paused the automated round-fix-launch cycle after this round** — the next
-step is a Fable-led architect pass over the whole site, producing a corrections
-list for one final Sonnet-executed pass. Do not resume the automated round-N
-cycle without that list or an explicit new ask. The non-obvious decisions
-from this pass:
+## Review round 16 rules
 
 - **The ad-hoc (searched-ticker) daily chart branch now carries the same
   `ctMinutesOfDay(new Date()) >= 3*60` clock gate the pinned-symbol branch
@@ -1983,14 +1920,7 @@ from this pass:
   `Number(v.toFixed(n)).toFixed(n)` normalization instead, since it doesn't
   share the other four rows' signed-prefix structure.
 
-## Guardrails added 2026-08-23, Fable architect pass (14 findings, all fixed)
-
-After round 16, the automated nine-section review cycle was paused (Zach's
-call) in favor of a Fable-model architect pass — an independent read of the
-whole codebase (not scoped to what the automated rubric catches), producing
-a corrections list a Sonnet pass then executed to completion the same day.
-See `docs/OPEN_ITEMS.md` for the full per-finding writeup. The non-obvious
-decisions from this pass:
+## Architect pass rules (2026-08-23)
 
 - **The fetcher had ZERO market-holiday awareness anywhere before this.**
   `market_guard.py`'s `_in_window` and `build_snapshot.py`'s own
@@ -2086,14 +2016,11 @@ decisions from this pass:
   "a test that mirrors buggy logic keeps passing against a copy of the bug"
   pattern CLAUDE.md documents from round 6 and round 7's own test fixes.
 
-## Guardrails added 2026-08-24 (volume profile, Zach's freeze lift)
+## Volume profile overlay
 
-Zach lifted the feature freeze explicitly for this one feature only ("Lift
-the freeze for the volume profile", 2026-08-24) — this does not close out
-the freeze itself (see "FEATURE FREEZE IN EFFECT" above and
-`docs/OPEN_ITEMS.md`'s "Getting to a real done" section, which are
-otherwise unchanged). All changes are frontend-only, in `index.html`; no
-fetcher changes, no new network calls.
+Built 2026-08-24 under a scoped lift of the (since-ended) feature freeze.
+All changes are frontend-only, in `index.html`; no fetcher changes, no new
+network calls.
 
 - **Honest vocabulary only.** The overlay and its zones are never called
   "institutional," "smart money," "buy zone," or "sell zone." The words on
@@ -2224,7 +2151,7 @@ fetcher changes, no new network calls.
   be wrong — checked inside `taSrBadgePick` itself, the one function every
   fit-time and live-poke collision site already calls.
 
-## Guardrails added 2026-08-24, freeze close-out pass
+## Vendor-data gaps closed by live probe (2026-08-24)
 
 Zach asked for the two remaining "deferred by judgement" items in
 `docs/OPEN_ITEMS.md`'s Open section to be re-investigated live rather than
@@ -2273,7 +2200,7 @@ by ruling, 2026-08-24."
   instead of an assumption. `docs/OPEN_ITEMS.md` states exactly what
   evidence would reopen either one.
 
-## Guardrails added 2026-08-24 (vertical drag-to-pan, Fable build spec)
+## Vertical drag-to-pan
 
 - **Vertical drag-to-pan rides the SAME `autoscaleInfoProvider` vZoom does**
   (Zach's report: "can't drag the chart up/down the way TradingView does").
@@ -2306,7 +2233,7 @@ by ruling, 2026-08-24."
   does NOT starve the library's own time-pan: one diagonal drag pans both
   axes (time range shifted ~8.3 bars and price ~82px in the same gesture).
 
-## Guardrails added 2026-08-25 (intraday-precision volume profile, Zach's approval)
+## Intraday-precision volume profile
 
 Zach approved this upgrade ("Approved to build 15m update") on top of the
 existing volume-profile freeze lift — frontend-only, `index.html`, no
@@ -2367,12 +2294,10 @@ fetcher changes, no new network calls.
   decomposition and fell back to the daily smear rather than distributing
   volume against an incomplete intraday session.
 
-## Guardrails added 2026-08-24, gamma snapshots, Zach's freeze lift
+## Gamma snapshots (gamma_history.json)
 
-Zach lifted the feature freeze explicitly for this one change ("Lift the
-freeze for gamma snapshots", 2026-08-24) — a scoped lift, not a close-out;
-the freeze itself (see "FEATURE FREEZE IN EFFECT" above) is unchanged and
-still governs everything else in this repo. Purpose: accumulate daily
+Built 2026-08-24 under a scoped lift of the (since-ended) feature freeze.
+Purpose: accumulate daily
 snapshots of each ticker's `facts.<TICKER>.gamma` object so a future
 combined GEX + volume-profile backtest becomes possible. Fetcher-only — no
 `index.html` change, the page never reads this file.
@@ -2426,7 +2351,7 @@ combined GEX + volume-profile backtest becomes possible. Fetcher-only — no
   retention, and that this is analysis-side reference data the page never
   reads.
 
-## Guardrails added 2026-08-26 (declutter redesign, Zach's direct ask)
+## Declutter redesign
 
 Zach's ask, verbatim intent: use the maximum desktop screen space while
 staying usable on mobile; consolidate the small text clusters behind
@@ -2434,8 +2359,7 @@ clickable buttons; only Bollinger Bands on by default in the chart views,
 everything else click-to-enable; the text under the chart is a quick recap
 of why it's bullish/bearish/hold; the same quick-recap principle for other
 sections; and the bar for every sentence is "can a person just getting into
-trading understand this?" A direct ask, same scoped-freeze-lift pattern as
-the watchlist sorts and the volume profile — the freeze itself is unchanged.
+trading understand this?"
 Frontend-only (`index.html` + README), no fetcher changes, no new network
 calls. The non-obvious decisions:
 
@@ -2520,13 +2444,7 @@ calls. The non-obvious decisions:
   expander round-trip working, heatmode hiding the new elements, and zero
   console errors beyond the sandbox's expected blocked-network fetches.
 
-## Guardrails added 2026-08-26, round-17 fix pass (24 findings, all 9 sections, all fixed)
-
-Round 17 — the first Sonnet-agent round after Zach's unfreeze ruling, and
-the first to review the same-day declutter redesign (see
-`docs/OPEN_ITEMS.md` for scores and the full table). Five of the 24 were
-declutter regressions, caught one round later exactly as the freeze's
-lesson predicts. The non-obvious decisions:
+## Review round 17 rules
 
 - **`#stagerecap` joins every clear path the other under-chart captions
   ride** — `stageSetEmpty` and `stageShow` both blank it (and reset
@@ -2643,10 +2561,7 @@ lesson predicts. The non-obvious decisions:
   horizontal scroll can't carry the one "rows were capped" disclosure off
   the left edge.
 
-## Guardrails added 2026-08-26, round-18 fix pass (22 findings, all fixed)
-
-First round scored on the anchored ruler (see `docs/OPEN_ITEMS.md` for the
-table). The non-obvious decisions:
+## Review round 18 rules
 
 - **The trend/S-R fitting window now excludes the live/synthetic last bar
   (`nFit`), the SAME settled-bars convention BB and VP already followed in
@@ -2739,7 +2654,7 @@ table). The non-obvious decisions:
   so it's a disclosure gated on all-wrapper tickers + a rating-note title
   shape, never a drop.
 
-## Guardrails added 2026-08-26 (lower-band touch alerts, Zach's direct ask)
+## Lower-band touch alerts
 
 Zach: "I need bollinger bands alerts for any that touch or go below lower
 band." Extends the existing Band-crosses rail panel (the 2026-08-21
@@ -2769,13 +2684,7 @@ architecture, no notifications, no persisted state. Frontend-only.
   documented MOVERS asymmetry stands; the header gains a "N at the lower
   band" count when any exist.
 
-## Guardrails added 2026-08-26, round-19 fix pass (21 findings, 8 sections, all fixed; Auto-TA re-run pending)
-
-Round 19 confirmed 21 findings across 8 sections (the Auto-TA reviewer's
-verify agent died at the structured-output retry cap and nulled that
-section; the run was resumed via `resumeFromRunId` to recover it — see
-`docs/OPEN_ITEMS.md` for scores). All 21 fixed the same day. The
-non-obvious decisions:
+## Review round 19 rules
 
 - **All five framework filters now carry an implausibility ceiling, not
   just 4/5.** The round's one blocker: Filter 2 (NTM revenue growth) was
@@ -2877,20 +2786,13 @@ non-obvious decisions:
   change, "Click to chart it."), matching the four index tiles beside
   them — only the no-quote branch had one before.
 
-## Guardrails added 2026-08-27, round-19 resumed run (8 verified findings, all fixed) — REVIEW CYCLE CLOSED
+## Review round 19 (resumed run) rules — review cycle closed 2026-08-27
 
-The `resumeFromRunId` recovery of round 19's dead Auto-TA section re-ran
-all nine reviewers against the already-fixed code — effectively a fresh
-scoring pass. **Every completed section scored 87-100 anchored; the
-script's own verdict was "below 80: none," meeting Zach's 2026-08-26
-finish line.** Zach then closed the cycle (2026-08-27: "after this pass
-stop, approaching weekly limits") — **do not launch round 20 without a
-fresh ask.** Caveat recorded in `docs/OPEN_ITEMS.md`: 12 verify agents
-died on the org usage limit, so 11 findings across vs Peers / panels /
-flow boards / data honesty were never adversarially verified; those four
-sections' 100s mean "no VERIFIED findings," and the unverified list is
-preserved there for a future session. The 8 verified findings were all
-fixed same day. Non-obvious decisions:
+The review cycle met Zach's 80+ bar on 2026-08-27 and he closed it the same
+day. **Do not launch another review round without a fresh ask.** Four
+sections (vs Peers, panels, flow boards, data honesty) carry findings that
+were never adversarially verified because verify agents hit the usage limit;
+the list is preserved in `docs/OPEN_ITEMS.md`.
 
 - **`taRegrade`'s FAILED verdict distinguishes a settled reversal from a
   live one (`fit.failedLive`).** `lastClose` is the live-patched intraday

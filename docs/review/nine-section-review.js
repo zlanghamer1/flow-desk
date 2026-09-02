@@ -65,11 +65,10 @@ export const meta = {
   ],
 }
 
-// REPO's absolute path varies by environment/session — this script does not
-// hardcode one. Pass it via Workflow's `args.repoRoot`; falls back to this
-// session's known checkout if the caller omits it (a later session on a
-// different workspace path MUST pass args.repoRoot rather than edit this).
-const REPO = (args && args.repoRoot) || '/home/user/flow-desk'
+// The checkout's absolute path varies by environment/session, so it is a
+// required argument: Workflow({scriptPath: ..., args: {repoRoot: '/abs/path'}}).
+const REPO = (args && args.repoRoot)
+if (!REPO) throw new Error('pass args.repoRoot (absolute path of the flow-desk checkout)')
 const FILE = REPO + '/index.html'
 
 const COMMON = `
