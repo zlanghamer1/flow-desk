@@ -1806,7 +1806,7 @@ var TIPS = {
   netflow:"Call premium traded minus put premium traded (volume × last × 100). Free data can't see buy vs sell side — this is premium changing hands, not directional order flow.",
   flows:"Fund flows = change in shares outstanding × NAV (creations/redemptions). Flows chase returns — context, never a signal.",
   fund:"Colored from a buyer's lens against rough thresholds: short % of float green under 2% / red over 5%; RSI green at 30 or under (washed out) / red at 70+ (hot); PEG green at 1 or under / red at 2+; net margin green at 20%+ / red below 0%; Debt/Eq green at 0.5 or under / red at 2+; analyst target green when 15%+ above price. A gauge, not a rating.",
-  framework:"Five filters testing one repricing cycle in order: is forward EPS being revised up (6mo), is NTM revenue growth above 20%, is that revision accelerating (3mo), is operating margin expanding faster than 50bps year over year, and is TTM free cash flow both POSITIVE and growing faster than revenue (self-funded growth, not just a shrinking loss — the row shows the exact figure when negative FCF is the reason a growing-faster-than-revenue reading still fails). 5/5 = BUY, 4/5 = BUY with one gap, 3/5 = ADD, 2/5 = HOLD, under 2 = AVOID. Computed once a day server-side from TradingView consensus and reported quarterly financials — never guessed: a filter with no data reads 'building' rather than pass or fail, and the verdict itself reads BUILDING HISTORY until at least 3 of the 5 have resolved. The two consensus-trend filters need 3-6 months of accumulated weekly snapshots after a fresh deployment. Display-only: it never feeds the conviction or swing score above, and works best on growth names — mature dividend payers score lower by design, not by error.",
+  framework:"Five filters testing one repricing cycle in order: is forward EPS being revised up (6mo), is NTM revenue growth above 20%, is that revision accelerating (3mo), is operating margin expanding faster than 50bps year over year, and is TTM free cash flow both POSITIVE and growing faster than revenue (self-funded growth, not just a shrinking loss — the row shows the exact figure when negative FCF is the reason a growing-faster-than-revenue reading still fails). 5/5 = BUY, 4/5 = BUY with one gap, 3/5 = ADD, 2/5 = HOLD, under 2 = AVOID. Computed once a day server-side from TradingView consensus and reported quarterly financials — never guessed: a filter with no data reads 'building' rather than pass or fail, and the verdict itself reads BUILDING HISTORY until at least 3 of the 5 have resolved. The two consensus-trend filters need 3-6 months of accumulated weekly snapshots after a fresh deployment, so a tier reached before they report shows how many measurable filters passed and how many are still to come — a pending filter can only add passes later, never subtract. A fund reads NOT APPLICABLE instead: a basket of holdings has no revenue, margin or cash flow of its own, so none of the five can ever be measured for it. Display-only: it never feeds the conviction or swing score above, and works best on growth names — mature dividend payers score lower by design, not by error.",
   range:"Position in the 52-week range. Near the low = shopping territory, near the high = hot runner. The diamond is today.",
   hot:"Today's move divided by this name's own average daily move — Micron swinging 2% is normal, Google swinging 2% is not. Highlights at 1.8× and up.",
   "tip-unusual-activity": "Today's 0-7 day options contract volume divided by this ticker's own trailing 20-session average — the same “relative to its own normal” idea as RVOL and the hot-move tag above, applied to options volume. Flags at 3× and up. Needs 20 sessions of history first; until then this ticker just isn't flagged. The BULLISH/BEARISH/HEDGING/MIXED word is a heuristic on top of that, from which side (call or put) holds the bigger near-money premium share vs. today's actual price move: put-heavy flow while the stock is NOT falling reads HEDGING (the one signature free data can honestly call protective), put-heavy while it IS falling reads BEARISH, call-heavy agreeing with an up move reads BULLISH, and call-heavy disagreeing reads MIXED rather than a mirrored “hedging” claim this data can't support (covered-call writing looks identical to bought calls here). Sampled, aggregated, free data — this cannot see who initiated a trade or why. Display only; it never moves the conviction or swing score.",
@@ -10004,15 +10004,20 @@ function rangeSecHTML(sym){
    have real data, never a confident tier on a minority of them. A tier
    verdict reached with fewer than all 5 filters resolved arrives as
    "<TIER>_BUILDING" (e.g. "ADD_BUILDING") — folded back into the base
-   tier's label/color below with a "(building)" qualifier, so a clean-but-
-   incomplete record never renders identical to the same tier reached with a
-   complete, genuinely mixed one (2026-08-22 review, data honesty finding
-   #3). */
+   tier's label/color below, so a clean-but-incomplete record never renders
+   identical to the same tier reached with a complete, genuinely mixed one
+   (2026-08-22 review, data honesty finding #3). That distinction is drawn
+   by a qualifier LINE naming how many measurable filters passed, not by a
+   "(building)" suffix on the tier itself — the suffix made a name that had
+   aced every measurable filter (LLY: 3 of 3, 0 fail) read like the same
+   unfinished state as a fund with five blank filters (Zach's report,
+   2026-09-03). A fund now says NOT_APPLICABLE outright and renders no
+   filter rows at all. */
 var FRAMEWORK_VERDICT_LABEL = {
   BUY_5:"BUY ★★★", BUY_4:"BUY ★★", ADD:"ADD", HOLD:"HOLD",
-  AVOID:"AVOID", BUILDING:"BUILDING HISTORY"
+  AVOID:"AVOID", BUILDING:"BUILDING HISTORY", NOT_APPLICABLE:"NOT APPLICABLE"
 };
-var FRAMEWORK_VERDICT_CLS = {BUY_5:"u", BUY_4:"u", ADD:"", HOLD:"m", AVOID:"d", BUILDING:"m"};
+var FRAMEWORK_VERDICT_CLS = {BUY_5:"u", BUY_4:"u", ADD:"", HOLD:"m", AVOID:"d", BUILDING:"m", NOT_APPLICABLE:"m"};
 // None of these five fmt() functions guarded against JS's signed-zero
 // rounding the way fm1/sign1 elsewhere in the file do (round 13 added those
 // specifically for this class of bug) — a tiny negative reading like
@@ -10072,6 +10077,22 @@ function stageFrameworkHTML(sym){
             + "server-side quarterly financials fund/{SYM}.json only carries for pinned names.")
       + '</div>';
   }
+  // A fund (sec_type "fund") can never resolve a single filter — it is a
+  // basket of holdings with no revenue, margin or cash flow of its own. The
+  // fetcher says so outright now (verdict "NOT_APPLICABLE", added
+  // 2026-09-03); before that a fund published the bare "BUILDING" an equity
+  // still accumulating consensus history publishes, so the panel promised a
+  // result that structurally cannot arrive on 25 of 63 scored names. Render
+  // the reason and stop: five "building…" rows and a five-segment progress
+  // strip would each be a fresh version of the same false promise.
+  if(fw.verdict === "NOT_APPLICABLE"){
+    return '<div class="dsec"><h3><span data-tip="'+esc(TIPS.framework)+'">5-metric framework</span></h3>'
+      + '<div class="kvrow"><span>Verdict</span><b class="m">'+esc(FRAMEWORK_VERDICT_LABEL.NOT_APPLICABLE)+'</b></div>'
+      + '<div class="note">'+esc(sym)+' is a fund — a basket of holdings, not a company. It has no revenue, '
+      + 'operating margin or cash flow of its own, so none of the five filters can be measured for it. '
+      + 'This is not a reading that is still loading.</div>'
+      +'</div>';
+  }
   var metrics = fw.metrics || {};
   var filters = fw.filters || {};
   // A null filter usually means "still building" — the two consensus-
@@ -10112,7 +10133,35 @@ function stageFrameworkHTML(sym){
   var vbase = vcapped ? vcode.slice(0, -"_CAPPED".length)
     : vbuilding ? vcode.slice(0, -"_BUILDING".length) : vcode;
   var vcls = FRAMEWORK_VERDICT_CLS[vbase] || "";
-  var vlabel = (FRAMEWORK_VERDICT_LABEL[vbase] || vbase) + (vcapped ? " (capped)" : vbuilding ? " (building)" : "");
+  // "(building)" is DROPPED from a tier verdict as of 2026-09-03 (Zach's
+  // report: "LLY is not a fund but says building as well?"). LLY had passed
+  // 3 of the 3 filters that can be measured today and failed none — the best
+  // result available — and rendered as "ADD (building)", the same word a
+  // fund with five blank filters and a stock with too little data to score
+  // at all both carried. One word was doing three jobs. The tier now reads
+  // as the result it is, and the qualifier below states the true fact
+  // instead: how many measurable filters passed, and how many are pending.
+  //
+  // The pending filters can only ADD passes as they resolve, never subtract,
+  // so the tier can rise from here but cannot fall on their account (the
+  // tier map keys off `filters_passed`, which is monotonic as unknowns
+  // resolve — a later change in the UNDERLYING data is a different matter).
+  // "(capped)" is unchanged: there the unresolved filters are permanently
+  // rejected, so naming the ceiling is the honest thing to say.
+  var vlabel = (FRAMEWORK_VERDICT_LABEL[vbase] || vbase) + (vcapped ? " (capped)" : "");
+  var flagCountEarly = Object.keys(flags).length;
+  var measurable = fw.filters_passed + fw.filters_failed;
+  var pendingCount = fw.filters_unknown - flagCountEarly;
+  var vsub = "";
+  if(vbuilding && measurable > 0){
+    vsub = '<div class="kvrow" style="margin-top:-4px"><span></span><span class="m" data-tip="'
+      + esc("A pending filter has no data yet — the two consensus-trend filters need months of accumulated weekly "
+          + "snapshots. As they resolve they can only add passes, never subtract, so this tier can rise from here "
+          + "but will not fall because of them.")
+      + '">'+fw.filters_passed+' of '+measurable+' measurable filter'+(measurable===1?'':'s')+' passed'
+      + (pendingCount>0 ? (' · '+pendingCount+' unlock'+(pendingCount===1?'s':'')+' later') : '')
+      + '</span></div>';
+  }
   // 3 of the 5 filters (revenue growth, opmargin expansion, FCF growth) read
   // straight off the same once-a-day fund/{SYM}.json sidecar the
   // Fundamentals grid already flags STALE — this panel had no equivalent, so
@@ -10125,10 +10174,11 @@ function stageFrameworkHTML(sym){
         + "quarterly-financials sidecar Fundamentals flags — it was built "+fwFundStaleDays
         + " days before this session and may be running on a stale filing.")+'">STALE '+fwFundStaleDays+'d</span>')
     : "";
-  var flagCount = Object.keys(flags).length;
-  var buildingCount = fw.filters_unknown - flagCount;
+  var flagCount = flagCountEarly;
+  var buildingCount = pendingCount;
   return '<div class="dsec"><h3><span data-tip="'+esc(TIPS.framework)+'">5-metric framework</span>'+fwStaleSub+'</h3>'
     + '<div class="kvrow"><span>Verdict</span><b class="'+vcls+'">'+esc(vlabel)+'</b></div>'
+    + vsub
     + '<div class="kvrow"><span>Filters</span><b>'+fw.filters_passed+' pass · '+fw.filters_failed+' fail · '
       + buildingCount+' building'
       + (flagCount ? (' · '+flagCount+' data flagged') : '')+'</b></div>'
