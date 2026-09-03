@@ -9,23 +9,27 @@ name: Refresh Loop
 # under GitHub's 6h hard job cap; if the session is still open at that point it
 # prints a "REDISPATCH" line, and the final step here re-fires this same
 # workflow via the API so the session keeps getting covered all day without a
-# human touching anything. Two backup cron starters (DST + standard time
-# variants) exist purely as a safety net in case the self-redispatch chain is
-# ever broken by a run failing outright — the primary mechanism is the
-# redispatch chain, not the cron.
+# human touching anything.
 #
-# Timing (moved earlier 2026-08-24): loop.py's should_publish() extended
-# window opens at 8:00am CT sharp — fire the cron any earlier and the run
-# sees "outside publish window" and exits immediately, doing nothing, so
-# 8:00am CT is the earliest a cron firing can be useful at all. The backup
-# crons target 8:03am CT (just past that floor, offset 3 minutes off the
-# top-of-hour mark GitHub's docs call out as congested/delay-prone — the
-# Morning Brief workflow uses the same offset-minute trick). That leaves the
-# maximum possible buffer, ~27 minutes, before the 8:30am CT market open.
-# This still isn't a hard guarantee: on 2026-08-24 the prior 8:20am-target
-# cron itself fired 43 minutes late (GitHub schedule triggers are
-# documented best-effort), which is what prompted moving the target earlier
-# rather than assuming any fixed lead time is safe.
+# WHAT ACTUALLY STARTS THE DAY (corrected 2026-09-03): the redispatch chain
+# is NOT a daily starter and never was. loop.py exits when the publish window
+# closes at 15:20 CT, so on any day the loop starts after ~09:50 CT it never
+# reaches MAX_RUN_SEC (5.5h), never prints REDISPATCH, and the chain simply
+# does not run. Every day's first run therefore comes from a cron firing or a
+# manual/API dispatch — which is why a delayed cron means a blank desk. The
+# durable answer is an external pinger on the dispatch endpoint, the same fix
+# ClaudeVault adopted on 2026-06-12 for the identical GitHub-cron failure;
+# see DEPLOY.md and market-data/event-alerts/EXTERNAL_TRIGGER.md.
+#
+# Timing: loop.py's should_publish() extended window opens at 8:00am CT sharp
+# — fire any earlier and the run sees "outside publish window" and exits
+# immediately, doing nothing, so 8:00am CT is the earliest a firing can be
+# useful at all. Every cron below sits at minute :03, off the top-of-hour mark
+# GitHub's docs call out as congested/delay-prone (the Morning Brief workflow
+# uses the same offset-minute trick). None of this is a hard guarantee:
+# GitHub schedule triggers are documented best-effort, they fired 43 minutes
+# late on 2026-08-24, 2.6-5h late on 2026-09-01/02, and not at all before
+# 11:38am CT on 2026-09-03.
 
 on:
   workflow_dispatch:
@@ -35,9 +39,34 @@ on:
         type: boolean
         default: false
   schedule:
-    # Backup starters only (see note above). UTC times = ~8:03am CT.
-    - cron: "3 13 * * 1-5"    # 08:03 CDT (UTC-5, DST)
-    - cron: "3 14 * * 1-5"    # 08:03 CST (UTC-6, standard time)
+    # Backup starters only (see note above). Minute :03 on every UTC hour that
+    # can land inside the publish window under either offset — 13:03 UTC is
+    # 08:03 CDT / 07:03 CST, 20:03 UTC is 15:03 CDT / 14:03 CST.
+    #
+    # Why so many (2026-09-03): on 2026-09-03 the desk showed nothing at all.
+    # Neither of the two 08:03-target crons had fired by 11:38am CT, so
+    # data.json still carried the 2026-09-02 15:17 CT publish and every
+    # payload-driven panel — Morning Brief tile, both flow boards, catalysts,
+    # news — was a day stale. The three prior sessions each got exactly two
+    # firings, both 2.6-5h late (13:03 -> 17:00 UTC, 14:03 -> 17:39 UTC on
+    # 2026-09-02). Same failure ClaudeVault documented on 2026-06-12 and
+    # solved with an external pinger; see market-data/event-alerts/
+    # EXTERNAL_TRIGGER.md in that repo and the DEPLOY.md note here.
+    #
+    # A firing that lands outside 08:00-15:20 CT is free: loop.py calls
+    # market_guard.should_publish() first and exits in seconds. A firing that
+    # lands inside the window starts the loop for the rest of the session, and
+    # the concurrency group below serializes any that arrive behind it. So the
+    # extra entries only add coverage — whichever firing arrives in-window
+    # first wins the day.
+    - cron: "3 13 * * 1-5"    # 08:03 CDT / 07:03 CST
+    - cron: "3 14 * * 1-5"    # 09:03 CDT / 08:03 CST
+    - cron: "3 15 * * 1-5"    # 10:03 CDT / 09:03 CST
+    - cron: "3 16 * * 1-5"    # 11:03 CDT / 10:03 CST
+    - cron: "3 17 * * 1-5"    # 12:03 CDT / 11:03 CST
+    - cron: "3 18 * * 1-5"    # 13:03 CDT / 12:03 CST
+    - cron: "3 19 * * 1-5"    # 14:03 CDT / 13:03 CST
+    - cron: "3 20 * * 1-5"    # 15:03 CDT / 14:03 CST
 
 permissions:
   contents: write   # loop.py pushes data.json/history.json to the `data` branch

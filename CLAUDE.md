@@ -3295,3 +3295,59 @@ disclosure removed.
   and drifting left, two `.nt-item` copies, six technicals buttons with zero
   `data-tip`, no tooltip on hover or click, no page errors, no sideways
   scroll.
+
+## Guardrails added 2026-09-03 (the desk went stale all morning — what actually starts the loop)
+
+Zach's report at 11:38 AM CT: "Morning Brief and several other functions of
+the desk are not updated today... Several overviews of the five metric
+framework are stated as building." Two separate questions with two separate
+answers; the fix is ops, not page code.
+
+- **One root cause for everything stale: `data.json` had not been republished
+  since 2026-09-02 15:17 CT, because no refresh-loop run had started that
+  day.** The desk's Morning Brief tile is `data.json.brief`, not the Morning
+  Brief workflow's own output — so a loop that never runs freezes the brief
+  tile, both flow boards, catalysts, news, Fed odds and the framework panel
+  together, in one stroke. The Morning Brief EMAIL was fine; ClaudeVault's
+  external pinger dispatched it on the minute at 6:23 AM CT. Diagnose a
+  "nothing updated" report by reading `origin/data`'s last commit timestamp
+  first; it separates these two systems in one command.
+- **The self-redispatch chain is NOT a daily starter and never was.**
+  `loop.py` exits at the 15:20 CT window close, so any run starting after
+  ~09:50 CT never reaches `MAX_RUN_SEC` (5.5h), never prints `REDISPATCH`,
+  and the chain simply does not fire. The workflow header comment claimed the
+  chain was "the primary mechanism" and the cron "purely a safety net" — the
+  reverse of the truth, and corrected in the same change. Every session's
+  first run is a cron firing or a dispatch.
+- **GitHub's `schedule` event is the failure point, measured not assumed.**
+  Both 08:03-target crons were still unfired at 11:38 AM CT; the three prior
+  sessions each got exactly two firings, 2.6–5h late (13:03 → 17:00 UTC and
+  14:03 → 17:39 UTC on 2026-09-02). ClaudeVault's `schedule`-triggered
+  Morning Brief ran 3h40m–5h18m late the same morning while its
+  pinger-dispatched runs were punctual to the second. The repo is public, so
+  Actions minutes are free and unmetered — this is not a billing block.
+- **Two mitigations, one of which needs Zach.** (1) The workflow now carries
+  eight `:03` cron entries across 13:00–20:00 UTC instead of two — a firing
+  landing outside 08:00–15:20 CT exits in seconds, whichever lands inside
+  starts the session, and the `refresh-loop` concurrency group serializes the
+  rest. Coverage, not punctuality. (2) The real fix is the external pinger
+  ClaudeVault has used since 2026-06-12 for this identical failure: a
+  cron-job.org job POSTing this repo's `refresh-loop.yml/dispatches` at 8:03
+  AM CT weekdays. Blocked on a token — the existing `workflow-pinger`
+  fine-grained PAT is scoped to ClaudeVault only. Steps and the token
+  requirement are in DEPLOY.md → "What actually starts the day."
+- **The framework's "building" verdicts are correct, not a symptom.**
+  `consensus_history.json` holds 3 weekly snapshots (2026-W34 through W36,
+  first written 2026-08-17). Filter 1 needs a 26-week lookback and Filter 3
+  needs 13 — so both read `null` until roughly late November 2026 and
+  February 2027 respectively, by construction. That leaves 3 of 5 filters
+  computable today, exactly `FRAMEWORK_MIN_EVALUATED`, so a name needs ALL
+  THREE of revenue growth / opmargin expansion / FCF growth to resolve
+  before it earns a tier. Live count on the 2026-09-03 payload: 63 names
+  carry a framework, 19 earned a tier (all `*_BUILDING`), 44 read plain
+  BUILDING. Of those 44, **25 are ETFs and wrappers** (SPY, QQQ, SMH, MUU,
+  CBRS…) which have no company financials and can never resolve any of the
+  three; 12 are missing one or two sidecar readings; 7 have a filter
+  ceiling-flagged as an implausible swing. Nothing here is broken — do not
+  "fix" it by lowering `FRAMEWORK_MIN_EVALUATED` or by guessing an
+  unresolved filter, which the 2026-08-21 rules forbid outright.
