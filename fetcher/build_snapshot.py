@@ -300,6 +300,25 @@ BIG_ORDERS_PER_TICKER = 3       # one number to retune; 3 matches the reference
                                 # format (its NVDA appeared 3 times)
 BIG_ORDERS_MIN_PREMIUM = 100_000.0   # $ floor; a quiet session publishes a short
                                      # board rather than padding it with noise
+# RANKED RELATIVE TO EACH NAME'S OWN NORMAL, not on raw dollars (Zach's call,
+# 2026-09-03: "biggest options dollars today in the desk should be relative to
+# its normal. Right now, only Nvidia, SPY, QQQ, and one other are shown"). On
+# raw dollars the index ETFs and the mega-caps own the board every day by
+# construction — a $2M line in SPY is an ordinary hour, a $2M line in AEHR is
+# the whole month. Each row's `vs_normal` = premium / that ticker's average
+# daily near-money short-dated premium (nm_call_prem_0_7 + nm_put_prem_0_7 over
+# its prior BIG_ORDERS_BASELINE_SESSIONS sessions in history.json), and the
+# merge below ranks on that ratio. Same minimum-history bar as opt_rvol and
+# iv_rank. The baseline is the 0-7 DTE near-money total because that is what
+# history.json already carries for every session — a longer-dated total was
+# never archived, so a ratio built on it would be blind for a month. It is the
+# same normal for every row of a ticker, so it re-ranks ACROSS names without
+# changing the order WITHIN one (which is why the per-ticker premium shortlist
+# in analyze_ticker still yields the exact top rows).
+# A ticker with too little history publishes vs_normal = null and sorts AFTER
+# every ranked row, on raw dollars, flagged on the page — a missing baseline is
+# disclosed, never guessed. The $ floor above still applies to every row.
+BIG_ORDERS_BASELINE_SESSIONS = UOA_MIN_SESSIONS
 BIG_ORDERS_DTE_HI = 183         # 0..183 inclusive — the UNION of the two scoring
                                 # buckets (0-7 and 14-183), so this board does not
                                 # inherit their 8-13 day blind spot
@@ -1482,6 +1501,51 @@ def compute_opt_rvol(sum_vol_0_7: float, vol_hist_prior: list) -> tuple[float | 
     return round(sum_vol_0_7 / baseline, 2), False
 
 
+def big_orders_normal_premium(sessions: dict, session_str: str, ticker: str) -> tuple[float | None, int]:
+    """(normal_prem, n_sessions) — the ticker's average daily near-money 0-7 DTE
+    premium (calls + puts) over its prior BIG_ORDERS_BASELINE_SESSIONS sessions
+    in history.json's `sessions` map, PRIOR sessions only (today's row is
+    excluded by the `< session_str` test, so a loud day can never dilute its
+    own baseline — the same rule compute_opt_rvol follows). Returns (None, n)
+    when fewer than the minimum sessions carry the near-money fields (rows
+    written before 2026-07-28 predate them) or the average is not positive.
+    """
+    vals: list[float] = []
+    for d in sorted(sessions.keys(), reverse=True):
+        if d >= session_str:
+            continue
+        row = sessions[d].get(ticker) if isinstance(sessions[d], dict) else None
+        if not isinstance(row, dict):
+            continue
+        c, p = row.get("nm_call_prem_0_7"), row.get("nm_put_prem_0_7")
+        if isinstance(c, (int, float)) and isinstance(p, (int, float)):
+            vals.append(float(c) + float(p))
+        if len(vals) >= BIG_ORDERS_BASELINE_SESSIONS:
+            break
+    if len(vals) < BIG_ORDERS_BASELINE_SESSIONS:
+        return None, len(vals)
+    avg = sum(vals) / len(vals)
+    if avg <= 0:
+        return None, len(vals)
+    return avg, len(vals)
+
+
+def rank_big_orders(pool: list[dict], normal_by_ticker: dict[str, tuple[float | None, int]]) -> list[dict]:
+    """Stamp `vs_normal` / `normal_prem` / `normal_sessions` on every pool row
+    and return the pool sorted for the merge: rows WITH a baseline first, by
+    vs_normal desc; rows without one after them, by raw premium desc. Premium
+    breaks ties either way. Mutates and returns the rows."""
+    for row in pool:
+        normal, n = normal_by_ticker.get(row["ticker"], (None, 0))
+        row["normal_prem"] = round(normal, 2) if normal else None
+        row["normal_sessions"] = n
+        row["vs_normal"] = round(row["premium"] / normal, 3) if normal else None
+    pool.sort(key=lambda r: (r["vs_normal"] is None,
+                             -(r["vs_normal"] if r["vs_normal"] is not None else 0.0),
+                             -r["premium"]))
+    return pool
+
+
 def options_activity_tag(flow_side: str | None, direction: str, change_pct: float | None) -> str:
     """BULLISH/BEARISH/HEDGING/MIXED from side-dominant options flow vs.
     today's actual price direction. The one well-established real-world
@@ -2024,8 +2088,16 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
         e.setdefault("direction", c["direction"])
 
     # ── biggest-orders board: merge every ticker's shortlist, re-rank, cap ───
-    big_orders_pool.sort(key=lambda r: r["premium"], reverse=True)
-    # Greedy fill in premium order, skipping a ticker once it hits its quota, so
+    # Ranked RELATIVE TO EACH NAME'S NORMAL (see BIG_ORDERS_BASELINE_SESSIONS):
+    # vs_normal = premium / the ticker's average daily near-money 0-7 DTE
+    # premium over its prior sessions. Rows with no baseline yet sort after
+    # every ranked row, on raw dollars, and carry vs_normal = null.
+    normal_by_ticker = {
+        t: big_orders_normal_premium(history["sessions"], session_str, t)
+        for t in {r["ticker"] for r in big_orders_pool}
+    }
+    rank_big_orders(big_orders_pool, normal_by_ticker)
+    # Greedy fill in that order, skipping a ticker once it hits its quota, so
     # the rows a crowded name gives up go to the next-loudest OTHER contracts
     # rather than shortening the board.
     big_orders = []

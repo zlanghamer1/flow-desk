@@ -85,7 +85,9 @@ values are `null` (never a string sentinel). All strings are already plain
     ]
   },
   "big_orders": [ <BigOrder>, ... ],          // biggest-orders board (added 2026-07-31); cross-ticker,
-                                              // sorted premium desc, at most BIG_ORDERS_CAP rows and at
+                                              // sorted vs_normal desc (rows with vs_normal null AFTER
+                                              // every ranked row, by premium desc — since 2026-09-03;
+                                              // was premium desc), at most BIG_ORDERS_CAP rows and at
                                               // most BIG_ORDERS_PER_TICKER rows per ticker.
                                               // Empty array (never null) when nothing clears the floor.
   "big_orders_capped": [                      // per-ticker cap disclosure; [] when the cap bound nothing.
@@ -971,6 +973,22 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
 >   (fails closed — without spot, a stock-replacement strike is
 >   indistinguishable from a bet).
 >
+> **Ranked relative to each name's normal, not on raw dollars (2026-09-03,
+> Zach: "biggest options dollars today in the desk should be relative to its
+> normal. Right now, only Nvidia, SPY, QQQ, and one other are shown").** Each
+> row carries `vs_normal = premium / normal_prem`, where `normal_prem` is the
+> ticker's average daily near-money 0-7 DTE premium over its prior
+> `BIG_ORDERS_BASELINE_SESSIONS` (20) sessions in `history.json` — the one
+> per-ticker dollar baseline history already carries for every name, so the
+> ranking works from day one instead of going blind for a month while a new
+> field accumulates. The baseline is the same for every row of a ticker, so
+> the ratio re-ranks ACROSS names without changing the order WITHIN one, which
+> is why the per-ticker premium shortlist in `analyze_ticker` still yields the
+> exact top rows. Today's own row is never part of its own baseline. A ticker
+> with fewer than 20 qualifying sessions publishes `vs_normal: null` and sorts
+> after every ranked row, on raw premium — a missing baseline is disclosed,
+> never guessed. `BIG_ORDERS_MIN_PREMIUM` still applies to every row.
+>
 > DTE spans `0..BIG_ORDERS_DTE_HI` (183) on purpose: the two scoring boards
 > bucket 0-7 and 14-183, and this board must NOT inherit their 8-13 day blind
 > spot. Per-ticker shortlists are capped at `BIG_ORDERS_CAP` before the
@@ -1010,8 +1028,20 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
   "open_interest": 41200,
   "delta": 0.55,                    // null if CBOE omits it
   "iv": 0.31,                       // decimal (0.31 = 31%); null if CBOE omits it
-  "premium": 125416670.0,           // volume x last x 100 — the ranking key.
-                                    // A SESSION TOTAL, not one order (see note above).
+  "premium": 125416670.0,           // volume x last x 100. A SESSION TOTAL, not one order
+                                    // (see note above). The ranking key until 2026-09-03.
+  "vs_normal": 3.412,               // THE RANKING KEY (2026-09-03, Zach: "relative to its
+                                    // normal"): premium / normal_prem. null when the ticker
+                                    // has no baseline yet — such rows sort AFTER every ranked
+                                    // row, by premium desc, and the page prints "no baseline",
+                                    // never a guessed ratio.
+  "normal_prem": 36750000.0,        // the ticker's average daily near-money 0-7 DTE premium
+                                    // (nm_call_prem_0_7 + nm_put_prem_0_7) over its prior
+                                    // BIG_ORDERS_BASELINE_SESSIONS (20) sessions in
+                                    // history.json — PRIOR sessions only, today excluded.
+                                    // null when fewer than 20 carry the fields.
+  "normal_sessions": 20,            // how many prior sessions fed normal_prem (0-20); the page
+                                    // prints this in the "no baseline" tooltip.
   "occ": "AMZN260821C00250000",
   "spot": 231.40                    // the underlying's spot AT THIS SNAPSHOT, so the page's
                                     // "MOSTLY INTRINSIC" badge can cross the contract against

@@ -2933,3 +2933,57 @@ disclosure moved or softened. Rules the pass produced:
 
 ## Decision history
 Lives in the ClaudeVault repo under `market-data/flow-desk/`.
+
+## Guardrails added 2026-09-03 (Zach's direct asks: big orders vs. normal, header headline reel, slower reels, explainer buttons removed)
+
+Four asks in one message; frontend + one fetcher ranking change, no new
+network calls. The non-obvious decisions:
+
+- **The Biggest Orders board ranks on `vs_normal`, never raw premium.**
+  Zach: "biggest options dollars today in the desk should be relative to its
+  normal. Right now, only Nvidia, SPY, QQQ, and one other are shown." On raw
+  dollars the index ETFs and mega-caps own the board by size alone.
+  `vs_normal = premium / normal_prem`, where `normal_prem` is the ticker's
+  average daily near-money 0-7 DTE premium (`nm_call_prem_0_7 +
+  nm_put_prem_0_7`) over its prior `BIG_ORDERS_BASELINE_SESSIONS`
+  (= `UOA_MIN_SESSIONS`, 20) sessions in history.json — chosen because it is
+  the one per-ticker dollar baseline history ALREADY carries for every name,
+  so the ranking works from day one. A longer-dated (0-183) baseline would
+  be the tighter match for the board's own DTE span but would need a new
+  history field and a month of accumulation; if that is ever wanted, archive
+  it first and switch only once 20 sessions exist. The ratio is one normal
+  per ticker, so it re-ranks ACROSS names and never WITHIN one — which is why
+  `analyze_ticker`'s per-ticker premium shortlist still yields the exact top
+  rows and `BIG_ORDERS_CAP`'s "shortlist equals board length" argument
+  survives. Today's own row is excluded from its own baseline (same rule as
+  `compute_opt_rvol`). A ticker with too little history gets `vs_normal:
+  null`, sorts AFTER every ranked row on raw premium, and the page prints
+  "no baseline" with its session count — a missing baseline is disclosed,
+  never guessed. `rank_big_orders` is the one function that stamps and
+  orders the pool; `test_big_orders.py`'s `_merge` mirror now CALLS it
+  instead of re-implementing the sort (the round-6 lesson about a test
+  mirroring buggy logic). The page's default sort key is the same
+  `vs_normal`, so fetcher order and page order can't disagree; `table()`
+  already sinks nulls. The quick read names "loudest for its size" and
+  "most raw dollars" as two facts in two clauses.
+- **The focused ticker's own tagged headlines roll in the header's spare
+  width** (`#focnews`, inside `.rail .grow`, left of the search box) —
+  strictly the headlines tagged to `FOCUS`, not the untagged MKT rows the
+  rail panel also lists. Hidden with no focus; with a focus and nothing
+  tagged it says so in place. It reuses the top ticker's `.nt-*` markup,
+  CSS and `tabindex=-1` rule; the rail's Tagged headlines panel is kept as
+  the keyboard-reachable copy. `.grow` is `display:none` under 900px, so on
+  a phone the panel alone carries them (no change there).
+- **Both reels roll at one pace, via one `ntDuration(n)`** — 7s per headline,
+  48-175s bounds (was 6s, 40-150s): "slow both news ticker reels just
+  slightly." Change the pace in that one function, never per reel.
+- **Every `expHTML` explainer button is gone** — "what these mean", "what
+  this means", "how to read the dots", "what this shows", "about these
+  figures", "how to read this", "about this comparison", "how to read this
+  chart". Zach: "Remove the 'what these mean' notes." The mechanism
+  (`expHTML`/`EXP_OPEN`) stays for the chart-notes toggle, which carries
+  dynamic MA/TA content and is not one of these. Every dynamic disclosure
+  those blocks sat next to (STALE, coverage, clamp notes, currency caveats)
+  is unchanged and still printed; the static prose they held is already in
+  the corresponding TIPS/tooltips. `finMethod` is still built (one place
+  the Financials wording lives) but no longer rendered.
