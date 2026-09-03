@@ -3237,3 +3237,61 @@ non-obvious decisions:
   below 900px (the focus bar shows the newest headline on a phone instead).
   Two sessions on one ask is how this happened; when a `/goal` is typed
   twice, the second session should read the first's branch before building.
+
+## Guardrails added 2026-09-03 (Zach's third ask: no ticker scrollbar, no chart-technicals tooltips)
+
+Zach's words: "sidescrolling bar for news ticker at the top isn't functional -
+remove. News should still tick from the top slowly to the left. remove all
+explainer text when clicking or hovering over chart technicals buttons."
+Frontend-only (`index.html`), no fetcher change, no payload change, no
+disclosure removed.
+
+- **Both news reels roll on EVERY motion setting, and neither is ever
+  manually scrollable.** `prefers-reduced-motion` used to stop the animation
+  and hand `.newsticker`/`.focnews` an `overflow-x:auto` scrollbar instead.
+  That scrollbar was the only way to read past the strip's edge and it did not
+  work as a reading control, so Zach removed it. This is a deliberate override
+  of `prefers-reduced-motion` for these two elements only — every other
+  animation in the file (`.sh .car`, `.expbtn .car2`, `.xscroll::after`,
+  `.busybar`, `.skelrows i`) still honors the setting. Hover-to-pause
+  (`.newsticker:hover .nt-track{animation-play-state:paused}`) is the way to
+  stop a reel and read it; verified working. Don't copy this override
+  elsewhere without an ask.
+- **The loop-seamlessly duplicate copy now always renders.** It was withheld
+  under reduced motion because that path made the strip scrollable and a
+  scroller then read every headline twice (2026-08-22 review, panels finding
+  #3). With the scrollbar gone the duplicate is never reachable by scrolling
+  and is always needed, so the `reducedMotion` branch is out of both
+  `renderNewsTicker` and `renderFocusNewsTicker`. The edge-fade masks apply on
+  every setting for the same reason.
+- **The reel PACE is unchanged at 8s per headline** (`ntDuration`, bounds
+  55-200s). "Slowly" described the behavior to keep, not a third slowdown —
+  Zach had already moved it 6s → 7s → 8s the same day. Change it only on a
+  fresh ask, and only in that one function, which both reels read.
+- **The six chart-technicals buttons (MA, trend, S/R, BB, VP, GEX) carry NO
+  `data-tip`.** The page's tooltip opens on hover AND on click, so dropping
+  the attribute is what removes both. This loses no disclosure — every fact
+  those tooltips carried is still printed where the overlay itself lands: the
+  MA button's disabled reason in the chart-notes legend (`stageTALegend`'s
+  `maOff1D` branch, verified live at index.html:13547), "S/R is hidden while
+  the volume profile is on" in the auto-TA caption (`summary.srHiddenByVp`),
+  and each overlay's own failure reason in the quick-read line's "nothing to
+  draw for ..." clause. Same rule as the same-day removal of the `expHTML`
+  explainer buttons: static methodology prose goes, dynamic disclosures stay
+  printed. Don't re-add `data-tip` to these buttons without a fresh ask.
+- **`taTrendTip()` is deleted, and TIPS.ta_trend keeps its stale numbers on
+  purpose.** That function patched the tooltip's hardcoded "12 bars"/"40 bars"
+  with the active interval's real scaled thresholds (1H's true `taFreshBars()`
+  is 78, not 12 — 2026-08-23 round 16, Auto-TA finding #0); the trend button
+  was its only caller. A note sits where it lived: if any tooltip ever renders
+  `TIPS.ta_trend` again, restore the substitution with it. `TIPS.ta_sr`,
+  `ta_ma`, `ta_vp` and `ta_gex` now have no consumer either and are kept as
+  the canonical wording store, the same posture as `finMethod`. `TIPS.ta_bb`
+  still has two live consumers (the rail's Band-crosses header, the quick
+  read's Bollinger clause) — leave it wired.
+- Verified before commit: 349 fetcher tests and 6 page smoke tests pass;
+  headless Chromium at 1440px under both `reduced-motion: reduce` and
+  `no-preference` shows `overflow-x: hidden` on the reel, `nt-roll` running
+  and drifting left, two `.nt-item` copies, six technicals buttons with zero
+  `data-tip`, no tooltip on hover or click, no page errors, no sideways
+  scroll.
