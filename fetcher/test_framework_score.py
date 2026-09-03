@@ -590,3 +590,95 @@ def test_type_column_is_fetched_and_parsed_end_to_end():
     facts = context.fetch_earnings_days({"SPY": quote}, SESSION)
     out = context.score_framework("SPY", facts["SPY"], None, {"weekly": {}}, SESSION)
     assert out["verdict"] == "NOT_APPLICABLE"
+
+
+# ── Filter 3 from Yahoo's own revision trend (added 2026-09-03) ─────────────
+# Zach: "The things that are building that require historical data — are they
+# not able to be deduced from tradingview or any other free source to know
+# now?" For the 3-month filter, yes: Yahoo publishes the next-FY consensus as
+# it stood 90 days ago. The 6-month filter still has no free source.
+
+def _trend(current, d90):
+    return {"quarterly": {"revenue": [], "fcf": [], "opinc": []}, "annual": {"revenue": []},
+            "eps_trend": {"current": current, "d90": d90, "period_end": "2027-08-31"}}
+
+
+def test_analyst_velocity_resolves_today_from_the_yahoo_trend():
+    """No consensus history at all, and the filter still answers — that is the
+    whole point of the change."""
+    out = context.score_framework("MU", {"eps_ntm": 155.0}, _trend(155.02524, 102.72243),
+                                  {"weekly": {}}, SESSION)
+    assert out["filters"]["analyst_velocity"] is True
+    assert out["metrics"]["eps_velocity_3m_pct"] == pytest.approx(50.92, abs=0.02)
+
+
+def test_analyst_velocity_reads_a_downgrade_as_false():
+    out = context.score_framework("CRWD", {"eps_ntm": 1.6}, _trend(1.59788, 1.6227),
+                                  {"weekly": {}}, SESSION)
+    assert out["filters"]["analyst_velocity"] is False
+
+
+def test_analyst_velocity_handles_a_profit_to_loss_sign_flip():
+    """Measured live 2026-09-03: CLSK -129.7%, NBIS -139.2%, both real flips
+    from a positive consensus to a negative one. A plain magnitude comparison
+    must call that a downgrade, not a pass, and must stay inside the 300%
+    implausibility ceiling rather than reading UNKNOWN."""
+    out = context.score_framework("CLSK", {"eps_ntm": -0.03}, _trend(-0.03, 0.10),
+                                  {"weekly": {}}, SESSION)
+    assert out["filters"]["analyst_velocity"] is False
+    assert "analyst_velocity" not in out["filter_flags"]
+    assert out["metrics"]["eps_velocity_3m_pct"] == pytest.approx(-130.0)
+
+
+def test_yahoo_trend_never_pairs_with_tradingviews_eps_ntm():
+    """Both legs of the ratio must come from the eps_trend object. If the
+    numerator silently fell back to facts.eps_ntm (a DIFFERENT vendor's
+    estimate) this would compute 300/102.7 = +192% instead of the real
+    +50.9% — the cross-vendor artifact round 19 had to cap on Filter 2."""
+    out = context.score_framework("MU", {"eps_ntm": 300.0}, _trend(155.02524, 102.72243),
+                                  {"weekly": {}}, SESSION)
+    assert out["metrics"]["eps_velocity_3m_pct"] == pytest.approx(50.92, abs=0.02)
+
+
+def test_missing_yahoo_trend_falls_back_to_the_accumulated_snapshots():
+    """Funds and a few thin names get no module from Yahoo. Those tickers must
+    behave exactly as they did before this change, not regress to UNKNOWN."""
+    hist = {"weekly": {context._iso_week_key(SESSION - timedelta(weeks=13)): {"X": {"eps_ntm": 10.0}}}}
+    out = context.score_framework("X", {"eps_ntm": 12.0}, _fund(), hist, SESSION)
+    assert out["filters"]["analyst_velocity"] is True
+    assert out["metrics"]["eps_velocity_3m_pct"] == pytest.approx(20.0)
+
+
+@pytest.mark.parametrize("trend", [
+    {"current": 5.0, "d90": 0},        # divide-by-zero
+    {"current": 5.0, "d90": None},     # half-populated
+    {"current": None, "d90": 5.0},
+])
+def test_unusable_trend_object_does_not_crash_or_guess(trend):
+    out = context.score_framework("X", {"eps_ntm": None},
+                                  {"quarterly": {}, "annual": {}, "eps_trend": trend},
+                                  {"weekly": {}}, SESSION)
+    assert out["filters"]["analyst_velocity"] is None
+
+
+# ── the Yahoo parser itself ─────────────────────────────────────────────────
+
+def test_parse_eps_trend_takes_the_next_fiscal_year_row():
+    mod = {"trend": [
+        {"period": "0y",  "endDate": "2026-08-31", "epsTrend": {"current": {"raw": 73.4}, "90daysAgo": {"raw": 58.3}}},
+        {"period": "+1y", "endDate": "2027-08-31", "epsTrend": {"current": {"raw": 155.0}, "90daysAgo": {"raw": 102.7}}},
+    ]}
+    out = context._parse_eps_trend(mod)
+    assert out == {"current": 155.0, "d90": 102.7, "period_end": "2027-08-31"}
+
+
+@pytest.mark.parametrize("mod", [
+    None, {}, {"trend": []}, {"trend": "nope"},
+    {"trend": [{"period": "0y", "epsTrend": {"current": {"raw": 1.0}, "90daysAgo": {"raw": 1.0}}}]},
+    {"trend": [{"period": "+1y", "epsTrend": {"current": {"raw": 1.0}}}]},
+    {"trend": [{"period": "+1y", "epsTrend": {"current": {"raw": 1.0}, "90daysAgo": {"raw": 0}}}]},
+])
+def test_parse_eps_trend_is_none_rather_than_partial(mod):
+    """A half-populated dict would read as "we have a trend" to any caller
+    that truthiness-checks it, then divide by a missing number."""
+    assert context._parse_eps_trend(mod) is None

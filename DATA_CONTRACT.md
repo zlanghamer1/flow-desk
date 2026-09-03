@@ -806,6 +806,32 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
   "sym": "NVDA",
   "short_pct_float": 1.259,          // % of float sold short, or null
   "pe_forward": 22.589,              // forward P/E, or null
+  // ── Consensus EPS revision trend (added 2026-09-03) — Yahoo's
+  // earningsTrend module for the NEXT fiscal year ("+1y"), riding the SAME
+  // quoteSummary request the fields above already make. No extra HTTP call,
+  // same fail-soft posture: the whole object is null when Yahoo omits the
+  // module (it does for funds and for a handful of thin names — measured
+  // 2026-09-03: 33 of ~36 real companies on the pinned list resolved a pair,
+  // the misses being CBRS/SKHY/STLL/SKHX).
+  //
+  // This exists so the framework's 3-month analyst-velocity filter can be
+  // answered TODAY instead of waiting on months of our own weekly snapshots.
+  // BOTH numbers come from Yahoo so the ratio is single-vendor: never
+  // compare `d90` against TradingView's facts.eps_ntm, which is a different
+  // vendor's estimate of the same thing and would reproduce the cross-vendor
+  // artifact that made MU read "+246% revenue growth" (round 19's blocker).
+  //
+  // Yahoo publishes current/7d/30d/60d/90d and nothing older, so the
+  // framework's 6-month filter is NOT servable from here — 180-day revision
+  // history is a premium (I/B/E/S-class) product; Zacks and Seeking Alpha
+  // stop at 90 days too. That filter keeps waiting on consensus_history.json.
+  "eps_trend": {                     // or null
+    "current": 155.02524,            // next-FY consensus EPS as of this build
+    "d90": 102.72243,                // the same estimate as it stood 90d ago
+    "period_end": "2027-08-31"       // fiscal period both figures describe,
+                                      // so a reader can confirm they are the
+                                      // same period and not two different ones
+  },
   "earnings": [                      // up to 12 rows, newest LAST, oldest first
     {
       "period": "Q1 2027",           // "Q{n} {fiscal year}"

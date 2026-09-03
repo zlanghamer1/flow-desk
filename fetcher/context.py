@@ -2128,7 +2128,11 @@ def build_bars(universe: list[str], session_date: date,
 # the reported actual, which is not the same thing as "what analysts
 # expected before the print"), and Yahoo's earningsTrend module only
 # returns forward-looking periods (0q/+1q/0y/+1y) on this account, no
-# historical -1q..-4q rows. `rev_est` / `rev_surprise_pct` on past quarters
+# historical -1q..-4q rows. (That same forward "+1y" row IS what the
+# 2026-09-03 `eps_trend` field reads — a forward period's own revision
+# history, which this module does carry, not the past-quarter estimate this
+# paragraph found missing. The two are different asks; both conclusions
+# stand.) `rev_est` / `rev_surprise_pct` on past quarters
 # are therefore ALWAYS null — a fourth vendor was deliberately not added for
 # it, same posture as facts.short_pct. `next_earnings.rev_est` (a FORWARD
 # estimate) IS available, from Yahoo's calendarEvents module.
@@ -2156,7 +2160,12 @@ YAHOO_QUOTESUMMARY_URL = "https://query1.finance.yahoo.com/v10/finance/quoteSumm
 # trades in. SK hynix (SKHY) files in KRW and Taiwan Semi (TSM) in TWD, but
 # both price in USD, so the page was labeling trillions of won "reported
 # dollars". No extra HTTP call — it rides the same quoteSummary request.
-YAHOO_QS_MODULES = "defaultKeyStatistics,earningsHistory,earnings,calendarEvents,upgradeDowngradeHistory,financialData"
+# earningsTrend added 2026-09-03 — carries the next-FY consensus EPS as it
+# stood current/7d/30d/60d/90d ago, which is what lets the framework answer
+# its 3-month analyst-velocity filter today instead of waiting months for
+# our own weekly snapshots. Rides this existing per-symbol request: no
+# extra HTTP call, same as `currency` above.
+YAHOO_QS_MODULES = "defaultKeyStatistics,earningsHistory,earnings,calendarEvents,upgradeDowngradeHistory,financialData,earningsTrend"
 # currency only ever gets SET by the Yahoo leg above, gated behind a
 # once-per-run crumb handshake (fetch_yahoo_crumb) — a crumb failure blanks
 # EVERY pinned ticker's currency for that day's rebuild at once, not just
@@ -2609,6 +2618,29 @@ def _parse_ratings(module, today: Optional[date] = None) -> list[dict]:
     return out
 
 
+def _parse_eps_trend(trend_mod) -> Optional[dict]:
+    """Yahoo earningsTrend -> {"current", "d90", "period_end"} for the NEXT
+    fiscal year, or None.
+
+    Returns None rather than a partial dict whenever either leg is missing or
+    d90 is zero: the only consumer divides by d90, and a half-populated object
+    would read as "we have a trend" to every caller that truthiness-checks it.
+    Yahoo omits this module entirely for funds and for some thin names.
+    """
+    trend = (trend_mod or {}).get("trend")
+    if not isinstance(trend, list):
+        return None
+    row = next((t for t in trend if isinstance(t, dict) and t.get("period") == "+1y"), None)
+    if not isinstance(row, dict):
+        return None
+    et = row.get("epsTrend") or {}
+    cur = _yahoo_num(et.get("current"))
+    d90 = _yahoo_num(et.get("90daysAgo"))
+    if cur is None or d90 is None or d90 == 0:
+        return None
+    return {"current": cur, "d90": d90, "period_end": row.get("endDate") or None}
+
+
 def fetch_yahoo_fundamentals(sym: str, crumb: str, _get: Optional[Callable] = None) -> dict:
     """One Yahoo quoteSummary call (defaultKeyStatistics + earningsHistory +
     earnings + calendarEvents) -> {"short_pct_float", "pe_forward",
@@ -2632,7 +2664,7 @@ def fetch_yahoo_fundamentals(sym: str, crumb: str, _get: Optional[Callable] = No
     None/[]/absent on a narrower miss (per-field fail-soft throughout).
     """
     empty = {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None,
-             "ratings": [], "currency": None}
+             "ratings": [], "currency": None, "eps_trend": None}
     url = (YAHOO_QUOTESUMMARY_URL.format(sym=sym)
            + f"?modules={YAHOO_QS_MODULES}&crumb={urllib.parse.quote(crumb)}")
     try:
@@ -2657,6 +2689,14 @@ def fetch_yahoo_fundamentals(sym: str, crumb: str, _get: Optional[Callable] = No
     fin_cur = ((result.get("financialData") or {}).get("financialCurrency"))
     if isinstance(fin_cur, str) and len(fin_cur.strip()) == 3 and fin_cur.strip().isalpha():
         out["currency"] = fin_cur.strip().upper()
+
+    # Consensus EPS revision trend (added 2026-09-03) — the NEXT fiscal year
+    # ("+1y") only, matching what facts.eps_ntm describes. Both numbers come
+    # from THIS response, so the ratio score_framework builds from them is
+    # single-vendor; never pair `d90` with TradingView's own eps_ntm.
+    # `period_end` is published so a reader can confirm the two figures
+    # describe the same fiscal period rather than two different ones.
+    out["eps_trend"] = _parse_eps_trend(result.get("earningsTrend"))
 
     earnings_mod = result.get("earnings") or {}
     echart = ((earnings_mod.get("earningsChart") or {}).get("quarterly")) or []
@@ -3212,17 +3252,41 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
     # Filter 3: analyst revision velocity — same eps_ntm series as filter 1,
     # a shorter ~3-month lookback (momentum vs. the 6-month magnitude above).
     # Same split-sized-ratio guard as filter 1, for the same reason.
-    eps_3m_ago = _consensus_lookback(consensus_history, ticker, session_date, FRAMEWORK_WEEKS_3M)
-    if _isnum(eps_ntm) and _isnum(eps_3m_ago) and eps_3m_ago != 0:
-        eps_ratio_3m = eps_ntm / eps_3m_ago
+    # Prefer Yahoo's own published revision trend (added 2026-09-03): it
+    # carries the next-FY consensus as it stood 90 days ago, which answers
+    # this filter TODAY instead of waiting ~3 months for our own weekly
+    # snapshots to reach a 13-week lookback. BOTH legs come from that one
+    # object, so the ratio stays single-vendor — pairing Yahoo's d90 against
+    # TradingView's eps_ntm would be the cross-vendor artifact that made MU
+    # read "+246% revenue growth" in round 19. When Yahoo omits the module
+    # (funds, and a few thin names) this falls back to the accumulated
+    # snapshots exactly as before, so nothing regresses for those tickers.
+    #
+    # Yahoo publishes no window older than 90 days, so Filter 1's 26-week
+    # lookback above is deliberately NOT served from here and still waits on
+    # consensus_history.json. 180-day revision history is a premium
+    # (I/B/E/S-class) product; Zacks and Seeking Alpha stop at 90 days too.
+    eps_trend = (fund or {}).get("eps_trend") if isinstance(fund, dict) else None
+    if isinstance(eps_trend, dict) and _isnum(eps_trend.get("current")) and _isnum(eps_trend.get("d90")):
+        eps_now_3m, eps_3m_ago = eps_trend["current"], eps_trend["d90"]
+    else:
+        eps_now_3m, eps_3m_ago = eps_ntm, _consensus_lookback(
+            consensus_history, ticker, session_date, FRAMEWORK_WEEKS_3M)
+    if _isnum(eps_now_3m) and _isnum(eps_3m_ago) and eps_3m_ago != 0:
+        eps_ratio_3m = eps_now_3m / eps_3m_ago
         if not (1.0 / SPLIT_BREAK_MIN < eps_ratio_3m < SPLIT_BREAK_MIN) and _ratio_matches_split(eps_ratio_3m):
             filters["analyst_velocity"] = None
-        elif abs((eps_ntm - eps_3m_ago) / abs(eps_3m_ago)) > FRAMEWORK_EPS_REVISION_MAX_PLAUSIBLE:
+        elif abs((eps_now_3m - eps_3m_ago) / abs(eps_3m_ago)) > FRAMEWORK_EPS_REVISION_MAX_PLAUSIBLE:
             filters["analyst_velocity"] = None
             filter_flags["analyst_velocity"] = "implausible_swing"
         else:
-            metrics["eps_velocity_3m_pct"] = round((eps_ntm - eps_3m_ago) / abs(eps_3m_ago) * 100, 2)
-            filters["analyst_velocity"] = eps_ntm > eps_3m_ago
+            metrics["eps_velocity_3m_pct"] = round((eps_now_3m - eps_3m_ago) / abs(eps_3m_ago) * 100, 2)
+            # A plain magnitude comparison, correct across a sign flip too:
+            # a consensus that fell from +0.10 to -0.03 is a DOWNGRADE, and
+            # `>` reads it as one (measured live 2026-09-03: CLSK -129.7%,
+            # NBIS -139.2%, both real profit-to-loss flips, both inside the
+            # 300% ceiling above).
+            filters["analyst_velocity"] = eps_now_3m > eps_3m_ago
     else:
         filters["analyst_velocity"] = None
 

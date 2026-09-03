@@ -1736,12 +1736,12 @@ def test_fetch_yahoo_fundamentals_fetch_failure_is_all_empty():
         raise urllib.error.URLError("boom")
     out = context.fetch_yahoo_fundamentals("NVDA", "abc", _get=fake_fail)
     assert out == {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None,
-                   "ratings": [], "currency": None}
+                   "ratings": [], "currency": None, "eps_trend": None}
 
     # A 200 with a shape quoteSummary doesn't recognize is equally fail-soft.
     out2 = context.fetch_yahoo_fundamentals("NVDA", "abc", _get=lambda u, h: json.dumps({"quoteSummary": {"result": []}}).encode())
     assert out2 == {"short_pct_float": None, "pe_forward": None, "earnings": [], "next_earnings": None,
-                    "ratings": [], "currency": None}
+                    "ratings": [], "currency": None, "eps_trend": None}
 
 
 # ── earnings-row revenue backfill (added 2026-08-15, wave 3, Task C) ────────
