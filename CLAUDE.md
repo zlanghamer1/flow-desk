@@ -3410,3 +3410,77 @@ correct behavior. The word "building" was doing three unrelated jobs:
   parity between the early return and a real score, and the full
   column→quote→facts→verdict chain) and 6 page smoke tests. All four states
   rendered from the live 2026-09-03 payload.
+
+## Guardrails added 2026-09-03 (3-month filter from Yahoo's trend; Forecast tab)
+
+Zach: "The things that are building that require historical data — are they
+not able to be deduced from tradingview or any other free source to know
+now?" Then, with a screenshot of TradingView's own Forecast page: "I want
+this added as another tab after Options Flow 'Forecast'."
+
+**Filter 3 is answerable today; Filter 1 is not.**
+
+- **Yahoo's `earningsTrend` module carries the next-FY consensus EPS as it
+  stood current/7d/30d/60d/90d ago.** 90 days is the framework's 13-week
+  lookback almost exactly, so `fund.eps_trend` (`current`/`d90`/`period_end`)
+  now answers the analyst-velocity filter immediately instead of waiting on
+  our own weekly snapshots. It rides the per-symbol quoteSummary request the
+  sidecar already makes — no extra HTTP call, no new vendor, no new
+  `DATA_LICENSING.md` row, the same way `currency` was added.
+- **BOTH legs of that ratio come from the eps_trend object.** Never pair
+  Yahoo's `d90` with TradingView's `facts.eps_ntm`: that cross-vendor pairing
+  is what made MU read "+246% revenue growth" in round 19, and a test pins
+  it. When Yahoo omits the module the filter falls back to
+  `consensus_history.json` exactly as before, so no ticker regresses.
+- **Filter 1 (26 weeks) has no free source and is NOT served from here.**
+  Yahoo publishes nothing older than 90 days; Zacks and Seeking Alpha stop
+  there too; 180-day revision history is a premium I/B/E/S-class product.
+  Searched before concluding, per the vault rule. Don't re-probe this from
+  memory — re-read this paragraph.
+- Measured live 2026-09-03: 33 of ~36 real companies resolve a 90-day pair
+  (misses: CBRS, SKHY, STLL, SKHX; every other failure is a fund). Effect on
+  that day's payload: 11 names that could not score at all crossed the
+  3-filter minimum, and the 16 already scoring dropped from 2 pending to 1.
+- **Sign flips are real in this data and are not anomalies.** CLSK −129.7%
+  and NBIS −139.2% are genuine profit-to-loss consensus flips. The plain
+  `>` comparison reads them as downgrades correctly and they sit inside the
+  300% ceiling; tested.
+
+**The Forecast tab (`fcst`, after Options flow).**
+
+- **One vendor per panel.** Every figure comes from the same TradingView
+  scanner row the rest of `facts` rides: `target`/`target_high`/`target_low`/
+  `target_median`, `rec_mark`/`rec_total`/`rec_buy`/`rec_hold`/`rec_sell`.
+  Yahoo's `recommendationTrend` would give five rating buckets instead of
+  three and was REJECTED: its counts disagree with TV's (2/1/3/0/0 vs
+  4/3/0) and with its own `numberOfAnalystOpinions` (5 vs 6), so mixing them
+  would put two contradictory analyst counts on one panel. Yahoo's
+  `financialData` targets disagree with TV's too (mean 163.4 vs 170.5) —
+  same reason, same answer.
+- **NO consensus WORD is printed, on purpose.** An earlier cut mapped the
+  1-to-5 mark onto TV's five labels and immediately contradicted them: AAOI's
+  live 1.4375 rendered "Strong buy" here while TradingView's own gauge for
+  that symbol reads "Buy". Their mark is not a plain average of the buckets
+  either (AAOI's 4/1/3 split weights to 1.875, not 1.4375), so the band edges
+  cannot be recovered from the data we have. The number and its scale are
+  printed instead. Do not add a label back without a verified mapping — a
+  word here that disagrees with the page Zach is comparing against is the
+  "two surfaces, one fact, two answers" bug a dozen rounds exist to prevent.
+- **buy+hold+sell can be LESS than `rec_total`** (AAOI: 4+3+0 against 8),
+  because the scanner exposes three buckets where TV's page splits five. The
+  tab PRINTS the shortfall; it never rescales the bars to close it, which
+  would invent a placement for analysts the vendor did not bucket.
+- **The target bar names what each bound actually is.** When the live price
+  sits outside the published target range the broken bound becomes the price
+  and is labelled "price", not "low"/"high" — mirroring `rangeBarHTML`'s
+  own new-52-week-high handling. Two markers: the diamond is the live price
+  (same shape as every other `.rb` bar) and the accent tick is the average.
+- **A median more than 5% from the mean gets its own sentence** naming which
+  way the outliers pull. That is the most useful caveat on the panel, so it
+  is printed rather than left for the reader to spot.
+- Display-only, stated on screen: nothing here feeds the conviction or swing
+  score, the compared price is 15-minute delayed, and the sidecar-sourced
+  rows (estimate trend, actual-vs-estimate) carry the same STALE badge the
+  Fundamentals grid uses.
+- Verified: 377 fetcher tests, 6 page smoke tests, and a real Chromium click
+  through the tab at 1440px and 390px — no page errors, no sideways scroll.

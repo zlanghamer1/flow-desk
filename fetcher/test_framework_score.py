@@ -682,3 +682,40 @@ def test_parse_eps_trend_is_none_rather_than_partial(mod):
     """A half-populated dict would read as "we have a trend" to any caller
     that truthiness-checks it, then divide by a missing number."""
     assert context._parse_eps_trend(mod) is None
+
+
+# ── Forecast tab columns (added 2026-09-03) ─────────────────────────────────
+
+def test_forecast_columns_are_fetched_and_reach_facts():
+    """The Forecast tab draws entirely from these seven scanner fields. They
+    ride the batch quote every other fact already uses, so a silent drop
+    anywhere in the chain would empty the tab with nothing failing."""
+    from build_snapshot import TV_COLUMNS, _COL, _row_to_quote
+
+    for col in ("price_target_high", "price_target_low", "price_target_median",
+                "recommendation_total", "recommendation_buy", "recommendation_hold",
+                "recommendation_sell"):
+        assert col in TV_COLUMNS, col
+
+    # AAOI's live 2026-09-03 reading, checked against TradingView's own
+    # Forecast page for the same symbol that day.
+    row = [None] * len(TV_COLUMNS)
+    row[_COL["close"]] = 101.5
+    row[_COL["price_target_average"]] = 170.5
+    row[_COL["price_target_high"]] = 220.0
+    row[_COL["price_target_low"]] = 109.0
+    row[_COL["price_target_median"]] = 184.0
+    row[_COL["recommendation_total"]] = 8
+    row[_COL["recommendation_buy"]] = 4
+    row[_COL["recommendation_hold"]] = 3
+    row[_COL["recommendation_sell"]] = 0
+    q = _row_to_quote("NASDAQ:AAOI", row)
+    facts = context.fetch_earnings_days({"AAOI": q}, SESSION)["AAOI"]
+    assert facts["target"] == 170.5 and facts["target_high"] == 220.0
+    assert facts["target_low"] == 109.0 and facts["target_median"] == 184.0
+    assert facts["rec_total"] == 8 and facts["rec_buy"] == 4
+    assert facts["rec_hold"] == 3 and facts["rec_sell"] == 0
+    # The vendor's own buckets sum to less than its own total here. The tab
+    # discloses the shortfall rather than reshaping the bars, so this stays
+    # a documented property of the data, not a bug to "fix" by rescaling.
+    assert facts["rec_buy"] + facts["rec_hold"] + facts["rec_sell"] < facts["rec_total"]

@@ -910,6 +910,19 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 .rb .hi{max-width:70%;text-align:right}
 .rb .hi b{display:block;font-size:10px;font-weight:700}
 .rb.big{height:6px;margin:10px 0 16px}
+/* Forecast tab (2026-09-03). The target bar reuses .rb's geometry and adds a
+   SECOND marker: `b` stays the live price (same diamond every other .rb bar
+   uses, so the shape means the same thing everywhere) and `.tgt` is the
+   analyst average, drawn as a distinct upright tick in the accent colour so
+   the two are never confused at a glance. Neutral ink only — a price target
+   is an opinion, not a direction the page endorses. */
+.rb .tgt{position:absolute;top:50%;width:2px;height:12px;background:var(--acc);transform:translate(-50%,-50%);border-radius:1px}
+.fcbars{display:grid;grid-template-columns:auto 1fr auto;gap:4px 8px;align-items:center;margin:8px 0 2px}
+.fcbars span{font-size:10.5px;color:var(--ink2);white-space:nowrap}
+.fcbars b{font-size:10.5px;color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
+.fcbars i{display:block;height:6px;border-radius:3px;background:var(--edge);position:relative;overflow:hidden}
+.fcbars i>u{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--ink3);text-decoration:none}
+.fcgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px 14px;margin-top:6px}
 .rb.big b{width:9px;height:9px}
 .rb.big .lo,.rb.big .hi{top:9px;font-size:9.5px}
 
@@ -14400,8 +14413,197 @@ function renderPeersTab(sym, widthOnly){
   });
 }
 
+/* =================== Forecast tab (added 2026-09-03, Zach's ask) ===========
+   Mirrors what TradingView's own Forecast page shows for a symbol: where the
+   analysts think the price goes, and how they rate it. Every figure comes
+   from the SAME TradingView scanner row the rest of `facts` rides — one
+   vendor per panel, the rule Filter 3 follows for the identical reason.
+   Yahoo's recommendationTrend would give five rating buckets instead of
+   three, and was rejected: its counts disagree with TV's and with its own
+   numberOfAnalystOpinions, so mixing them would put two contradictory
+   analyst counts on one screen.
+
+   Display-only, like every other reference panel — a price target never
+   touches the conviction or swing score. The wording is deliberately flat:
+   these are opinions on record, not a forecast the desk endorses. */
+function fcNum(v){ return (typeof v==="number" && isFinite(v)) ? v : null; }
+// DELIBERATELY NO WORD. An earlier version mapped the 1-to-5 mark onto
+// TradingView's own five labels, and immediately disagreed with them: AAOI's
+// live mark of 1.4375 rendered "Strong buy" here while TradingView's gauge
+// for the same symbol reads "Buy". Their mark is not a plain average of the
+// buckets either (AAOI's 4 strong-buy / 1 buy / 3 hold weights to 1.875, not
+// 1.4375), so the band edges cannot be recovered from the data we have —
+// guessing them would put a word on this page that contradicts the page Zach
+// is comparing it against, the exact "two surfaces, one fact, two answers"
+// bug this file has spent a dozen rounds removing. The number and the scale
+// are printed instead; the buckets underneath carry the shape.
+function fcTargetSecHTML(sym, f){
+  var avg = fcNum(f.target), hi = fcNum(f.target_high), lo = fcNum(f.target_low),
+      med = fcNum(f.target_median);
+  if(avg==null && hi==null && lo==null){
+    return '<div class="dsec"><h3>Price target</h3><div class="note">No analyst price target is published for '
+      + esc(sym)+'. Funds and thinly-covered names usually carry none.</div></div>';
+  }
+  var d = dispQuote(liveBySym(sym)), px = d.px;
+  var head, sub = "";
+  if(avg!=null){
+    head = '<b style="font-size:19px">'+fmtpx(avg)+'</b>';
+    if(px!=null && px>0){
+      var dl = avg - px, pc = dl/px*100;
+      // A per-share delta, NOT fmDollarsSigned — that helper formats in
+      // millions/billions for flow dollars and would render a $69 gap as
+      // "$69". The minus sign is the page's U+2212, same as every other
+      // signed figure on screen.
+      head += ' <span class="'+(dl>=0?"u":"d")+'" style="font-size:11.5px">'
+        + (dl>=0?"+":"\u2212")+fmtpx(Math.abs(dl))+' · '+fwSignedFixed(pc,1)+'%</span>';
+      sub = 'against '+fmtpx(px)+' now'+(liveStale(sym)?' <span class="sess">STALE</span>':'');
+    } else {
+      sub = 'no live price to compare it against right now';
+    }
+  } else {
+    head = '<b style="font-size:19px">—</b>';
+    sub = 'no average published; the range below is what is available';
+  }
+  // The bar spans the analyst low..high. Both the live price and the average
+  // are plotted on it, with the price extending the bound it breaks rather
+  // than clamping silently — the same honesty rangeBarHTML applies to a
+  // 52-week bar that today's price has already broken through.
+  var bar = "";
+  if(hi!=null && lo!=null && hi>lo){
+    var blo = lo, bhi = hi, broke = "";
+    if(px!=null && px > bhi){ bhi = px; broke = "above"; }
+    if(px!=null && px < blo){ blo = px; broke = "below"; }
+    var pos = function(v){ return Math.min(100, Math.max(0, (v-blo)/(bhi-blo)*100)); };
+    bar = '<div class="rb big"><span class="rbtip" data-tip="'
+      + esc("The spread of published 1-year price targets: the lowest on the left, the highest on the right. "
+          + "The upright accent tick is the average of them. The diamond is the last price, which is 15-minute "
+          + "delayed. A target is one analyst's opinion on record, not a prediction this page endorses, and the "
+          + "spread is usually wider than the average alone suggests."
+          + (broke==="above" ? " The last price is ABOVE every published target, so the right-hand bound shown is the price itself." : "")
+          + (broke==="below" ? " The last price is BELOW every published target, so the left-hand bound shown is the price itself." : ""))
+      + '"></span>'
+      + (px!=null ? '<i style="width:'+pos(px).toFixed(1)+'%"></i><b style="left:'+pos(px).toFixed(1)+'%"></b>' : '')
+      + (avg!=null ? '<span class="tgt" style="left:'+pos(avg).toFixed(1)+'%"></span>' : '')
+      + '<span class="lo tn">'+fmtpx(blo)+(broke==="below"?' price':' low')+'</span>'
+      + '<span class="hi tn">'+fmtpx(bhi)+(broke==="above"?' price':' high')
+      + (broke==="above" ? ' <b class="u">price is past every target</b>' : '')
+      + (broke==="below" ? ' <b class="d">price is under every target</b>' : '')
+      + '</span></div>';
+  }
+  var rows = '<div class="fcgrid">'
+    + '<div class="kvrow"><span>Average</span><b>'+(avg!=null?fmtpx(avg):"—")+'</b></div>'
+    + '<div class="kvrow"><span data-tip="'+esc("The middle target rather than the mean. When it sits well "
+        + "away from the average, one or two outlying targets are pulling the average around.")
+        +'">Median</span><b>'+(med!=null?fmtpx(med):"—")+'</b></div>'
+    + '<div class="kvrow"><span>Highest</span><b>'+(hi!=null?fmtpx(hi):"—")+'</b></div>'
+    + '<div class="kvrow"><span>Lowest</span><b>'+(lo!=null?fmtpx(lo):"—")+'</b></div>'
+    + '</div>';
+  // A median far from the mean is the single most useful caveat on this
+  // panel, so it is printed rather than left to the reader to spot.
+  var skew = "";
+  if(avg!=null && med!=null && avg>0 && Math.abs(med-avg)/avg > 0.05){
+    skew = '<div class="note">The median target ('+fmtpx(med)+') sits '
+      + fwSignedFixed((med-avg)/avg*100,1)+'% from the average, so a small number of outlying targets are '
+      + 'pulling the average '+(med>avg?"down":"up")+'. The median is the steadier of the two.</div>';
+  }
+  return '<div class="dsec"><h3>Price target</h3><div>'+head+'</div>'
+    + '<div class="note" style="margin-top:2px">'+sub+'</div>'
+    + bar + rows + skew + '</div>';
+}
+function fcRatingSecHTML(sym, f){
+  var mark = fcNum(f.rec_mark), tot = fcNum(f.rec_total);
+  var buy = fcNum(f.rec_buy), hold = fcNum(f.rec_hold), sell = fcNum(f.rec_sell);
+  if(mark==null && tot==null) return "";
+  var cls = mark==null ? "" : (mark<2.5 ? "u" : mark<3.5 ? "m" : "d");
+  var bucketed = (buy||0)+(hold||0)+(sell||0);
+  var denom = Math.max(bucketed, tot||0, 1);
+  var row = function(label, n, tip){
+    var w = n==null ? 0 : (n/denom*100);
+    return '<span'+(tip?(' data-tip="'+esc(tip)+'"'):'')+'>'+label+'</span>'
+      + '<i><u style="width:'+w.toFixed(1)+'%"></u></i>'
+      + '<b>'+(n==null?"—":n)+'</b>';
+  };
+  var bars = (buy!=null||hold!=null||sell!=null)
+    ? ('<div class="fcbars">'+row("Buy",buy)+row("Hold",hold)+row("Sell",sell)+'</div>') : "";
+  // The vendor's own three buckets can sum to less than its own total: the
+  // scanner exposes buy/hold/sell where TradingView's page splits five
+  // (AAOI live: 4+3+0 against a total of 8). Print the shortfall rather than
+  // rescaling the bars to close it — a missing reading is never guessed, and
+  // silently stretching the bars would invent a placement for the analysts
+  // the vendor did not bucket.
+  var gap = (tot!=null && bucketed < tot)
+    ? ('<div class="note">'+(tot-bucketed)+' of the '+tot+' analysts '+((tot-bucketed)===1?'is':'are')
+       + ' counted in the rating average but not placed in one of these three buckets by the data feed. '
+       + 'The bars show only what it bucketed.</div>')
+    : "";
+  return '<div class="dsec"><h3>Analyst rating</h3>'
+    + '<div class="kvrow"><span data-tip="'+esc("The vendor's 1-to-5 consensus scale: 1 means every analyst rates "
+        + "it a strong buy, 3 is the middle, 5 is sell. It counts opinions, not whether those opinions have been "
+        + "right. No label is printed for it here because the vendor's own published label does not always match "
+        + "the band the number falls in, and two different words for one reading is worse than none.")
+    + '">Consensus</span><b class="'+cls+'">'+(mark!=null?(mark.toFixed(2)+' / 5'):"—")
+    + '<span class="m" style="font-weight:400"> (1 = strong buy)</span></b></div>'
+    + (tot!=null?('<div class="kvrow"><span>Analysts covering</span><b>'+tot+'</b></div>'):'')
+    + bars + gap + '</div>';
+}
+function fcTrendSecHTML(sym, fund){
+  var t = fund && fund.eps_trend;
+  if(!t || !fcNum(t.current) || !fcNum(t.d90)) return "";
+  var cur = t.current, d90 = t.d90, pct = (cur-d90)/Math.abs(d90)*100;
+  var dir = cur>d90 ? "u" : cur<d90 ? "d" : "m";
+  return '<div class="dsec"><h3>Where the estimate has moved</h3>'
+    + '<div class="kvrow"><span data-tip="'+esc("The consensus earnings-per-share estimate for the next full "
+        + "fiscal year, as it stands now against where it stood 90 days ago. Both figures come from the same "
+        + "vendor and describe the same fiscal period, so the change is a real revision rather than two "
+        + "sources disagreeing. Rising estimates are the thing the 5-metric framework's velocity filter tests.")
+    + '">Next-year EPS estimate</span><b class="'+dir+'">'+numStr(cur,2)+'</b></div>'
+    + '<div class="kvrow"><span>90 days ago</span><b>'+numStr(d90,2)+'</b></div>'
+    + '<div class="kvrow"><span>Change</span><b class="'+dir+'">'+fwSignedFixed(pct,1)+'%</b></div>'
+    + (t.period_end ? ('<div class="note">Both figures are the estimate for the fiscal year ending '
+        + esc(t.period_end)+'.</div>') : '')
+    + '</div>';
+}
+function fcActualsSecHTML(sym, fund){
+  var rows = (fund && Array.isArray(fund.earnings)) ? fund.earnings.slice(-8) : [];
+  var withEst = rows.filter(function(r){ return fcNum(r.eps)!=null && fcNum(r.eps_est)!=null; });
+  if(!withEst.length) return "";
+  var body = withEst.slice().reverse().map(function(r){
+    var beat = r.eps > r.eps_est, miss = r.eps < r.eps_est;
+    var sp = fcNum(r.eps_surprise_pct);
+    return '<div class="kvrow"><span>'+esc(r.period||r.date||"")+'</span><b class="'
+      + (beat?"u":miss?"d":"m")+'">'+numStr(r.eps,2)+' <span class="m" style="font-weight:400">vs '
+      + numStr(r.eps_est,2)+' est</span>'
+      + (sp!=null?(' · '+fwSignedFixed(sp,1)+'%'):'')+'</b></div>';
+  }).join("");
+  return '<div class="dsec"><h3>Actual vs. estimate</h3>'+body
+    + '<div class="note">Reported earnings per share against the consensus estimate going into each print, '
+    + 'newest first. A beat or a miss here is history, not a forecast.</div></div>';
+}
+function stageForecastHTML(sym, fund){
+  var f = factsOf(sym);
+  if(!f){
+    return '<div class="dsec note">'+esc(sym)+' is outside the desk’s tracked universe, so there are no '
+      + 'analyst targets or ratings here — they ride the same once-a-cycle scanner row the tracked names use.'
+      + '</div>';
+  }
+  var secs = fcTargetSecHTML(sym, f) + fcRatingSecHTML(sym, f)
+    + fcTrendSecHTML(sym, fund) + fcActualsSecHTML(sym, fund);
+  // Staleness: the targets and ratings ride the once-a-cycle scanner row, so
+  // they age with data.json; the estimate trend and the actuals ride the
+  // once-a-day sidecar, which the Fundamentals grid already badges.
+  var stale = fundBuiltStaleDays(FUND_CACHE[sym]);
+  var staleNote = (stale!=null && stale > FUND_BUILT_STALE_DAYS)
+    ? ('<div class="note"><span class="sess">STALE '+stale+'d</span> The estimate trend and the actual-vs-estimate '
+       + 'rows come from the quarterly-financials sidecar, built '+stale+' days before this session.</div>') : "";
+  return secs
+    + '<div class="dsec note">Price targets and ratings are analyst opinions on record, collected by TradingView '
+    + 'and refreshed with the rest of the desk each cycle. They are reference, not a signal: nothing here feeds '
+    + 'the conviction or swing score, and the last price they are compared against is 15-minute delayed.'
+    + staleNote + '</div>';
+}
+
 /* ---- tabs under the chart: the old modal's panels, now always on screen ---- */
-var STAGE_TABS = [["ov","Overview"],["fin","Financials"],["peers","vs Peers"],["flow","Options flow"]];
+var STAGE_TABS = [["ov","Overview"],["fin","Financials"],["peers","vs Peers"],["flow","Options flow"],["fcst","Forecast"]];
 function stageTabsRender(){
   var el = document.getElementById("stagetabs");
   if(!el) return;
@@ -14509,6 +14711,8 @@ function renderStageTab(){
     renderPeersTab(sym);
   } else if(STAGE.tab==="flow"){
     body.innerHTML = stageFlowSecHTML(sym);
+  } else if(STAGE.tab==="fcst"){
+    body.innerHTML = stageForecastHTML(sym, fund);
   } else {
     body.innerHTML = '<div id="rangesec">'+rangeSecHTML(sym)+'</div>'
       + stageFrameworkHTML(sym)

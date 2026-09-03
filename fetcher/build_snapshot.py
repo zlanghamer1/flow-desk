@@ -537,6 +537,24 @@ TV_COLUMNS = [
     # fetched — see context.py's facts.eps_ntm comment for why the framework
     # uses the annual estimate for both its 6-month AND 3-month lookbacks.
     "earnings_per_share_forecast_next_fy", "revenue_forecast_next_fy",
+    # Analyst forecast spread + rating breakdown (added 2026-09-03, Forecast
+    # tab). price_target_average and recommendation_mark were already here;
+    # these are the rest of what the tab draws, live-verified the same day on
+    # NASDAQ:AAOI against TradingView's own Forecast page for that symbol —
+    # avg 170.5, high 220, low 109, median 184, 8 rating analysts.
+    #
+    # KNOWN AND DISCLOSED ON SCREEN: buy+hold+sell does not always equal
+    # recommendation_total (AAOI: 4+3+0 against a total of 8) because the
+    # scanner exposes three buckets where TV's own page splits five. The tab
+    # prints the shortfall rather than reshaping the bars to fit the total.
+    # Yahoo's recommendationTrend WOULD give five buckets, and was rejected:
+    # its counts disagree with TV's (2/1/3/0/0) and with its own
+    # numberOfAnalystOpinions (5), so mixing them would put two contradictory
+    # analyst counts on one panel. One vendor per panel, same rule the
+    # framework's Filter 3 follows.
+    "price_target_high", "price_target_low", "price_target_median",
+    "recommendation_total", "recommendation_buy", "recommendation_hold",
+    "recommendation_sell",
 ]
 # index positions into the "d" row, named for readability
 _COL = {name: i for i, name in enumerate(TV_COLUMNS)}
@@ -642,6 +660,15 @@ def _row_to_quote(sym_field: str, d: list) -> dict | None:
         "industry": _txt(_COL["industry"]),
         # Security type (added 2026-09-03) — see TV_COLUMNS above.
         "sec_type": _txt(_COL["type"]),
+        # Analyst forecast spread + rating breakdown (added 2026-09-03) —
+        # see TV_COLUMNS above. Numeric-or-None like every field here.
+        "target_high": _num(_COL["price_target_high"]),
+        "target_low": _num(_COL["price_target_low"]),
+        "target_median": _num(_COL["price_target_median"]),
+        "rec_total": _num(_COL["recommendation_total"]),
+        "rec_buy": _num(_COL["recommendation_buy"]),
+        "rec_hold": _num(_COL["recommendation_hold"]),
+        "rec_sell": _num(_COL["recommendation_sell"]),
         # NTM consensus (added 2026-08-21) — see TV_COLUMNS above.
         "eps_ntm": _num(_COL["earnings_per_share_forecast_next_fy"]),
         "rev_ntm": _num(_COL["revenue_forecast_next_fy"]),

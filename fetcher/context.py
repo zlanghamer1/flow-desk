@@ -1115,6 +1115,17 @@ def fetch_earnings_days(tv_rows: dict[str, dict], session_date: date) -> dict[st
             "yld": q.get("yld"),
             "target": q.get("target"),
             "rec_mark": q.get("rec_mark"),
+            # Analyst forecast spread + rating breakdown (added 2026-09-03,
+            # Forecast tab) — see build_snapshot.py's TV_COLUMNS for the
+            # live verification and for why the buy/hold/sell buckets can
+            # sum to less than rec_total.
+            "target_high": q.get("target_high"),
+            "target_low": q.get("target_low"),
+            "target_median": q.get("target_median"),
+            "rec_total": q.get("rec_total"),
+            "rec_buy": q.get("rec_buy"),
+            "rec_hold": q.get("rec_hold"),
+            "rec_sell": q.get("rec_sell"),
             # NTM consensus (added 2026-08-21, 5-metric scoring framework) —
             # forward EPS/revenue estimates for the NEXT fiscal year. See
             # build_snapshot.py's TV_COLUMNS comment for how these column
