@@ -1,0 +1,63 @@
+name: CI
+
+# Runs the test suites on every push to main and every pull request.
+#
+# Before 2026-09-03 the fetcher's 344 tests only ever ran when a session
+# remembered to run them by hand; nothing in CI executed them, so a PR could
+# merge red. Two jobs:
+#
+#   fetcher-tests  — `pytest fetcher/`: scoring, calendar guard, split repair,
+#                    cross-file constant sync (TIPS <-> scoring, holidays,
+#                    TRACK_ONLY), and the pages.yml ship-list test.
+#   page-smoke     — `pytest tests/`: loads index.html and legal.html in
+#                    headless Chromium from a local static server with every
+#                    external host blocked, and fails on any uncaught page
+#                    error. The page is designed to keep rendering when its
+#                    feeds are down ("a feed that fails keeps its slot"); this
+#                    job is the first automated check that it actually does.
+#
+# No secrets are used. The token is read-only. Dependencies are pinned.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fetcher-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # The fetcher is pure stdlib and runs on the runner's default python3
+      # (3.12 on ubuntu-latest), the same interpreter refresh-loop.yml uses.
+      - name: Install pytest
+        run: python3 -m pip install --quiet --disable-pip-version-check pytest==9.1.1
+
+      - name: Run fetcher tests
+        run: python3 -m pytest fetcher -q
+
+  page-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Playwright and pytest
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pytest==9.1.1 playwright==1.62.0
+          python3 -m playwright install --with-deps chromium
+
+      - name: Run page smoke tests
+        run: python3 -m pytest tests -q

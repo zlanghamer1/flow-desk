@@ -3085,3 +3085,56 @@ network calls. The non-obvious decisions:
   is unchanged and still printed; the static prose they held is already in
   the corresponding TIPS/tooltips. `finMethod` is still built (one place
   the Financials wording lives) but no longer rendered.
+
+## Guardrails added 2026-09-03 (monetization readiness pass, Zach's /goal)
+
+Zach's goal: "make the desk a professional grade trading site that could be
+monetized." The architect pass found the blockers are outside the code (data
+rights, hosting terms, no server to gate access) and wrote them up in
+`docs/MONETIZATION.md` and `docs/DATA_LICENSING.md`; the code work in the
+same pass is the part that needed no accounts or money. Rules from it:
+
+- **`docs/DATA_LICENSING.md` is authoritative for what the desk may call.**
+  Every external host the fetcher or the page talks to has a row there with
+  its terms and its paid-product status. Adding a new external host means
+  adding a row in the same change. Today every market-data row is
+  **Blocked** for a paid product; the desk stays a personal tool until those
+  rows are resolved by a signed vendor agreement, never by wording. The
+  2026-06-14 "don't re-pitch paid feeds" ruling still governs the personal
+  tool; the product question lives in `docs/MONETIZATION.md`, not in chat.
+- **User-facing copy names the rule, never the person who made it.** Two
+  TIPS entries said "Zach's 2026-08-26 ruling"/"alert ask"; they now say
+  "the 2026-08-26 declutter rule"/"the lower-band alert rule". Code
+  comments, CLAUDE.md, and the README's decision notes keep attribution; the
+  rendered page does not.
+- **Every root HTML page ships through all three lists in `pages.yml`**
+  (`paths:`, `git checkout main --`, `git add`). `fetcher/test_pages_ship.py`
+  fails on a missing one and on any `href="*.html"` in `index.html` that
+  does not exist at the repo root. `legal.html` is the first second page;
+  it mirrors `index.html`'s color tokens and reads `desk.theme` so a
+  reader's theme choice carries over. Change a token in one file, change it
+  in the other.
+- **The legal page's bracketed placeholders are visible on purpose.** The
+  operator's legal name, contact, and governing law are Zach's to fill and
+  an attorney's to approve. Never invent an entity name or a state to make
+  the page look finished. Every non-bracketed sentence on it is a fact about
+  how the site works today (no accounts, no cookies, the `desk.*` storage
+  keys, which hosts the browser contacts); if one of those facts changes,
+  change the page in the same commit.
+- **CI runs two suites on every PR** (`.github/workflows/ci.yml`, read-only
+  token, pinned versions): `pytest fetcher` and `pytest tests`. The page
+  smoke test blocks every external host BY DESIGN and fails on any uncaught
+  page error at 1440px and 390px, plus any sideways scroll. A failure there
+  is a real fail-soft bug in the page, the class every review round since
+  2026-08-19 has guarded by rule; never "fix" it by letting the test reach
+  the network. Locally, point `PW_CHROMIUM` at a preinstalled browser
+  (`/opt/pw-browsers/chromium` in the sandbox) instead of downloading one.
+- **Head metadata is product copy.** `index.html` now carries a description,
+  Open Graph and Twitter card tags, theme colors, and a canonical URL. The
+  descriptions say "15-minute delayed" and "research, not advice" for the
+  same reason the honesty box does; keep both claims when editing them.
+- **Not changed, on purpose:** the framework's BUY/ADD/HOLD/AVOID words
+  (Zach's vocabulary, flagged for the attorney conversation), the single-file
+  `index.html` (splitting it belongs to the Phase 2 data-layer change), and
+  every current feed (removing one before its licensed replacement exists
+  breaks the personal tool for no gain).
