@@ -138,10 +138,15 @@ a.nt-item:hover{color:var(--ink)}
 .nt-item .tk{font-size:9.5px;font-weight:700;color:var(--acc)}
 .nt-item .tm{font-size:10px;color:var(--ink3)}
 .nt-sep{color:var(--ink3);opacity:.5;font-size:8px;padding-right:14px}
-@media (prefers-reduced-motion: reduce){
-  .nt-track{animation:none}
-  .newsticker{overflow-x:auto}
-}
+/* Zach's ruling 2026-09-03: "sidescrolling bar for news ticker at the top
+   isn't functional - remove. News should still tick from the top slowly to
+   the left." The reduced-motion path used to stop the animation and hand the
+   strip a horizontal scrollbar instead. On this page that scrollbar was the
+   only way to read past the edge, and it did not work as a reading control —
+   so the reel now rolls on every setting, and hover-to-pause (below) is the
+   way to stop it and read. A deliberate override of prefers-reduced-motion
+   for these two reels only; every other animation on the page still honors
+   it. Nothing else in this file should copy the pattern without an ask. */
 
 /* ============ top rail ============ */
 .rail{
@@ -169,7 +174,7 @@ a.nt-item:hover{color:var(--ink)}
 .focnews .nt-item{min-height:22px;font-size:11px}
 .focnews:hover .nt-track{animation-play-state:paused}
 .focnews .nt-empty{font-size:11px;padding:0 4px}
-@media (prefers-reduced-motion: reduce){ .focnews{overflow-x:auto} }
+/* No manual side-scroll here either — see the top reel's note above. */
 .kbtn{
   display:flex;align-items:center;gap:8px;border:1px solid var(--edge);border-radius:6px;
   padding:4px 10px;color:var(--ink3);font-size:11.5px;background:var(--srf2);min-width:170px;
@@ -1206,7 +1211,9 @@ html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink3) 50%,tran
   mask-image:linear-gradient(90deg, transparent, #000 22px, #000 calc(100% - 22px), transparent)}
 .focnews{-webkit-mask-image:linear-gradient(90deg, #000 calc(100% - 26px), transparent);
   mask-image:linear-gradient(90deg, #000 calc(100% - 26px), transparent)}
-@media (prefers-reduced-motion: reduce){ .newsticker,.focnews{-webkit-mask-image:none;mask-image:none} }
+/* The edge fades used to be dropped under reduced motion, when these strips
+   became manually scrollable. They roll on every setting now, so the fades
+   apply on every setting too (2026-09-03). */
 .rail{background:linear-gradient(180deg, var(--srf2), var(--srf));box-shadow:0 1px 0 var(--edge), 0 10px 28px -18px var(--shadow)}
 .newsticker{background:linear-gradient(180deg, var(--srf2), var(--srf))}
 .tape{background:linear-gradient(180deg, var(--srf), var(--srf2))}
@@ -6385,15 +6392,15 @@ function renderNewsTicker(data){
   // all of them ahead of everything else and the first one off-screen to the
   // left. The ticker is a decorative restatement of the Tagged headlines
   // panel, which is keyboard reachable — so it leaves the tab order entirely.
-  // With reduced motion the CSS disables the animation and switches to
-  // manual horizontal scroll (overflow-x:auto) — but the duplicate copy is
-  // only aria-hidden, not invisible to scrolling, so every headline printed
-  // twice back-to-back for the one audience the loop-seamlessly duplicate
-  // was never meant to be seen by (2026-08-22 review, panels finding #3).
-  var reducedMotion = false;
-  try{ reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches; }catch(e){}
+  // The second copy is what makes the roll loop seamlessly, and it is
+  // aria-hidden. It used to be withheld under reduced motion, because that
+  // path stopped the animation and made the strip manually scrollable — a
+  // scroller then read every headline twice (2026-08-22 review, panels
+  // finding #3). Zach removed that scrollbar on 2026-09-03 and the reel now
+  // rolls on every setting, so the duplicate is always needed and is never
+  // reachable by scrolling.
   el.innerHTML = '<div class="nt-track" style="--nt-dur:'+dur+'s">'
-    + half + (reducedMotion ? '' : '<span aria-hidden="true">' + half + '</span>') + '</div>';
+    + half + '<span aria-hidden="true">' + half + '</span></div>';
   $$("#newsticker a").forEach(function(a){ a.setAttribute("tabindex","-1"); });
 }
 // One reading pace for both reels (2026-09-03): 7 seconds per headline,
@@ -6484,10 +6491,9 @@ function renderFocusNewsTicker(data){
       + inner + (href ? '</a>' : '</span>') + '<span class="nt-sep">◆</span>';
   }
   var half = items.map(itemHTML).join("");
-  var reducedMotion = false;
-  try{ reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches; }catch(e){}
+  // Always duplicated, same reason as the top reel — see renderNewsTicker.
   el.innerHTML = '<div class="nt-track" style="--nt-dur:'+ntDuration(items.length)+'s">'
-    + half + (reducedMotion ? '' : '<span aria-hidden="true">' + half + '</span>') + '</div>';
+    + half + '<span aria-hidden="true">' + half + '</span></div>';
   $$("#focnews a").forEach(function(a){ a.setAttribute("tabindex","-1"); });
 }
 function renderNews(){
@@ -10223,19 +10229,15 @@ function taMinWinForTrend(){
   var cap = TA_REALISTIC_MAX_BARS[STAGE.iv];
   return cap!=null ? Math.min(v, cap) : v;
 }
-// TIPS.ta_trend's "12 bars"/"40 bars" text is only literally true on 1D — on
-// every other interval taFreshBars()/taMinWinForTrend() scale those numbers
-// by taBarScale() (and cap them for thin intraday intervals), so the real
-// threshold can be off by 4-6x from what the static tooltip claims (verified:
-// 1H's real taFreshBars() is 78, not 12; 1W's real taMinWinForTrend() is far
-// below the daily 40). Substituted here at render time, the same way
-// stageTALegend's tooShort message already computes its own number fresh
-// per render (2026-08-23 review round 16, Auto-TA finding #0).
-function taTrendTip(){
-  return TIPS.ta_trend
-    .replace("more than 12 bars old", "more than "+taFreshBars()+" bars old")
-    .replace("Windows under 40 bars", "Windows under "+taMinWinForTrend()+" bars");
-}
+// taTrendTip() lived here until 2026-09-03. It patched TIPS.ta_trend's
+// hardcoded "12 bars"/"40 bars" with the active interval's real, scaled
+// thresholds, because those numbers are only literally true on 1D (1H's real
+// taFreshBars() is 78, not 12). Its one consumer was the trend button's
+// tooltip, which Zach removed that day, so the function had no caller left.
+// TIPS.ta_trend itself is kept as the canonical wording store — if a tooltip
+// ever renders it again, restore this substitution with it, or the text will
+// state a threshold 4-6x off on every interval but 1D (2026-08-23 review
+// round 16, Auto-TA finding #0).
 // avg_move (facts.avg_move) is a DAILY % figure. taContainTol/taFitLine's own
 // touchTol/hugTol only ever scaled it for STAGE.iv==="1D" — every other
 // interval fell back to a flat, un-scaled default, which silently starved
@@ -13447,10 +13449,6 @@ function stageBar(){
   var prefs = taPrefs();
   // EMA and RSI overlays were removed 2026-08-21 (Zach's call): only trend
   // lines and horizontal S/R remain as toggles.
-  // S/R's own tooltip gets a suffix when VP is on (B4): VP and S/R never
-  // stack, so the toggle still shows its stored pressed state but the
-  // tooltip discloses why the lines aren't drawing.
-  var srTip = TIPS.ta_sr + (prefs.vp ? " (hidden while the volume profile is on)" : "");
   // gex joined the toggle row 2026-08-26 (Zach's declutter ruling: BB is the
   // only overlay on by default) — the gamma lines drew unconditionally for
   // every desk name before that.
@@ -13460,16 +13458,30 @@ function stageBar(){
   // nothing, with no disclosure anywhere — an interface lie (2026-08-26
   // review round 18, chart stage finding #1, a blocker). The stored pref is
   // untouched; only the button's rendered state says the truth for THIS view.
+  //
+  // NO TOOLTIPS ON THESE SIX BUTTONS (Zach's ruling 2026-09-03: "remove all
+  // explainer text when clicking or hovering over chart technicals buttons").
+  // The page's tooltip opens on hover AND on click, so dropping data-tip is
+  // what removes both. This loses no disclosure — every fact those tooltips
+  // carried is still printed where the overlay itself lands:
+  //   - the MA button's disabled reason, in the chart-notes legend
+  //     (stageTALegend's maOff1D branch);
+  //   - "S/R is hidden while the volume profile is on", in the auto-TA
+  //     caption (summary.srHiddenByVp);
+  //   - each overlay's own failure reason, in the quick-read line's
+  //     "nothing to draw for ..." clause and the chart notes behind it.
+  // The methodology prose lives in TIPS.ta_* and is still read by the rail's
+  // Band-crosses header and the recap's Bollinger clause. Same rule as the
+  // 2026-09-03 removal of the expHTML explainer buttons: static methodology
+  // prose goes, dynamic disclosures stay printed. Don't re-add data-tip here
+  // without a fresh ask.
   var maOff1D = (STAGE.iv !== "1D");
-  var taBtns = [["ma","MA", maOff1D
-        ? "The 20/50/200-day moving average lines are computed from DAILY bars and draw on the 1D view only — this button has nothing to draw here. Switch to 1D to use it; your on/off choice is remembered."
-        : TIPS.ta_ma],
-      ["trend","trend",taTrendTip()],["sr","S/R",srTip],["bb","BB",TIPS.ta_bb],["vp","VP",TIPS.ta_vp],["gex","GEX",TIPS.ta_gex]]
+  var taBtns = [["ma","MA"],["trend","trend"],["sr","S/R"],["bb","BB"],["vp","VP"],["gex","GEX"]]
     .map(function(t){
       var dis = (t[0]==="ma" && maOff1D);
       return '<button data-ta="'+t[0]+'" aria-pressed="'+(dis ? "false" : !!prefs[t[0]])+'"'
         + (dis ? ' disabled aria-disabled="true"' : '')
-        + ' data-tip="'+esc(t[2])+'">'+t[1]+'</button>';
+        + '>'+t[1]+'</button>';
     }).join("");
   // Three LABELED groups (UX-laws redesign, 2026-09-02): bars and window are
   // radio groups, overlays are independent toggles and render as toggles.
