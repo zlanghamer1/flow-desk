@@ -31,7 +31,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_snapshot import (  # noqa: E402
     analyze_ticker, BIG_ORDERS_CAP, BIG_ORDERS_DTE_HI,
-    BIG_ORDERS_MIN_PREMIUM, MONEYNESS_BAND)
+    BIG_ORDERS_MIN_PREMIUM, MONEYNESS_BAND,
+    BIG_ORDERS_BASELINE_SESSIONS, big_orders_normal_premium, rank_big_orders)
 
 SESSION = date(2026, 7, 27)
 
@@ -220,10 +221,13 @@ def test_board_does_not_disturb_the_scoring_inputs():
 # the disclosure. The cap is only acceptable BECAUSE it is disclosed — a test
 # that checked the cap without checking the disclosure would bless half of it.
 
-def _merge(pool_rows):
-    """Mirror of run_cycle's merge/cap/disclose block."""
+def _merge(pool_rows, normal_by_ticker=None):
+    """Mirror of run_cycle's merge/cap/disclose block. The ORDER comes from the
+    real rank_big_orders (vs_normal desc, then raw premium); with no baselines
+    supplied every row has vs_normal=None and the walk runs on raw premium,
+    which is what the cap/disclosure tests below exercise."""
     from build_snapshot import BIG_ORDERS_CAP as CAP, BIG_ORDERS_PER_TICKER as PER
-    pool = sorted(pool_rows, key=lambda r: r["premium"], reverse=True)
+    pool = rank_big_orders([dict(r) for r in pool_rows], normal_by_ticker or {})
     board, shown = [], {}
     for r in pool:
         if len(board) >= CAP:
@@ -316,3 +320,83 @@ def test_two_crowded_names_are_both_disclosed_worst_first():
     _, capped = _merge(pool)
     assert [c["ticker"] for c in capped] == ["QQQ", "AMZN"]
     assert capped[0]["earned"] == 5 and capped[1]["earned"] == 4
+
+
+# ── 6. ranked relative to each name's normal (Zach, 2026-09-03) ──────────────
+# "Biggest options dollars today in the desk should be relative to its normal.
+# Right now, only Nvidia, SPY, QQQ, and one other are shown." On raw dollars
+# the index ETFs own the board by size alone; these pin the ratio ranking, the
+# baseline's own-history-only rule, and the no-baseline fallback.
+
+def _sessions(session_str, ticker_days):
+    """history['sessions'] shaped map: {date: {ticker: {nm_call, nm_put}}}."""
+    out = {}
+    for t, days in ticker_days.items():
+        for i, (c, p) in enumerate(days):
+            d = f"2026-06-{i+1:02d}"
+            out.setdefault(d, {})[t] = {"nm_call_prem_0_7": c, "nm_put_prem_0_7": p}
+    out.setdefault(session_str, {})
+    return out
+
+
+def test_normal_premium_averages_prior_near_money_dollars():
+    sess = _sessions("2026-07-27", {"MU": [(600_000.0, 400_000.0)] * BIG_ORDERS_BASELINE_SESSIONS})
+    normal, n = big_orders_normal_premium(sess, "2026-07-27", "MU")
+    assert normal == pytest.approx(1_000_000.0)
+    assert n == BIG_ORDERS_BASELINE_SESSIONS
+
+
+def test_normal_premium_excludes_today_and_needs_minimum_history():
+    """Today's own row must never sit in its own baseline (a loud day would
+    dilute the ratio it is measured by), and short history reads None."""
+    days = [(1.0, 1.0)] * (BIG_ORDERS_BASELINE_SESSIONS - 1)
+    sess = _sessions("2026-07-27", {"MU": days})
+    sess["2026-07-27"]["MU"] = {"nm_call_prem_0_7": 9e9, "nm_put_prem_0_7": 9e9}
+    normal, n = big_orders_normal_premium(sess, "2026-07-27", "MU")
+    assert normal is None and n == BIG_ORDERS_BASELINE_SESSIONS - 1
+    # rows predating the near-money fields (2026-07-28) don't count either
+    sess["2026-06-30"] = {"MU": {"net_flow_0_7": 1.0}}
+    assert big_orders_normal_premium(sess, "2026-07-27", "MU")[0] is None
+
+
+def test_a_quiet_name_having_a_loud_day_outranks_spy_on_raw_dollars():
+    """The whole point: SPY's $20M contract is an ordinary hour for SPY; AEHR's
+    $400K contract is four normal days of AEHR's entire options business."""
+    pool = [_row("SPY", 20e6), _row("AEHR", 400e3), _row("MU", 3e6)]
+    normals = {"SPY": (200e6, 20), "AEHR": (100e3, 20), "MU": (2e6, 20)}
+    board, _ = _merge(pool, normals)
+    assert [r["ticker"] for r in board] == ["AEHR", "MU", "SPY"]
+    assert board[0]["vs_normal"] == pytest.approx(4.0)
+    assert board[0]["normal_prem"] == pytest.approx(100e3)
+    assert board[0]["normal_sessions"] == 20
+    assert board[2]["vs_normal"] == pytest.approx(0.1)
+
+
+def test_no_baseline_rows_sort_after_every_ranked_row_on_raw_dollars():
+    """A missing baseline is disclosed (vs_normal null), never guessed as 0x
+    or as infinity — and it never displaces a ranked row."""
+    pool = [_row("NEW", 50e6), _row("NEW2", 60e6), _row("MU", 1e6)]
+    normals = {"MU": (2e6, 20), "NEW": (None, 3), "NEW2": (None, 0)}
+    board, _ = _merge(pool, normals)
+    assert [r["ticker"] for r in board] == ["MU", "NEW2", "NEW"]
+    assert board[1]["vs_normal"] is None and board[1]["normal_prem"] is None
+    assert board[2]["normal_sessions"] == 3
+
+
+def test_ratio_ranking_keeps_a_tickers_own_rows_in_premium_order():
+    """One normal per ticker, so within a name the order is still by dollars —
+    which is why analyze_ticker's per-ticker premium shortlist stays exact."""
+    pool = [_row("MU", 1e6, 100.0), _row("MU", 3e6, 101.0), _row("MU", 2e6, 102.0)]
+    board, _ = _merge(pool, {"MU": (2e6, 20)})
+    assert [r["strike"] for r in board] == [101.0, 102.0, 100.0]
+
+
+def test_per_ticker_cap_and_disclosure_still_apply_under_ratio_ranking():
+    pool = [_row("QQQ", 90e6 - i, 683.0 + i) for i in range(5)]
+    pool += [_row(f"N{i}", 1e6 - i) for i in range(20)]
+    normals = {"QQQ": (10e6, 20)}
+    for i in range(20):
+        normals[f"N{i}"] = (1e6, 20)
+    board, capped = _merge(pool, normals)
+    assert sum(1 for r in board if r["ticker"] == "QQQ") == 3
+    assert capped == [{"ticker": "QQQ", "shown": 3, "earned": 5}]

@@ -204,13 +204,22 @@ row, so it's a separate decision, not folded into this one.
 ## Biggest orders today (added 2026-07-31)
 
 Below the two scored boards is a plain ranked list: the individual option
-contracts with the **most money traded through them today**, across every name
-on the watch list. It's the same thing the "institutional options flow" posts
-circulating on social media show, built from the same free CBOE data they use.
+contracts having the **biggest day for their own name**, across every name on
+the watch list. It's built from the same free CBOE data the "institutional
+options flow" posts circulating on social media use.
 
-Read a line like this — `AMZN CALL $250  2026-08-21 (21d)   $122.22M` — as:
-*of everything traded today, more dollars went through Amazon's $250 calls
-expiring Aug 21 than any other single contract on the list.*
+**Ranked against each name's normal, not on raw dollars (changed 2026-09-03).**
+On raw dollars the board was SPY, QQQ, NVDA and one other name every single
+day, by size alone — a $2M line in SPY is an ordinary hour, a $2M line in a
+small name is its whole month. So each line now carries a **× normal** figure:
+the dollars through that one contract divided by what its name usually trades
+in a whole day of near-money, short-dated options (averaged over its last 20
+sessions). The board sorts on that column. Read a line like
+`AEHR CALL $35  2026-09-19 (16d)   4.1×   $410K` as: *this one contract did
+about four normal days' worth of Aehr's options business today.* A name with
+fewer than 20 sessions of history shows "no baseline" and sits at the bottom,
+ranked on raw dollars — the page never guesses a ratio. The raw dollar figure
+is still printed beside it.
 
 **One line is one contract's whole day, NOT one order.** This is the honest
 limit and it's worth being clear about, because it's exactly where those posts

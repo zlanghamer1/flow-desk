@@ -80,3 +80,17 @@ def test_holiday_tables_match_across_fetcher_and_frontend():
         f"MARKET_HALF_DAYS disagree: fetcher-only={fetcher_half - frontend_half} "
         f"frontend-only={frontend_half - fetcher_half}"
     )
+
+
+def test_big_orders_baseline_sessions_match():
+    """BIG_ORDERS_BASELINE_SESSIONS (fetcher, = UOA_MIN_SESSIONS) <-> the
+    frontend's BIG_ORDERS_BASELINE_SESSIONS literal, which the × normal cell's
+    'no baseline yet' tooltip prints (2026-09-03). Two files, one number."""
+    m = re.search(r"UOA_MIN_SESSIONS\s*=\s*(\d+)", SNAP)
+    assert m, "UOA_MIN_SESSIONS not found"
+    assert "BIG_ORDERS_BASELINE_SESSIONS = UOA_MIN_SESSIONS" in SNAP
+    m2 = re.search(r"var BIG_ORDERS_BASELINE_SESSIONS = (\d+);", INDEX)
+    assert m2, "BIG_ORDERS_BASELINE_SESSIONS not found in index.html"
+    assert int(m2.group(1)) == int(m.group(1))
+    tip = re.search(r'"tip-vsnormal":\s*"((?:[^"\\]|\\.)*)"', INDEX)
+    assert tip and f"last {m.group(1)} sessions" in tip.group(1)
