@@ -396,6 +396,19 @@ If the card is missing, the odds could not be read — a market too thinly trade
 to mean anything, or a feed that was down. The card disappears rather than
 showing a 0%, because 0% would be a real claim and a wrong one.
 
+## Headlines for every desk name (added 2026-09-03)
+
+Select any name on the desk and its newest headline prints in the "focused
+on" bar under the header, while all of its recent headlines roll in the
+header's spare width left of the search box. Every pinned name now keeps
+its own newest three headlines from the hourly scan, so a quiet name is no
+longer invisible just because the big four filled the top reel. A rail row
+carries a small NEWS mark when that name has a headline from the last 24
+hours; hover it for the title. The top reel itself now holds 24 headlines
+with at most 2 per name, and both reels roll a little slower. Names you add
+in your own browser are not scanned (the news service does not allow the
+page to call it), and the bar says so.
+
 ## Terms, privacy, and risk disclosure (added 2026-09-03)
 
 The footer links to a second page, `legal.html`, that says in plain English

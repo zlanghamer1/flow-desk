@@ -3171,3 +3171,52 @@ same pass is the part that needed no accounts or money. Rules from it:
     tooltip.** "+1.1% shown" named no subject; a new reader could not tell
     what was shown. The number itself is unchanged: first to last candle on
     screen, following zoom and pan.
+
+## Guardrails added 2026-09-03 (Zach's second ask: gradients and shading, the focused name's headlines, slower reels, news for every watchlist name)
+
+Zach's words: "make the UI more polished, still darker themed but more color
+gradients & shading. When a stock is selected, put its most recent headline
+news at the top near the top search bar in that blank space where nothing
+exists. Make the news scroll slightly slower & try to get news on all stocks
+in watchlist." Frontend plus one fetcher change; no new network calls. The
+non-obvious decisions:
+
+- **The focused-name header reel was broken since it shipped, and that is
+  why the space read as blank.** Raw `news.items` carry `ticker`
+  (singular); `renderFocusNewsTicker` filtered them on `n.tickers`, a field
+  that only exists AFTER `dedupeNews`, so it matched nothing and printed
+  "no tagged headlines" for every name. `newsForSym(sym, data)` is now the
+  ONE function every per-name news surface calls (header reel, focus bar,
+  rail panel under a focus, rail-row mark): `news.by_ticker[sym]` first,
+  then reel items tagged either way, deduped on the article, newest first.
+- **`news.by_ticker` (fetcher) gives every pinned name its own newest 3
+  headlines from the same hourly per-symbol pulls** — zero extra requests;
+  the reel's pooled list just used to throw the rest away. A symbol that
+  returned nothing has no key, never an empty list. Documented in
+  DATA_CONTRACT.md before the code. Custom (browser-only) names can never be
+  in it: `news-mediator.tradingview.com` sends no
+  `access-control-allow-origin` (checked 2026-09-03 with an Origin header),
+  so the page cannot fetch them itself; the reel says "headlines cover desk
+  names only" for such a name instead of showing an empty reel.
+- **Reel caps moved toward breadth: `NEWS_CAP` 20 → 24, `NEWS_PER_TICKER_CAP`
+  3 → 2.** The two 2026-08-15 historical-scenario tests pin the algorithm at
+  the old caps via `monkeypatch`; the cap-size tests read the constants.
+- **`ntDuration(n)` is 8s per headline, bounds 55–200s** (was 7s, 48–175s).
+  24 items × 8s = 192s stays under the ceiling, so the widened reel does not
+  speed back up. Still the one pace function for both reels.
+- **A `NEWS` mark on a rail row means a headline inside 24 hours for that
+  name** (`newsMarkHTML`, `NEWS_FRESH_MS`), tooltip carrying the newest
+  title and age. It sits on the ticker line, never the name line, so the
+  company name does not ellipsize behind it.
+- **The focus bar carries the newest headline as static text** beside the
+  rolling header reel: the header's spare width is ~180px at 1440px once the
+  verdict/backdrop/fed chips are on, too narrow to read a rolling line. Same
+  data, same render call, same key; the focus bar row was otherwise empty.
+- **Shading is surfaces only, never text.** Tokens `--shadow`, `--hilite`,
+  `--glow` in all four palette blocks; every gradient runs between the
+  palette's own `--srf2`/`--srf`, a hairline `--hilite`, or an existing
+  low-alpha tint (`--upbg`/`--dnbg` on tape tiles by direction via a
+  `tp-u`/`tp-d`/`tp-m` class from the SAME `cls` the change text already
+  uses; `--accbg` on focus). No measured text contrast moved. Pressed
+  controls get an accent gradient; the overlay toggles (`.seg.tog`) keep
+  their square indicator and no gradient.

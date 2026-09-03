@@ -44,6 +44,7 @@
      is not a reference. These sit near 2:1 in both themes. */
   --grid:#2A323C; --gridzero:#3C4653;
   --tipline:rgba(134,149,166,.42);
+  --shadow:rgba(0,0,0,.55); --hilite:rgba(255,255,255,.045); --glow:rgba(94,159,216,.10);
 }
 @media (prefers-color-scheme: light){
   :root:not([data-theme="dark"]){
@@ -62,6 +63,7 @@
     --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   --grid:#D3DBE4; --gridzero:#B4C0CD;
   --tipline:rgba(82,96,111,.40);
+  --shadow:rgba(23,32,42,.10); --hilite:rgba(255,255,255,.80); --glow:rgba(47,111,174,.07);
   }
 }
 :root[data-theme="light"]{
@@ -76,6 +78,7 @@
   --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   --grid:#D3DBE4; --gridzero:#B4C0CD;
   --tipline:rgba(82,96,111,.40);
+  --shadow:rgba(23,32,42,.10); --hilite:rgba(255,255,255,.80); --glow:rgba(47,111,174,.07);
 }
 :root[data-theme="dark"]{
   --bg:#0C0E11; --srf:#101318; --srf2:#14181E; --edge:#1D232B; --edge2:#161B21;
@@ -92,6 +95,7 @@
      is not a reference. These sit near 2:1 in both themes. */
   --grid:#2A323C; --gridzero:#3C4653;
   --tipline:rgba(134,149,166,.42);
+  --shadow:rgba(0,0,0,.55); --hilite:rgba(255,255,255,.045); --glow:rgba(94,159,216,.10);
 }
 /* ============ base ============ */
 *{box-sizing:border-box;margin:0;padding:0}
@@ -179,7 +183,12 @@ a.nt-item:hover{color:var(--ink)}
 .focusbar{display:none;align-items:center;gap:8px;padding:6px 16px;border-bottom:1px solid var(--edge);background:var(--accbg);font-size:12px}
 .focusbar.on{display:flex}
 .focusbar b{letter-spacing:.04em}
-.focusbar button{color:var(--acc);font-size:11.5px}
+.focusbar button{color:var(--acc);font-size:11.5px;flex:none}
+.focusbar .fnew{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:12px;padding-left:12px;border-left:1px solid var(--edge2);font-size:11.5px;color:var(--ink2)}
+.focusbar .fnew[hidden]{display:none}
+.focusbar .fnew a{color:var(--ink)}
+.focusbar .fnew .tm{color:var(--ink3);margin-left:6px}
+.focusbar .fnew .lb{color:var(--ink3);margin-right:6px;letter-spacing:.06em;font-size:10px;text-transform:uppercase;font-weight:700}
 
 /* ============ tape ============ */
 .tape{display:flex;overflow-x:auto;border-bottom:1px solid var(--edge);background:var(--srf)}
@@ -1177,6 +1186,37 @@ footer .credit{margin-top:10px;padding-top:8px;border-top:1px solid var(--edge2)
    OS default. Standard properties only; supported browsers ignore the
    -webkit pseudo-elements once these are set. */
 html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink3) 50%,transparent) transparent}
+/* ===== Shading pass (2026-09-03, Zach: "still darker themed but more color
+   gradients & shading"). Surfaces, never text: every gradient runs between the
+   palette's own --srf2 and --srf (or a hairline --hilite / a low-alpha tint),
+   so no measured text contrast moves. Direction tints on the tape tiles use
+   the existing --upbg/--dnbg tokens; the accent tints use --accbg. Light theme
+   gets the same rules through its own tokens. ===== */
+.shell{background:radial-gradient(1100px 320px at 50% -160px, var(--glow), transparent 70%),
+  linear-gradient(180deg, var(--srf2) 0, var(--srf) 480px)}
+.rail{background:linear-gradient(180deg, var(--srf2), var(--srf));box-shadow:0 1px 0 var(--edge), 0 10px 28px -18px var(--shadow)}
+.newsticker{background:linear-gradient(180deg, var(--srf2), var(--srf))}
+.tape{background:linear-gradient(180deg, var(--srf), var(--srf2))}
+.tp{background-image:linear-gradient(180deg, var(--hilite), transparent 60%)}
+.tp.tp-u{background-image:radial-gradient(150px 70px at 100% 55%, var(--upbg), transparent 72%), linear-gradient(180deg, var(--hilite), transparent 60%)}
+.tp.tp-d{background-image:radial-gradient(150px 70px at 100% 55%, var(--dnbg), transparent 72%), linear-gradient(180deg, var(--hilite), transparent 60%)}
+.alertbox,.stat,.fedcard,#stagerecap,.pop,.tipb{background:linear-gradient(180deg, var(--srf2), var(--srf))}
+.alertbox,.stat,.fedcard{box-shadow:0 1px 2px var(--shadow), inset 0 1px 0 var(--hilite)}
+#s-brief{background:linear-gradient(180deg, var(--srf2), var(--srf) 60%)}
+.sh{background-image:linear-gradient(180deg, var(--hilite), transparent)}
+thead th{background-image:linear-gradient(180deg, var(--hilite), transparent)}
+.fbtn,.ic,.kbtn,.seg button,.wlx{background-image:linear-gradient(180deg, var(--hilite), transparent 70%)}
+.fbtn[aria-pressed="true"],.ic[aria-pressed="true"],.seg button[aria-pressed="true"]{
+  background-image:linear-gradient(180deg, color-mix(in srgb, var(--acc) 26%, transparent), color-mix(in srgb, var(--acc) 6%, transparent))}
+.seg.tog button[aria-pressed="true"]{background-image:none}
+.wr.foc{background:linear-gradient(90deg, var(--accbg), transparent 75%)}
+.focnews{background:linear-gradient(90deg, var(--accbg), transparent 55%);border-radius:4px;border-left-color:var(--acc)}
+.focnews .tk{color:var(--acc);font-weight:700}
+footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
+/* NEWS mark on a rail row: a headline inside 24h for that name (2026-09-03). */
+.nwm{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);
+  border:1px solid color-mix(in srgb, var(--ink3) 40%, transparent);border-radius:3px;padding:0 4px;line-height:1.5;flex:none;align-self:center}
+.wr:hover .nwm,.wr.foc .nwm,.wr:focus-within .nwm{color:var(--acc);border-color:color-mix(in srgb, var(--acc) 55%, transparent)}
 </style>
 </head>
 <body>
@@ -1210,6 +1250,10 @@ html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink3) 50%,tran
     <span>focused on</span> <b id="focsym">—</b>
     <span class="m" id="focname"></span>
     <button id="focclear">clear ×</button>
+    <!-- Newest headline for the focused name (2026-09-03): static text in the
+         bar's otherwise-empty width, beside the rolling header reel. Same
+         data (newsForSym), same render call as the reel. -->
+    <span class="fnew" id="focnewest" hidden></span>
   </div>
   <!-- data-feed failure banner: a failed data.json load used to be invisible —
        the page kept "Loading…" forever under a CLOSED lamp and read as a quiet
@@ -3283,7 +3327,7 @@ function mainTileHTML(t){
     + (d.ext && d.ext.ch!=null ? (". After hours: "+fmtpx(d.ext.px)+" ("+fm1(d.ext.ch)+"% since the 3:00 PM CT close).") : "")
     + (frozen ? " This reading has not refreshed in over a minute." : "")
     + " Click to chart it.";
-  return '<div class="tp" data-sym="'+esc(tkey)+'" role="button" tabindex="0" data-tip="'+esc(tip)+'">'
+  return '<div class="tp tp-'+cls+'" data-sym="'+esc(tkey)+'" role="button" tabindex="0" data-tip="'+esc(tip)+'">'
     +'<span class="s"><span class="t">'+esc(t.s)+' · '+esc(t.n)+'</span>'+sessTagHTML(d.tag)
     + (d.ext ? sessTagHTML(d.ext.tag) : "")+ftag+'</span>'
     +'<span class="p">'+pxStr+'</span><span class="c '+cls+'">'+chStr+'</span></div>';
@@ -3293,7 +3337,7 @@ function macroTileHTML(m){
   if(!d || d.px==null){
     // Keep the slot and say the quote is missing. Dropping the tile made a
     // broken feed look like a tape that never carried the reading.
-    return '<div class="tp" data-sym="'+esc(m.bk||m.s)+'" role="button" tabindex="0" data-tip="'
+    return '<div class="tp tp-'+cls+'" data-sym="'+esc(m.bk||m.s)+'" role="button" tabindex="0" data-tip="'
       + esc(m.s+" — no quote resolved this cycle. The tape keeps the slot so a missing reading is visible.")+'">'
       +'<span class="s"><span class="t">'+esc(m.s)+' · '+esc(m.n)+'</span></span>'
       +'<span class="p m">—</span><span class="c m">no quote</span></div>';
@@ -3865,7 +3909,7 @@ function railRowHTML(s, opts){
     else manageBtn = '<button class="wlx" data-wlx="'+esc(s)+'" data-tip="'+(railHasSym(s)?"Hide this pinned name from the rail (boards still track it — the universe is server-curated).":"Remove this custom name from this browser\u2019s list.")+'">×</button>';
   }
   return '<div class="wr '+(isHot?"hot":"")+(opts && opts.ghost?" ghost":"")+'" data-sym="'+esc(s)+'" role="button" tabindex="0">'
-    +'<div class="l1"><span class="sy">'+esc(s)+'</span>'
+    +'<div class="l1"><span class="sy">'+esc(s)+'</span>'+newsMarkHTML(s)
     +(unresolved
         ? '<span class="noq" data-tip="No exchange listing resolves for this symbol, so the 30-second poll has nothing to ask for. It is not a slow quote — it will stay blank until the symbol is corrected.">no quote</span>'
         : ('<span class="px tn">'+pxStr+'</span><span class="ch tn '+cls+'">'+chStr+'</span>'
@@ -6341,8 +6385,46 @@ function renderNewsTicker(data){
 // One reading pace for both reels (2026-09-03): 7 seconds per headline,
 // bounded so a 3-headline reel doesn't blink past and a 30-headline one
 // doesn't take four minutes to come around.
-function ntDuration(n){ return Math.min(175, Math.max(48, n*7)); }
+// 7s -> 8s per headline (Zach, 2026-09-03: "slightly slower"); bounds 55-200s so
+// the top reel's NEWS_CAP (24) items keep the 8s pace instead of hitting the
+// ceiling and speeding up. Both reels read this one function.
+function ntDuration(n){ return Math.min(200, Math.max(55, n*8)); }
 var FN_KEY = null;
+// Every pinned name's own headlines (2026-09-03, Zach: "try to get news on all
+// stocks in watchlist"). news.by_ticker carries each pinned symbol's newest few
+// from the same hourly pull the reel is built from; a payload published before
+// that key existed falls back to the reel items tagged to the name. Raw reel
+// items carry `ticker` (singular) — the old focused-reel filter tested
+// `n.tickers`, which only exists AFTER dedupeNews, so it matched nothing and
+// the reel read "no tagged headlines" for every name. Deduped on the article,
+// newest first. Custom (browser-only) names are never in by_ticker: the news
+// endpoint sends no CORS header (checked 2026-09-03), so the page cannot fetch
+// them itself, and callers say so in place instead of showing an empty reel.
+function newsForSym(sym, data){
+  var news = data && data.news;
+  if(!news || !sym) return [];
+  var own = (news.by_ticker && Array.isArray(news.by_ticker[sym])) ? news.by_ticker[sym] : [];
+  var tagged = Array.isArray(news.items) ? news.items.filter(function(n){
+    return n && n.title && (n.ticker===sym || (n.tickers||[]).indexOf(sym)!==-1);
+  }) : [];
+  var all = dedupeNews(own.concat(tagged).filter(function(n){ return n && n.title; }));
+  all.sort(function(a,b){ return (Date.parse(b.ts||"")||0) - (Date.parse(a.ts||"")||0); });
+  return all;
+}
+function newsIsPinnedName(sym){
+  return !!(sym && (railHasSym(sym) || (STATE.data && STATE.data.facts && STATE.data.facts[sym])));
+}
+// A headline from the last 24 hours puts a small NEWS mark on the name's rail
+// row, so every watchlist name's news is visible without selecting each one.
+var NEWS_FRESH_MS = 24*3600*1000;
+function newsMarkHTML(sym){
+  var list = newsForSym(sym, STATE.data);
+  if(!list.length) return "";
+  var n = list[0], t = Date.parse(n.ts||"");
+  if(!(t>0) || (Date.now()-t) > NEWS_FRESH_MS) return "";
+  return '<span class="nwm" data-tip="'+esc("Newest headline, "+(elapsedShort(n.ts)||ctTimeShort(n.ts))+": "
+    +(n.title||"")+" Select the name to roll its headlines in the header.")+'">news</span>';
+}
 // The focused name's OWN tagged headlines, rolling in the header's spare
 // width (Zach, 2026-09-03: "move the specific stock's tagged headlines into
 // the blank space to the left of the top search ticker bar, rotating through
@@ -6354,17 +6436,28 @@ var FN_KEY = null;
 function renderFocusNewsTicker(data){
   var el = document.getElementById("focnews");
   if(!el) return;
-  if(!FOCUS){ el.hidden = true; FN_KEY = null; return; }
+  var fnew = document.getElementById("focnewest");
+  if(!FOCUS){ el.hidden = true; FN_KEY = null; if(fnew){ fnew.hidden = true; fnew.innerHTML = ""; } return; }
   var newsMissing = !!(data && data.news == null);
-  var items = dedupeNews((data && data.news && Array.isArray(data.news.items))
-    ? data.news.items.filter(function(n){ return n && n.title && (n.tickers||[]).indexOf(FOCUS)!==-1; }) : []);
+  var items = newsForSym(FOCUS, data);
+  if(fnew){
+    if(items.length){
+      var n0 = items[0], h0 = safeHref(n0.url);
+      fnew.innerHTML = '<span class="lb">newest</span>'
+        + (h0 ? '<a href="'+esc(h0)+'" target="_blank" rel="noopener noreferrer">'+esc(n0.title||"")+'</a>' : esc(n0.title||""))
+        + '<span class="tm tn"'+(n0.ts?(' data-ts="'+esc(n0.ts)+'" title="'+esc(ctWhenLong(n0.ts))+'"'):'')+'>'+esc(elapsedShort(n0.ts) || ctTimeShort(n0.ts))+'</span>';
+      fnew.hidden = false;
+    } else { fnew.hidden = true; fnew.innerHTML = ""; }
+  }
   var key = FOCUS+"|"+items.map(function(n){ return (n.url||n.title||"")+"@"+(n.ts||""); }).join("|");
   if(key === FN_KEY){ el.hidden = false; return; }
   FN_KEY = key;
   el.hidden = false;
   if(!items.length){
     el.innerHTML = '<div class="nt-empty">'+esc(FOCUS)+': '
-      + (newsMissing ? 'headline scan did not return this cycle' : 'no tagged headlines this cycle')+'</div>';
+      + (newsMissing ? 'headline scan did not return this cycle'
+         : newsIsPinnedName(FOCUS) ? 'no headlines in the last hourly scan'
+         : 'headlines cover desk names only; custom adds are not scanned')+'</div>';
     return;
   }
   function itemHTML(n){
@@ -6407,7 +6500,13 @@ function renderNews(){
     return;
   }
   var list = items;
-  if(FOCUS) list = items.filter(function(n){ return (n.tickers||[]).indexOf(FOCUS)!==-1 || !(n.tickers||[]).length; });
+  if(FOCUS){
+    // The focused name's OWN headlines (news.by_ticker, every pinned name)
+    // lead, then the untagged market rows; one row per article.
+    var seen = {};
+    list = newsForSym(FOCUS, data).concat(items.filter(function(n){ return !(n.tickers||[]).length; }))
+      .filter(function(n){ var k = String(n.url||n.title||"").toLowerCase(); if(!k || seen[k]) return false; seen[k] = true; return true; });
+  }
   var html = "";
   // The contract's rotation_banner is a BOOLEAN (true when 2+ scanned titles
   // carry rotation/derisking language, same keyword list as the brief). The
@@ -6461,7 +6560,7 @@ function renderNews(){
    text of the stamp spans avoids re-rendering the panel, which would throw
    away keyboard focus on a headline link. */
 function tickNewsStamps(){
-  $$("#news .tm[data-ts], #newsticker .tm[data-ts], #focnews .tm[data-ts]").forEach(function(el){
+  $$("#news .tm[data-ts], #newsticker .tm[data-ts], #focnews .tm[data-ts], #focnewest .tm[data-ts]").forEach(function(el){
     var t = elapsedShort(el.getAttribute("data-ts"));
     if(t && el.textContent !== t) el.textContent = t;
   });
