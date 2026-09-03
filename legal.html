@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Desk — Terms, privacy, and risk disclosure</title>
+<meta name="description" content="Terms of use, privacy practices, risk disclosure, and data attributions for The Desk, an options-flow and market dashboard. Delayed data, no accounts, no trackers, research not advice.">
+<meta name="theme-color" content="#0C0E11" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F4F7" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://zlanghamer1.github.io/flow-desk/legal.html">
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="%230C0E11"/><path d="M7.5 4v16M14.5 5v14" stroke="%235E9FD8" stroke-width="1.6" stroke-linecap="round"/><rect x="5.2" y="9" width="4.6" height="7" rx="1" fill="%235E9FD8"/><rect x="12.2" y="7" width="4.6" height="6" rx="1" fill="%235E9FD8"/></svg>'>
+<style>
+/* Tokens mirror index.html's palette so the two pages read as one site.
+   Dark is the native theme; light follows the OS unless the reader picked a
+   theme on the desk itself (desk.theme in localStorage, applied by the
+   script at the bottom). Keep the values in step with index.html. */
+:root{
+  --bg:#0C0E11; --srf:#101318; --srf2:#14181E; --edge:#1D232B;
+  --ink:#DEE5EC; --ink2:#8E9AA8; --ink3:#8695A6;
+  --acc:#5E9FD8; --hi:#D9A845; --hibg:rgba(217,168,69,.16); --dn:#F06A5D;
+  --shadow:rgba(0,0,0,.55); --hilite:rgba(255,255,255,.045); --glow:rgba(94,159,216,.12); --glow2:rgba(63,181,176,.10);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#F2F4F7; --srf:#FFFFFF; --srf2:#F7F9FB; --edge:#DDE3EA;
+    --ink:#1B232C; --ink2:#4E5A66; --ink3:#5B6773;
+    --acc:#2F6FAE; --hi:#8A6414; --hibg:rgba(138,100,20,.12); --dn:#B93E33;
+    --shadow:rgba(23,32,42,.10); --hilite:rgba(255,255,255,.80); --glow:rgba(47,111,174,.08); --glow2:rgba(30,122,118,.06);
+  }
+}
+:root[data-theme="light"]{
+  --bg:#F2F4F7; --srf:#FFFFFF; --srf2:#F7F9FB; --edge:#DDE3EA;
+  --ink:#1B232C; --ink2:#4E5A66; --ink3:#5B6773;
+  --acc:#2F6FAE; --hi:#8A6414; --hibg:rgba(138,100,20,.12); --dn:#B93E33;
+  --shadow:rgba(23,32,42,.10); --hilite:rgba(255,255,255,.80); --glow:rgba(47,111,174,.08); --glow2:rgba(30,122,118,.06);
+}
+*{box-sizing:border-box}
+html{color-scheme:dark light}
+body{margin:0;background:radial-gradient(1100px 340px at 12% -140px, var(--glow), transparent 70%), radial-gradient(900px 300px at 96% -120px, var(--glow2), transparent 70%), var(--bg);color:var(--ink);font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--acc)}
+.wrap{max-width:760px;margin:0 auto;padding:28px 20px 56px}
+header .back{font-size:13px;text-decoration:none}
+header .back:hover{text-decoration:underline}
+h1{font-size:26px;line-height:1.25;margin:14px 0 6px;letter-spacing:-.01em}
+h2{font-size:18px;margin:36px 0 10px;padding-top:18px;border-top:1px solid var(--edge)}
+h3{font-size:15px;margin:18px 0 6px;color:var(--ink)}
+p,li{color:var(--ink)}
+.meta{color:var(--ink2);font-size:13px;margin:0}
+.review{margin:16px 0 0;padding:10px 14px;border:1px solid var(--edge);border-left:3px solid var(--hi);background:var(--hibg);border-radius:6px;font-size:14px}
+.review b{color:var(--ink)}
+nav.jump{display:flex;flex-wrap:wrap;gap:6px 14px;margin:20px 0 0;font-size:13.5px}
+nav.jump a{text-decoration:none;padding:4px 0}
+nav.jump a:hover{text-decoration:underline}
+ul{padding-left:22px;margin:8px 0}
+li{margin:5px 0}
+.short{background:linear-gradient(180deg, var(--srf2), var(--srf));border:1px solid var(--edge);border-radius:8px;padding:14px 18px;margin-top:22px;box-shadow:0 1px 2px var(--shadow), inset 0 1px 0 var(--hilite)}
+.short h2{border:0;margin:0 0 6px;padding:0;font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink2)}
+code{font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--srf2);border:1px solid var(--edge);border-radius:4px;padding:0 5px;color:var(--ink)}
+.pending{color:var(--hi);font-weight:600}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:10px 0}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--edge);vertical-align:top}
+th{color:var(--ink2);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.06em}
+footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--edge);font-size:12.5px;color:var(--ink3);line-height:1.7}
+@media (max-width:640px){ h1{font-size:22px} .wrap{padding:20px 16px 44px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <a class="back" href="./">&larr; Back to The Desk</a>
+  <h1>Terms of use, privacy, and risk disclosure</h1>
+  <p class="meta">Last updated 2026-09-03. Applies to The Desk at <a href="https://zlanghamer1.github.io/flow-desk/">zlanghamer1.github.io/flow-desk</a>.</p>
+  <p class="review"><b>Under legal review.</b> Items in <span class="pending">[brackets]</span> are pending: the operator's legal name, contact address, and governing law. The facts on this page about how the site works are current and accurate today.</p>
+  <nav class="jump" aria-label="Sections">
+    <a href="#short">Short version</a>
+    <a href="#risk">Risk disclosure</a>
+    <a href="#terms">Terms of use</a>
+    <a href="#privacy">Privacy</a>
+    <a href="#sources">Data sources</a>
+    <a href="#contact">Contact</a>
+  </nav>
+</header>
+
+<main>
+<section class="short" id="short">
+  <h2>The short version</h2>
+  <ul>
+    <li>This site shows market data and charts for research. It does not give investment advice.</li>
+    <li>Prices and options data are at least 15 minutes behind the market.</li>
+    <li>There are no accounts and no trackers. Your watchlist edits stay in your own browser.</li>
+    <li>You use the site at your own risk. The operator makes no promise about accuracy or uptime.</li>
+    <li>Options trading can lose more than you put in. Read the risk disclosure before you act on anything here.</li>
+  </ul>
+</section>
+
+<section id="risk">
+  <h2>Risk disclosure</h2>
+  <h3>Nothing here is advice</h3>
+  <p>Nothing on this site is a recommendation to buy, sell, or hold any security, option, or fund. The boards, scores, verdicts, quick reads, alerts, and framework tiers describe what the data shows. They are the same for every visitor. They do not consider your finances, your goals, or how much risk you can take.</p>
+  <h3>The operator is not your adviser</h3>
+  <p><span class="pending">[Operator legal name]</span> is not a registered investment adviser, broker-dealer, or financial planner. The operator does not manage money, hold accounts, or take orders. If you want advice for your situation, talk to a licensed professional.</p>
+  <h3>Options carry real risk</h3>
+  <p>Options are not suitable for everyone. Some strategies can lose more than the money you put in. Before you trade options, read the Options Clearing Corporation's booklet <em>Characteristics and Risks of Standardized Options</em>. Your broker provides it, and it is available at <a href="https://www.theocc.com" rel="noopener" target="_blank">theocc.com</a>.</p>
+  <h3>The data is delayed and estimated</h3>
+  <p>Stock prices are about 15 minutes behind. Options data is 15-minute-delayed Cboe data. Figures such as net flow, flow percent, aggressor tilt, unusual-activity tags, and the biggest-orders board are estimates built from delayed, sampled, aggregated data. Free data cannot see who bought and who sold. A number on this site is not a fact about what any trader did.</p>
+  <h3>No performance claim</h3>
+  <p>The scores, verdicts, and auto-drawn chart lines on this site have not been shown to predict returns. Past patterns do not predict future results.</p>
+  <h3>Your decisions are yours</h3>
+  <p>You alone decide what to do with your money. The operator is not responsible for trades you make after reading this site.</p>
+</section>
+
+<section id="terms">
+  <h2>Terms of use</h2>
+  <h3>1. Agreement</h3>
+  <p>By using this site you agree to these terms. If you do not agree, do not use the site.</p>
+  <h3>2. What you get</h3>
+  <p>The operator provides the site as is, with no warranty of any kind, express or implied. That includes no warranty of accuracy, completeness, fitness for a purpose, or uninterrupted availability. The site can be wrong, late, or offline at any time. When a feed fails, the page says so in place; it does not fill the gap with a guess.</p>
+  <h3>3. Allowed use</h3>
+  <p>You may view the site for your own personal, non-commercial research. You may not:</p>
+  <ul>
+    <li>copy, scrape, resell, or redistribute the site's data or content;</li>
+    <li>use automated tools to pull data from the site or from its published data files;</li>
+    <li>use the site or its data to run automated trading or order generation;</li>
+    <li>remove or hide any source credit or notice on the site.</li>
+  </ul>
+  <p>The market data shown here belongs to the providers named under <a href="#sources">Data sources</a>. Their terms also apply to you.</p>
+  <h3>4. Limits on liability</h3>
+  <p>To the fullest extent the law allows, the operator is not liable for any loss or damage, including trading losses, lost profits, or data loss, that comes from using or relying on this site or from being unable to use it.</p>
+  <h3>5. Changes</h3>
+  <p>The operator can change or shut down the site, or change these terms, at any time. Changes take effect when they are posted here. The date at the top of this page tells you when it last changed.</p>
+  <h3>6. Third-party links</h3>
+  <p>Headlines and other links lead to sites the operator does not control. The operator is not responsible for their content or their practices.</p>
+  <h3>7. Governing law</h3>
+  <p>These terms are governed by the laws of <span class="pending">[State]</span>, United States, without regard to conflict-of-law rules.</p>
+</section>
+
+<section id="privacy">
+  <h2>Privacy</h2>
+  <h3>No accounts, no trackers</h3>
+  <p>The site has no sign-up, login, or password. It sets no cookies. It runs no analytics, advertising, or fingerprinting scripts.</p>
+  <h3>What stays in your browser</h3>
+  <p>The site saves your own choices in your browser's local storage so they survive a reload. This data never leaves your device, and the operator cannot see it. Clearing your browser's site data erases it.</p>
+  <table>
+    <thead><tr><th>Stored item</th><th>Key</th></tr></thead>
+    <tbody>
+      <tr><td>Light or dark theme</td><td><code>desk.theme</code></td></tr>
+      <tr><td>Custom watchlist names you added</td><td><code>desk.wl.custom</code></td></tr>
+      <tr><td>Pinned watchlist names you hid</td><td><code>desk.wl.hidden</code></td></tr>
+      <tr><td>Watchlist sort choice</td><td><code>desk.wl.sort</code></td></tr>
+      <tr><td>Watchlist collapsed on a phone</td><td><code>desk.wl</code></td></tr>
+      <tr><td>Last chart symbol and view</td><td><code>desk.stage.sym</code>, <code>desk.stage.view</code></td></tr>
+      <tr><td>Chart overlay toggles</td><td><code>desk.stage.ta2</code></td></tr>
+      <tr><td>Heatmap expanded</td><td><code>desk.heat.wide</code></td></tr>
+    </tbody>
+  </table>
+  <h3>Who else sees your visit</h3>
+  <p>Your browser loads this page from GitHub Pages and then requests data directly from a few services. Each one receives your IP address and standard request details under its own privacy policy. The operator does not receive them.</p>
+  <ul>
+    <li><b>GitHub Pages</b> hosts the site and may log visitor IP addresses.</li>
+    <li><b>TradingView</b> answers the price, search, fundamentals, and heatmap requests.</li>
+    <li><b>stockanalysis.com</b> answers price-history and financial-statement requests for names outside the desk universe.</li>
+    <li><b>raw.githubusercontent.com</b> serves the desk's own published data files.</li>
+  </ul>
+  <h3>Children</h3>
+  <p>The site is not directed at anyone under 18.</p>
+  <h3>Changes to this notice</h3>
+  <p>Updates to this page are dated at the top.</p>
+</section>
+
+<section id="sources">
+  <h2>Data sources and attribution</h2>
+  <ul>
+    <li>Charts render with <a href="https://www.tradingview.com/lightweight-charts/" rel="noopener" target="_blank">TradingView Lightweight Charts&trade;</a>, &copy; TradingView, Inc., Apache-2.0.</li>
+    <li>Stock prices, ticker search, fundamentals, heatmap universes, the economic calendar, and headlines: TradingView, 15-minute delayed.</li>
+    <li>Options chains and open interest: Cboe delayed quotes, 15 minutes behind.</li>
+    <li>Daily price history and financial statements: Yahoo Finance and stockanalysis.com.</li>
+    <li>Fed rate-change odds: Polymarket.</li>
+  </ul>
+  <p>Market data remains the property of its providers. Every panel on the desk prints its own as-of time and says where its numbers came from.</p>
+</section>
+
+<section id="contact">
+  <h2>Contact</h2>
+  <p><span class="pending">[Operator legal name]</span> &middot; <span class="pending">[contact email]</span></p>
+</section>
+</main>
+
+<footer>
+  Charts render with <a href="https://www.tradingview.com/lightweight-charts/" rel="noopener" target="_blank">TradingView Lightweight Charts&trade;</a>, &copy; TradingView, Inc., Apache-2.0.
+  &middot; <a href="./">The Desk</a>
+</footer>
+</div>
+<script>
+// Honor the theme the reader picked on the desk itself (index.html stores it
+// under desk.theme). Wrapped in try/catch: blocked storage must not break a
+// legal page.
+try {
+  var t = localStorage.getItem("desk.theme");
+  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+} catch (e) {}
+</script>
+</body>
+</html>

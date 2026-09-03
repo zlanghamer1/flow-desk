@@ -396,6 +396,41 @@ If the card is missing, the odds could not be read — a market too thinly trade
 to mean anything, or a feed that was down. The card disappears rather than
 showing a 0%, because 0% would be a real claim and a wrong one.
 
+## Headlines for every desk name (added 2026-09-03)
+
+Select any name on the desk and its newest headline prints in the "focused
+on" bar under the header, while all of its recent headlines roll in the
+header's spare width left of the search box. Every pinned name now keeps
+its own newest three headlines from the hourly scan, so a quiet name is no
+longer invisible just because the big four filled the top reel. A rail row
+carries a small NEWS mark when that name has a headline from the last 24
+hours; hover it for the title. The top reel itself now holds 24 headlines
+with at most 2 per name, and both reels roll a little slower. Names you add
+in your own browser are not scanned (the news service does not allow the
+page to call it), and the bar says so.
+
+## Terms, privacy, and risk disclosure (added 2026-09-03)
+
+The footer links to a second page, `legal.html`, that says in plain English
+what the site is and is not: research, not advice; data at least 15 minutes
+behind; no accounts and no trackers; your watchlist edits stay in your own
+browser. It lists every outside service your browser talks to and every
+setting the page stores. The operator's legal name, contact, and governing
+law are shown in brackets until they are filled in. Bracketed items are
+pending legal review; everything else on that page is true today.
+
+## Could this be sold? (added 2026-09-03)
+
+Not as it stands, and the reasons are not in the code. Every feed the desk
+uses is licensed for personal use or is an undocumented endpoint, GitHub
+Pages and GitHub Actions both forbid running a paid service, and a static
+page has no way to tell a subscriber from anyone else. What a product would
+need, what it would cost, and in what order to do it is written up in
+`docs/MONETIZATION.md`, with the vendor-by-vendor terms in
+`docs/DATA_LICENSING.md`. The short answer: the desk stays a personal tool
+until someone pays a data vendor for the right to show its numbers to other
+people.
+
 ## Its limits
 
 - **Options data is 15 minutes delayed.** It's free CBOE data, not a live feed.
@@ -430,12 +465,20 @@ it ever stalls or you want to check on it:
 ## What each file is
 
 - **`index.html`** — the website itself. This is the whole dashboard.
+- **`legal.html`** — the terms, privacy, and risk-disclosure page the footer
+  links to.
 - **`fetcher/`** — the behind-the-scenes scripts that pull data, score it,
   and publish it. You never need to open or run these by hand.
 - **`.github/workflows/refresh-loop.yml`** — the schedule that keeps the
   data flowing during market hours.
 - **`.github/workflows/pages.yml`** — the schedule that publishes the
   website itself whenever it changes.
+- **`.github/workflows/ci.yml`** — runs every test on every change: the
+  fetcher's tests and a headless-browser check that both pages load with
+  their feeds cut off.
+- **`tests/`** — that headless-browser check (`test_page_smoke.py`).
+- **`docs/MONETIZATION.md`** and **`docs/DATA_LICENSING.md`** — what it would
+  take to sell this, and the terms of every data source it uses.
 - **`data.json`** — the live snapshot the website reads. You won't see this
   file on the `main` branch — it only lives on the `data` branch, since it's
   regenerated constantly and doesn't need a history of its own on `main`.

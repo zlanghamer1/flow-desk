@@ -732,7 +732,10 @@ def test_short_pct_is_always_none_regardless_of_input():
 
 # ── news: cap, ordering, rotation banner ─────────────────────────────────────
 
-def test_news_cap_is_20_total_and_newest_first():
+def test_news_cap_is_news_cap_total_and_newest_first():
+    # 20 until 2026-09-03, NEWS_CAP (24) since. Reads the constant so a
+    # deliberate cap change is one edit; the historical-scenario tests below
+    # pin the algorithm at the 2026-08-15 caps via monkeypatch.
     def fake_get(url, headers):
         if "symbol:NASDAQ:MU" in url:
             items = [{"title": f"MU headline {i}", "published": 1000 + i,
@@ -745,7 +748,7 @@ def test_news_cap_is_20_total_and_newest_first():
         return _news_json(items)
     result = context.fetch_news(["NASDAQ:MU", "NASDAQ:CRWD"], _get=fake_get)
     assert result is not None
-    assert len(result["items"]) == 20
+    assert len(result["items"]) == context.NEWS_CAP
     tss = [it["ts"] for it in result["items"]]
     assert tss == sorted(tss, reverse=True)
     assert result["items"][0]["ticker"] == "CRWD"   # highest published ts overall
@@ -843,7 +846,7 @@ def test_apply_news_ticker_cap_under_total_pool_size_returns_everything():
     assert len(result) == 3
 
 
-def test_fetch_news_per_ticker_cap_lets_other_names_through_with_mega_caps_still_dominant():
+def test_fetch_news_per_ticker_cap_lets_other_names_through_with_mega_caps_still_dominant(monkeypatch):
     """Reproduces the exact live numbers NEWS_PER_TICKER_CAP was built to fix
     (Zach, 2026-08-15): a 20-item board where NVDA/AMZN/GOOGL alone held 14
     of 20 slots. After the cap: the big names keep the SAME counts here
@@ -865,6 +868,10 @@ def test_fetch_news_per_ticker_cap_lets_other_names_through_with_mega_caps_still
                 return _news_json(items)
         raise AssertionError(url)
 
+    # The 2026-08-15 scenario at the caps of that day (20 total, 3 per ticker);
+    # the constants moved to 24/2 on 2026-09-03 and the algorithm did not.
+    monkeypatch.setattr(context, "NEWS_CAP", 20)
+    monkeypatch.setattr(context, "NEWS_PER_TICKER_CAP", 3)
     result = context.fetch_news(list(feeds.keys()), _get=fake_get)
     assert result is not None
     tickers = [it["ticker"] for it in result["items"]]
@@ -891,7 +898,7 @@ def test_fetch_news_no_ticker_exceeds_per_ticker_cap_unless_backfilled():
                   "storyPath": f"/news/mu{i}/"} for i in range(30)]
         return _news_json(items)
     result = context.fetch_news(["NASDAQ:MU"], _get=fake_get)
-    assert len(result["items"]) == context.NEWS_CAP == 20
+    assert len(result["items"]) == context.NEWS_CAP
     assert all(it["ticker"] == "MU" for it in result["items"])
 
 
@@ -2712,3 +2719,45 @@ def test_build_bars_omits_the_calendar_when_the_feed_sends_no_timestamps():
         _get=lambda url, headers=None: _yahoo_json([10.0, 11.0, 12.0]))
     assert "sessions" not in payload
     assert payload["bars"]["NOTS"]
+
+
+# ── news.by_ticker (2026-09-03): every pinned name keeps its own newest few ──
+
+def test_fetch_news_by_ticker_keeps_newest_per_symbol_regardless_of_reel_caps():
+    def fake_get(url, headers):
+        if "symbol:NASDAQ:MU" in url:
+            items = [{"title": f"MU {i}", "published": 5000 + i, "storyPath": f"/mu{i}/"} for i in range(10)]
+        elif "symbol:NASDAQ:AEHR" in url:
+            # Old and few: would never win a reel slot against MU's flood.
+            items = [{"title": "AEHR one", "published": 10, "storyPath": "/a1/"},
+                     {"title": "AEHR two", "published": 20, "storyPath": "/a2/"}]
+        elif "symbol:NASDAQ:QUIET" in url:
+            items = []
+        else:
+            raise AssertionError(url)
+        return _news_json(items)
+    result = context.fetch_news(["NASDAQ:MU", "NASDAQ:AEHR", "NASDAQ:QUIET"], _get=fake_get)
+    bt = result["by_ticker"]
+    assert set(bt) == {"MU", "AEHR"}, "a symbol that returned nothing gets no key, never an empty list"
+    assert len(bt["MU"]) == context.NEWS_BY_TICKER_CAP
+    assert [x["title"] for x in bt["MU"]] == ["MU 9", "MU 8", "MU 7"], "newest first, capped"
+    assert [x["title"] for x in bt["AEHR"]] == ["AEHR two", "AEHR one"]
+    assert set(bt["AEHR"][0]) == {"ticker", "title", "ts", "url"}, "same NewsItem shape as items"
+    assert any(it["ticker"] == "AEHR" for it in result["items"]), "the small name still gets a reel seat"
+
+
+def test_fetch_news_reel_caps_are_24_total_and_2_per_ticker_since_2026_09_03():
+    def fake_get(url, headers):
+        sym = url.split("symbol:", 1)[1].split("&", 1)[0].split(":", 1)[1]
+        base = {"A": 9000, "B": 8000, "C": 7000, "D": 6000}[sym]
+        items = [{"title": f"{sym} {i}", "published": base + i, "storyPath": f"/{sym}{i}/"} for i in range(10)]
+        return _news_json(items)
+    result = context.fetch_news(["X:A", "X:B", "X:C", "X:D"], _get=fake_get)
+    assert context.NEWS_CAP == 24 and context.NEWS_PER_TICKER_CAP == 2
+    assert len(result["items"]) == 24
+    hist: dict[str, int] = {}
+    for it in result["items"]:
+        hist[it["ticker"]] = hist.get(it["ticker"], 0) + 1
+    # Four names, 2 guaranteed seats each = 8; the other 16 backfill newest-first.
+    assert all(v >= 2 for v in hist.values())
+    assert set(hist) == {"A", "B", "C", "D"}

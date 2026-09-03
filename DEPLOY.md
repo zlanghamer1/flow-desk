@@ -7,8 +7,11 @@ loop are wired.
 ## Deploy method
 
 Pages runs in **branch mode from `gh-pages`**. `.github/workflows/pages.yml`
-copies `index.html` from `main` onto `gh-pages`; GitHub's built-in "pages
-build and deployment" then publishes it. **Do not** flip Settings → Pages to
+copies `index.html`, `legal.html`, and `vendor/` from `main` onto `gh-pages`;
+GitHub's built-in "pages build and deployment" then publishes it. A new root
+HTML page has to be added to all three lists in that workflow (`paths:`,
+`git checkout main --`, `git add`); `fetcher/test_pages_ship.py` fails if one
+is missing. **Do not** flip Settings → Pages to
 "GitHub Actions" mode — branch mode is intentional (the workflow token can't
 create a Pages site, and the auto-created github-pages environment rejects
 `actions/deploy-pages` runs from `main`). If Pages ever gets turned off:
@@ -26,6 +29,22 @@ re-triggers itself so it covers the whole session. A daily scheduled backup
 start (~8:03 AM CT — moved earlier 2026-08-24 for more buffer before the
 8:30 AM open; 8:00 AM CT is the earliest the loop will do anything at all)
 exists in case the redispatch chain ever breaks.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull
+request, with a read-only token and pinned dependencies. Two jobs:
+`fetcher-tests` (`pytest fetcher`) and `page-smoke` (`pytest tests`, headless
+Chromium loading `index.html` and `legal.html` from a local static server
+with every external host blocked). Added 2026-09-03; before that the test
+suite only ran when a session ran it by hand.
+
+## Hosting terms (read before charging for the site)
+
+GitHub Pages does not allow commercial software as a service, and GitHub
+Actions does not allow workloads unrelated to building the repo. The current
+deploy is fine for a personal tool and not for a paid one. The move-off plan
+is in `docs/MONETIZATION.md`.
 
 ## Restarting
 

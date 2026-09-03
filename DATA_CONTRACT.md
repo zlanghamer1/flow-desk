@@ -118,7 +118,8 @@ values are `null` (never a string sentinel). All strings are already plain
   },
   "brief": { "...": "...", "stale": false },   // OPTIONAL — see note below
   "catalysts": [ <Catalyst>, ... ],             // OPTIONAL — see note below
-  "news": { "items": [ <NewsItem>, ... ], "rotation_banner": false },  // OPTIONAL
+  "news": { "items": [ <NewsItem>, ... ], "rotation_banner": false,     // OPTIONAL
+            "by_ticker": { "MU": [ <NewsItem>, ... ], ... } },           // newest <=3 per pinned name (2026-09-03)
   "facts": { "MU": { "hi52": null, "...": "..." } },  // OPTIONAL
   "desk_private": { "v": 1 },                    // OPTIONAL, opaque — see note below
   "fed_odds": { "hike_pct": 28.4, "...": "..." },  // OPTIONAL — see note below
@@ -286,13 +287,25 @@ values are `null` (never a string sentinel). All strings are already plain
 > reading of 55.6 is an index level, not a quantity. Rows from the other four
 > sources do not carry them at all.
 >
-> **`news`** — up to 20 items total (not per ticker) across the pinned
-> universe, newest first, pulled from TradingView's per-symbol news endpoint.
-> Within that total, no single ticker's tag can hold more than
-> `NEWS_PER_TICKER_CAP` (3) slots unless a backfill pass needs the extra room
-> to reach 20 (Zach's ruling, 2026-08-15: mega-caps may still appear most
-> often, but other tagged names are now guaranteed a seat instead of being
-> crowded out entirely). `rotation_banner` is true when at least 2 of the
+> **`news`** — `items` is the top reel: up to `NEWS_CAP` (24; was 20 until
+> 2026-09-03) items total (not per ticker) across the pinned universe, newest
+> first, pulled from TradingView's per-symbol news endpoint. Within that
+> total, no single ticker's tag can hold more than `NEWS_PER_TICKER_CAP` (2;
+> was 3) slots unless a backfill pass needs the extra room to reach the cap
+> (Zach's ruling, 2026-08-15: mega-caps may still appear most often, but
+> other tagged names are guaranteed a seat instead of being crowded out
+> entirely; 2026-09-03: "try to get news on all stocks in watchlist" moved
+> both numbers toward breadth). **`by_ticker`** (2026-09-03) is the per-name
+> list: for every pinned symbol whose pull returned anything, its newest
+> `NEWS_BY_TICKER_CAP` (3) items in the same NewsItem shape, taken from the
+> same per-symbol pulls BEFORE the reel caps, so a quiet name that never wins
+> a reel slot still has its own headlines. A symbol that returned nothing has
+> no key (never an empty list). The page reads it for the focused name's
+> header reel, the rail's Tagged headlines panel under a focus, and the
+> watchlist row's fresh-news mark. Custom (browser-only) watchlist names are
+> never in it: the news endpoint sends no CORS header, so the page cannot
+> fetch them itself, and the page says so in place. Payloads published
+> before 2026-09-03 lack the key; readers fall back to filtering `items`. `rotation_banner` is true when at least 2 of the
 > scanned titles carry rotation/derisking language — the identical keyword
 > list the morning brief's headline scan uses
 > (`market-data/morning-report/sections/headlines.py`, `ROTATION_KEYWORDS`),

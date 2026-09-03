@@ -172,8 +172,14 @@ TV_NEWS_URL = "https://news-mediator.tradingview.com/public/view/v1/symbol"
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
 
 ECON_WINDOW_DAYS = 28        # display window for TV/csv econ rows and OpEx
-NEWS_CAP = 20                 # total items across the whole pinned universe
-NEWS_PER_TICKER_CAP = 3        # Zach, 2026-08-15: "big 4 dominating headlines
+NEWS_CAP = 24                 # total items in the top reel across the whole
+                                # pinned universe. 20 -> 24 on 2026-09-03 (Zach:
+                                # "try to get news on all stocks in watchlist");
+                                # 24 x 8s per headline = 192s, inside the reel's
+                                # 200s ceiling, so the pace Zach asked for holds.
+NEWS_PER_TICKER_CAP = 2        # 3 -> 2 on 2026-09-03, same ask: more NAMES in
+                                # the top reel. Originally Zach, 2026-08-15:
+                                # "big 4 dominating headlines
                                 # ... want to see other names mentioned as
                                 # well if in the news". A live pull the same
                                 # day put 20 items total across just 3 tickers
@@ -183,6 +189,13 @@ NEWS_PER_TICKER_CAP = 3        # Zach, 2026-08-15: "big 4 dominating headlines
                                 # _apply_news_ticker_cap. Mega-caps can still
                                 # win MOST slots via backfill; this only
                                 # guarantees room for others, not parity.
+NEWS_BY_TICKER_CAP = 3         # `news.by_ticker`: newest N headlines kept PER
+                                # pinned symbol, from the same per-symbol pulls
+                                # the reel is pooled from (no extra requests).
+                                # Zach, 2026-09-03: the focused name's own
+                                # headlines roll in the header, so every desk
+                                # name needs its own list, not just the 24 that
+                                # win a reel slot. Display only.
 BARS_MAX = 504                 # cap on daily bars kept per ticker (2y of daily
                                 # sessions, bumped from 252/1y 2026-08-15 so
                                 # the frontend has enough history for a full
@@ -969,7 +982,8 @@ def _apply_news_ticker_cap(pooled: list[dict], total_cap: int, per_ticker_cap: i
 
 
 def fetch_news(symbols: list[str], _get: Optional[Callable] = None) -> Optional[dict]:
-    """TradingView per-symbol news -> {"items": [...], "rotation_banner": bool}.
+    """TradingView per-symbol news -> {"items": [...], "rotation_banner": bool,
+    "by_ticker": {TICKER: [...]}}.
 
     symbols: exchange-prefixed tv_symbol strings (e.g. "NASDAQ:MU"), matching
     the news endpoint's own filter parameter and the ticker/quote shape the
@@ -977,9 +991,14 @@ def fetch_news(symbols: list[str], _get: Optional[Callable] = None) -> Optional[
     symbol exactly as before; assembling the FINAL list then applies two
     caps together: NEWS_CAP items TOTAL (unchanged, not per ticker) and
     NEWS_PER_TICKER_CAP per ticker (added 2026-08-15 — see
-    _apply_news_ticker_cap), newest first throughout. None if nothing at all
-    came back for any symbol (fail-soft; a single symbol's failure just
-    contributes nothing, it never aborts the others).
+    _apply_news_ticker_cap), newest first throughout. `by_ticker` (2026-09-03)
+    keeps the newest NEWS_BY_TICKER_CAP items PER SYMBOL from the same pooled
+    pull, before any reel cap is applied, so a pinned name that never wins a
+    reel slot still has its own headlines for the page's focused-ticker reel
+    and rail panel. A symbol that returned nothing has no key (never an empty
+    list stamped in for it). None if nothing at all came back for any symbol
+    (fail-soft; a single symbol's failure just contributes nothing, it never
+    aborts the others).
     """
     pooled: list[dict] = []
     for tv_symbol in symbols:
@@ -1018,10 +1037,15 @@ def fetch_news(symbols: list[str], _get: Optional[Callable] = None) -> Optional[
     if not pooled:
         return None
     pooled.sort(key=lambda x: x["_sort"], reverse=True)
+    by_ticker: dict[str, list[dict]] = {}
+    for x in pooled:  # already newest first
+        lst = by_ticker.setdefault(x["ticker"], [])
+        if len(lst) < NEWS_BY_TICKER_CAP:
+            lst.append({"ticker": x["ticker"], "title": x["title"], "ts": x["ts"], "url": x["url"]})
     final = _apply_news_ticker_cap(pooled, NEWS_CAP, NEWS_PER_TICKER_CAP)
     capped = [{"ticker": x["ticker"], "title": x["title"], "ts": x["ts"], "url": x["url"]}
               for x in final]
-    return {"items": capped, "rotation_banner": _rotation_banner(capped)}
+    return {"items": capped, "rotation_banner": _rotation_banner(capped), "by_ticker": by_ticker}
 
 
 # ── Facts (rides the existing per-cycle scanner call — no gate) ─────────────

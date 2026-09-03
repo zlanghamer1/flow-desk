@@ -3085,3 +3085,155 @@ network calls. The non-obvious decisions:
   is unchanged and still printed; the static prose they held is already in
   the corresponding TIPS/tooltips. `finMethod` is still built (one place
   the Financials wording lives) but no longer rendered.
+
+## Guardrails added 2026-09-03 (monetization readiness pass, Zach's /goal)
+
+Zach's goal: "make the desk a professional grade trading site that could be
+monetized." The architect pass found the blockers are outside the code (data
+rights, hosting terms, no server to gate access) and wrote them up in
+`docs/MONETIZATION.md` and `docs/DATA_LICENSING.md`; the code work in the
+same pass is the part that needed no accounts or money. Rules from it:
+
+- **`docs/DATA_LICENSING.md` is authoritative for what the desk may call.**
+  Every external host the fetcher or the page talks to has a row there with
+  its terms and its paid-product status. Adding a new external host means
+  adding a row in the same change. Today every market-data row is
+  **Blocked** for a paid product; the desk stays a personal tool until those
+  rows are resolved by a signed vendor agreement, never by wording. The
+  2026-06-14 "don't re-pitch paid feeds" ruling still governs the personal
+  tool; the product question lives in `docs/MONETIZATION.md`, not in chat.
+- **User-facing copy names the rule, never the person who made it.** Two
+  TIPS entries said "Zach's 2026-08-26 ruling"/"alert ask"; they now say
+  "the 2026-08-26 declutter rule"/"the lower-band alert rule". Code
+  comments, CLAUDE.md, and the README's decision notes keep attribution; the
+  rendered page does not.
+- **Every root HTML page ships through all three lists in `pages.yml`**
+  (`paths:`, `git checkout main --`, `git add`). `fetcher/test_pages_ship.py`
+  fails on a missing one and on any `href="*.html"` in `index.html` that
+  does not exist at the repo root. `legal.html` is the first second page;
+  it mirrors `index.html`'s color tokens and reads `desk.theme` so a
+  reader's theme choice carries over. Change a token in one file, change it
+  in the other.
+- **The legal page's bracketed placeholders are visible on purpose.** The
+  operator's legal name, contact, and governing law are Zach's to fill and
+  an attorney's to approve. Never invent an entity name or a state to make
+  the page look finished. Every non-bracketed sentence on it is a fact about
+  how the site works today (no accounts, no cookies, the `desk.*` storage
+  keys, which hosts the browser contacts); if one of those facts changes,
+  change the page in the same commit.
+- **CI runs two suites on every PR** (`.github/workflows/ci.yml`, read-only
+  token, pinned versions): `pytest fetcher` and `pytest tests`. The page
+  smoke test blocks every external host BY DESIGN and fails on any uncaught
+  page error at 1440px and 390px, plus any sideways scroll. A failure there
+  is a real fail-soft bug in the page, the class every review round since
+  2026-08-19 has guarded by rule; never "fix" it by letting the test reach
+  the network. Locally, point `PW_CHROMIUM` at a preinstalled browser
+  (`/opt/pw-browsers/chromium` in the sandbox) instead of downloading one.
+- **Head metadata is product copy.** `index.html` now carries a description,
+  Open Graph and Twitter card tags, theme colors, and a canonical URL. The
+  descriptions say "15-minute delayed" and "research, not advice" for the
+  same reason the honesty box does; keep both claims when editing them.
+- **Not changed, on purpose:** the framework's BUY/ADD/HOLD/AVOID words
+  (Zach's vocabulary, flagged for the attorney conversation), the single-file
+  `index.html` (splitting it belongs to the Phase 2 data-layer change), and
+  every current feed (removing one before its licensed replacement exists
+  breaks the personal tool for no gain).
+- **Zach's ruling, same day, after reading the assessment: "too much is
+  involved to make it a paid site. Just make it professional-looking for
+  me."** The paid-site roadmap is a record, not a plan. Don't re-pitch it,
+  and don't re-open the data-vendor question from memory; `docs/MONETIZATION.md`
+  states exactly what would have to change first. The polish pass that
+  followed is visual only. Its rules:
+  - **The brand is a mark plus a wordmark.** `h1.mark` carries an inline SVG
+    candle mark (`.logo`, accent square, two candles in `--srf`) ahead of
+    the "THE DESK" wordmark, and the favicon is the same mark on the dark
+    ground (`#0C0E11` with `#5E9FD8` candles, so it reads on light and dark
+    tab bars alike). `legal.html` uses the identical favicon. Change one,
+    change all three.
+  - **Tooltip underlines rest on `--tipline`, not `--ink3`.** The 2026-09-02
+    decision to keep permanent underlines on headers, chips and rail labels
+    stands; the resting rule now draws at ~40% alpha (a token in all four
+    palette blocks) and returns to full `--ink3` on hover and keyboard
+    focus. Quieter, not removed: the affordance still teaches itself.
+  - **Band-crosses NEW rows stay on one line.** The reason ellipsizes
+    (`.bbr .w` nowrap/ellipsis); the row's own `data-tip` already carries
+    the full sentence, so nothing is lost. The 2026-09-02 wrap-under layout
+    left a 52px indent and a half-empty line on the one row that mattered
+    most.
+  - **Below 900px the search button says "Search", never ⌘K / Ctrl K.**
+    The keyboard hint is meaningless without a keyboard, and the long
+    placeholder span was already hidden at that width, so the button read
+    as a bare shortcut on phones and tablets.
+  - **The page scrollbar is thin and themed** (`html{scrollbar-width;
+    scrollbar-color}`), matching the boards' `.xwrap` scrollbars. Standard
+    properties only.
+  - **The chart's visible-range chip reads "+N% in view" and carries a
+    tooltip.** "+1.1% shown" named no subject; a new reader could not tell
+    what was shown. The number itself is unchanged: first to last candle on
+    screen, following zoom and pan.
+
+## Guardrails added 2026-09-03 (Zach's second ask: gradients and shading, the focused name's headlines, slower reels, news for every watchlist name)
+
+Zach's words: "make the UI more polished, still darker themed but more color
+gradients & shading. When a stock is selected, put its most recent headline
+news at the top near the top search bar in that blank space where nothing
+exists. Make the news scroll slightly slower & try to get news on all stocks
+in watchlist." Frontend plus one fetcher change; no new network calls. The
+non-obvious decisions:
+
+- **The focused-name header reel was broken since it shipped, and that is
+  why the space read as blank.** Raw `news.items` carry `ticker`
+  (singular); `renderFocusNewsTicker` filtered them on `n.tickers`, a field
+  that only exists AFTER `dedupeNews`, so it matched nothing and printed
+  "no tagged headlines" for every name. `newsForSym(sym, data)` is now the
+  ONE function every per-name news surface calls (header reel, focus bar,
+  rail panel under a focus, rail-row mark): `news.by_ticker[sym]` first,
+  then reel items tagged either way, deduped on the article, newest first.
+- **`news.by_ticker` (fetcher) gives every pinned name its own newest 3
+  headlines from the same hourly per-symbol pulls** — zero extra requests;
+  the reel's pooled list just used to throw the rest away. A symbol that
+  returned nothing has no key, never an empty list. Documented in
+  DATA_CONTRACT.md before the code. Custom (browser-only) names can never be
+  in it: `news-mediator.tradingview.com` sends no
+  `access-control-allow-origin` (checked 2026-09-03 with an Origin header),
+  so the page cannot fetch them itself; the reel says "headlines cover desk
+  names only" for such a name instead of showing an empty reel.
+- **Reel caps moved toward breadth: `NEWS_CAP` 20 → 24, `NEWS_PER_TICKER_CAP`
+  3 → 2.** The two 2026-08-15 historical-scenario tests pin the algorithm at
+  the old caps via `monkeypatch`; the cap-size tests read the constants.
+- **`ntDuration(n)` is 8s per headline, bounds 55–200s** (was 7s, 48–175s).
+  24 items × 8s = 192s stays under the ceiling, so the widened reel does not
+  speed back up. Still the one pace function for both reels.
+- **A `NEWS` mark on a rail row means a headline inside 24 hours for that
+  name** (`newsMarkHTML`, `NEWS_FRESH_MS`), tooltip carrying the newest
+  title and age. It sits on the ticker line, never the name line, so the
+  company name does not ellipsize behind it.
+- **The focus bar carries the newest headline as static text** beside the
+  rolling header reel: the header's spare width is ~180px at 1440px once the
+  verdict/backdrop/fed chips are on, too narrow to read a rolling line. Same
+  data, same render call, same key; the focus bar row was otherwise empty.
+- **Shading is surfaces only, never text.** Tokens `--shadow`, `--hilite`,
+  `--glow` in all four palette blocks; every gradient runs between the
+  palette's own `--srf2`/`--srf`, a hairline `--hilite`, or an existing
+  low-alpha tint (`--upbg`/`--dnbg` on tape tiles by direction via a
+  `tp-u`/`tp-d`/`tp-m` class from the SAME `cls` the change text already
+  uses; `--accbg` on focus). No measured text contrast moved. Pressed
+  controls get an accent gradient; the overlay toggles (`.seg.tog`) keep
+  their square indicator and no gradient.
+- **A parallel vault-only session built its own version of this same ask
+  inside the vault mirror** (`ClaudeVault` commit `68245a3`, branch
+  `claude/desk-ui-news-display-w91s0s`, session `01RNdf3Vng6dimcuwAmDh5kg`;
+  it could not push to flow-desk). This branch is the version in the real
+  repo, verified by live render. Ported from theirs because they fit the ask
+  and mine lacked them: a second (teal, `--glow2`) page glow, the
+  accent-to-teal wordmark and logo-square gradient, rails a step darker than
+  the middle column (`.wl,.rr` via `color-mix`), fade-out masks on both
+  reels, the `.databanner` and `.tp.foc` gradients, the "N/M names" coverage
+  count in the Tagged headlines header, and the legal page's wash and raised
+  summary box. Not ported: their token names (`--srf3/--shade/--hl` map to
+  this file's `--srf2/--shadow/--hilite`), their 8.5s pace (8s here, with
+  the cap math above), their LATEST tag in the reel (the focus bar's NEWEST
+  line carries that fact here), and their reel wrapping to its own rail row
+  below 900px (the focus bar shows the newest headline on a phone instead).
+  Two sessions on one ask is how this happened; when a `/goal` is typed
+  twice, the second session should read the first's branch before building.

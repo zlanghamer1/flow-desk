@@ -4,7 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Desk</title>
-<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">📈</text></svg>'>
+<meta name="description" content="The Desk: an options-flow and market dashboard. Scored flow boards, biggest orders vs. each name's normal, a sector heatmap, charts with auto technical analysis, a morning brief, catalysts, and headlines. Data is 15-minute delayed. Research, not advice.">
+<meta name="theme-color" content="#0C0E11" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F4F7" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://zlanghamer1.github.io/flow-desk/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="The Desk">
+<meta property="og:title" content="The Desk">
+<meta property="og:description" content="Options flow, biggest orders vs. normal, sector heatmap, charts with auto technical analysis, morning brief, catalysts, and headlines. 15-minute delayed data. Research, not advice.">
+<meta property="og:url" content="https://zlanghamer1.github.io/flow-desk/">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="The Desk">
+<meta name="twitter:description" content="Options flow, biggest orders vs. normal, sector heatmap, charts with auto technical analysis, morning brief, catalysts, and headlines. 15-minute delayed data. Research, not advice.">
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="%230C0E11"/><path d="M7.5 4v16M14.5 5v14" stroke="%235E9FD8" stroke-width="1.6" stroke-linecap="round"/><rect x="5.2" y="9" width="4.6" height="7" rx="1" fill="%235E9FD8"/><rect x="12.2" y="7" width="4.6" height="6" rx="1" fill="%235E9FD8"/></svg>'>
 <style>
 /* ============ tokens — dark is the native theme ============ */
 :root{
@@ -31,6 +43,8 @@
      invisible under a plot — a tick number labeling a line you cannot see
      is not a reference. These sit near 2:1 in both themes. */
   --grid:#2A323C; --gridzero:#3C4653;
+  --tipline:rgba(134,149,166,.42);
+  --shadow:rgba(0,0,0,.55); --hilite:rgba(255,255,255,.045); --glow:rgba(94,159,216,.12); --glow2:rgba(63,181,176,.10);
 }
 @media (prefers-color-scheme: light){
   :root:not([data-theme="dark"]){
@@ -48,6 +62,8 @@
     --sel:rgba(47,111,174,.06);
     --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   --grid:#D3DBE4; --gridzero:#B4C0CD;
+  --tipline:rgba(82,96,111,.40);
+  --shadow:rgba(23,32,42,.10); --hilite:rgba(255,255,255,.80); --glow:rgba(47,111,174,.08); --glow2:rgba(30,122,118,.06);
   }
 }
 :root[data-theme="light"]{
@@ -61,6 +77,8 @@
   --sel:rgba(47,111,174,.06);
   --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   --grid:#D3DBE4; --gridzero:#B4C0CD;
+  --tipline:rgba(82,96,111,.40);
+  --shadow:rgba(23,32,42,.10); --hilite:rgba(255,255,255,.80); --glow:rgba(47,111,174,.08); --glow2:rgba(30,122,118,.06);
 }
 :root[data-theme="dark"]{
   --bg:#0C0E11; --srf:#101318; --srf2:#14181E; --edge:#1D232B; --edge2:#161B21;
@@ -76,6 +94,8 @@
      invisible under a plot — a tick number labeling a line you cannot see
      is not a reference. These sit near 2:1 in both themes. */
   --grid:#2A323C; --gridzero:#3C4653;
+  --tipline:rgba(134,149,166,.42);
+  --shadow:rgba(0,0,0,.55); --hilite:rgba(255,255,255,.045); --glow:rgba(94,159,216,.12); --glow2:rgba(63,181,176,.10);
 }
 /* ============ base ============ */
 *{box-sizing:border-box;margin:0;padding:0}
@@ -128,7 +148,8 @@ a.nt-item:hover{color:var(--ink)}
   display:flex;align-items:center;gap:14px;padding:9px 16px;
   border-bottom:1px solid var(--edge);background:var(--srf);position:sticky;top:0;z-index:40;
 }
-.mark{font-weight:700;font-size:15px;letter-spacing:.18em}
+.mark{display:flex;align-items:center;gap:9px;margin:0;font-weight:700;font-size:15px;letter-spacing:.18em}
+.mark .logo{flex:none;display:block}
 .mark em{font-style:normal;color:var(--acc)}
 .mark small{display:block;font-size:9px;letter-spacing:.14em;color:var(--ink3);font-weight:600;margin-top:-1px}
 .rl{display:flex;align-items:baseline;gap:6px;font-size:11.5px;color:var(--ink2);white-space:nowrap}
@@ -162,7 +183,12 @@ a.nt-item:hover{color:var(--ink)}
 .focusbar{display:none;align-items:center;gap:8px;padding:6px 16px;border-bottom:1px solid var(--edge);background:var(--accbg);font-size:12px}
 .focusbar.on{display:flex}
 .focusbar b{letter-spacing:.04em}
-.focusbar button{color:var(--acc);font-size:11.5px}
+.focusbar button{color:var(--acc);font-size:11.5px;flex:none}
+.focusbar .fnew{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:12px;padding-left:12px;border-left:1px solid var(--edge2);font-size:11.5px;color:var(--ink2)}
+.focusbar .fnew[hidden]{display:none}
+.focusbar .fnew a{color:var(--ink)}
+.focusbar .fnew .tm{color:var(--ink3);margin-left:6px}
+.focusbar .fnew .lb{color:var(--ink3);margin-right:6px;letter-spacing:.06em;font-size:10px;text-transform:uppercase;font-weight:700}
 
 /* ============ tape ============ */
 .tape{display:flex;overflow-x:auto;border-bottom:1px solid var(--edge);background:var(--srf)}
@@ -902,7 +928,11 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 /* ============ tooltip ============ */
 .tipb{position:fixed;z-index:90;max-width:280px;background:var(--srf2);border:1px solid var(--edge);border-radius:6px;padding:7px 10px;font-size:11px;color:var(--ink2);display:none;box-shadow:0 8px 24px rgba(0,0,0,.35)}
 [data-tip]{cursor:help}
-span[data-tip],.rl[data-tip]{border-bottom:1px dotted var(--ink3)}
+/* Resting underline is --tipline (ink3 at ~40% alpha): the affordance stays
+   learnable everywhere it was kept, without every label on the page carrying
+   a full-strength dotted rule. Hover and keyboard focus restore full --ink3. */
+span[data-tip],.rl[data-tip]{border-bottom:1px dotted var(--tipline)}
+span[data-tip]:hover,.rl[data-tip]:hover,span[data-tip]:focus-visible,.rl[data-tip]:focus-visible{border-bottom-color:var(--ink3)}
 /* 376 dotted underlines on one screen is no underline at all (UX-laws
    redesign, 2026-09-02 — Von Restorff). Inside table cells, quick-read
    lines, footnotes and key/value rows the underline is drawn only while
@@ -1121,12 +1151,12 @@ footer b{color:var(--ink2)}
 /* The NEW (just crossed) row keeps ticker + NEW on line one and its reason on
    line two, indented under the reason column — two lines by design, never a
    reason wrapping around a pill (verifier finding, 2026-09-02). */
-.bbr.new{flex-wrap:wrap}
-.bbr.new .w{order:3;flex-basis:100%;padding-left:52px}
+.bbr.new{flex-wrap:nowrap}
+.bbr.new .w{order:3}
 .bbr.new .pill{order:2}
 .bbmore{display:block;font-size:10.5px;padding:3px 0 0}
 .bbr.lo b{font-weight:700}
-.bbr .w{color:var(--ink2);flex:1;min-width:0}
+.bbr .w{color:var(--ink2);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Hick + Jakob: one native sort select instead of six equal buttons. */
 .wlsortbox .wlsort{padding:9px 14px 2px}
 .wlsortnote{padding:0 14px 4px;font-size:10.5px;color:var(--ink3)}
@@ -1145,6 +1175,62 @@ footer .honesty p{margin:0}
 footer .credit{margin-top:10px;padding-top:8px;border-top:1px solid var(--edge2)}
 @media (max-width:900px){ footer .honesty{grid-template-columns:1fr} }
 @media (pointer:coarse){ .wlsel,.bbr{min-height:28px} }
+/* Phone header: the search button's keyboard hint (⌘K / Ctrl K) means nothing
+   without a keyboard; say what the button does instead. The long placeholder
+   span is already hidden at this width (the 900px block above). */
+@media (max-width:900px){
+  .kbtn kbd{display:none}
+  .kbtn::before{content:"Search";font-size:12px;color:var(--ink2)}
+}
+/* Page scrollbar matches the boards' thin themed ones (.xwrap) instead of the
+   OS default. Standard properties only; supported browsers ignore the
+   -webkit pseudo-elements once these are set. */
+html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink3) 50%,transparent) transparent}
+/* ===== Shading pass (2026-09-03, Zach: "still darker themed but more color
+   gradients & shading"). Surfaces, never text: every gradient runs between the
+   palette's own --srf2 and --srf (or a hairline --hilite / a low-alpha tint),
+   so no measured text contrast moves. Direction tints on the tape tiles use
+   the existing --upbg/--dnbg tokens; the accent tints use --accbg. Light theme
+   gets the same rules through its own tokens. ===== */
+.shell{background:radial-gradient(1100px 340px at 12% -140px, var(--glow), transparent 70%),
+  radial-gradient(900px 300px at 96% -120px, var(--glow2), transparent 70%),
+  linear-gradient(180deg, var(--srf2) 0, var(--srf) 480px)}
+/* Rails sit a step below the middle column, so the chart and boards read as
+   the raised surface. */
+.wl,.rr{background:color-mix(in srgb, var(--srf) 72%, var(--bg))}
+/* Wordmark: accent-to-teal, the same two stops as the logo square. */
+.mark em{background:linear-gradient(90deg, var(--acc), var(--gex));-webkit-background-clip:text;background-clip:text;color:transparent}
+.databanner{background:linear-gradient(90deg, var(--dnbg), color-mix(in srgb, var(--dnbg) 40%, transparent))}
+/* Reels fade at their edges instead of cutting a headline mid-letter. */
+.newsticker{-webkit-mask-image:linear-gradient(90deg, transparent, #000 22px, #000 calc(100% - 22px), transparent);
+  mask-image:linear-gradient(90deg, transparent, #000 22px, #000 calc(100% - 22px), transparent)}
+.focnews{-webkit-mask-image:linear-gradient(90deg, #000 calc(100% - 26px), transparent);
+  mask-image:linear-gradient(90deg, #000 calc(100% - 26px), transparent)}
+@media (prefers-reduced-motion: reduce){ .newsticker,.focnews{-webkit-mask-image:none;mask-image:none} }
+.rail{background:linear-gradient(180deg, var(--srf2), var(--srf));box-shadow:0 1px 0 var(--edge), 0 10px 28px -18px var(--shadow)}
+.newsticker{background:linear-gradient(180deg, var(--srf2), var(--srf))}
+.tape{background:linear-gradient(180deg, var(--srf), var(--srf2))}
+.tp{background-image:linear-gradient(180deg, var(--hilite), transparent 60%)}
+.tp.tp-u{background-image:radial-gradient(150px 70px at 100% 55%, var(--upbg), transparent 72%), linear-gradient(180deg, var(--hilite), transparent 60%)}
+.tp.tp-d{background-image:radial-gradient(150px 70px at 100% 55%, var(--dnbg), transparent 72%), linear-gradient(180deg, var(--hilite), transparent 60%)}
+.alertbox,.stat,.fedcard,#stagerecap,.pop,.tipb{background:linear-gradient(180deg, var(--srf2), var(--srf))}
+.alertbox,.stat,.fedcard{box-shadow:0 1px 2px var(--shadow), inset 0 1px 0 var(--hilite)}
+#s-brief{background:linear-gradient(180deg, var(--srf2), var(--srf) 60%)}
+.sh{background-image:linear-gradient(180deg, var(--hilite), transparent)}
+thead th{background-image:linear-gradient(180deg, var(--hilite), transparent)}
+.fbtn,.ic,.kbtn,.seg button,.wlx{background-image:linear-gradient(180deg, var(--hilite), transparent 70%)}
+.fbtn[aria-pressed="true"],.ic[aria-pressed="true"],.seg button[aria-pressed="true"]{
+  background-image:linear-gradient(180deg, color-mix(in srgb, var(--acc) 26%, transparent), color-mix(in srgb, var(--acc) 6%, transparent))}
+.seg.tog button[aria-pressed="true"]{background-image:none}
+.wr.foc{background:linear-gradient(90deg, var(--accbg), transparent 75%)}
+.tp.foc{background:linear-gradient(180deg, var(--sel), var(--accbg));box-shadow:inset 0 -2px 0 var(--acc)}
+.focnews{background:linear-gradient(90deg, var(--accbg), transparent 55%);border-radius:4px;border-left-color:var(--acc)}
+.focnews .tk{color:var(--acc);font-weight:700}
+footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
+/* NEWS mark on a rail row: a headline inside 24h for that name (2026-09-03). */
+.nwm{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);
+  border:1px solid color-mix(in srgb, var(--ink3) 40%, transparent);border-radius:3px;padding:0 4px;line-height:1.5;flex:none;align-self:center}
+.wr:hover .nwm,.wr.foc .nwm,.wr:focus-within .nwm{color:var(--acc);border-color:color-mix(in srgb, var(--acc) 55%, transparent)}
 </style>
 </head>
 <body>
@@ -1159,7 +1245,7 @@ footer .credit{margin-top:10px;padding-top:8px;border-top:1px solid var(--edge2)
 
   <!-- ======= top rail ======= -->
   <div class="rail">
-    <h1 class="mark">THE<em>DESK</em><small>FLOW · BRIEF · CATALYSTS</small></h1>
+    <h1 class="mark"><svg class="logo" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><defs><linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--acc)"/><stop offset="1" stop-color="var(--gex)"/></linearGradient></defs><rect width="24" height="24" rx="5" fill="url(#logoGrad)"/><path d="M7.5 4v16M14.5 5v14" stroke="var(--srf)" stroke-width="1.6" stroke-linecap="round"/><rect x="5.2" y="9" width="4.6" height="7" rx="1" fill="var(--srf)"/><rect x="12.2" y="7" width="4.6" height="6" rx="1" fill="var(--srf)"/></svg><span class="mk">THE<em>DESK</em><small>FLOW · BRIEF · CATALYSTS</small></span></h1>
     <span class="rl" id="railstate"><span class="lamp" id="raillamp"></span><b id="railstatetext">—</b></span>
     <span class="rl clock tn" id="clock">—</span>
     <span class="rl" id="railverdict" data-tip="The Morning Brief engine's synthesis score, computed once pre-market — same number the daily brief computes. Most of its measured edge is the overnight gap." hidden>verdict <b id="railverdicttext">—</b></span>
@@ -1178,6 +1264,10 @@ footer .credit{margin-top:10px;padding-top:8px;border-top:1px solid var(--edge2)
     <span>focused on</span> <b id="focsym">—</b>
     <span class="m" id="focname"></span>
     <button id="focclear">clear ×</button>
+    <!-- Newest headline for the focused name (2026-09-03): static text in the
+         bar's otherwise-empty width, beside the rolling header reel. Same
+         data (newsForSym), same render call as the reel. -->
+    <span class="fnew" id="focnewest" hidden></span>
   </div>
   <!-- data-feed failure banner: a failed data.json load used to be invisible —
        the page kept "Loading…" forever under a CLOSED lamp and read as a quiet
@@ -1323,7 +1413,8 @@ footer .credit{margin-top:10px;padding-top:8px;border-top:1px solid var(--edge2)
         Nothing here is financial advice.</p></div>
     </div>
     <div class="credit">Charts render with <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a>,
-    © TradingView, Inc., Apache-2.0.</div>
+    © TradingView, Inc., Apache-2.0.
+    · <a href="legal.html">Terms, privacy &amp; risk disclosure</a></div>
   </footer>
 </div>
 
@@ -1715,8 +1806,8 @@ var TIPS = {
   stale:"This section is older than expected for its usual refresh cadence — showing the last good read.",
   ta_trend:"Auto trend lines, fit on the selected window: swing highs and lows (4 bars each side, 2 on short windows), then the best line through two or more pivots that price respected. A pivot counts as a touch within roughly 0.3%-3% of the line and a wick poking through by roughly 1.2%-4% kills the fit, on EVERY interval including intraday — both scale with what the name actually moves (avg_move), converted to that interval's own typical bar-to-bar range, not a flat number the vault scanner started from. On the daily and weekly views the poke is judged on CLOSES rather than wicks, because a wick's intrabar extremes could otherwise kill a genuine daily/weekly line no close ever invalidated. The anchor, containment and break rules come from that scanner, generalized to the support side; its rising-lows condition is not applied here. A line whose break is more than 12 bars old is not drawn, one price has traded back through and walked away from is captioned as failed, and one price closed through and stayed through has FLIPPED — broken support is drawn and captioned as overhead resistance. Windows under 40 bars draw no trend line. The dashed part is the line projected forward, and a failed line gets no projection. When BOTH a resistance and a support line fit, the caption also names the shape the pair draws — ascending/descending/symmetrical triangle, rising/falling wedge, ascending/descending channel, trading range, broadening formation, or bull/bear flag when a fast prior move preceded a tight channel — read off the same two lines' slopes and convergence, never a separate detector. Said only when the geometry clearly matches one of those names; otherwise nothing is claimed. Display only — never a signal, never in any score.",
   ta_sr:"Horizontal support/resistance: swing-point prices clustered inside half a 60-bar ATR (floored at 1%, capped at 5%, so a $900 stock and a $12 one both cluster sensibly); a level needs 2+ touches, strongest three drawn. A level that held as a floor often matters again as a ceiling, so highs and lows cluster together. Colored by where price sits against each level: red overhead (resistance ahead), green underneath (support below), blue when price is inside the band itself — the same three words the caption under the chart uses. Every level's price and touch count is named there too; only the one nearest price takes an axis badge, and even that is dropped when it would land on a moving-average badge. Levels up to 20% from price are kept on purpose — a level is a measured shelf where price actually traded, unlike a projected trend line, which is held to a tighter, volatility-scaled distance — and each level's caption prints its own %-distance so a far one reads as far. Display only.",
-  ta_bb:"Bollinger Bands: a 20-period simple moving average plus/minus 2 standard deviations of the same 20 closes, in purple. The 20 periods are whichever interval is active — 20 daily bars on the 1D view, but 20 HOURLY bars on 1H (about two and a half trading days), so on intraday views the band is a different, much faster signal than the daily one. On any one interval it is computed on the full price history, not the window selector — switching from 1M to 1Y does not change the band's shape. The caption under the chart says whether price is currently above the upper band, below the lower band, or inside them. Display only — never a signal, never in any score. The watchlist rail's Band crosses panel flags any rail ticker whose price just crossed a band — and, first in the list, any that TOUCHED its LOWER band today, sits at/below it, or is within 1% above it (Zach's 2026-08-26 alert ask) — from the same daily bars, whether or not this toggle is on or its chart is even open.",
-  ta_ma:"The 20, 50 and 200-DAY moving average lines — the price's own average over those many days, the most common way traders read trend. Off by default to keep the chart clean (Zach's 2026-08-26 ruling); turn on to draw them. They are computed from daily bars, so they draw on the 1D view only — the button is disabled on intraday and weekly views. On 1D, the chart notes keep showing the values and the % gap to price whether the lines are drawn or not.",
+  ta_bb:"Bollinger Bands: a 20-period simple moving average plus/minus 2 standard deviations of the same 20 closes, in purple. The 20 periods are whichever interval is active — 20 daily bars on the 1D view, but 20 HOURLY bars on 1H (about two and a half trading days), so on intraday views the band is a different, much faster signal than the daily one. On any one interval it is computed on the full price history, not the window selector — switching from 1M to 1Y does not change the band's shape. The caption under the chart says whether price is currently above the upper band, below the lower band, or inside them. Display only — never a signal, never in any score. The watchlist rail's Band crosses panel flags any rail ticker whose price just crossed a band — and, first in the list, any that TOUCHED its LOWER band today, sits at/below it, or is within 1% above it (the lower-band alert rule, added 2026-08-26) — from the same daily bars, whether or not this toggle is on or its chart is even open.",
+  ta_ma:"The 20, 50 and 200-DAY moving average lines — the price's own average over those many days, the most common way traders read trend. Off by default to keep the chart clean (the 2026-08-26 declutter rule); turn on to draw them. They are computed from daily bars, so they draw on the 1D view only — the button is disabled on intraday and weekly views. On 1D, the chart notes keep showing the values and the % gap to price whether the lines are drawn or not.",
   "recap-conv":"A plain-English restatement of this board's own header counts — same numbers, in a sentence. A name counts as bullish when more option dollars moved through its calls (contracts that profit if the stock rises) than its puts (contracts that profit if it falls) in the 0-7 day bucket. That is dollars changing hands, not confirmed buying — the same caveat as the Net flow column. Firing = flow unusually loud versus that name's own normal day. A description of today's tape, never advice.",
   "recap-swing":"A plain-English restatement of the rows shown in the table below — the count covers exactly those rows, nothing off-screen. A name counts as bullish when TODAY'S option dollars leaned toward its calls (contracts that profit if the stock rises) rather than its puts (contracts that profit if it falls), in the same 0-7 day bucket the Conviction board reads. What makes this board multi-week is its SELECTION, not this count: a name earns its row by holding the same lean across sessions (the Persist column) — but the bull/bear split here is today's flow, not a longer-dated position. Dollars changing hands, not confirmed buying. A description of the tape, never advice.",
   "recap-orders":"A plain-English count of the rows shown below. A call is a contract that profits if the stock rises; a put profits if it falls. IMPORTANT CAVEATS, same as the board's own tooltips: these are day TOTALS of dollars changing hands per contract — free data cannot see who bought and who sold, so a call-heavy day is not proof of bullish bets. The board ranks each line against ITS OWN NAME'S usual day (the × normal column), so 'loudest for its size' and 'most raw dollars' can be two different names; and a deep in-the-money line can be mostly money already in the strike (the MOSTLY INTRINSIC badge marks those). A description of what traded, never advice.",
@@ -3250,7 +3341,7 @@ function mainTileHTML(t){
     + (d.ext && d.ext.ch!=null ? (". After hours: "+fmtpx(d.ext.px)+" ("+fm1(d.ext.ch)+"% since the 3:00 PM CT close).") : "")
     + (frozen ? " This reading has not refreshed in over a minute." : "")
     + " Click to chart it.";
-  return '<div class="tp" data-sym="'+esc(tkey)+'" role="button" tabindex="0" data-tip="'+esc(tip)+'">'
+  return '<div class="tp tp-'+cls+'" data-sym="'+esc(tkey)+'" role="button" tabindex="0" data-tip="'+esc(tip)+'">'
     +'<span class="s"><span class="t">'+esc(t.s)+' · '+esc(t.n)+'</span>'+sessTagHTML(d.tag)
     + (d.ext ? sessTagHTML(d.ext.tag) : "")+ftag+'</span>'
     +'<span class="p">'+pxStr+'</span><span class="c '+cls+'">'+chStr+'</span></div>';
@@ -3260,7 +3351,7 @@ function macroTileHTML(m){
   if(!d || d.px==null){
     // Keep the slot and say the quote is missing. Dropping the tile made a
     // broken feed look like a tape that never carried the reading.
-    return '<div class="tp" data-sym="'+esc(m.bk||m.s)+'" role="button" tabindex="0" data-tip="'
+    return '<div class="tp tp-'+cls+'" data-sym="'+esc(m.bk||m.s)+'" role="button" tabindex="0" data-tip="'
       + esc(m.s+" — no quote resolved this cycle. The tape keeps the slot so a missing reading is visible.")+'">'
       +'<span class="s"><span class="t">'+esc(m.s)+' · '+esc(m.n)+'</span></span>'
       +'<span class="p m">—</span><span class="c m">no quote</span></div>';
@@ -3832,7 +3923,7 @@ function railRowHTML(s, opts){
     else manageBtn = '<button class="wlx" data-wlx="'+esc(s)+'" data-tip="'+(railHasSym(s)?"Hide this pinned name from the rail (boards still track it — the universe is server-curated).":"Remove this custom name from this browser\u2019s list.")+'">×</button>';
   }
   return '<div class="wr '+(isHot?"hot":"")+(opts && opts.ghost?" ghost":"")+'" data-sym="'+esc(s)+'" role="button" tabindex="0">'
-    +'<div class="l1"><span class="sy">'+esc(s)+'</span>'
+    +'<div class="l1"><span class="sy">'+esc(s)+'</span>'+newsMarkHTML(s)
     +(unresolved
         ? '<span class="noq" data-tip="No exchange listing resolves for this symbol, so the 30-second poll has nothing to ask for. It is not a slow quote — it will stay blank until the symbol is corrected.">no quote</span>'
         : ('<span class="px tn">'+pxStr+'</span><span class="ch tn '+cls+'">'+chStr+'</span>'
@@ -6308,8 +6399,46 @@ function renderNewsTicker(data){
 // One reading pace for both reels (2026-09-03): 7 seconds per headline,
 // bounded so a 3-headline reel doesn't blink past and a 30-headline one
 // doesn't take four minutes to come around.
-function ntDuration(n){ return Math.min(175, Math.max(48, n*7)); }
+// 7s -> 8s per headline (Zach, 2026-09-03: "slightly slower"); bounds 55-200s so
+// the top reel's NEWS_CAP (24) items keep the 8s pace instead of hitting the
+// ceiling and speeding up. Both reels read this one function.
+function ntDuration(n){ return Math.min(200, Math.max(55, n*8)); }
 var FN_KEY = null;
+// Every pinned name's own headlines (2026-09-03, Zach: "try to get news on all
+// stocks in watchlist"). news.by_ticker carries each pinned symbol's newest few
+// from the same hourly pull the reel is built from; a payload published before
+// that key existed falls back to the reel items tagged to the name. Raw reel
+// items carry `ticker` (singular) — the old focused-reel filter tested
+// `n.tickers`, which only exists AFTER dedupeNews, so it matched nothing and
+// the reel read "no tagged headlines" for every name. Deduped on the article,
+// newest first. Custom (browser-only) names are never in by_ticker: the news
+// endpoint sends no CORS header (checked 2026-09-03), so the page cannot fetch
+// them itself, and callers say so in place instead of showing an empty reel.
+function newsForSym(sym, data){
+  var news = data && data.news;
+  if(!news || !sym) return [];
+  var own = (news.by_ticker && Array.isArray(news.by_ticker[sym])) ? news.by_ticker[sym] : [];
+  var tagged = Array.isArray(news.items) ? news.items.filter(function(n){
+    return n && n.title && (n.ticker===sym || (n.tickers||[]).indexOf(sym)!==-1);
+  }) : [];
+  var all = dedupeNews(own.concat(tagged).filter(function(n){ return n && n.title; }));
+  all.sort(function(a,b){ return (Date.parse(b.ts||"")||0) - (Date.parse(a.ts||"")||0); });
+  return all;
+}
+function newsIsPinnedName(sym){
+  return !!(sym && (railHasSym(sym) || (STATE.data && STATE.data.facts && STATE.data.facts[sym])));
+}
+// A headline from the last 24 hours puts a small NEWS mark on the name's rail
+// row, so every watchlist name's news is visible without selecting each one.
+var NEWS_FRESH_MS = 24*3600*1000;
+function newsMarkHTML(sym){
+  var list = newsForSym(sym, STATE.data);
+  if(!list.length) return "";
+  var n = list[0], t = Date.parse(n.ts||"");
+  if(!(t>0) || (Date.now()-t) > NEWS_FRESH_MS) return "";
+  return '<span class="nwm" data-tip="'+esc("Newest headline, "+(elapsedShort(n.ts)||ctTimeShort(n.ts))+": "
+    +(n.title||"")+" Select the name to roll its headlines in the header.")+'">news</span>';
+}
 // The focused name's OWN tagged headlines, rolling in the header's spare
 // width (Zach, 2026-09-03: "move the specific stock's tagged headlines into
 // the blank space to the left of the top search ticker bar, rotating through
@@ -6321,17 +6450,28 @@ var FN_KEY = null;
 function renderFocusNewsTicker(data){
   var el = document.getElementById("focnews");
   if(!el) return;
-  if(!FOCUS){ el.hidden = true; FN_KEY = null; return; }
+  var fnew = document.getElementById("focnewest");
+  if(!FOCUS){ el.hidden = true; FN_KEY = null; if(fnew){ fnew.hidden = true; fnew.innerHTML = ""; } return; }
   var newsMissing = !!(data && data.news == null);
-  var items = dedupeNews((data && data.news && Array.isArray(data.news.items))
-    ? data.news.items.filter(function(n){ return n && n.title && (n.tickers||[]).indexOf(FOCUS)!==-1; }) : []);
+  var items = newsForSym(FOCUS, data);
+  if(fnew){
+    if(items.length){
+      var n0 = items[0], h0 = safeHref(n0.url);
+      fnew.innerHTML = '<span class="lb">newest</span>'
+        + (h0 ? '<a href="'+esc(h0)+'" target="_blank" rel="noopener noreferrer">'+esc(n0.title||"")+'</a>' : esc(n0.title||""))
+        + '<span class="tm tn"'+(n0.ts?(' data-ts="'+esc(n0.ts)+'" title="'+esc(ctWhenLong(n0.ts))+'"'):'')+'>'+esc(elapsedShort(n0.ts) || ctTimeShort(n0.ts))+'</span>';
+      fnew.hidden = false;
+    } else { fnew.hidden = true; fnew.innerHTML = ""; }
+  }
   var key = FOCUS+"|"+items.map(function(n){ return (n.url||n.title||"")+"@"+(n.ts||""); }).join("|");
   if(key === FN_KEY){ el.hidden = false; return; }
   FN_KEY = key;
   el.hidden = false;
   if(!items.length){
     el.innerHTML = '<div class="nt-empty">'+esc(FOCUS)+': '
-      + (newsMissing ? 'headline scan did not return this cycle' : 'no tagged headlines this cycle')+'</div>';
+      + (newsMissing ? 'headline scan did not return this cycle'
+         : newsIsPinnedName(FOCUS) ? 'no headlines in the last hourly scan'
+         : 'headlines cover desk names only; custom adds are not scanned')+'</div>';
     return;
   }
   function itemHTML(n){
@@ -6356,7 +6496,14 @@ function renderNews(){
   var newsObj = data && data.news;
   var items = dedupeNews((newsObj && Array.isArray(newsObj.items)) ? newsObj.items : []);
   var stale = isStaleContext(data);
-  document.getElementById("newsstat").innerHTML = "TradingView news · hourly" + ageStampHTML(data && data.context_updated_at, stale);
+  // Coverage (2026-09-03): how many desk names returned at least one headline
+  // in the last hourly scan, out of every pinned name that resolved a quote.
+  var cov = "";
+  if(newsObj && newsObj.by_ticker && data && data.facts){
+    var have = Object.keys(newsObj.by_ticker).length, pinnedN = Object.keys(data.facts).length;
+    if(pinnedN) cov = ' · <span data-tip="'+esc("Desk names with at least one headline in the last hourly scan, out of every pinned name. A name with none is quiet, not missing.")+'">'+have+'/'+pinnedN+' names</span>';
+  }
+  document.getElementById("newsstat").innerHTML = "TradingView news · hourly" + cov + ageStampHTML(data && data.context_updated_at, stale);
   // A NULL news object means the scan did not return at all — the publisher
   // emits null when nothing came back for any symbol. Hiding the panel read as
   // "no headlines today" while the ticker above said the scan matched nothing.
@@ -6374,7 +6521,13 @@ function renderNews(){
     return;
   }
   var list = items;
-  if(FOCUS) list = items.filter(function(n){ return (n.tickers||[]).indexOf(FOCUS)!==-1 || !(n.tickers||[]).length; });
+  if(FOCUS){
+    // The focused name's OWN headlines (news.by_ticker, every pinned name)
+    // lead, then the untagged market rows; one row per article.
+    var seen = {};
+    list = newsForSym(FOCUS, data).concat(items.filter(function(n){ return !(n.tickers||[]).length; }))
+      .filter(function(n){ var k = String(n.url||n.title||"").toLowerCase(); if(!k || seen[k]) return false; seen[k] = true; return true; });
+  }
   var html = "";
   // The contract's rotation_banner is a BOOLEAN (true when 2+ scanned titles
   // carry rotation/derisking language, same keyword list as the brief). The
@@ -6428,7 +6581,7 @@ function renderNews(){
    text of the stamp spans avoids re-rendering the panel, which would throw
    away keyboard focus on a headline link. */
 function tickNewsStamps(){
-  $$("#news .tm[data-ts], #newsticker .tm[data-ts], #focnews .tm[data-ts]").forEach(function(el){
+  $$("#news .tm[data-ts], #newsticker .tm[data-ts], #focnews .tm[data-ts], #focnewest .tm[data-ts]").forEach(function(el){
     var t = elapsedShort(el.getAttribute("data-ts"));
     if(t && el.textContent !== t) el.textContent = t;
   });
@@ -7838,7 +7991,7 @@ function stageOnVisRange(range){
     if(el && c0!=null && c1!=null && c0!==0){
       var pct = (c1/c0-1)*100;
       el.className = "pchip tn "+(pct>=0?"u":"d");
-      el.textContent = fm1(pct)+"% shown";
+      el.textContent = fm1(pct)+"% in view";
       el.hidden = false;
     } else if(el){ el.hidden = true; }
   });
@@ -13241,7 +13394,7 @@ function stageBar(){
   // means "show me that much history", switching back to daily candles.
   var ivBtns = IVS.map(function(t){ return '<button data-iv="'+t+'" aria-pressed="'+(t===STAGE.iv)+'">'+t+'</button>'; }).join("");
   var tfBtns = GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(STAGE.iv==="1D" && t===STAGE.tf)+'">'+t+'</button>'; }).join("");
-  var chips = '<span class="pchip tn" id="stagepct" hidden></span>'
+  var chips = '<span class="pchip tn" id="stagepct" hidden data-tip="Price change from the first candle on screen to the last one. It follows the zoom and the pan, so it describes exactly the stretch you are looking at, not the whole range button."></span>'
     + '<span class="pchip tn m" id="stagevz" hidden></span>'
     + '<button class="fbtn" id="stagelog" aria-pressed="'+STAGE.log+'" data-tip="'+esc(TIPS["tip-logscale"])+' The desk picks automatically; this button overrides it until the next symbol change.">log</button>';
   var fixedBy = STAGE.sym ? splitFixedFor(STAGE.sym) : null;
