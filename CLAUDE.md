@@ -3138,3 +3138,32 @@ same pass is the part that needed no accounts or money. Rules from it:
   `index.html` (splitting it belongs to the Phase 2 data-layer change), and
   every current feed (removing one before its licensed replacement exists
   breaks the personal tool for no gain).
+- **Zach's ruling, same day, after reading the assessment: "too much is
+  involved to make it a paid site. Just make it professional-looking for
+  me."** The paid-site roadmap is a record, not a plan. Don't re-pitch it,
+  and don't re-open the data-vendor question from memory; `docs/MONETIZATION.md`
+  states exactly what would have to change first. The polish pass that
+  followed is visual only. Its rules:
+  - **The brand is a mark plus a wordmark.** `h1.mark` carries an inline SVG
+    candle mark (`.logo`, accent square, two candles in `--srf`) ahead of
+    the "THE DESK" wordmark, and the favicon is the same mark on the dark
+    ground (`#0C0E11` with `#5E9FD8` candles, so it reads on light and dark
+    tab bars alike). `legal.html` uses the identical favicon. Change one,
+    change all three.
+  - **Tooltip underlines rest on `--tipline`, not `--ink3`.** The 2026-09-02
+    decision to keep permanent underlines on headers, chips and rail labels
+    stands; the resting rule now draws at ~40% alpha (a token in all four
+    palette blocks) and returns to full `--ink3` on hover and keyboard
+    focus. Quieter, not removed: the affordance still teaches itself.
+  - **Band-crosses NEW rows stay on one line.** The reason ellipsizes
+    (`.bbr .w` nowrap/ellipsis); the row's own `data-tip` already carries
+    the full sentence, so nothing is lost. The 2026-09-02 wrap-under layout
+    left a 52px indent and a half-empty line on the one row that mattered
+    most.
+  - **Below 900px the search button says "Search", never ⌘K / Ctrl K.**
+    The keyboard hint is meaningless without a keyboard, and the long
+    placeholder span was already hidden at that width, so the button read
+    as a bare shortcut on phones and tablets.
+  - **The page scrollbar is thin and themed** (`html{scrollbar-width;
+    scrollbar-color}`), matching the boards' `.xwrap` scrollbars. Standard
+    properties only.

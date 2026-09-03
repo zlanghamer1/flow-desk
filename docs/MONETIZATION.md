@@ -4,6 +4,18 @@ Written 2026-09-03 in response to the goal "make the desk a professional
 grade trading site that could be monetized." The vendor-terms facts behind
 this document are in `docs/DATA_LICENSING.md`.
 
+## Decision (Zach, 2026-09-03)
+
+Zach read this assessment the day it was written and ruled: "too much is
+involved to make it a paid site. Just make it professional-looking for me."
+The desk stays a personal tool. Nothing below is scheduled work; it is the
+record of what a paid product would take, kept so the question does not get
+re-opened from memory. The same-day visual polish pass (brand mark, favicon,
+quieter tooltip underlines, phone search label, one-line alert rows) is
+recorded in `CLAUDE.md` under "Guardrails added 2026-09-03 (monetization
+readiness pass)". The legal page, head metadata, and CI stay: they are
+ordinary hygiene for a public page, paid or not.
+
 ## The answer first
 
 The desk cannot be sold as it is today. Three things block it, and none of
