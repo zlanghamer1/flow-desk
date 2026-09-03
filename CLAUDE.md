@@ -3167,3 +3167,7 @@ same pass is the part that needed no accounts or money. Rules from it:
   - **The page scrollbar is thin and themed** (`html{scrollbar-width;
     scrollbar-color}`), matching the boards' `.xwrap` scrollbars. Standard
     properties only.
+  - **The chart's visible-range chip reads "+N% in view" and carries a
+    tooltip.** "+1.1% shown" named no subject; a new reader could not tell
+    what was shown. The number itself is unchanged: first to last candle on
+    screen, following zoom and pan.

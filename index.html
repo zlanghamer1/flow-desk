@@ -7871,7 +7871,7 @@ function stageOnVisRange(range){
     if(el && c0!=null && c1!=null && c0!==0){
       var pct = (c1/c0-1)*100;
       el.className = "pchip tn "+(pct>=0?"u":"d");
-      el.textContent = fm1(pct)+"% shown";
+      el.textContent = fm1(pct)+"% in view";
       el.hidden = false;
     } else if(el){ el.hidden = true; }
   });
@@ -13274,7 +13274,7 @@ function stageBar(){
   // means "show me that much history", switching back to daily candles.
   var ivBtns = IVS.map(function(t){ return '<button data-iv="'+t+'" aria-pressed="'+(t===STAGE.iv)+'">'+t+'</button>'; }).join("");
   var tfBtns = GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(STAGE.iv==="1D" && t===STAGE.tf)+'">'+t+'</button>'; }).join("");
-  var chips = '<span class="pchip tn" id="stagepct" hidden></span>'
+  var chips = '<span class="pchip tn" id="stagepct" hidden data-tip="Price change from the first candle on screen to the last one. It follows the zoom and the pan, so it describes exactly the stretch you are looking at, not the whole range button."></span>'
     + '<span class="pchip tn m" id="stagevz" hidden></span>'
     + '<button class="fbtn" id="stagelog" aria-pressed="'+STAGE.log+'" data-tip="'+esc(TIPS["tip-logscale"])+' The desk picks automatically; this button overrides it until the next symbol change.">log</button>';
   var fixedBy = STAGE.sym ? splitFixedFor(STAGE.sym) : null;
