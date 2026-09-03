@@ -3351,3 +3351,62 @@ answers; the fix is ops, not page code.
   ceiling-flagged as an implausible swing. Nothing here is broken — do not
   "fix" it by lowering `FRAMEWORK_MIN_EVALUATED` or by guessing an
   unresolved filter, which the 2026-08-21 rules forbid outright.
+
+## Guardrails added 2026-09-03 (one word, three meanings — the framework's "building")
+
+Zach, reading the panel rather than the payload: "LLY is not a fund but says
+building as well?" That question found a real defect I had just told him was
+correct behavior. The word "building" was doing three unrelated jobs:
+
+| On screen | Payload | What it actually meant |
+|---|---|---|
+| `ADD (building)` | `ADD_BUILDING` | Passed every measurable filter. Best result available. |
+| `BUILDING HISTORY` | `BUILDING` | Too few filters resolved to score at all. |
+| `BUILDING HISTORY` | `BUILDING` | A **fund**. Can never resolve anything, ever. |
+
+- **A fund now reads `NOT_APPLICABLE`, gated on TradingView's own `type`
+  column — never inferred.** `TV_COLUMNS` gained `"type"`, `_row_to_quote`
+  lifts it to `sec_type`, `fetch_earnings_days` carries it into facts, and
+  `score_framework` early-returns before any filter runs. **Only
+  `FRAMEWORK_NO_FINANCIALS_TYPES = ("fund",)` is excluded**: a blanket
+  "anything that isn't `stock`" would have killed TSM and SKHY, which come
+  back `dr` — depositary receipts of real foreign operating companies with
+  real financials. Live-verified across the pinned universe 2026-09-03:
+  `stock` (MU/LLY/CRWD/XOM/WTI/CBRS), `fund` (SPY/QQQ/SMH/XLE/NRGU/OILU/
+  MUU/SOXS), `dr` (TSM/SKHY). A null or unrecognized type falls through to
+  the ordinary path — a missing reading is never turned into a verdict, and
+  the fund state is never inferred from an absent market cap or an absent
+  sidecar (the round-12 heatmap conflation, which this deliberately avoids
+  repeating). The panel renders one sentence and **no filter rows and no
+  progress strip** for a fund: five "building…" rows and a five-segment
+  strip would each be a fresh version of the same false promise.
+- **`_framework_verdict`'s `evaluated < FRAMEWORK_MIN_EVALUATED` early
+  return is why this was missed for two weeks.** Round 12 built `_CAPPED`
+  precisely to stop a verdict promising a resolution that cannot come — but
+  it sits below that early return, so the 25 names that never reach a tier
+  skipped the whole distinction. When adding a state to a verdict function,
+  check every return path, not the one the feature was written against.
+- **A tier verdict no longer carries a `(building)` suffix.** `ADD
+  (building)` made a 3-of-3, zero-fail name (LLY) read like an unfinished
+  state. The tier prints as the result it is, and a qualifier LINE under it
+  states the true fact: "3 of 3 measurable filters passed · 2 unlock later."
+  The payload's `_BUILDING` suffix is UNCHANGED — the fetcher's distinction
+  was always right; only the rendering lied. `(capped)` is also unchanged:
+  there the unresolved filters are permanently rejected, so naming the
+  ceiling is the honest thing to say.
+- **The qualifier's tooltip states a provable property, not reassurance:**
+  a pending filter can only ADD passes as it resolves, and the tier map keys
+  off `filters_passed`, so the tier can rise from a `_BUILDING` state but
+  cannot fall on those filters' account. Scoped deliberately — a later
+  change in the UNDERLYING data is a different matter and the tooltip says
+  so rather than promising a floor.
+- **Takeaway worth keeping:** the raw payload had three distinct codes for
+  these three states and looked fine under inspection. They collapsed into
+  one word only at the render layer. Reading `data.json` is not the same as
+  reading the page, and the page is what Zach acts on — check the rendered
+  string, not just the field.
+- Verified: 360 fetcher tests (11 new in `test_framework_score.py`, covering
+  the fund gate, the `dr`/null fall-through, case-insensitivity, key-shape
+  parity between the early return and a real score, and the full
+  column→quote→facts→verdict chain) and 6 page smoke tests. All four states
+  rendered from the live 2026-09-03 payload.

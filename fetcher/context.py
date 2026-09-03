@@ -1134,6 +1134,11 @@ def fetch_earnings_days(tv_rows: dict[str, dict], session_date: date) -> dict[st
             # peer groups from `industry`; see DATA_CONTRACT.md.
             "sector": q.get("sector"),
             "industry": q.get("industry"),
+            # Security type (added 2026-09-03) — TV's `type`, verbatim:
+            # "stock" | "fund" | "dr" | None. Read only by score_framework,
+            # to tell a fund (no financials, ever) apart from an equity
+            # still accumulating history. See DATA_CONTRACT.md.
+            "sec_type": q.get("sec_type"),
         }
     return facts
 
@@ -2948,6 +2953,20 @@ FRAMEWORK_WEEKS_6M = 26                 # Filter 1 lookback: ~6 months of ISO we
 FRAMEWORK_WEEKS_3M = 13                 # Filter 3 lookback: ~3 months of ISO weeks
 FRAMEWORK_WEEK_TOLERANCE = 1            # nearest-available-snapshot search radius
 FRAMEWORK_MIN_EVALUATED = 3             # filters needed before a verdict is given at all
+# TV `type` values that have no company financials of their own, so NONE of
+# the five filters can ever resolve for them (added 2026-09-03). Deliberately
+# an explicit allow-list of ONE value rather than "anything that isn't
+# stock": "dr" is a depositary receipt — an ADR of a real foreign operating
+# company (TSM, SKHY) with real revenue, margins and cash flow — and must
+# keep its score. A null/unrecognized type falls through to the ordinary
+# path: a missing reading is never turned into a verdict.
+FRAMEWORK_NO_FINANCIALS_TYPES = ("fund",)
+# The five filter keys, in the order score_framework sets them. Declared once
+# so the NOT_APPLICABLE early return above can emit the identical key set a
+# real score does — a hand-copied literal would silently drift the day a
+# sixth filter lands. test_framework_score.py pins the two against each other.
+FRAMEWORK_FILTER_KEYS = ("forward_eps_revision", "revenue_growth",
+                         "analyst_velocity", "opmargin_expansion", "fcf_growth")
 # Filters 4/5 (opmargin expansion, FCF growth) had no anomaly check on the
 # same fund/{SYM}.json quarterly arrays the Financials chart already guards
 # with robustClampMag and a duplicate-row detector. Live example: MU's
@@ -3099,6 +3118,34 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
     the sidecar build failed for this name). Every filter is True/False/None
     independently; a missing input never gets guessed into a pass or a fail.
     """
+    # A fund (ETF/ETN wrapper) is a basket of holdings, not a company: it has
+    # no revenue, no operating margin and no free cash flow of its own, so
+    # every one of the five filters is unanswerable for it FOREVER. Before
+    # 2026-09-03 a fund fell through the ordinary path, resolved nothing, and
+    # published the bare "BUILDING" verdict an equity genuinely still
+    # accumulating weekly consensus history publishes — the panel told the
+    # reader to wait for a result that structurally cannot arrive, on 25 of
+    # the 63 scored names. Same distinction "_CAPPED" already draws for a
+    # TIER verdict (round 12); the no-tier case took the
+    # `evaluated < FRAMEWORK_MIN_EVALUATED` early return in
+    # _framework_verdict and never reached that logic at all.
+    #
+    # Gated on TV's own `type` column, never inferred from an absent market
+    # cap or an absent fund sidecar — "no reading this cycle" and
+    # "structurally has no financials" are two different facts, and conflating
+    # them is exactly the bug the 2026-08-23 round-12 heatmap fix exists for.
+    sec_type = f.get("sec_type") if isinstance(f, dict) else None
+    if isinstance(sec_type, str) and sec_type.lower() in FRAMEWORK_NO_FINANCIALS_TYPES:
+        return {
+            "filters": {k: None for k in FRAMEWORK_FILTER_KEYS},
+            "filters_passed": 0,
+            "filters_failed": 0,
+            "filters_unknown": len(FRAMEWORK_FILTER_KEYS),
+            "filter_flags": {},
+            "verdict": "NOT_APPLICABLE",
+            "metrics": {},
+        }
+
     filters: dict[str, Optional[bool]] = {}
     metrics: dict[str, float] = {}
     # A filter rejected by an implausibility ceiling (Filter 4/5's

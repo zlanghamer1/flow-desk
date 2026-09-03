@@ -516,6 +516,16 @@ TV_COLUMNS = [
     # (MU: "Electronic Technology"/"Semiconductors"), verified live the same
     # day. The page builds peer groups from these; facts passes them through.
     "sector", "industry",
+    # Security type (added 2026-09-03) — a third STRING column, same scanner
+    # row. Live-verified the same day across the pinned universe: "stock"
+    # (MU/LLY/CRWD/XOM/WTI/CBRS), "fund" (SPY/QQQ/SMH/XLE/NRGU/OILU/MUU/
+    # SOXS), "dr" (TSM/SKHY). Fetched so the 5-metric framework can tell a
+    # fund — which structurally has no revenue, margin or cash flow and can
+    # never resolve a single filter — apart from an equity that is genuinely
+    # still accumulating consensus history. "dr" is an ADR of a real
+    # operating company and keeps its score; ONLY "fund" is excluded. The
+    # heatmap already reads this same column browser-side.
+    "type",
     # NTM consensus (added 2026-08-21, 5-metric scoring framework) — forward
     # EPS/revenue estimates for the NEXT fiscal year. Live-verified on NVDA
     # and MU the same day via the FY/FQ internal-consistency check (the FY
@@ -630,6 +640,8 @@ def _row_to_quote(sym_field: str, d: list) -> dict | None:
         "rec_mark": _num(_COL["recommendation_mark"]),
         "sector": _txt(_COL["sector"]),
         "industry": _txt(_COL["industry"]),
+        # Security type (added 2026-09-03) — see TV_COLUMNS above.
+        "sec_type": _txt(_COL["type"]),
         # NTM consensus (added 2026-08-21) — see TV_COLUMNS above.
         "eps_ntm": _num(_COL["earnings_per_share_forecast_next_fy"]),
         "rev_ntm": _num(_COL["revenue_forecast_next_fy"]),

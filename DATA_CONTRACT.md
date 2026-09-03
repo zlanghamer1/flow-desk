@@ -380,6 +380,19 @@ values are `null` (never a string sentinel). All strings are already plain
 >   // fiscal year, not the current one. null if TV omits it for this ticker.
 >   "eps_ntm": 12.34,         // TV earnings_per_share_forecast_next_fy
 >   "rev_ntm": 42500000000.0, // TV revenue_forecast_next_fy ($)
+>   // ── Security type (added 2026-09-03) — TV's `type` column, verbatim,
+>   // off the same scanner batch-quote call. Live-verified the same day
+>   // across the pinned universe: "stock" (MU, LLY, CRWD, XOM, WTI, CBRS),
+>   // "fund" (SPY, QQQ, SMH, XLE, NRGU, OILU, MUU, SOXS), "dr" (TSM, SKHY).
+>   // null when TV omits it. Read ONLY to decide whether the 5-metric
+>   // framework applies at all — see the framework block's
+>   // "NOT_APPLICABLE" verdict below. Note "dr" (a depositary receipt: an
+>   // ADR of a real foreign operating company) is a REAL company with real
+>   // financials and keeps its framework score; only "fund" is excluded.
+>   // Never infer this from a missing market cap or a missing sidecar —
+>   // "no reading this cycle" and "structurally has no financials" are two
+>   // different facts (the 2026-08-23 round-12 heatmap conflation).
+>   "sec_type": "stock",
 >   // ── 5-metric scoring framework (added 2026-08-21) — see
 >   // fetcher/context.py's score_framework. OMITTED (not present, not null)
 >   // for a ticker the once-daily rebuild hasn't scored yet, same convention
@@ -425,6 +438,27 @@ values are `null` (never a string sentinel). All strings are already plain
 >                               // filter was permanently rejected by an
 >                               // implausibility ceiling (filter_flags) and
 >                               // this verdict will not move by waiting.
+>                               //
+>                               // "NOT_APPLICABLE" (added 2026-09-03) is a
+>                               // fourth, terminal state: `sec_type` is
+>                               // "fund", so the ticker is a basket of
+>                               // holdings with no revenue, margin or cash
+>                               // flow of its own and NONE of the five
+>                               // filters can ever resolve for it. All five
+>                               // filters are null, filter_flags is {} and
+>                               // metrics is {}. Before this, a fund
+>                               // published the identical bare "BUILDING"
+>                               // an equity genuinely still accumulating
+>                               // weekly consensus history publishes —
+>                               // 25 of the 63 scored names on the
+>                               // 2026-09-03 payload, every one of them
+>                               // promising a result that structurally
+>                               // cannot arrive. Same distinction "_CAPPED"
+>                               // draws for a tier verdict; this draws it
+>                               // for the no-tier case, which took the
+>                               // `evaluated < FRAMEWORK_MIN_EVALUATED`
+>                               // early return and never reached the
+>                               // _CAPPED/_BUILDING logic at all.
 >     "metrics": {              // only the metrics whose filter resolved; a
 >                               // key is simply absent when its filter is null
 >       "revenue_growth_ntm_pct": 24.3,

@@ -500,3 +500,93 @@ def test_consensus_history_prunes_to_max_weeks(tmp_path):
     # The oldest weeks are the ones dropped, not an arbitrary subset.
     assert "2020-W01" not in reloaded["weekly"]
     assert f"2020-W{52:02d}" in reloaded["weekly"]
+
+
+# ── sec_type gate: a fund can never resolve a filter (added 2026-09-03) ─────
+# Zach's report: "LLY is not a fund but says building as well?" — which
+# surfaced that the panel used one word, "building", for three unrelated
+# states. A fund's is the worst of the three: it promised a result that
+# structurally cannot arrive, on 25 of the 63 scored names.
+
+def test_fund_reads_not_applicable_never_building():
+    """A fund has no revenue/margin/cash flow of its own, so "still gathering
+    data" is a false promise for it — the verdict must say so outright."""
+    f = {"sec_type": "fund", "eps_ntm": 5.0, "rev_ntm": 200.0}
+    out = context.score_framework("SPY", f, _fund(annual_revenue=[100.0]), {"weekly": {}}, SESSION)
+    assert out["verdict"] == "NOT_APPLICABLE"
+    assert out["filters_passed"] == 0
+    assert out["filters_failed"] == 0
+    assert all(v is None for v in out["filters"].values())
+    assert out["metrics"] == {}
+    assert out["filter_flags"] == {}
+
+
+def test_fund_gate_wins_even_when_a_filter_would_have_passed():
+    """The rev_ntm/annual pair here would score revenue_growth True on any
+    ordinary name. A fund must not borrow a passing filter from vendor data
+    that does not describe a company."""
+    f = {"sec_type": "fund", "rev_ntm": 200.0}
+    out = context.score_framework("QQQ", f, _fund(annual_revenue=[100.0]), {"weekly": {}}, SESSION)
+    assert out["verdict"] == "NOT_APPLICABLE"
+    assert out["filters"]["revenue_growth"] is None
+
+
+@pytest.mark.parametrize("sec_type", ["dr", "stock", None, "", "DR"])
+def test_non_fund_types_keep_their_score(sec_type):
+    """"dr" is a depositary receipt — an ADR of a real foreign operating
+    company (TSM, SKHY) with real financials — and must keep its score. A
+    null/blank type is an absent reading, never grounds for a verdict. Only
+    "fund" is excluded; a blanket "anything that isn't stock" would have
+    silently killed two real companies on the pinned list."""
+    f = {"sec_type": sec_type, "rev_ntm": 121.0}
+    out = context.score_framework("TSM", f, _fund(annual_revenue=[100.0]), {"weekly": {}}, SESSION)
+    assert out["verdict"] != "NOT_APPLICABLE"
+    assert out["filters"]["revenue_growth"] is True
+
+
+def test_fund_gate_is_case_insensitive():
+    f = {"sec_type": "Fund"}
+    out = context.score_framework("SPY", f, None, {"weekly": {}}, SESSION)
+    assert out["verdict"] == "NOT_APPLICABLE"
+
+
+def test_not_applicable_emits_the_same_filter_keys_a_real_score_does():
+    """The early return builds its filter map from FRAMEWORK_FILTER_KEYS
+    rather than a hand-copied literal, so a sixth filter can never leave the
+    two shapes disagreeing. This test is what makes that guarantee real."""
+    scored = context.score_framework("X", {"rev_ntm": 121.0}, _fund(annual_revenue=[100.0]),
+                                     {"weekly": {}}, SESSION)
+    na = context.score_framework("SPY", {"sec_type": "fund"}, None, {"weekly": {}}, SESSION)
+    assert set(na["filters"]) == set(scored["filters"])
+    assert set(na) == set(scored)
+
+
+def test_sec_type_rides_the_scanner_quote_into_facts():
+    """facts.<T>.sec_type is what score_framework gates on, so the column has
+    to actually survive the quote -> facts hop."""
+    quotes = {"SPY": {"sec_type": "fund"}, "MU": {"sec_type": "stock"}, "X": {}}
+    facts = context.fetch_earnings_days(quotes, SESSION)
+    assert facts["SPY"]["sec_type"] == "fund"
+    assert facts["MU"]["sec_type"] == "stock"
+    assert facts["X"]["sec_type"] is None
+
+
+def test_type_column_is_fetched_and_parsed_end_to_end():
+    """The full chain the fund gate depends on: TV_COLUMNS asks for `type`,
+    _row_to_quote lifts it onto the quote as sec_type, fetch_earnings_days
+    carries it into facts, and score_framework gates on it. Any one of those
+    four hops silently dropping the field would put every fund back on the
+    bare "BUILDING" verdict with no test failing."""
+    from build_snapshot import TV_COLUMNS, _COL, _row_to_quote
+
+    assert "type" in TV_COLUMNS, "the fund gate has no signal without this column"
+
+    row = [None] * len(TV_COLUMNS)
+    row[_COL["close"]] = 640.0
+    row[_COL["type"]] = "fund"
+    quote = _row_to_quote("AMEX:SPY", row)
+    assert quote is not None and quote["sec_type"] == "fund"
+
+    facts = context.fetch_earnings_days({"SPY": quote}, SESSION)
+    out = context.score_framework("SPY", facts["SPY"], None, {"weekly": {}}, SESSION)
+    assert out["verdict"] == "NOT_APPLICABLE"
