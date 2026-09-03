@@ -3220,3 +3220,20 @@ non-obvious decisions:
   uses; `--accbg` on focus). No measured text contrast moved. Pressed
   controls get an accent gradient; the overlay toggles (`.seg.tog`) keep
   their square indicator and no gradient.
+- **A parallel vault-only session built its own version of this same ask
+  inside the vault mirror** (`ClaudeVault` commit `68245a3`, branch
+  `claude/desk-ui-news-display-w91s0s`, session `01RNdf3Vng6dimcuwAmDh5kg`;
+  it could not push to flow-desk). This branch is the version in the real
+  repo, verified by live render. Ported from theirs because they fit the ask
+  and mine lacked them: a second (teal, `--glow2`) page glow, the
+  accent-to-teal wordmark and logo-square gradient, rails a step darker than
+  the middle column (`.wl,.rr` via `color-mix`), fade-out masks on both
+  reels, the `.databanner` and `.tp.foc` gradients, the "N/M names" coverage
+  count in the Tagged headlines header, and the legal page's wash and raised
+  summary box. Not ported: their token names (`--srf3/--shade/--hl` map to
+  this file's `--srf2/--shadow/--hilite`), their 8.5s pace (8s here, with
+  the cap math above), their LATEST tag in the reel (the focus bar's NEWEST
+  line carries that fact here), and their reel wrapping to its own rail row
+  below 900px (the focus bar shows the newest headline on a phone instead).
+  Two sessions on one ask is how this happened; when a `/goal` is typed
+  twice, the second session should read the first's branch before building.

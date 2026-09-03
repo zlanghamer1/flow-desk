@@ -44,7 +44,7 @@
      is not a reference. These sit near 2:1 in both themes. */
   --grid:#2A323C; --gridzero:#3C4653;
   --tipline:rgba(134,149,166,.42);
-  --shadow:rgba(0,0,0,.55); --hilite:rgba(255,255,255,.045); --glow:rgba(94,159,216,.10);
+  --shadow:rgba(0,0,0,.55); --hilite:rgba(255,255,255,.045); --glow:rgba(94,159,216,.12); --glow2:rgba(63,181,176,.10);
 }
 @media (prefers-color-scheme: light){
   :root:not([data-theme="dark"]){
@@ -63,7 +63,7 @@
     --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   --grid:#D3DBE4; --gridzero:#B4C0CD;
   --tipline:rgba(82,96,111,.40);
-  --shadow:rgba(23,32,42,.10); --hilite:rgba(255,255,255,.80); --glow:rgba(47,111,174,.07);
+  --shadow:rgba(23,32,42,.10); --hilite:rgba(255,255,255,.80); --glow:rgba(47,111,174,.08); --glow2:rgba(30,122,118,.06);
   }
 }
 :root[data-theme="light"]{
@@ -78,7 +78,7 @@
   --spark-up:#1E9E63; --spark-dn:#D64545; --spark-n:#93A1B0;
   --grid:#D3DBE4; --gridzero:#B4C0CD;
   --tipline:rgba(82,96,111,.40);
-  --shadow:rgba(23,32,42,.10); --hilite:rgba(255,255,255,.80); --glow:rgba(47,111,174,.07);
+  --shadow:rgba(23,32,42,.10); --hilite:rgba(255,255,255,.80); --glow:rgba(47,111,174,.08); --glow2:rgba(30,122,118,.06);
 }
 :root[data-theme="dark"]{
   --bg:#0C0E11; --srf:#101318; --srf2:#14181E; --edge:#1D232B; --edge2:#161B21;
@@ -95,7 +95,7 @@
      is not a reference. These sit near 2:1 in both themes. */
   --grid:#2A323C; --gridzero:#3C4653;
   --tipline:rgba(134,149,166,.42);
-  --shadow:rgba(0,0,0,.55); --hilite:rgba(255,255,255,.045); --glow:rgba(94,159,216,.10);
+  --shadow:rgba(0,0,0,.55); --hilite:rgba(255,255,255,.045); --glow:rgba(94,159,216,.12); --glow2:rgba(63,181,176,.10);
 }
 /* ============ base ============ */
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1192,8 +1192,21 @@ html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink3) 50%,tran
    so no measured text contrast moves. Direction tints on the tape tiles use
    the existing --upbg/--dnbg tokens; the accent tints use --accbg. Light theme
    gets the same rules through its own tokens. ===== */
-.shell{background:radial-gradient(1100px 320px at 50% -160px, var(--glow), transparent 70%),
+.shell{background:radial-gradient(1100px 340px at 12% -140px, var(--glow), transparent 70%),
+  radial-gradient(900px 300px at 96% -120px, var(--glow2), transparent 70%),
   linear-gradient(180deg, var(--srf2) 0, var(--srf) 480px)}
+/* Rails sit a step below the middle column, so the chart and boards read as
+   the raised surface. */
+.wl,.rr{background:color-mix(in srgb, var(--srf) 72%, var(--bg))}
+/* Wordmark: accent-to-teal, the same two stops as the logo square. */
+.mark em{background:linear-gradient(90deg, var(--acc), var(--gex));-webkit-background-clip:text;background-clip:text;color:transparent}
+.databanner{background:linear-gradient(90deg, var(--dnbg), color-mix(in srgb, var(--dnbg) 40%, transparent))}
+/* Reels fade at their edges instead of cutting a headline mid-letter. */
+.newsticker{-webkit-mask-image:linear-gradient(90deg, transparent, #000 22px, #000 calc(100% - 22px), transparent);
+  mask-image:linear-gradient(90deg, transparent, #000 22px, #000 calc(100% - 22px), transparent)}
+.focnews{-webkit-mask-image:linear-gradient(90deg, #000 calc(100% - 26px), transparent);
+  mask-image:linear-gradient(90deg, #000 calc(100% - 26px), transparent)}
+@media (prefers-reduced-motion: reduce){ .newsticker,.focnews{-webkit-mask-image:none;mask-image:none} }
 .rail{background:linear-gradient(180deg, var(--srf2), var(--srf));box-shadow:0 1px 0 var(--edge), 0 10px 28px -18px var(--shadow)}
 .newsticker{background:linear-gradient(180deg, var(--srf2), var(--srf))}
 .tape{background:linear-gradient(180deg, var(--srf), var(--srf2))}
@@ -1210,6 +1223,7 @@ thead th{background-image:linear-gradient(180deg, var(--hilite), transparent)}
   background-image:linear-gradient(180deg, color-mix(in srgb, var(--acc) 26%, transparent), color-mix(in srgb, var(--acc) 6%, transparent))}
 .seg.tog button[aria-pressed="true"]{background-image:none}
 .wr.foc{background:linear-gradient(90deg, var(--accbg), transparent 75%)}
+.tp.foc{background:linear-gradient(180deg, var(--sel), var(--accbg));box-shadow:inset 0 -2px 0 var(--acc)}
 .focnews{background:linear-gradient(90deg, var(--accbg), transparent 55%);border-radius:4px;border-left-color:var(--acc)}
 .focnews .tk{color:var(--acc);font-weight:700}
 footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
@@ -1231,7 +1245,7 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
 
   <!-- ======= top rail ======= -->
   <div class="rail">
-    <h1 class="mark"><svg class="logo" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><rect width="24" height="24" rx="5" fill="var(--acc)"/><path d="M7.5 4v16M14.5 5v14" stroke="var(--srf)" stroke-width="1.6" stroke-linecap="round"/><rect x="5.2" y="9" width="4.6" height="7" rx="1" fill="var(--srf)"/><rect x="12.2" y="7" width="4.6" height="6" rx="1" fill="var(--srf)"/></svg><span class="mk">THE<em>DESK</em><small>FLOW · BRIEF · CATALYSTS</small></span></h1>
+    <h1 class="mark"><svg class="logo" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><defs><linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--acc)"/><stop offset="1" stop-color="var(--gex)"/></linearGradient></defs><rect width="24" height="24" rx="5" fill="url(#logoGrad)"/><path d="M7.5 4v16M14.5 5v14" stroke="var(--srf)" stroke-width="1.6" stroke-linecap="round"/><rect x="5.2" y="9" width="4.6" height="7" rx="1" fill="var(--srf)"/><rect x="12.2" y="7" width="4.6" height="6" rx="1" fill="var(--srf)"/></svg><span class="mk">THE<em>DESK</em><small>FLOW · BRIEF · CATALYSTS</small></span></h1>
     <span class="rl" id="railstate"><span class="lamp" id="raillamp"></span><b id="railstatetext">—</b></span>
     <span class="rl clock tn" id="clock">—</span>
     <span class="rl" id="railverdict" data-tip="The Morning Brief engine's synthesis score, computed once pre-market — same number the daily brief computes. Most of its measured edge is the overnight gap." hidden>verdict <b id="railverdicttext">—</b></span>
@@ -6482,7 +6496,14 @@ function renderNews(){
   var newsObj = data && data.news;
   var items = dedupeNews((newsObj && Array.isArray(newsObj.items)) ? newsObj.items : []);
   var stale = isStaleContext(data);
-  document.getElementById("newsstat").innerHTML = "TradingView news · hourly" + ageStampHTML(data && data.context_updated_at, stale);
+  // Coverage (2026-09-03): how many desk names returned at least one headline
+  // in the last hourly scan, out of every pinned name that resolved a quote.
+  var cov = "";
+  if(newsObj && newsObj.by_ticker && data && data.facts){
+    var have = Object.keys(newsObj.by_ticker).length, pinnedN = Object.keys(data.facts).length;
+    if(pinnedN) cov = ' · <span data-tip="'+esc("Desk names with at least one headline in the last hourly scan, out of every pinned name. A name with none is quiet, not missing.")+'">'+have+'/'+pinnedN+' names</span>';
+  }
+  document.getElementById("newsstat").innerHTML = "TradingView news · hourly" + cov + ageStampHTML(data && data.context_updated_at, stale);
   // A NULL news object means the scan did not return at all — the publisher
   // emits null when nothing came back for any symbol. Hiding the panel read as
   // "no headlines today" while the ticker above said the scan matched nothing.
