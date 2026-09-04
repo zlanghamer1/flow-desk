@@ -1,0 +1,227 @@
+{
+  "built": "2026-09-04",
+  "sym": "CAMT",
+  "short_pct_float": 8.66,
+  "pe_forward": 32.227,
+  "earnings": [
+    {
+      "period": "Q3 2025",
+      "date": "2025-09-30",
+      "report_date": "2025-11-10",
+      "session": "premarket",
+      "eps": 0.82,
+      "eps_est": 0.8032,
+      "eps_surprise_pct": 2.09,
+      "rev": 125993000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q4 2025",
+      "date": "2025-12-31",
+      "report_date": "2026-02-18",
+      "session": "premarket",
+      "eps": 0.81,
+      "eps_est": 0.81325,
+      "eps_surprise_pct": -0.4,
+      "rev": 128124000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q2 2026",
+      "date": "2026-06-30",
+      "report_date": "2026-08-10",
+      "session": "premarket",
+      "eps": 0.78,
+      "eps_est": 0.75967,
+      "eps_surprise_pct": 2.68,
+      "rev": 133243000,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    }
+  ],
+  "next_earnings": {
+    "date": "2026-11-16",
+    "session": "BMO",
+    "eps_est": 0.75967,
+    "rev_est": 130187330.0
+  },
+  "quarterly": {
+    "periods": [
+      "Q3 23",
+      "Q4 23",
+      "Q1 24",
+      "Q2 24",
+      "Q3 24",
+      "Q4 24",
+      "Q1 25",
+      "Q2 25",
+      "Q3 25",
+      "Q4 25",
+      "Q1 26",
+      "Q2 26"
+    ],
+    "revenue": [
+      80470000,
+      88690000,
+      97010000,
+      102591000,
+      112340000,
+      117293000,
+      118638000,
+      123317000,
+      125993000,
+      128124000,
+      121659000,
+      133243000
+    ],
+    "eps": [
+      0.46,
+      0.43353,
+      0.51,
+      0.569998,
+      0.67,
+      0.672206,
+      0.7,
+      0.68999,
+      -1.162299,
+      0.708618,
+      0.63,
+      0.46
+    ],
+    "ni": [
+      22058000,
+      20790000,
+      24799000,
+      27964000,
+      32743000.000000004,
+      33009000,
+      34311000,
+      33695000,
+      -53181000,
+      35897000,
+      31645000,
+      23305000
+    ],
+    "fcf": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "opinc": [
+      19065000,
+      17219000,
+      21238000,
+      25885000,
+      29646000,
+      31836000,
+      32700000.000000004,
+      31974000,
+      32345000,
+      34887000,
+      27266000,
+      27227000
+    ]
+  },
+  "annual": {
+    "periods": [
+      "FY22",
+      "FY23",
+      "FY24",
+      "FY25"
+    ],
+    "revenue": [
+      320909000,
+      315375000,
+      429234000,
+      496072000
+    ],
+    "eps": [
+      1.68011,
+      1.63348,
+      2.4222,
+      0.93631
+    ],
+    "ni": [
+      79949000,
+      78632000,
+      118515000.0,
+      50722000
+    ],
+    "fcf": [
+      null,
+      null,
+      null,
+      null
+    ],
+    "opinc": [
+      81498000,
+      65412000,
+      108605000,
+      131906000.0
+    ]
+  },
+  "ratings": [
+    {
+      "date": "2026-04-17",
+      "ts": 1776424559,
+      "dir": "down",
+      "firm": "Stifel",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": 185.0,
+      "pt_prior": 185.0
+    },
+    {
+      "date": "2025-10-13",
+      "ts": 1760379893,
+      "dir": "up",
+      "firm": "B of A Securities",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 135.0,
+      "pt_prior": 95.0
+    },
+    {
+      "date": "2024-08-05",
+      "ts": 1722879865,
+      "dir": "up",
+      "firm": "Northland Capital Markets",
+      "from": "Market Perform",
+      "to": "Outperform",
+      "pt": 99.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2024-01-16",
+      "ts": 1705423505,
+      "dir": "up",
+      "firm": "Barclays",
+      "from": "Equal-Weight",
+      "to": "Overweight",
+      "pt": 82.0,
+      "pt_prior": 65.0
+    },
+    {
+      "date": "2023-12-06",
+      "ts": 1701872649,
+      "dir": "up",
+      "firm": "B. Riley Securities",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 75.0,
+      "pt_prior": 70.0
+    }
+  ],
+  "currency": "USD"
+}

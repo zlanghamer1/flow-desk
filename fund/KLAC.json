@@ -1,0 +1,315 @@
+{
+  "built": "2026-09-04",
+  "sym": "KLAC",
+  "short_pct_float": 1.944,
+  "pe_forward": 31.716,
+  "earnings": [
+    {
+      "period": "Q1 2026",
+      "date": "2025-09-30",
+      "report_date": "2025-10-29",
+      "session": "afterhours",
+      "eps": 0.881,
+      "eps_est": 0.86172,
+      "eps_surprise_pct": 2.24,
+      "rev": 3209696000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q2 2026",
+      "date": "2025-12-31",
+      "report_date": "2026-01-29",
+      "session": "afterhours",
+      "eps": 0.885,
+      "eps_est": 0.87978,
+      "eps_surprise_pct": 0.59,
+      "rev": 3297146000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q3 2026",
+      "date": "2026-03-31",
+      "report_date": "2026-04-29",
+      "session": "afterhours",
+      "eps": 0.94,
+      "eps_est": 0.91703,
+      "eps_surprise_pct": 2.5,
+      "rev": 3415078000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q4 2026",
+      "date": "2026-06-30",
+      "report_date": "2026-07-28",
+      "session": "afterhours",
+      "eps": 1.05,
+      "eps_est": 0.99866,
+      "eps_surprise_pct": 5.14,
+      "rev": 3657556000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    }
+  ],
+  "next_earnings": {
+    "date": "2026-10-28",
+    "session": "BMO",
+    "eps_est": 1.17852,
+    "rev_est": 4040194880.0
+  },
+  "quarterly": {
+    "periods": [
+      "Q1 24",
+      "Q2 24",
+      "Q3 24",
+      "Q4 24",
+      "Q1 25",
+      "Q2 25",
+      "Q3 25",
+      "Q4 25",
+      "Q1 26",
+      "Q2 26",
+      "Q3 26",
+      "Q4 26"
+    ],
+    "revenue": [
+      2396956000,
+      2486726000,
+      2359830000,
+      2568735000,
+      2841541000,
+      3076851000,
+      3063029000,
+      3174741000,
+      3209696000,
+      3297146000,
+      3415078000,
+      3657556000
+    ],
+    "eps": [
+      0.541,
+      0.428,
+      0.443,
+      0.618339,
+      0.701,
+      0.616,
+      0.816,
+      0.909879,
+      0.847,
+      0.868,
+      0.912,
+      1.035463
+    ],
+    "ni": [
+      741375000,
+      582534000,
+      601541000,
+      836446000,
+      945851000,
+      824527000,
+      1088416000,
+      1202849000,
+      1121040000,
+      1145682000,
+      1200990000,
+      1363059000
+    ],
+    "fcf": [
+      815695000,
+      545441000,
+      838185000,
+      831870000,
+      934845000,
+      757192000,
+      990024000,
+      1064583000,
+      1065697000,
+      1262031000,
+      622264000,
+      817142000
+    ],
+    "opinc": [
+      899206000,
+      952318000,
+      806841000,
+      977319000,
+      1119923000,
+      1242152000,
+      1300392000,
+      1351760000,
+      1337177000,
+      1362146000,
+      1407509000,
+      1553948000
+    ]
+  },
+  "annual": {
+    "periods": [
+      "FY22",
+      "FY23",
+      "FY24",
+      "FY25",
+      "FY26"
+    ],
+    "revenue": [
+      9211883000,
+      10496056000,
+      9812247000,
+      12156162000,
+      13579476000
+    ],
+    "eps": [
+      2.19006,
+      2.40869,
+      2.03034,
+      3.04288,
+      3.66246
+    ],
+    "ni": [
+      3321807000,
+      3387277000,
+      2761896000,
+      4061643000,
+      4830771000
+    ],
+    "fcf": [
+      3005382000,
+      3328214000,
+      3031191000,
+      3746644000,
+      3767134000
+    ],
+    "opinc": [
+      3651610000,
+      3991788000,
+      3635684000,
+      5014227000,
+      5660780000
+    ]
+  },
+  "ratings": [
+    {
+      "date": "2026-01-15",
+      "ts": 1768485036,
+      "dir": "up",
+      "firm": "Wells Fargo",
+      "from": "Equal-Weight",
+      "to": "Overweight",
+      "pt": 1600.0,
+      "pt_prior": 1250.0
+    },
+    {
+      "date": "2026-01-13",
+      "ts": 1768329715,
+      "dir": "up",
+      "firm": "TD Cowen",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 1800.0,
+      "pt_prior": 1300.0
+    },
+    {
+      "date": "2025-12-16",
+      "ts": 1765887476,
+      "dir": "up",
+      "firm": "Cantor Fitzgerald",
+      "from": "Neutral",
+      "to": "Overweight",
+      "pt": 1500.0,
+      "pt_prior": 1350.0
+    },
+    {
+      "date": "2025-12-15",
+      "ts": 1765813920,
+      "dir": "up",
+      "firm": "Jefferies",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 1500.0,
+      "pt_prior": 1100.0
+    },
+    {
+      "date": "2025-10-20",
+      "ts": 1760958084,
+      "dir": "up",
+      "firm": "Barclays",
+      "from": "Equal-Weight",
+      "to": "Overweight",
+      "pt": 1200.0,
+      "pt_prior": 750.0
+    },
+    {
+      "date": "2025-09-22",
+      "ts": 1758562039,
+      "dir": "down",
+      "firm": "Morgan Stanley",
+      "from": "Overweight",
+      "to": "Equal-Weight",
+      "pt": 1093.0,
+      "pt_prior": 928.0
+    },
+    {
+      "date": "2025-07-08",
+      "ts": 1751978040,
+      "dir": "down",
+      "firm": "Wells Fargo",
+      "from": "Overweight",
+      "to": "Equal-Weight",
+      "pt": 920.0,
+      "pt_prior": 870.0
+    },
+    {
+      "date": "2025-03-31",
+      "ts": 1743413374,
+      "dir": "up",
+      "firm": "Morgan Stanley",
+      "from": "Equal-Weight",
+      "to": "Overweight",
+      "pt": 870.0,
+      "pt_prior": 748.0
+    },
+    {
+      "date": "2025-03-28",
+      "ts": 1743161669,
+      "dir": "down",
+      "firm": "Jefferies",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": 725.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2024-10-31",
+      "ts": 1730369727,
+      "dir": "up",
+      "firm": "Oppenheimer",
+      "from": "Perform",
+      "to": "Outperform",
+      "pt": 850.0,
+      "pt_prior": 750.0
+    },
+    {
+      "date": "2024-06-05",
+      "ts": 1717595401,
+      "dir": "up",
+      "firm": "Barclays",
+      "from": "Underweight",
+      "to": "Equal-Weight",
+      "pt": 765.0,
+      "pt_prior": 630.0
+    },
+    {
+      "date": "2024-01-29",
+      "ts": 1706532230,
+      "dir": "down",
+      "firm": "Susquehanna",
+      "from": "Positive",
+      "to": "Neutral",
+      "pt": 675.0,
+      "pt_prior": 640.0
+    }
+  ],
+  "currency": "USD"
+}

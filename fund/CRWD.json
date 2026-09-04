@@ -1,0 +1,519 @@
+{
+  "built": "2026-09-04",
+  "sym": "CRWD",
+  "short_pct_float": 2.401,
+  "pe_forward": 152.558,
+  "earnings": [
+    {
+      "period": "Q3 2026",
+      "date": "2025-10-31",
+      "report_date": "2025-12-02",
+      "session": "afterhours",
+      "eps": 0.24,
+      "eps_est": 0.23533,
+      "eps_surprise_pct": 1.98,
+      "rev": 1234244000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q4 2026",
+      "date": "2026-01-31",
+      "report_date": "2026-03-03",
+      "session": "afterhours",
+      "eps": 0.28,
+      "eps_est": 0.2757,
+      "eps_surprise_pct": 1.56,
+      "rev": 1305375000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q1 2027",
+      "date": "2026-04-30",
+      "report_date": "2026-06-03",
+      "session": "afterhours",
+      "eps": 0.275,
+      "eps_est": 0.26686,
+      "eps_surprise_pct": 3.05,
+      "rev": 1385629000.0,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    },
+    {
+      "period": "Q2 2027",
+      "date": "2026-07-31",
+      "report_date": "2026-08-26",
+      "session": "afterhours",
+      "eps": 0.31,
+      "eps_est": 0.29141,
+      "eps_surprise_pct": 6.38,
+      "rev": 1470897000,
+      "rev_est": null,
+      "rev_surprise_pct": null
+    }
+  ],
+  "next_earnings": {
+    "date": "2026-12-01",
+    "session": "BMO",
+    "eps_est": 0.31113,
+    "rev_est": 1527539420.0
+  },
+  "quarterly": {
+    "periods": [
+      "Q3 24",
+      "Q4 24",
+      "Q1 25",
+      "Q2 25",
+      "Q3 25",
+      "Q4 25",
+      "Q1 26",
+      "Q2 26",
+      "Q3 26",
+      "Q4 26",
+      "Q1 27",
+      "Q2 27"
+    ],
+    "revenue": [
+      786014000,
+      845335000,
+      921036000,
+      963872000,
+      1010178000,
+      1058538000,
+      1103434000,
+      1168952000,
+      1234244000,
+      1305375000,
+      1385629000,
+      1470897000
+    ],
+    "eps": [
+      0.0275,
+      0.054263,
+      0.0425,
+      0.0475,
+      -0.0175,
+      -0.089348,
+      -0.105,
+      -0.070178,
+      -0.035,
+      0.057665,
+      0.027365,
+      0.005204
+    ],
+    "ni": [
+      26665000,
+      53699000,
+      42820000,
+      47013000,
+      -16822000,
+      -88252000,
+      -104264000,
+      -70153000,
+      -33997000,
+      59377000,
+      27774000,
+      5306000
+    ],
+    "fcf": [
+      252254000,
+      294432000,
+      333545000,
+      287387000,
+      247432000,
+      258511000,
+      298356000,
+      302335000,
+      314146000,
+      395404000,
+      493313000,
+      405855000
+    ],
+    "opinc": [
+      3163000,
+      29671000,
+      6936000,
+      13658000,
+      -55723000,
+      -81271000,
+      -118713000,
+      -67072999.99999999,
+      -68977000,
+      13092000,
+      -30600000,
+      -33232000
+    ]
+  },
+  "annual": {
+    "periods": [
+      "FY23",
+      "FY24",
+      "FY25",
+      "FY26"
+    ],
+    "revenue": [
+      2241236000,
+      3055555000,
+      3953624000,
+      4812005000
+    ],
+    "eps": [
+      -0.20045,
+      0.08977,
+      -0.01685,
+      -0.15251
+    ],
+    "ni": [
+      -183245000,
+      89327000,
+      -15241000,
+      -149037000
+    ],
+    "fcf": [
+      705988000,
+      989678000,
+      1126875000,
+      1310241000
+    ],
+    "opinc": [
+      -190112000,
+      -1995000,
+      -116400000,
+      -241671000.0
+    ]
+  },
+  "ratings": [
+    {
+      "date": "2026-04-27",
+      "ts": 1777284404,
+      "dir": "up",
+      "firm": "Mizuho",
+      "from": "Neutral",
+      "to": "Outperform",
+      "pt": 520.0,
+      "pt_prior": 490.0
+    },
+    {
+      "date": "2026-04-21",
+      "ts": 1776769100,
+      "dir": "up",
+      "firm": "Keybanc",
+      "from": "Sector Weight",
+      "to": "Overweight",
+      "pt": 525.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2026-03-30",
+      "ts": 1774867692,
+      "dir": "up",
+      "firm": "Wolfe Research",
+      "from": "Peer Perform",
+      "to": "Outperform",
+      "pt": 450.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2026-03-10",
+      "ts": 1773135743,
+      "dir": "up",
+      "firm": "Morgan Stanley",
+      "from": "Equal-Weight",
+      "to": "Overweight",
+      "pt": 510.0,
+      "pt_prior": 487.0
+    },
+    {
+      "date": "2026-03-02",
+      "ts": 1772451011,
+      "dir": "up",
+      "firm": "Piper Sandler",
+      "from": "Neutral",
+      "to": "Overweight",
+      "pt": 520.0,
+      "pt_prior": 520.0
+    },
+    {
+      "date": "2026-02-13",
+      "ts": 1770987132,
+      "dir": "up",
+      "firm": "HSBC",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 446.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2026-01-12",
+      "ts": 1768219397,
+      "dir": "down",
+      "firm": "Keybanc",
+      "from": "Overweight",
+      "to": "Sector Weight",
+      "pt": null,
+      "pt_prior": null
+    },
+    {
+      "date": "2026-01-09",
+      "ts": 1767987175,
+      "dir": "up",
+      "firm": "Berenberg",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 600.0,
+      "pt_prior": 600.0
+    },
+    {
+      "date": "2025-12-11",
+      "ts": 1765480144,
+      "dir": "up",
+      "firm": "Freedom Capital Markets",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 550.0,
+      "pt_prior": 430.0
+    },
+    {
+      "date": "2025-12-11",
+      "ts": 1765454719,
+      "dir": "up",
+      "firm": "Freedom Broker",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 550.0,
+      "pt_prior": 430.0
+    },
+    {
+      "date": "2025-09-25",
+      "ts": 1758799362,
+      "dir": "up",
+      "firm": "Scotiabank",
+      "from": "Sector Perform",
+      "to": "Sector Outperform",
+      "pt": 600.0,
+      "pt_prior": 440.0
+    },
+    {
+      "date": "2025-07-14",
+      "ts": 1752493704,
+      "dir": "down",
+      "firm": "Morgan Stanley",
+      "from": "Overweight",
+      "to": "Equal-Weight",
+      "pt": 495.0,
+      "pt_prior": 490.0
+    },
+    {
+      "date": "2025-07-10",
+      "ts": 1752177489,
+      "dir": "down",
+      "firm": "CFRA",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": 555.0,
+      "pt_prior": 517.0
+    },
+    {
+      "date": "2025-07-07",
+      "ts": 1751898628,
+      "dir": "down",
+      "firm": "Piper Sandler",
+      "from": "Overweight",
+      "to": "Neutral",
+      "pt": 505.0,
+      "pt_prior": 505.0
+    },
+    {
+      "date": "2025-06-06",
+      "ts": 1749219458,
+      "dir": "down",
+      "firm": "Bernstein",
+      "from": "Outperform",
+      "to": "Market Perform",
+      "pt": 371.0,
+      "pt_prior": 371.0
+    },
+    {
+      "date": "2025-06-04",
+      "ts": 1749057136,
+      "dir": "down",
+      "firm": "Evercore ISI Group",
+      "from": "Outperform",
+      "to": "In-Line",
+      "pt": 440.0,
+      "pt_prior": 450.0
+    },
+    {
+      "date": "2025-06-04",
+      "ts": 1749043056,
+      "dir": "down",
+      "firm": "B of A Securities",
+      "from": "Buy",
+      "to": "Neutral",
+      "pt": 470.0,
+      "pt_prior": 420.0
+    },
+    {
+      "date": "2025-06-04",
+      "ts": 1749037884,
+      "dir": "down",
+      "firm": "Canaccord Genuity",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": 475.0,
+      "pt_prior": 420.0
+    },
+    {
+      "date": "2025-05-15",
+      "ts": 1747320622,
+      "dir": "down",
+      "firm": "Mizuho",
+      "from": "Outperform",
+      "to": "Neutral",
+      "pt": 425.0,
+      "pt_prior": 425.0
+    },
+    {
+      "date": "2025-03-25",
+      "ts": 1742913483,
+      "dir": "up",
+      "firm": "BTIG",
+      "from": "Neutral",
+      "to": "Buy",
+      "pt": 431.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2025-02-03",
+      "ts": 1738580975,
+      "dir": "down",
+      "firm": "Baird",
+      "from": "Outperform",
+      "to": "Neutral",
+      "pt": 430.0,
+      "pt_prior": 390.0
+    },
+    {
+      "date": "2024-11-27",
+      "ts": 1732704723,
+      "dir": "down",
+      "firm": "HSBC",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": 347.0,
+      "pt_prior": null
+    },
+    {
+      "date": "2024-08-30",
+      "ts": 1725015735,
+      "dir": "up",
+      "firm": "HSBC",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 339.0,
+      "pt_prior": 302.0
+    },
+    {
+      "date": "2024-08-06",
+      "ts": 1722936270,
+      "dir": "up",
+      "firm": "Piper Sandler",
+      "from": "Neutral",
+      "to": "Overweight",
+      "pt": 290.0,
+      "pt_prior": 310.0
+    },
+    {
+      "date": "2024-07-23",
+      "ts": 1721729661,
+      "dir": "down",
+      "firm": "HSBC",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": 302.0,
+      "pt_prior": 388.0
+    },
+    {
+      "date": "2024-07-22",
+      "ts": 1721666969,
+      "dir": "down",
+      "firm": "Scotiabank",
+      "from": "Sector Outperform",
+      "to": "Sector Perform",
+      "pt": 300.0,
+      "pt_prior": 393.0
+    },
+    {
+      "date": "2024-07-22",
+      "ts": 1721648317,
+      "dir": "down",
+      "firm": "BTIG",
+      "from": "Buy",
+      "to": "Neutral",
+      "pt": null,
+      "pt_prior": null
+    },
+    {
+      "date": "2024-07-22",
+      "ts": 1721641681,
+      "dir": "down",
+      "firm": "Guggenheim",
+      "from": "Buy",
+      "to": "Neutral",
+      "pt": null,
+      "pt_prior": null
+    },
+    {
+      "date": "2024-07-18",
+      "ts": 1721317854,
+      "dir": "down",
+      "firm": "Redburn Atlantic",
+      "from": "Buy",
+      "to": "Sell",
+      "pt": 275.0,
+      "pt_prior": 380.0
+    },
+    {
+      "date": "2024-07-02",
+      "ts": 1719912008,
+      "dir": "down",
+      "firm": "Piper Sandler",
+      "from": "Overweight",
+      "to": "Neutral",
+      "pt": 400.0,
+      "pt_prior": 400.0
+    },
+    {
+      "date": "2024-01-17",
+      "ts": 1705494341,
+      "dir": "down",
+      "firm": "WestPark Capital",
+      "from": "Buy",
+      "to": "Hold",
+      "pt": null,
+      "pt_prior": null
+    },
+    {
+      "date": "2024-01-09",
+      "ts": 1704795389,
+      "dir": "up",
+      "firm": "Morgan Stanley",
+      "from": "Equal-Weight",
+      "to": "Overweight",
+      "pt": 304.0,
+      "pt_prior": 203.0
+    },
+    {
+      "date": "2023-10-19",
+      "ts": 1697710257,
+      "dir": "up",
+      "firm": "Jefferies",
+      "from": "Hold",
+      "to": "Buy",
+      "pt": 225.0,
+      "pt_prior": 170.0
+    }
+  ],
+  "currency": "USD"
+}

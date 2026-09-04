@@ -1,0 +1,26 @@
+{
+  "built": "2026-09-04",
+  "sym": "XLU",
+  "short_pct_float": null,
+  "pe_forward": null,
+  "earnings": [],
+  "next_earnings": null,
+  "quarterly": {
+    "periods": [],
+    "revenue": [],
+    "eps": [],
+    "ni": [],
+    "fcf": [],
+    "opinc": []
+  },
+  "annual": {
+    "periods": [],
+    "revenue": [],
+    "eps": [],
+    "ni": [],
+    "fcf": [],
+    "opinc": []
+  },
+  "ratings": [],
+  "currency": "USD"
+}
