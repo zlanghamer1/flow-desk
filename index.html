@@ -934,6 +934,11 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 .fcbars i{display:block;height:6px;border-radius:3px;background:var(--edge);position:relative;overflow:hidden}
 .fcbars i>u{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--ink3);text-decoration:none}
 .fcgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px 14px;margin-top:6px}
+/* Forecast chart (2026-09-05). figure/figcaption carry their own margins by
+   default, which double against the .dsec gap. */
+.fcchart{margin:10px 0 2px;display:flex;flex-direction:column;gap:5px}
+.fcchart svg{width:100%;height:auto;display:block}
+.fcchart figcaption{margin:0}
 .rb.big b{width:9px;height:9px}
 .rb.big .lo,.rb.big .hi{top:9px;font-size:9.5px}
 
@@ -14465,6 +14470,182 @@ function fcCoverage(sym){
 // is comparing it against, the exact "two surfaces, one fact, two answers"
 // bug this file has spent a dozen rounds removing. The number and the scale
 // are printed instead; the buckets underneath carry the shape.
+/* The forecast chart (2026-09-05). Zach's reference was TradingView's own
+   Forecast page for MU on his phone: the price line, then a fan forward from
+   the last price out to the highest and lowest published targets with the
+   average dashed through it, and each level badged at the right edge. It
+   replaces a 6px `.rb big` strip that carried the same three numbers and read
+   as a divider rule on a phone — the "not showing a graph" he reported.
+
+   Honesty rules this chart inherits from the rest of the page:
+   - The fan is GEOMETRY, not a path. Nobody forecast the line between here
+     and there, and the caption under the chart says so. Only the endpoints
+     are published.
+   - Every wedge takes its colour from its OWN sign against the last price,
+     never from which bound it is, so a name trading above every published
+     target draws two falling red wedges instead of a green one pointing down.
+     rangeBarHTML makes the same choice on a 52-week bar the price has broken.
+   - The price plotted is the same 15-minute-delayed print the rest of the
+     page uses; the line above the chart already badges it STALE when it is.
+   - The viewBox width follows the narrow/wide split every other chart in the
+     kit uses, and onViewportChange re-renders this tab across it. Text is
+     authored in viewBox units, so a single hard-coded width puts the axis at
+     6px on a phone (the bug the vs-Peers chart carried).
+   - Badges are nudged apart when two levels land within a badge of each
+     other, so a tight range cannot stack them into one illegible block. The
+     tick at the plot edge stays on the true level, so a nudged badge still
+     points at where its number actually sits. */
+function fcProjectionSVG(sym, px, avg, hi, lo){
+  if(px==null || !(px>0)) return "";
+  if(hi==null && lo==null && avg==null) return "";
+  var full = barsOf(sym), n = full.length;
+  // Under about three months of dailies the line is too short to be a
+  // reference for a one-year target, and the numbers under the chart already
+  // carry every level. The caller falls back to the range strip.
+  if(n < 60) return "";
+  var vals = [], i;
+  for(i=0;i<n;i++){ if(full[i]!=null) vals.push(full[i]); }
+  if(vals.length < 40) return "";
+  vals.push(px);
+  [hi, avg, lo].forEach(function(v){ if(v!=null) vals.push(v); });
+  var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+  var vpad = (mx-mn)*0.10 || Math.abs(mx||1)*0.1;
+  mn = Math.max(0, mn-vpad); mx = mx+vpad;
+  if(mn===mx){ mn = Math.max(0, mn-1); mx = mx+1; }
+
+  var narrow = (window.innerWidth || 1440) <= 760;
+  var W = narrow ? 360 : 620, H = narrow ? 232 : 262;
+  var FS = 11, padT = 14, padB = 22, padR = 5;
+  var ticks = niceTicks(mn, mx, 4), fmt = tickFormatter(ticks, "money");
+  var widest = 0;
+  ticks.forEach(function(t){ widest = Math.max(widest, String(fmt(t)).length); });
+  var padL = Math.ceil(widest*FS*0.62) + 8;
+  var plotW = W-padL-padR, plotH = H-padT-padB;
+  // bars.json keeps about two years of dailies and the targets are one-year
+  // forecasts, so the forward third is drawn to the same scale as the history
+  // behind it rather than to whatever width was left over.
+  var fwdW = plotW/3, histW = plotW-fwdW;
+  var x0 = padL+histW, xR = padL+plotW, yB = padT+plotH;
+  var Y = function(v){ return padT + (1-(v-mn)/(mx-mn))*plotH; };
+  var XH = function(k){ return padL + (n<=1 ? histW : k*histW/(n-1)); };
+  var yNow = Y(px), out = "";
+
+  // forward region: its own ground, so the eye reads the split before it
+  // reads the fan
+  out += '<rect x="'+x0.toFixed(1)+'" y="'+padT+'" width="'+fwdW.toFixed(1)+'" height="'+plotH.toFixed(1)
+       + '" fill="var(--srf2)"/>';
+  ticks.forEach(function(t){
+    var y = Y(t);
+    if(y < padT-1 || y > yB+1) return;
+    out += '<line x1="'+padL+'" y1="'+y.toFixed(1)+'" x2="'+xR.toFixed(1)+'" y2="'+y.toFixed(1)
+         + '" stroke="var(--grid)" stroke-width="1"/>'
+         + '<text x="'+(padL-5)+'" y="'+(y+3.6).toFixed(1)+'" text-anchor="end" fill="var(--ink3)" font-size="'
+         + FS+'">'+esc(fmt(t))+'</text>';
+  });
+
+  // the fan, under the price line so the line stays the darkest mark
+  function wedge(v){
+    if(v==null) return "";
+    return '<polygon points="'+x0.toFixed(1)+','+yNow.toFixed(1)+' '+xR.toFixed(1)+','+Y(v).toFixed(1)
+         + ' '+xR.toFixed(1)+','+yNow.toFixed(1)+'" fill="'+(v>=px?"var(--upbg)":"var(--dnbg)")+'"/>';
+  }
+  function ray(v, dash){
+    if(v==null) return "";
+    return '<line x1="'+x0.toFixed(1)+'" y1="'+yNow.toFixed(1)+'" x2="'+xR.toFixed(1)+'" y2="'+Y(v).toFixed(1)
+         + '" stroke="'+(v>=px?"var(--up)":"var(--dn)")+'" stroke-width="'+(dash?1.6:1.2)+'"'
+         + (dash?' stroke-dasharray="5 3"':'')+' fill="none"/>';
+  }
+  out += wedge(hi)+wedge(lo)+ray(hi,false)+ray(lo,false)+ray(avg,true);
+
+  // price history
+  var d = "", first = null, last = null, started = false;
+  for(i=0;i<n;i++){
+    if(full[i]==null) continue;
+    var xx = XH(i), yy = Y(full[i]);
+    d += (started?"L":"M")+xx.toFixed(1)+" "+yy.toFixed(1);
+    if(!started){ first = xx; started = true; }
+    last = xx;
+  }
+  if(!started) return "";
+  out += '<path d="'+d+'L'+last.toFixed(1)+' '+yB.toFixed(1)+'L'+first.toFixed(1)+' '+yB.toFixed(1)
+       + 'Z" fill="var(--accbg)"/>'
+       + '<path d="'+d+'" fill="none" stroke="var(--acc)" stroke-width="1.8" stroke-linejoin="round"/>';
+
+  // today: the divider, the level it anchors, and the point the fan opens from
+  out += '<line x1="'+x0.toFixed(1)+'" y1="'+padT+'" x2="'+x0.toFixed(1)+'" y2="'+yB.toFixed(1)
+       + '" stroke="var(--grid)" stroke-width="1"/>'
+       + '<line x1="'+x0.toFixed(1)+'" y1="'+yNow.toFixed(1)+'" x2="'+xR.toFixed(1)+'" y2="'+yNow.toFixed(1)
+       + '" stroke="var(--acc)" stroke-width="1.3"/>'
+       + '<circle cx="'+x0.toFixed(1)+'" cy="'+yNow.toFixed(1)+'" r="3.1" fill="var(--acc)" stroke="var(--srf)" stroke-width="1.5"/>';
+
+  // right-edge badges
+  var badges = [];
+  function badge(v, lab){
+    if(v==null) return;
+    badges.push({ y0:Y(v), y:Y(v), col:(lab==="now" ? "var(--acc)" : (v>=px ? "var(--up)" : "var(--dn)")),
+                  txt: lab + (lab==="now" ? "" : " "+fwSignedFixed((v-px)/px*100, 0)+"%") });
+  }
+  badge(hi,"max"); badge(avg,"avg"); badge(px,"now"); badge(lo,"min");
+  badges.sort(function(a2,b2){ return a2.y-b2.y; });
+  var BH = 14.5, GAP = 2.5;
+  for(i=1;i<badges.length;i++){
+    if(badges[i].y - badges[i-1].y < BH+GAP) badges[i].y = badges[i-1].y + BH + GAP;
+  }
+  var over = badges.length ? (badges[badges.length-1].y + BH/2) - yB : 0;
+  if(over > 0) badges.forEach(function(bg){ bg.y -= over; });
+  if(badges.length && badges[0].y - BH/2 < padT){
+    var up = padT - (badges[0].y - BH/2);
+    badges.forEach(function(bg){ bg.y += up; });
+  }
+  badges.forEach(function(bg){
+    // 0.58em/char measured a 400-weight label; these are 700 and clipped
+    // "max +130%" past the right edge of the viewBox at phone width.
+    var bw = Math.min(Math.max(38, bg.txt.length*7.2 + 12), plotW-4);
+    var bx = xR - bw;
+    // A nudged badge keeps a tick on its real level so the label never claims
+    // a height its number does not sit at.
+    if(Math.abs(bg.y - bg.y0) > 1){
+      out += '<line x1="'+(bx-6).toFixed(1)+'" y1="'+bg.y0.toFixed(1)+'" x2="'+bx.toFixed(1)+'" y2="'
+           + bg.y0.toFixed(1)+'" stroke="'+bg.col+'" stroke-width="1.2"/>';
+    }
+    out += '<rect x="'+bx.toFixed(1)+'" y="'+(bg.y-BH/2).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+BH
+         + '" rx="2.5" fill="'+bg.col+'"/>'
+         + '<text x="'+(bx+bw/2).toFixed(1)+'" y="'+(bg.y+3.6).toFixed(1)+'" text-anchor="middle" fill="var(--srf)"'
+         + ' font-size="10.5" font-weight="700">'+esc(bg.txt)+'</text>';
+  });
+
+  // x axis: the year each January starts, plus the year the targets run into
+  var dates = barSessionDates(sym, n), xlab = "";
+  if(dates && dates.length===n){
+    // Only real January boundaries get a label. Labelling the FIRST bar's own
+    // year too printed "20242025" — the series opens mid-year, so that label
+    // and the January tick beside it are a few units apart.
+    var marks = [];
+    for(i=1;i<n;i++){
+      var yr = dates[i].getUTCFullYear();
+      if(dates[i-1].getUTCFullYear()===yr) continue;
+      marks.push({x:XH(i), t:String(yr), tick:true});
+    }
+    // The year the targets run into owns the right edge; a January tick that
+    // lands under it is the one that gives way.
+    var placed = [{x:xR, t:String(dates[n-1].getUTCFullYear()+1), tick:false, anchor:"end"}];
+    marks.forEach(function(m){
+      var clash = placed.some(function(q){ return Math.abs(q.x-m.x) < 30; });
+      if(!clash) placed.push(m);
+    });
+    placed.forEach(function(m){
+      xlab += '<text x="'+m.x.toFixed(1)+'" y="'+(yB+14)+'" text-anchor="'+(m.anchor||"middle")
+           +  '" fill="var(--ink3)" font-size="10.5">'+m.t+'</text>';
+      if(m.tick) xlab += '<line x1="'+m.x.toFixed(1)+'" y1="'+yB+'" x2="'+m.x.toFixed(1)+'" y2="'+(yB+3.5)
+           +  '" stroke="var(--grid)"/>';
+    });
+  }
+  var alt = sym+" price over the last "+Math.round(n/252*12)+" months, then the published one-year targets: "
+    + (hi!=null?("highest "+fmtpx(hi)+", "):"") + (avg!=null?("average "+fmtpx(avg)+", "):"")
+    + (lo!=null?("lowest "+fmtpx(lo)+", "):"") + "against "+fmtpx(px)+" now.";
+  return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(alt)+'"><title>'+esc(alt)+'</title>'
+       + out + xlab + '</svg>';
+}
 function fcTargetSecHTML(sym, f){
   var avg = fcNum(f.target), hi = fcNum(f.target_high), lo = fcNum(f.target_low),
       med = fcNum(f.target_median);
@@ -14496,8 +14677,17 @@ function fcTargetSecHTML(sym, f){
   // are plotted on it, with the price extending the bound it breaks rather
   // than clamping silently — the same honesty rangeBarHTML applies to a
   // 52-week bar that today's price has already broken through.
-  var bar = "";
-  if(hi!=null && lo!=null && hi>lo){
+  var bar = fcProjectionSVG(sym, px, avg, hi, lo);
+  if(bar){
+    bar = '<figure class="fcchart">'+bar+'<figcaption class="note">'
+      + 'The shaded fan is not a path anybody forecast \u2014 only its endpoints are published. It shows where '
+      + 'the highest and lowest one-year targets sit against where the price has actually been, with the '
+      + 'average dashed through the middle. The badges read as a move from today.'
+      + '</figcaption></figure>';
+  }
+  // No usable daily history \u2014 an ad-hoc searched ticker whose bars never
+  // loaded \u2014 still gets the range as the strip this chart replaced.
+  else if(hi!=null && lo!=null && hi>lo){
     var blo = lo, bhi = hi, broke = "";
     if(px!=null && px > bhi){ bhi = px; broke = "above"; }
     if(px!=null && px < blo){ blo = px; broke = "below"; }

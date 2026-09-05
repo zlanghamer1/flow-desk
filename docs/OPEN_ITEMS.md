@@ -439,9 +439,39 @@ Verified: `pytest fetcher` 377 passed, `pytest tests` 6 passed; Playwright at
 Overview, MU unchanged and still drawing its range bar and rating bars, zero
 page errors, no sideways scroll at either width.
 
-STILL OPEN from the same report: the price-target "graph" on a covered name is
-a 6px `.rb big` hairline, which does not read as a chart. Zach is supplying a
-reference picture for what it should be.
+Second half of the same report, shipped the same day against Zach's reference
+picture (TradingView's own Forecast page for MU on his phone): the price-target
+"graph" on a covered name was a 6px `.rb big` hairline that reads as a divider
+rule. `fcProjectionSVG` replaces it with a real chart — the daily price line
+with an area fill, then a fan forward from the last price to the highest and
+lowest published targets with the average dashed through it, and each level
+badged at the right edge as a move from today.
+
+Decisions inside it worth not re-litigating:
+- The fan is geometry, not a path. Only its endpoints are published, and the
+  figcaption says so. Nobody forecast the line between here and there.
+- Each wedge takes its colour from its own sign against the last price, never
+  from which bound it is, so a name trading above every published target draws
+  two falling red wedges rather than a green one pointing down — the same
+  choice `rangeBarHTML` makes on a 52-week bar the price has broken.
+- Twelve months forward against the ~24 months of dailies `bars.json` keeps, so
+  the forward third is drawn to the same scale as the history behind it.
+- viewBox width follows the existing narrow/wide split (`onViewportChange`
+  already re-renders this tab across it); a single hard-coded width is what put
+  the vs-Peers axis at 6.5px on a phone.
+- The old strip survives as the fallback for a name with under 60 dailies — an
+  ad-hoc searched ticker whose bars never loaded still gets its range.
+- Two defects were caught in the render pass and fixed before shipping: badge
+  width measured at 0.58em/char clipped "max +130%" past the right edge at
+  phone width (these labels are 700-weight), and labelling the first bar's own
+  year alongside the January tick beside it printed "20242025".
+
+NOT built, deliberately: the rating gauge from the same screenshot. A gauge
+places a needle inside a named band, which is the assertion this panel already
+refuses to make — TradingView's own label disagrees with its own mark (AAOI
+1.4375 reads "Buy" there, "Strong buy" under any band edges we can derive), and
+the band edges are not recoverable from the data we have. The Buy/Hold/Sell
+bars stay.
 
 ## Shipped 2026-08-23, Fable architect pass (14 findings, all fixed)
 
