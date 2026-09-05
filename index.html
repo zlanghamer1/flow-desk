@@ -14874,7 +14874,16 @@ function fcRatingSecHTML(sym, f){
   // for three of five columns and reporting its own gap as the feed's defect.
   // If it ever fires again it is a real vendor gap, so still never rescale the
   // bars to close it.
-  var gap = (tot!=null && bucketed < tot)
+  //
+  // GATED ON HAVING ALL FIVE. A null bucket means "this snapshot predates the
+  // column", not "zero analysts" -- data.json is republished weekdays only, so
+  // after the 2026-09-05 fetcher change every tracked name carried a null
+  // rec_over/rec_under until the next weekday run. Summing those as zero would
+  // have reprinted the exact phantom shortfall this change removed, on all 69
+  // tracked names, for the whole weekend. Unknown is shown as an em dash on
+  // its own row and asserts nothing.
+  var haveAll = (sbuy!=null && buy!=null && hold!=null && sell!=null && ssell!=null);
+  var gap = (haveAll && tot!=null && bucketed < tot)
     ? ('<div class="note">'+(tot-bucketed)+' of '+tot+' not bucketed by the feed.</div>')
     : "";
   // The gauge carries the mark and the analyst count, so the two kvrows that
