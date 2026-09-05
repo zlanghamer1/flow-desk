@@ -860,14 +860,32 @@ constants (`TA_PIVOT_K`, `TA_MIN_SPAN`, `TA_TOUCH_TOL`, `TA_CONTAIN_TOL`).
   `financialData` targets were rejected: their counts and means disagree with
   TV's and with Yahoo's own analyst count, so mixing them would put two
   contradictory numbers on one panel.
-- **No consensus word is printed.** TV's 1-to-5 mark is not a plain average of
-  its own buckets, and the band edges cannot be recovered from the data
-  available — a mapped label contradicted TradingView's own gauge on live
-  data. Print the number and its scale. Do not add a label without a verified
-  mapping.
-- buy+hold+sell can be less than `rec_total` (three exposed buckets against
-  five on TV's page). **Print the shortfall; never rescale the bars to close
-  it.**
+- **`rec_mark` runs 1..3, NOT 1..5** (corrected 2026-09-05). 1 = every analyst
+  a strong buy, 2 = neutral, 3 = every analyst a strong sell. The market's
+  worst consensus is 2.7143 and nothing can exceed 3. The gauge maps it
+  `(v-1)/2*180`. Drawing it on a 1..5 arc — which shipped for two days — put a
+  dead-neutral 2.00 on "Buy" and made the Sell half unreachable, so every name
+  read more bullish than it was.
+- **There are FIVE rating buckets and all five must be requested.** TV's own
+  column names understate two of them: `recommendation_buy` weighs 1.0 (a
+  STRONG buy) and `recommendation_sell` 3.0 (a STRONG sell), with
+  `recommendation_over` (1.5) and `recommendation_under` (2.5) carrying the
+  plain ones. Label them accordingly or the bars contradict the needle. With
+  all five they sum to `rec_total` exactly; a shortfall is a real vendor gap,
+  and **is still never closed by rescaling the bars.**
+- **No consensus word is printed** — but the old reason for it was wrong, so do
+  not repeat it. It claimed the mark "is not a plain average of its own
+  buckets" and that a mapped label contradicted TradingView. Both were
+  artefacts of the 1..5 error and the mislabelled buckets. The mark IS a plain
+  weighted average: AAOI's 4 buy / 1 over / 3 hold = (4+1.5+6)/8 = 1.4375, its
+  published mark exactly, landing by the Buy anchor, which is TradingView's own
+  label. The word is omitted because Zach asked for a gauge and a number and
+  has not asked for one. That is a display choice, not a data limit.
+- **Before writing "the vendor does not publish X", check.** Fetch
+  `https://scanner.tradingview.com/america/metainfo` (keyless) and grep its
+  3,777-field list. Three separate forecast bugs in one week were all the same
+  shape — the request narrower than the feed — and twice the page printed its
+  own gap as the vendor's defect.
 - When the live price sits outside the published target range, the broken
   bound becomes the price and is labeled "price", not "low"/"high". The
   diamond is the live price; the accent tick is the average.
