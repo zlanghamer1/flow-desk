@@ -5178,10 +5178,7 @@ function contractLine(c){
   // boards finding #2).
   var clVol = num(c.volume), clOi = num(c.open_interest);
   if(clVol!=null || clOi!=null){
-    bits.push('<span class="m" data-tip="'+esc("Today’s volume and open interest on this exact contract. Thin or brand-new "
-      + "contracts trade at wide spreads — the delayed last price may not be a fillable price. Check the live bid/ask "
-      + "before acting. Volume far above open interest means most of today’s activity is new positions the data cannot "
-      + "tell apart from round-tripping.")+'">vol '
+    bits.push('<span class="m">vol '
       +(clVol!=null?Math.round(clVol).toLocaleString():"—")+' · OI '+(clOi!=null?Math.round(clOi).toLocaleString():"—")+'</span>');
   }
   // No longer wrapped in a single esc() at the end: expiry is pre-escaped
@@ -5208,14 +5205,14 @@ function suggestedContractLine(c, spot){
   if(target!=null && entry!=null && delta!=null && delta!==0 && num(spot)){
     var movePct = (target-entry)/Math.abs(delta)/num(spot)*100;
     if(isFinite(movePct) && movePct>0){
-      trade.push('<span class="m" data-tip="Rough stock move needed to reach the target, translated through the contract’s delta AS IT IS TODAY. Two things move the real answer, in opposite directions: time decay works against the position the whole way, which makes the move needed larger; and delta itself RISES as the stock moves your way, which makes it smaller. A slow grind lands worse than this number, a fast move lands better. Treat it as an order of magnitude, not an estimate.">needs ~'
+      trade.push('<span class="m">needs ~'
         +(side==="PUT"?"−":"+")+movePct.toFixed(0)+'% on the stock</span>');
     }
   }
   // Liquidity check — the entry above is a 15-min-delayed LAST, and on a thin
   // contract the spread can eat a third of the stated stop before anything moves.
   if(vol!=null || oi!=null){
-    trade.push('<span class="m" data-tip="Today’s volume and open interest on this exact contract. Thin contracts trade at wide spreads — the delayed last price shown as entry may not be a fillable price. Check the live bid/ask before acting.">vol '
+    trade.push('<span class="m">vol '
       +(vol!=null?Math.round(vol).toLocaleString():"—")+' · OI '+(oi!=null?Math.round(oi).toLocaleString():"—")+'</span>');
   }
   return head + (trade.length? (" · "+trade.join(" · ")) : "");
@@ -14617,18 +14614,34 @@ function fcTargetSecHTML(sym, f){
       + esc(sym)+'. Funds and thinly-covered names usually carry none.</div></div>';
   }
   var d = dispQuote(liveBySym(sym)), px = d.px;
+  // The chart measures the target fan against a price. That price used to come
+  // only from the live poll, so a null px returned "" at fcProjectionSVG's first
+  // guard and no chart drew. The panel does not re-render when the quote later
+  // lands, so on a phone -- slower network, cold start, the poll routinely
+  // landing after the tab is opened -- the chart stayed absent for the whole
+  // visit. Fall back to the newest daily close, which is already in memory, and
+  // let the sub-line say which price is on screen.
+  var fromClose = false, pxRef = px;
+  if(pxRef==null || !(pxRef>0)){
+    var hist = barsOf(sym);
+    for(var bi=hist.length-1; bi>=0; bi--){
+      if(hist[bi]!=null && hist[bi]>0){ pxRef = hist[bi]; fromClose = true; break; }
+    }
+  }
   var head, sub = "";
   if(avg!=null){
     head = '<b style="font-size:19px">'+fmtpx(avg)+'</b>';
-    if(px!=null && px>0){
-      var dl = avg - px, pc = dl/px*100;
+    if(pxRef!=null && pxRef>0){
+      var dl = avg - pxRef, pc = dl/pxRef*100;
       // A per-share delta, NOT fmDollarsSigned — that helper formats in
       // millions/billions for flow dollars and would render a $69 gap as
       // "$69". The minus sign is the page's U+2212, same as every other
       // signed figure on screen.
       head += ' <span class="'+(dl>=0?"u":"d")+'" style="font-size:11.5px">'
         + (dl>=0?"+":"\u2212")+fmtpx(Math.abs(dl))+' · '+fwSignedFixed(pc,1)+'%</span>';
-      sub = 'against '+fmtpx(px)+' now'+(liveStale(sym)?' <span class="sess">STALE</span>':'');
+      sub = fromClose
+        ? ('against '+fmtpx(pxRef)+' at the last close')
+        : ('against '+fmtpx(pxRef)+' now'+(liveStale(sym)?' <span class="sess">STALE</span>':''));
     } else {
       sub = 'no live price to compare it against right now';
     }
@@ -14640,7 +14653,7 @@ function fcTargetSecHTML(sym, f){
   // are plotted on it, with the price extending the bound it breaks rather
   // than clamping silently — the same honesty rangeBarHTML applies to a
   // 52-week bar that today's price has already broken through.
-  var bar = fcProjectionSVG(sym, px, avg, hi, lo);
+  var bar = fcProjectionSVG(sym, pxRef, avg, hi, lo);
   if(bar){
     // No caption. What the fan is and is not lives in the chart's own
     // data-tip (CLAUDE.md, "NO EXPLANATION TEXT ON THE PAGE").
@@ -14650,8 +14663,8 @@ function fcTargetSecHTML(sym, f){
   // loaded \u2014 still gets the range as the strip this chart replaced.
   else if(hi!=null && lo!=null && hi>lo){
     var blo = lo, bhi = hi, broke = "";
-    if(px!=null && px > bhi){ bhi = px; broke = "above"; }
-    if(px!=null && px < blo){ blo = px; broke = "below"; }
+    if(pxRef!=null && pxRef > bhi){ bhi = pxRef; broke = "above"; }
+    if(pxRef!=null && pxRef < blo){ blo = pxRef; broke = "below"; }
     var pos = function(v){ return Math.min(100, Math.max(0, (v-blo)/(bhi-blo)*100)); };
     bar = '<div class="rb big"><span class="rbtip" data-tip="'
       + esc("The spread of published 1-year price targets: the lowest on the left, the highest on the right. "
@@ -14661,7 +14674,7 @@ function fcTargetSecHTML(sym, f){
           + (broke==="above" ? " The last price is ABOVE every published target, so the right-hand bound shown is the price itself." : "")
           + (broke==="below" ? " The last price is BELOW every published target, so the left-hand bound shown is the price itself." : ""))
       + '"></span>'
-      + (px!=null ? '<i style="width:'+pos(px).toFixed(1)+'%"></i><b style="left:'+pos(px).toFixed(1)+'%"></b>' : '')
+      + (pxRef!=null ? '<i style="width:'+pos(pxRef).toFixed(1)+'%"></i><b style="left:'+pos(pxRef).toFixed(1)+'%"></b>' : '')
       + (avg!=null ? '<span class="tgt" style="left:'+pos(avg).toFixed(1)+'%"></span>' : '')
       + '<span class="lo tn">'+fmtpx(blo)+(broke==="below"?' price':' low')+'</span>'
       + '<span class="hi tn">'+fmtpx(bhi)+(broke==="above"?' price':' high')
@@ -14671,9 +14684,7 @@ function fcTargetSecHTML(sym, f){
   }
   var rows = '<div class="fcgrid">'
     + '<div class="kvrow"><span>Average</span><b>'+(avg!=null?fmtpx(avg):"—")+'</b></div>'
-    + '<div class="kvrow"><span data-tip="'+esc("The middle target rather than the mean. When it sits well "
-        + "away from the average, one or two outlying targets are pulling the average around.")
-        +'">Median</span><b>'+(med!=null?fmtpx(med):"—")+'</b></div>'
+    + '<div class="kvrow"><span>Median</span><b>'+(med!=null?fmtpx(med):"—")+'</b></div>'
     + '<div class="kvrow"><span>Highest</span><b>'+(hi!=null?fmtpx(hi):"—")+'</b></div>'
     + '<div class="kvrow"><span>Lowest</span><b>'+(lo!=null?fmtpx(lo):"—")+'</b></div>'
     + '</div>';
@@ -14789,10 +14800,7 @@ function fcRatingSecHTML(sym, f){
   // silently stretching the bars would invent a placement for the analysts
   // the vendor did not bucket.
   var gap = (tot!=null && bucketed < tot)
-    ? ('<div class="note" data-tip="'+esc("The scanner exposes three buckets where TradingView's own page "
-        + "splits five, so its buckets can sum to less than its own total. The shortfall is printed rather "
-        + "than closed by rescaling the bars, which would invent a placement for analysts the vendor did "
-        + "not bucket.")+'">'+(tot-bucketed)+' of '+tot+' not bucketed by the feed.</div>')
+    ? ('<div class="note">'+(tot-bucketed)+' of '+tot+' not bucketed by the feed.</div>')
     : "";
   // The gauge carries the mark and the analyst count, so the two kvrows that
   // printed them are gone. Without a mark there is no needle to place, and the

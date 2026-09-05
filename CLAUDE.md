@@ -257,9 +257,16 @@ individual findings.
     fact about the reading on screen right now. Write them as the bare fact
     ("8 of 57 not bucketed by the feed"), never as a paragraph about it.
   - **The test:** would the sentence read the same for every symbol on every
-    day? Then it is explanation — delete it or move it into a tooltip. Does it
-    change with the data? Then it is a disclosure — keep it, and cut it to the
-    fact.
+    day? Then it is explanation — delete it. Does it change with the data?
+    Then it is a disclosure — keep it, and cut it to the fact.
+  - **Emptying `TIPS` is not the whole sweep.** Most explanation on this page
+    is not in `TIPS` at all — it is inline, written straight into the markup
+    as `data-tip="'+esc("...")+'"`. The first pass gutted the lookup and
+    declared the job done; five explainers were still shipping on the Forecast
+    and Options-flow tabs a session later (the median caveat, the bucket
+    shortfall, the delta/decay lecture, two liquidity lectures). Grep
+    `data-tip="[^"]{40,}` and `data-tip="'+esc(` before claiming the page is
+    clean, and check the rendered DOM per tab rather than the source alone.
 
 ## Tests and process
 - **A test that mirrors buggy logic keeps passing against a copy of the bug.**

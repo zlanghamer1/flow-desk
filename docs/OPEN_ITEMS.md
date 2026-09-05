@@ -3043,3 +3043,54 @@ What the probes measured, all currently clean:
 - Prices agreeing across the rail, the chart header and the boards
 - The "% shown" chip matching the visible window exactly on every name
 - 266 fetcher tests passing
+
+## Forecast chart drew nothing when the live poll had not landed (fixed 2026-09-05)
+
+Zach, after the merge: "Review why the forecast chart and analyst gauge haven't
+shown up on mobile yet."
+
+The merge was real and the code was live. The chart still did not draw, for a
+reason the desktop never exposed.
+
+`fcTargetSecHTML` read the price from the live poll only:
+
+    var d = dispQuote(liveBySym(sym)), px = d.px;
+    var bar = fcProjectionSVG(sym, px, avg, hi, lo);
+
+`fcProjectionSVG`'s first guard is `if(px==null || !(px>0)) return ""`. So a
+visit where the TradingView scanner had not answered yet got the targets, the
+gauge, and no chart. The panel does not re-render when the quote lands, so it
+stayed missing for the rest of the visit. Measured: seeding a price gave
+`chart: True`; withholding it gave `chart: False` and no recovery after 35
+seconds of waiting.
+
+This is a mobile-shaped bug even though nothing in it is mobile-specific. A
+phone is a slower and colder network, so the poll far more often lands after
+the tab is already open. On a desktop the poll usually beats the click, which
+is exactly why it looked like a layout problem on the phone.
+
+Fixed by falling back to the newest usable daily close from `barsOf(sym)` --
+already in memory, 502 bars -- and labelling the sub-line "against 958.16 at
+the last close" so the reader knows which price is on screen. The gauge never
+had this problem: it needs only `rec_mark`, so it drew all along.
+
+Pinned by `fetcher/test_forecast_chart_guard.py`.
+
+Two things that are NOT bugs and should not be "fixed" later:
+
+- **SPY shows no Forecast tab.** The desk boots to SPY, which carries no
+  analyst coverage, so `fcCoverage` greys the tab. 24 of 63 tracked names are
+  the same. Focus a covered name to see the panel.
+- **The remaining long `data-tip`s are disclosures.** "no quote resolved this
+  cycle", "As of today's close", "Of $1.18B near-money premium traded today"
+  all change with the data. They stay.
+
+## Explanation sweep missed the inline tips (fixed 2026-09-05)
+
+Emptying `TIPS` was mistaken for finishing the job. Most of the page's
+explanation was never in `TIPS` -- it is written inline as
+`data-tip="'+esc("...")+'"`. Five explainers were still popping up on tap a
+session after the "trim out all explanation text" ruling: the median caveat and
+the bucket-shortfall note on Forecast, and the delta/decay lecture plus two
+liquidity lectures on Options flow. Removed; 1,559 characters. The visible
+readings they hung off are untouched.
