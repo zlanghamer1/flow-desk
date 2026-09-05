@@ -413,6 +413,36 @@ closed C/D/E above. Nothing else is blocking "done."
 
 ---
 
+## Shipped 2026-09-05 — Forecast tab opened on an apology (Zach's report)
+
+Zach reported the Forecast tab "is not showing a graph." It was not a
+rendering bug. **The desk boots to SPY, and SPY has no analyst coverage**, so
+the first thing a reader taps on a fresh load is a tab whose entire content is
+one sentence saying no target is published. 24 of the 63 tracked names are in
+that state: SPY, QQQ, every XL* sector fund, SOXL/SOXS, MUU, NRGU, OILU, DRAM,
+RAM, SMH, STLL, AAOG, SKHX. On a phone, where nothing else on the panel fills
+the screen, that reads as a broken tab rather than as a name nobody covers.
+
+Fixed: `fcCoverage(sym)` answers whether the tab has anything to draw — the
+scanner row's target/rating fields, or the daily sidecar's estimate trend and
+actuals, so a name carrying only the later-loading sidecar data still counts.
+`stageTabsRender` greys the Forecast tab (`.off`, opacity .45) when it does
+not, carries the reason in a tooltip, and hands back to Overview if the reader
+was on that tab when the symbol changed. The tab stays clickable on purpose: a
+`disabled` button dispatches no mouse events, which would kill the tooltip,
+and a phone surfaces no tooltip on tap — so the panel carries the reason too,
+rewritten to a "No analyst coverage" heading that says whether the name is a
+fund (`isFundSym`) or simply thinly covered.
+
+Verified: `pytest fetcher` 377 passed, `pytest tests` 6 passed; Playwright at
+390px and 1440px, SPY/QQQ greyed with the tooltip and handing back to
+Overview, MU unchanged and still drawing its range bar and rating bars, zero
+page errors, no sideways scroll at either width.
+
+STILL OPEN from the same report: the price-target "graph" on a covered name is
+a 6px `.rb big` hairline, which does not read as a chart. Zach is supplying a
+reference picture for what it should be.
+
 ## Shipped 2026-08-23, Fable architect pass (14 findings, all fixed)
 
 A Fable-model architect pass — the follow-up to pausing the automated

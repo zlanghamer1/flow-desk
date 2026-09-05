@@ -656,6 +656,17 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
   padding:8px 12px;border-bottom:2px solid transparent;white-space:nowrap}
 .stagetabs button[aria-pressed="true"]{color:var(--acc);border-bottom-color:var(--acc)}
 .stagetabs button:hover{color:var(--ink)}
+/* A tab with nothing behind it for the focused name reads as unavailable at
+   a glance instead of only explaining itself after a tap. The Forecast tab on
+   a fund is the case that forced this: SPY is the boot symbol and carries no
+   target and no rating, so the first thing a reader tapped was an empty
+   panel. Deliberately NOT `disabled` — a disabled button dispatches no mouse
+   events, which would kill the hover tooltip carrying the reason, and it
+   stays tappable because a phone surfaces no tooltip on tap and the panel is
+   where that reason has to be legible. */
+.stagetabs button.off{opacity:.45;cursor:help}
+.stagetabs button.off:hover{color:var(--ink3)}
+.stagetabs button.off[aria-pressed="true"]{color:var(--acc);opacity:.7}
 @media (max-width:900px){ .stagechart{height:clamp(300px,46vh,480px)} }
 /* ============ sector heatmap (2026-08-19, Finviz-style) ============ */
 .viewseg{display:flex;gap:8px;align-items:center;padding:8px 14px 0}
@@ -14427,6 +14438,23 @@ function renderPeersTab(sym, widthOnly){
    touches the conviction or swing score. The wording is deliberately flat:
    these are opinions on record, not a forecast the desk endorses. */
 function fcNum(v){ return (typeof v==="number" && isFinite(v)) ? v : null; }
+// Does this name have anything for the Forecast tab to draw? Targets and
+// ratings ride the once-a-cycle scanner row, so data.json always answers for
+// a tracked name; the estimate trend and the actuals ride the daily sidecar,
+// which loads later, so a name that has only those still counts. 24 of the 63
+// tracked names are funds and wrappers with none of it — the tab greys out
+// for them rather than opening on an apology.
+function fcCoverage(sym){
+  if(!sym) return true;                       // nothing focused yet: judge nothing
+  var f = factsOf(sym);
+  if(f && (fcNum(f.target)!=null || fcNum(f.target_high)!=null || fcNum(f.target_low)!=null
+        || fcNum(f.target_median)!=null || fcNum(f.rec_mark)!=null || fcNum(f.rec_total)!=null)) return true;
+  var fd = FUND_CACHE[sym];
+  if(fd && fd.eps_trend && fcNum(fd.eps_trend.current)!=null) return true;
+  if(fd && Array.isArray(fd.earnings) && fd.earnings.some(function(r){
+    return r && fcNum(r.eps)!=null && fcNum(r.eps_est)!=null; })) return true;
+  return false;
+}
 // DELIBERATELY NO WORD. An earlier version mapped the 1-to-5 mark onto
 // TradingView's own five labels, and immediately disagreed with them: AAOI's
 // live mark of 1.4375 rendered "Strong buy" here while TradingView's gauge
@@ -14586,6 +14614,19 @@ function stageForecastHTML(sym, fund){
       + 'analyst targets or ratings here — they ride the same once-a-cycle scanner row the tracked names use.'
       + '</div>';
   }
+  // A fund has no analyst behind it at all, so the panel says that once and
+  // stops. It used to open on a "Price target" heading over an apology, which
+  // reads as a broken chart rather than as a name nobody covers.
+  if(!fcCoverage(sym)){
+    return '<div class="dsec"><h3>No analyst coverage</h3><div class="note">'
+      + (isFundSym(sym)
+          ? (esc(sym)+' is a fund. Nobody publishes a price target or a rating for it — analysts cover '
+             + 'companies, and a fund holds companies. ')
+          : ('No analyst price target or rating is published for '+esc(sym)+'. Thinly-covered names often '
+             + 'carry none. '))
+      + 'Focus a covered name to see the target range, the rating split and where the estimate has moved.'
+      + '</div></div>';
+  }
   var secs = fcTargetSecHTML(sym, f) + fcRatingSecHTML(sym, f)
     + fcTrendSecHTML(sym, fund) + fcActualsSecHTML(sym, fund);
   // Staleness: the targets and ratings ride the once-a-cycle scanner row, so
@@ -14607,8 +14648,17 @@ var STAGE_TABS = [["ov","Overview"],["fin","Financials"],["peers","vs Peers"],["
 function stageTabsRender(){
   var el = document.getElementById("stagetabs");
   if(!el) return;
+  var covered = fcCoverage(STAGE.sym);
+  // Switching from a covered name to a fund would otherwise leave the reader
+  // parked on a dead panel, so the tab hands back to Overview on the way.
+  if(STAGE.tab==="fcst" && !covered) STAGE.tab = "ov";
+  var offTip = esc("No analyst covers " + (STAGE.sym||"this name") + ", so there is no price target, no rating "
+    + "and nothing to chart here. Funds and wrappers carry none \u2014 analysts cover companies.");
   el.innerHTML = STAGE_TABS.map(function(t){
-    return '<button data-tab="'+t[0]+'" aria-pressed="'+(STAGE.tab===t[0])+'">'+t[1]+'</button>';
+    var off = (t[0]==="fcst" && !covered);
+    return '<button data-tab="'+t[0]+'" aria-pressed="'+(STAGE.tab===t[0])+'"'
+      + (off ? (' class="off" data-tip="'+offTip+'"') : '')
+      + '>'+t[1]+'</button>';
   }).join("");
   $$("button", el).forEach(function(b){
     b.addEventListener("click", function(){ STAGE.tab = b.dataset.tab; stageTabsRender(); renderStageTab(); });
