@@ -27,6 +27,7 @@ the test.
 from __future__ import annotations
 
 import http.server
+import json
 import os
 import re
 import socketserver
@@ -66,14 +67,37 @@ def server():
         srv.server_close()
 
 
+# Where a preinstalled Chromium usually lives when PW_CHROMIUM is not set.
+# The vault's run_checks.sh gate runs this suite from a hook that carries no
+# PW_CHROMIUM, and a pip-installed playwright then looks for a browser build it
+# never downloaded. Probe the known path before giving up.
+KNOWN_CHROMIUM = ("/opt/pw-browsers/chromium",)
+
+
+def _chromium_path():
+    exe = os.environ.get("PW_CHROMIUM")
+    if exe:
+        return exe
+    for cand in KNOWN_CHROMIUM:
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return None
+
+
 @pytest.fixture(scope="module")
 def browser():
     with sync_playwright() as p:
         kwargs = {}
-        exe = os.environ.get("PW_CHROMIUM")
+        exe = _chromium_path()
         if exe:
             kwargs["executable_path"] = exe
-        b = p.chromium.launch(**kwargs)
+        try:
+            b = p.chromium.launch(**kwargs)
+        except Exception as e:  # no browser binary on this machine
+            # run_checks.sh's contract: a test that needs a browser skips
+            # cleanly when none is installed. This is an environment gap,
+            # not a page result; CI installs the browser and runs it.
+            pytest.skip(f"no Chromium available to launch: {e}".splitlines()[0])
         try:
             yield b
         finally:
@@ -149,5 +173,69 @@ def test_legal_page_sections_present(browser, server):
         for sec in ("short", "risk", "terms", "privacy", "sources", "contact"):
             assert page.locator(f"#{sec}").count() == 1, f"legal.html is missing #{sec}"
         assert page.get_attribute("header a.back", "href") == "./"
+    finally:
+        page.close()
+
+
+# A data.json that reaches the page and then fails to DRAW used to be
+# reported as "Can't reach data.json" (2026-09-05: renderBrief read .replace
+# off a tooltip attribute the explanation sweep had deleted, on every
+# browser, phone and desktop alike). The smoke tests above only ever see the
+# fetch fail, so they cannot catch a render crash. This one hands the page a
+# real-shaped payload and asserts the fetch is counted as a success, no
+# render error is recorded, and the failure banner stays hidden.
+FED_ODDS = {
+    "as_of": "2026-09-04T19:33:31Z", "source": "Polymarket",
+    "meeting_date": "2026-09-16", "days_to_meeting": 12,
+    "hike_pct": 51.1, "hold_pct": 48.3, "cut_pct": 0.6,
+    "grade": "HOSTILE", "alarm": True,
+}
+BRIEF_PAYLOAD = {
+    "generated_at": "2026-09-04T20:20:52Z",
+    "context_updated_at": "2026-09-04T20:20:52Z",
+    "market_state": "afterhours",
+    "session_date": "2026-09-04",
+    "brief": {
+        "date": "2026-09-04", "verdict": "CAUTIOUS", "score": 3,
+        "plain_words": "test brief", "backdrop": None, "gap_note": None,
+        "sectors": [], "retreat_watch": [], "havens": [], "havens_totals": None,
+        "whales_hiding": [], "fed_hike": None, "semi_flow": None, "stale": False,
+    },
+    "fed_odds": FED_ODDS,
+    "conviction": [], "swing": [], "big_orders": [], "etf_flow": [],
+    "catalysts": [], "news": {"items": [], "by_ticker": {}}, "facts": {},
+}
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_index_renders_a_delivered_data_json(browser, server, width, height):
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+
+    def route(r):
+        url = r.request.url
+        if "/data/data.json" in url:
+            r.fulfill(status=200, content_type="application/json", body=json.dumps(BRIEF_PAYLOAD))
+        elif url.startswith(server) or url.startswith("data:"):
+            r.continue_()
+        else:
+            r.abort()
+
+    page.route("**/*", route)
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == [], f"index.html @ {width}px threw: {page_errors}"
+        st = page.evaluate(
+            "({failures: FETCH_STATE.failures, renderError: FETCH_STATE.renderError,"
+            " hasData: !!STATE.data, banner: document.getElementById('databanner').hidden,"
+            " fed: document.getElementById('railfedtext').textContent})"
+        )
+        assert st["hasData"], "data.json was served but STATE.data is empty"
+        assert st["renderError"] is None, f"renderAll threw: {st['renderError']}"
+        assert st["failures"] == 0, "a delivered data.json was counted as a fetch failure"
+        assert st["banner"] is True, "failure banner shown after a successful load"
+        assert st["fed"].startswith("51%"), f"fed chip reads {st['fed']!r}"
     finally:
         page.close()
