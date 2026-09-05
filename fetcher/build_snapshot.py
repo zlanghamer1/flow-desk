@@ -501,7 +501,7 @@ TV_COLUMNS = [
     # NASDAQ:NVDA the same day: pe=34.48, peg=0.313, net_margin=62.97,
     # gross_margin=74.15, op_margin=64.02, fcf_margin=46.97, debt_eq=0.0656,
     # roe=114.29, ps=25.56, pb=34.79, ev_ebitda=32.51, yld=0.124,
-    # target=314.29, rec_mark=1.115 (1=strong buy .. 5=sell). Forward P/E was
+    # target=314.29, rec_mark=1.115 (1=all strong buy .. 3=all strong sell, 2=neutral). Forward P/E was
     # probed under BOTH `price_earnings_forward_fy` and `price_earnings_fy`
     # and BOTH returned null for NVDA — this scanner simply doesn't carry a
     # forward multiple, so no column for it here; pe_forward is sourced in

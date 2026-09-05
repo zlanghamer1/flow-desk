@@ -34,6 +34,7 @@ import threading
 from pathlib import Path
 
 import pytest
+pytest.importorskip("playwright", reason="browser smoke test needs playwright")
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
