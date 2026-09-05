@@ -3094,3 +3094,52 @@ session after the "trim out all explanation text" ruling: the median caveat and
 the bucket-shortfall note on Forecast, and the delta/decay lecture plus two
 liquidity lectures on Options flow. Removed; 1,559 characters. The visible
 readings they hung off are untouched.
+
+## Searched names drew the gauge and no chart (fixed 2026-09-05)
+
+Zach: "EROC & SEI show an analyst gauge but no forecast chart."
+
+Both publish a full analyst row. The scanner returns it live:
+
+    NYSE:EROC  close 12.33  avg 22.50  high 28  low 19  mark 1.0625  8 analysts
+    NYSE:SEI   close 55.00  avg 93.99  high 120 low 73  mark 1.0588  17 analysts
+
+So the gauge had everything it needed and drew. The chart did not, because
+neither symbol is one of the 69 in bars.json -- they are searched names, not
+tracked ones. `fcProjectionSVG` read history through `barsOf(sym)`, which only
+consults `BARS_CACHE`, got an empty array, and returned "" at the `n < 60`
+guard.
+
+The history was not missing. A searched name's dailies are fetched from the
+same history endpoint the price chart uses and land in `ADHOC_BARS[sym].D`,
+which is why the Overview price chart draws for EROC perfectly well.
+`seriesFull()` has consulted both sources since ad-hoc search shipped; the
+forecast chart was the one place that did not.
+
+Fixed with `fcHistory(sym)`, one helper returning `{closes, dates}` from
+`barsOf()` first and `ADHOC_BARS[sym].D` second. `fcProjectionSVG` and the
+`pxRef` last-close fallback both read it, so the chart and the price it is
+measured against cannot disagree about which history they are using. X-axis
+labels take the ad-hoc `dates` array when `barSessionDates` returns null, which
+it does for anything outside `bar_dates`.
+
+Second half of the same bug: the Forecast tab can be the first thing opened, so
+the dailies may not be fetched yet, and this panel has no re-render on data
+arrival. `renderStageTab`'s `fcst` branch now calls `adhocEnsureDaily(sym)` and
+redraws exactly once, guarded on `STAGE.sym`/`STAGE.tab` still matching and on
+a per-symbol `FC_DAILY_TRIED` flag so a resolve yielding no usable rows cannot
+spin.
+
+Verified against a 260-session synthetic EROC built through the real ad-hoc
+path (`ADHOC_FACTS` + `ADHOC_BARS.D`) at 390px: chart and gauge both draw, 260
+closes read, no page errors.
+
+Pinned by three assertions in `fetcher/test_forecast_chart_guard.py`.
+
+**Note the shape of this bug, because it has now bitten twice.** Both times the
+forecast chart went missing it was reading a narrower data source than the rest
+of the page: first the live quote alone when 502 closes sat in memory, then
+`barsOf()` alone when the searched name's closes sat in `ADHOC_BARS`. The panel
+never re-renders on data arrival, so every such gap is permanent for the visit
+rather than a flicker. Before adding anything to this tab, check what the
+Overview tab uses for the same input.

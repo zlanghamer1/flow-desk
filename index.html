@@ -14456,10 +14456,31 @@ function fcCoverage(sym){
      other, so a tight range cannot stack them into one illegible block. The
      tick at the plot edge stays on the true level, so a nudged badge still
      points at where its number actually sits. */
+/* The daily closes behind the forecast chart, with their dates when known.
+   A TRACKED name carries them in bars.json, reachable through barsOf(). A
+   SEARCHED name carries them in ADHOC_BARS, fetched from the same history
+   endpoint the price chart uses. fcProjectionSVG read only barsOf(), so a
+   searched name with full analyst coverage drew the gauge and no chart --
+   EROC and SEI both publish targets and a rating, and both sat outside the
+   69 tracked symbols in bars.json, so barsOf() handed back an empty array
+   and the n<60 guard returned "". seriesFull() has consulted both sources
+   since ad-hoc search shipped; this is the same fallback, kept in one place
+   so the chart and the price it is measured against cannot disagree. */
+function fcHistory(sym){
+  var closes = barsOf(sym);
+  if(closes.length) return {closes:closes, dates:barSessionDates(sym, closes.length)};
+  var ad = ADHOC_BARS[sym] && ADHOC_BARS[sym].D;
+  if(ad && ad.rows && ad.rows.length){
+    closes = ad.rows.map(function(r){ return num(r[3]); });
+    return {closes:closes,
+            dates:(ad.dates && ad.dates.length===closes.length) ? ad.dates : null};
+  }
+  return {closes:[], dates:null};
+}
 function fcProjectionSVG(sym, px, avg, hi, lo){
   if(px==null || !(px>0)) return "";
   if(hi==null && lo==null && avg==null) return "";
-  var full = barsOf(sym), n = full.length;
+  var _h = fcHistory(sym), full = _h.closes, n = full.length;
   // Under about three months of dailies the line is too short to be a
   // reference for a one-year target, and the numbers under the chart already
   // carry every level. The caller falls back to the range strip.
@@ -14576,7 +14597,7 @@ function fcProjectionSVG(sym, px, avg, hi, lo){
   });
 
   // x axis: the year each January starts, plus the year the targets run into
-  var dates = barSessionDates(sym, n), xlab = "";
+  var dates = _h.dates, xlab = "";
   if(dates && dates.length===n){
     // Only real January boundaries get a label. Labelling the FIRST bar's own
     // year too printed "20242025" — the series opens mid-year, so that label
@@ -14623,7 +14644,7 @@ function fcTargetSecHTML(sym, f){
   // let the sub-line say which price is on screen.
   var fromClose = false, pxRef = px;
   if(pxRef==null || !(pxRef>0)){
-    var hist = barsOf(sym);
+    var hist = fcHistory(sym).closes;
     for(var bi=hist.length-1; bi>=0; bi--){
       if(hist[bi]!=null && hist[bi]>0){ pxRef = hist[bi]; fromClose = true; break; }
     }
@@ -14966,6 +14987,11 @@ function stageFlowSecHTML(sym){
   }
   return convSec + swSec;
 }
+// One attempt per symbol at pulling a searched name's dailies for the
+// forecast chart. Keyed by symbol, never cleared: a second attempt would
+// hit adhocEnsureDaily's own cache anyway, and clearing it on refocus is
+// how a failed fetch turns into a redraw loop.
+var FC_DAILY_TRIED = {};
 function renderStageTab(){
   var body = document.getElementById("stagetabbody");
   if(!body || !STAGE.sym) return;
@@ -14995,6 +15021,21 @@ function renderStageTab(){
     body.innerHTML = stageFlowSecHTML(sym);
   } else if(STAGE.tab==="fcst"){
     body.innerHTML = stageForecastHTML(sym, fund);
+    // A searched name's dailies are fetched lazily for the price chart, and
+    // the Forecast tab can be the first thing the reader opens. This panel has
+    // no re-render on data arrival, so without this the chart draws nothing
+    // and never retries for the rest of the visit. Ask for the history, then
+    // redraw exactly once -- guarded on the reader not having moved to another
+    // symbol or tab while the fetch was in flight, and on a per-symbol flag so
+    // a resolve that yields no usable rows cannot spin.
+    if(!fcHistory(sym).closes.length && typeof adhocEnsureDaily==="function"
+       && !FC_DAILY_TRIED[sym]){
+      FC_DAILY_TRIED[sym] = true;
+      var fcWant = sym;
+      adhocEnsureDaily(sym).then(function(){
+        if(STAGE.sym===fcWant && STAGE.tab==="fcst") renderStageTab();
+      }, function(){});
+    }
   } else {
     body.innerHTML = '<div id="rangesec">'+rangeSecHTML(sym)+'</div>'
       + stageFrameworkHTML(sym)
