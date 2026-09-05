@@ -50,7 +50,10 @@ def test_last_close_fallback_exists() -> None:
     assert re.search(r"var fromClose = false, pxRef = px;", body), (
         "the pxRef fallback declaration is gone"
     )
-    assert "barsOf(sym)" in body, "the fallback no longer reads the daily bars"
+    assert "fcHistory(sym).closes" in body, (
+        "the fallback must read fcHistory, the same source the chart uses -- "
+        "reading barsOf() alone misses every searched name"
+    )
     assert re.search(r"pxRef = hist\[bi\]; fromClose = true;", body), (
         "the loop that walks back to the newest usable close is gone"
     )
@@ -63,3 +66,48 @@ def test_sub_line_says_which_price_is_on_screen() -> None:
         "the reader must be told when the comparison price is a close rather "
         "than a live quote"
     )
+
+
+def _fc_projection() -> str:
+    start = INDEX.index("function fcProjectionSVG(")
+    end = INDEX.index("\nfunction ", start + 1)
+    return INDEX[start:end]
+
+
+def test_chart_reads_both_history_sources() -> None:
+    """A searched name keeps its dailies in ADHOC_BARS, not bars.json.
+
+    EROC and SEI both publish a full analyst row -- targets, a rating mark, a
+    coverage count -- and neither is one of the 69 symbols in bars.json. The
+    chart read barsOf() alone, got an empty array, and returned "" at the n<60
+    guard, so both drew the gauge and no chart. seriesFull() has consulted both
+    sources since ad-hoc search shipped; fcHistory is that same fallback.
+    """
+    assert "function fcHistory(sym)" in INDEX, "the fcHistory helper is gone"
+    assert "ADHOC_BARS[sym] && ADHOC_BARS[sym].D" in INDEX, (
+        "fcHistory no longer falls back to a searched name's dailies"
+    )
+    body = _fc_projection()
+    assert "fcHistory(sym)" in body, (
+        "fcProjectionSVG must source history through fcHistory"
+    )
+    assert not re.search(r"var full = barsOf\(sym\)", body), (
+        "fcProjectionSVG is reading barsOf() directly again -- that is empty "
+        "for every searched name"
+    )
+
+
+def test_searched_name_history_is_requested_once() -> None:
+    """The panel has no re-render on data arrival, so it must ask and redraw."""
+    assert "var FC_DAILY_TRIED = {}" in INDEX, (
+        "the per-symbol one-shot flag is gone; without it a resolve that "
+        "yields no usable rows can spin the redraw"
+    )
+    assert re.search(r"FC_DAILY_TRIED\[sym\] = true;", INDEX), (
+        "the one-shot flag is never set"
+    )
+    assert re.search(
+        r"adhocEnsureDaily\(sym\)\.then\(function\(\)\{\s*"
+        r"if\(STAGE\.sym===fcWant && STAGE\.tab===\"fcst\"\) renderStageTab\(\);",
+        INDEX,
+    ), "the guarded one-shot redraw after the history fetch is gone"
