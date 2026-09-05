@@ -111,3 +111,54 @@ def test_searched_name_history_is_requested_once() -> None:
         r"if\(STAGE\.sym===fcWant && STAGE\.tab===\"fcst\"\) renderStageTab\(\);",
         INDEX,
     ), "the guarded one-shot redraw after the history fetch is gone"
+
+
+def test_adhoc_facts_request_the_full_analyst_row() -> None:
+    """A searched name needs the same analyst fields a tracked one carries.
+
+    ADHOC_FACTS_COLS asked for price_target_average and recommendation_mark and
+    nothing else in that family, so a searched name reached the Forecast tab
+    with an average and a needle: Median/Highest/Lowest dashed, no analyst
+    count under the gauge, no Buy/Hold/Sell bars, and a fan drawn with only the
+    average line because fcProjectionSVG had no hi/lo to build wedges to. The
+    scanner publishes all of it on the same row -- SEI carries high 120, low
+    73, median 90 and 17 analysts -- so the request was narrower than the feed.
+
+    The six columns are appended at the END of the list on purpose: every
+    mapping below reads by position, so inserting one anywhere else silently
+    shifts n(0)..n(21) onto the wrong fields.
+    """
+    cols = re.search(r"var ADHOC_FACTS_COLS = \[(.*?)\];", INDEX, re.S)
+    assert cols, "ADHOC_FACTS_COLS is gone"
+    names = re.findall(r'"([A-Za-z0-9_]+)"', cols.group(1))
+    for i, want in enumerate(
+        [
+            "price_target_high",
+            "price_target_low",
+            "price_target_median",
+            "recommendation_total",
+            "recommendation_buy",
+            "recommendation_hold",
+            "recommendation_sell",
+        ],
+        start=23,
+    ):
+        assert names[i] == want, (
+            f"column {i} is {names[i]!r}, expected {want!r} -- the mapping "
+            "reads by position, so a reordered list writes the wrong field"
+        )
+    assert names.index("price_target_average") == 18, "target average moved"
+    assert names.index("recommendation_mark") == 19, "rating mark moved"
+
+    for field, idx in [
+        ("target_high", 23),
+        ("target_low", 24),
+        ("target_median", 25),
+        ("rec_total", 26),
+        ("rec_buy", 27),
+        ("rec_hold", 28),
+        ("rec_sell", 29),
+    ]:
+        assert re.search(rf"{field}:n\({idx}\)", INDEX), (
+            f"{field} is not mapped from column {idx}"
+        )

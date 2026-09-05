@@ -3104,7 +3104,17 @@ var ADHOC_FACTS_COLS = ["price_52_week_high","price_52_week_low","market_cap_bas
   "gross_margin_ttm","operating_margin_ttm","free_cash_flow_margin_ttm","debt_to_equity",
   "return_on_equity","price_sales_ratio","price_book_ratio","enterprise_value_ebitda_ttm",
   "dividends_yield_current","price_target_average","recommendation_mark","sector","industry",
-  "earnings_release_next_date"];
+  "earnings_release_next_date",
+  // Appended 2026-09-05, at the END so every positional index above is
+  // untouched. Without these a SEARCHED name reached the Forecast tab with an
+  // average target and a rating mark and nothing else: Median/Highest/Lowest
+  // dashed, no analyst count under the gauge, no Buy/Hold/Sell bars, and a fan
+  // with only the average line because fcProjectionSVG had no hi/lo to draw
+  // wedges to. The scanner publishes all six for the same row -- SEI carries
+  // high 120, low 73, median 90, 17 analysts -- so this was the request being
+  // narrower than the feed, not a coverage gap.
+  "price_target_high","price_target_low","price_target_median",
+  "recommendation_total","recommendation_buy","recommendation_hold","recommendation_sell"];
 function adhocEnsureFacts(sym){
   // The permanent-cache short-circuit below never re-fetched, so a searched
   // ticker's earnings countdown went blank forever once its cached date
@@ -3161,7 +3171,9 @@ function adhocEnsureFacts(sym){
         earn_days:earnDays, earn_ts:(earnTs!=null?earnTs:null), rsi:n(5), avg_move:null, pe:n(6), peg:n(7), net_margin:n(8),
         gross_margin:n(9), op_margin:n(10), fcf_margin:n(11), debt_eq:n(12), roe:n(13),
         ps:n(14), pb:n(15), ev_ebitda:n(16), yld:n(17), target:n(18), rec_mark:n(19),
-        sector:t(20), industry:t(21) };
+        sector:t(20), industry:t(21),
+        target_high:n(23), target_low:n(24), target_median:n(25),
+        rec_total:n(26), rec_buy:n(27), rec_hold:n(28), rec_sell:n(29) };
       delete ADHOC_FACTS_FAILED[sym];
       // If the daily-bars fetch already won the race, this is the call that
       // can finally see both pieces — fill it in now instead of leaving it

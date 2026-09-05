@@ -3143,3 +3143,41 @@ of the page: first the live quote alone when 502 closes sat in memory, then
 never re-renders on data arrival, so every such gap is permanent for the visit
 rather than a flicker. Before adding anything to this tab, check what the
 Overview tab uses for the same input.
+
+## Searched names asked the scanner for half the analyst row (fixed 2026-09-05)
+
+Zach, looking at SEI on his phone: "How do I know how many analysts are covering
+a stock and factoring into the forecast chart & gauge?" His screenshot showed
+Median, Highest and Lowest all dashed, a fan with only the average line, and no
+count under the gauge.
+
+`ADHOC_FACTS_COLS` requested `price_target_average` and `recommendation_mark`
+and nothing else in that family. The scanner publishes the rest on the same
+row:
+
+    NYSE:SEI  avg 93.99  high 120  low 73  median 90  mark 1.0588  17 analysts
+              buy 15  hold 0  sell 0
+
+So this was the request being narrower than the feed, not a coverage gap. Added
+the six missing columns AT THE END of the list -- every mapping below reads by
+position, so inserting anywhere else silently shifts `n(0)..n(21)` onto the
+wrong fields. Guarded by `test_adhoc_facts_request_the_full_analyst_row`, which
+pins each column to its index.
+
+Tracked names were never affected: the fetcher pulls the full row server-side
+into `data.json`.
+
+### The count the page still cannot show
+
+The number under the gauge is `recommendation_total` -- analysts with a
+buy/hold/sell rating on file. It is NOT the number who published a price
+target, and the two genuinely differ. TradingView's own Forecast page for MU,
+the screenshot this whole feature was built from, reads "The 48 analysts
+offering 1-year price forecasts" above a rating gauge captioned 57.
+
+The scanner does not expose that 48. `price_target_estimates` was requested
+alongside the working columns and returns null for both MU and SEI. So the
+chart has no count of its own, and the gauge's count must not be borrowed for
+it -- labelling the chart "17 analysts" would assert a number the feed never
+published. Left uncounted deliberately. If a future session wants it, find a
+column that actually returns it before wiring anything to the gauge's total.
