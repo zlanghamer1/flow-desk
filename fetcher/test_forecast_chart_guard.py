@@ -162,3 +162,78 @@ def test_adhoc_facts_request_the_full_analyst_row() -> None:
         assert re.search(rf"{field}:n\({idx}\)", INDEX), (
             f"{field} is not mapped from column {idx}"
         )
+
+
+def _fc_gauge() -> str:
+    start = INDEX.index("function fcGaugeSVG(")
+    end = INDEX.index("\nfunction ", start + 1)
+    return INDEX[start:end]
+
+
+def test_gauge_scale_is_one_to_three() -> None:
+    """recommendation_mark runs 1..3, not 1..5.
+
+    Solving the weighted mean that reproduces the vendor's own mark gives
+    buy 1.0, over 1.5, hold 2.0, under 2.5, sell 3.0 -- exact on every live row
+    tested, from the market's best consensus (1.0000, all strong buys) to its
+    worst (2.7143). Drawn on a 1..5 arc the whole real range collapsed into the
+    left half: a dead-neutral 2.00 pointed at "Buy" and the most bearish name in
+    the US market stopped short of "Neutral", so every stock read more bullish
+    than it was.
+
+    AAOI is the independent check. Its 1.4375 lands at 39.6 degrees, inside the
+    Buy anchor's neighbourhood, which is what TradingView's own gauge says. On
+    the 1..5 arc it read "Strong buy" and disagreed with them.
+    """
+    body = _fc_gauge()
+    assert "Math.min(3, m)" in body, "the mark is not clamped to the 1..3 scale"
+    assert "Math.min(5, m)" not in body, "the 1..5 clamp is back"
+    assert re.search(r"function ang\(v\)\{ return \(v-1\)/2\*180; \}", body), (
+        "the needle angle must map 1..3 across the half-circle"
+    )
+    assert "(v-1)/4*180" not in body, "the 1..5 angle mapping is back"
+    assert "[1.5,2,2.5].forEach" in body, (
+        "notches must sit at the interior anchors of the 1..3 scale"
+    )
+    assert "1-to-3 scale" in body, "the alt text still describes the wrong scale"
+
+
+def test_all_five_rating_buckets_are_read_and_labelled() -> None:
+    """TV's column names understate two buckets; the labels must not repeat it.
+
+    recommendation_buy weighs 1.0 and recommendation_sell 3.0, so they are the
+    STRONG ends, with over/under carrying the plain ones. Labelling rec_buy as
+    plain "Buy" put the bars in contradiction with the needle above them.
+    """
+    start = INDEX.index("function fcRatingSecHTML(")
+    body = INDEX[start : INDEX.index("\nfunction ", start + 1)]
+    for field in ("rec_buy", "rec_over", "rec_hold", "rec_under", "rec_sell"):
+        assert f"f.{field}" in body, f"{field} is not read into the rating section"
+    for label, field in [
+        ('row("Strong buy",sbuy)', "rec_buy"),
+        ('row("Buy",buy)', "rec_over"),
+        ('row("Sell",sell)', "rec_under"),
+        ('row("Strong sell",ssell)', "rec_sell"),
+    ]:
+        assert label in body, f"{label} is missing -- {field} must carry that label"
+    assert "var sbuy = fcNum(f.rec_buy)" in body, "rec_buy must be the STRONG buy bucket"
+    assert "ssell = fcNum(f.rec_sell)" in body, "rec_sell must be the STRONG sell bucket"
+
+
+def test_both_fetch_paths_request_all_five_buckets() -> None:
+    """The client-side and server-side column lists must not diverge."""
+    cols = re.search(r"var ADHOC_FACTS_COLS = \[(.*?)\];", INDEX, re.S).group(1)
+    names = re.findall(r'"([A-Za-z0-9_]+)"', cols)
+    assert names[30] == "recommendation_over", f"col 30 is {names[30]!r}"
+    assert names[31] == "recommendation_under", f"col 31 is {names[31]!r}"
+    assert re.search(r"rec_over:n\(30\)", INDEX) and re.search(r"rec_under:n\(31\)", INDEX), (
+        "over/under are requested but never mapped into ADHOC_FACTS"
+    )
+
+    snap = (ROOT / "fetcher" / "build_snapshot.py").read_text(encoding="utf-8")
+    for col in ("recommendation_over", "recommendation_under"):
+        assert f'"{col}"' in snap, f"{col} missing from the server-side TV_COLUMNS"
+    for key, col in [("rec_over", "recommendation_over"), ("rec_under", "recommendation_under")]:
+        assert re.search(rf'"{key}": _num\(_COL\["{col}"\]\)', snap), (
+            f"{key} is not mapped in build_snapshot"
+        )

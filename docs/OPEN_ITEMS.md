@@ -3181,3 +3181,82 @@ chart has no count of its own, and the gauge's count must not be borrowed for
 it -- labelling the chart "17 analysts" would assert a number the feed never
 published. Left uncounted deliberately. If a future session wants it, find a
 column that actually returns it before wiring anything to the gauge's total.
+
+## The rating gauge was drawn on the wrong scale (fixed 2026-09-05)
+
+Zach: "it says 17 analysts rated it and it says 15 noted it buy, with 0 hold and
+0 sell." He was right that it was a bug, and it was not the one it looked like.
+Chasing the missing 2 turned up three faults, each one hiding the next.
+
+### 1. The scanner exposes FIVE buckets, not three
+
+`/america/metainfo` lists seven `recommendation_*` fields. Two were never
+requested: `recommendation_over` and `recommendation_under`. With all five, the
+buckets sum to `recommendation_total` exactly:
+
+    SEI   17 = 15 + 2 + 0 + 0 + 0
+    MU    57 = 46 + 8 + 3 + 0 + 0
+    EROC   8 =  7 + 1 + 0 + 0 + 0
+    AAOI   8 =  4 + 1 + 3 + 0 + 0
+
+Zero gap on every row. **The "N of M not bucketed by the feed" note was never
+the vendor's defect — it was this page requesting three of five columns and
+printing its own gap as theirs.** Both fetch paths were wrong the same way:
+`ADHOC_FACTS_COLS` client-side and `TV_COLUMNS` in `build_snapshot.py`.
+
+### 2. TV's column names understate two buckets
+
+Solving the weighted mean that reproduces `recommendation_mark`:
+
+    buy 1.0   over 1.5   hold 2.0   under 2.5   sell 3.0
+
+Exact on all 14 rows tested. So the vendor's `buy` is a **strong** buy and its
+`sell` a **strong** sell; over/under carry the plain ones. Labelling `rec_buy`
+as plain "Buy" put the bars in contradiction with the needle above them.
+
+### 3. The mark's scale is 1..3, and the gauge drew it as 1..5
+
+This is the one that mattered. Marks run 1.0000 (every analyst a strong buy)
+to 3.0 (every analyst a strong sell), 2.0 neutral — the worst consensus in the
+US market is 2.7143, and nothing can exceed 3. `fcGaugeSVG` clamped to 5 and
+mapped `(v-1)/4*180`, so the entire real range was squeezed into the left half
+of the arc:
+
+| mark | means | old needle | new needle |
+|---|---|---|---|
+| 1.00 | all strong buy | Strong buy | Strong buy |
+| 2.00 | dead neutral | **Buy** | Neutral |
+| 2.50 | all sell | **Neutral** | Sell |
+| 2.71 | market's worst | **just past Neutral** | Sell |
+| 3.00 | all strong sell | **Neutral/Sell** | Strong sell |
+
+Every stock on the Desk read more bullish than it was, and the Sell half of the
+gauge was unreachable. Fixed to `(v-1)/2*180` with notches at 1.5/2/2.5.
+
+### The 2026-09-03 "no word" reasoning was wrong
+
+It ran: mapping the mark onto TV's five labels made AAOI's 1.4375 read "Strong
+buy" while TV's own gauge says "Buy", and the mark "is not a plain average of
+the buckets" (weighting to 1.875), so the band edges were unrecoverable.
+
+Both halves were artefacts of the wrong scale and mislabelled buckets. The mark
+IS a plain weighted average: AAOI is 4 buy / 1 over / 3 hold = (4 + 1.5 + 6)/8
+= **1.4375**, to the digit. On the 1..3 arc it lands at 39.6°, in the Buy
+anchor's neighbourhood — TradingView's own answer. Nothing disagrees, and that
+agreement is the independent check that the scale is right.
+
+The word still is not printed, because Zach asked for a gauge and a number and
+has not asked for one. That is now a display choice, not a data limit.
+
+### The pattern, three times running
+
+Every forecast bug this week has been the same shape: **the request was
+narrower than the feed.** The live quote alone when 502 closes sat in memory.
+`barsOf()` alone when the searched name's closes sat in `ADHOC_BARS`. Three of
+five buckets when the scanner publishes five. Twice the page then reported its
+own gap as a vendor limitation, in a comment and on screen.
+
+Before writing "the vendor does not publish X", fetch
+`https://scanner.tradingview.com/america/metainfo` and grep the field list. It
+is 3,777 fields and it is authoritative. Guarded by four tests in
+`fetcher/test_forecast_chart_guard.py`.
