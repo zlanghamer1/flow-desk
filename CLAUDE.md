@@ -238,9 +238,19 @@ individual findings.
   He asked for this after the Forecast chart shipped under a five-line
   figcaption explaining that the fan was not a prediction. A chart that needs a
   paragraph is a chart that has not been drawn well enough.
-  - **Explanation belongs in a `data-tip` tooltip**, which is hidden until
-    someone wants it. That is where the methodology, the scale definition and
-    the vendor caveats go, and it is not affected by this rule.
+  - **A tooltip is not a hiding place.** The first pass at this rule moved the
+    prose into `data-tip`; Zach's follow-up closed that door — "on mobile when
+    clicking a technical indicator button the explanation text will pop up,
+    remove this. I don't want it either in mobile or on the web." The page's
+    tooltip opens on hover AND on tap, so a tooltip is on-screen text with an
+    extra step. Explanation is DELETED, not relocated.
+  - **`TIPS` is an empty lookup and stays that way.** It held 43 entries of
+    methodology and is now `new Proxy({}, {get:()=>""})` so every call site
+    resolves to "" and `showTip` no-ops. `fetcher/test_tips_sync.py` fails if
+    anyone refills it. Same for `METRIC_MARKET_NOTE`.
+  - **A control does not explain itself.** A button may carry a short
+    affordance line saying what the click does ("Click to hide it from the
+    rail."). It may not carry methodology, scope, or what the feature is for.
   - **A dynamic disclosure is not an explanation and still stays printed** —
     the rule above is unchanged. STALE badges, as-of stamps, failure reasons,
     clamp/cap/coverage notes and "no analyst covers this name" all state a

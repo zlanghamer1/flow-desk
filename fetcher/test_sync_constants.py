@@ -92,5 +92,6 @@ def test_big_orders_baseline_sessions_match():
     m2 = re.search(r"var BIG_ORDERS_BASELINE_SESSIONS = (\d+);", INDEX)
     assert m2, "BIG_ORDERS_BASELINE_SESSIONS not found in index.html"
     assert int(m2.group(1)) == int(m.group(1))
-    tip = re.search(r'"tip-vsnormal":\s*"((?:[^"\\]|\\.)*)"', INDEX)
-    assert tip and f"last {m.group(1)} sessions" in tip.group(1)
+    # The tooltip that used to print this number is gone with TIPS
+    # (Zach's 2026-09-05 no-explanation-text ruling); the two-file constant
+    # check above is what this test was really for.
