@@ -543,18 +543,30 @@ TV_COLUMNS = [
     # NASDAQ:AAOI against TradingView's own Forecast page for that symbol —
     # avg 170.5, high 220, low 109, median 184, 8 rating analysts.
     #
-    # KNOWN AND DISCLOSED ON SCREEN: buy+hold+sell does not always equal
-    # recommendation_total (AAOI: 4+3+0 against a total of 8) because the
-    # scanner exposes three buckets where TV's own page splits five. The tab
-    # prints the shortfall rather than reshaping the bars to fit the total.
-    # Yahoo's recommendationTrend WOULD give five buckets, and was rejected:
-    # its counts disagree with TV's (2/1/3/0/0) and with its own
-    # numberOfAnalystOpinions (5), so mixing them would put two contradictory
-    # analyst counts on one panel. One vendor per panel, same rule the
-    # framework's Filter 3 follows.
+    # CORRECTED 2026-09-05. This block used to say buy+hold+sell cannot equal
+    # recommendation_total "because the scanner exposes three buckets where
+    # TV's own page splits five" (AAOI: 4+3+0 against a total of 8), and the
+    # page printed the shortfall as a vendor defect. That was wrong. The
+    # scanner exposes FIVE: recommendation_over and recommendation_under were
+    # simply never requested. /america/metainfo lists all seven
+    # recommendation_* fields, and with over/under added the buckets sum to
+    # recommendation_total exactly on every row checked -- AAOI's missing one
+    # is an "over" (1+4+3=8).
+    #
+    # The arithmetic also names them. Solving the weighted mean that
+    # reproduces recommendation_mark gives buy 1.0, over 1.5, hold 2.0,
+    # under 2.5, sell 3.0, exact on all 14 rows tested. So the vendor's "buy"
+    # is a STRONG buy and its "sell" a STRONG sell, and the mark's scale is
+    # 1..3, not 1..5.
+    #
+    # Yahoo's recommendationTrend was rejected here and stays rejected: its
+    # counts disagree with TV's and with its own numberOfAnalystOpinions, so
+    # mixing them would put two contradictory analyst counts on one panel.
+    # One vendor per panel, same rule the framework's Filter 3 follows. There
+    # is no longer any reason to want it.
     "price_target_high", "price_target_low", "price_target_median",
     "recommendation_total", "recommendation_buy", "recommendation_hold",
-    "recommendation_sell",
+    "recommendation_sell", "recommendation_over", "recommendation_under",
 ]
 # index positions into the "d" row, named for readability
 _COL = {name: i for i, name in enumerate(TV_COLUMNS)}
@@ -669,6 +681,8 @@ def _row_to_quote(sym_field: str, d: list) -> dict | None:
         "rec_buy": _num(_COL["recommendation_buy"]),
         "rec_hold": _num(_COL["recommendation_hold"]),
         "rec_sell": _num(_COL["recommendation_sell"]),
+        "rec_over": _num(_COL["recommendation_over"]),
+        "rec_under": _num(_COL["recommendation_under"]),
         # NTM consensus (added 2026-08-21) — see TV_COLUMNS above.
         "eps_ntm": _num(_COL["earnings_per_share_forecast_next_fy"]),
         "rev_ntm": _num(_COL["revenue_forecast_next_fy"]),

@@ -374,7 +374,20 @@ values are `null` (never a string sentinel). All strings are already plain
 >   "ev_ebitda": 32.51,      // TV enterprise_value_ebitda_ttm
 >   "yld": 0.124,            // TV dividends_yield_current, percent (0.124 == 0.124%)
 >   "target": 314.29,        // TV price_target_average (analyst 12-mo price target, $)
->   "rec_mark": 1.115,       // TV recommendation_mark, 1.0 (strong buy) .. 5.0 (sell)
+>   "rec_mark": 1.115,       // TV recommendation_mark, 1.0 (all strong buy) .. 3.0 (all strong sell), 2.0 = neutral
+>   // The five rating buckets. TV's column NAMES understate two of them: its
+>   // "buy" is a STRONG buy and its "sell" a STRONG sell, with over/under
+>   // carrying the plain ones. Solving the weighted mean that reproduces
+>   // rec_mark gives buy 1.0, over 1.5, hold 2.0, under 2.5, sell 3.0 — exact
+>   // on every row tested. All five together sum to rec_total; requesting only
+>   // buy/hold/sell (before 2026-09-05) left a phantom shortfall the page
+>   // printed as a vendor defect.
+>   "rec_total": 57,         // TV recommendation_total, analysts with a rating on file
+>   "rec_buy":   46,         // TV recommendation_buy   — STRONG buy
+>   "rec_over":   8,         // TV recommendation_over  — buy
+>   "rec_hold":   3,         // TV recommendation_hold  — hold / neutral
+>   "rec_under":  0,         // TV recommendation_under — sell
+>   "rec_sell":   0,         // TV recommendation_sell  — STRONG sell
 >   // ── NTM consensus (added 2026-08-21, 5-metric scoring framework) — rides
 >   // the same scanner batch-quote call. Forward estimates for the NEXT
 >   // fiscal year, not the current one. null if TV omits it for this ticker.

@@ -3114,7 +3114,11 @@ var ADHOC_FACTS_COLS = ["price_52_week_high","price_52_week_low","market_cap_bas
   // high 120, low 73, median 90, 17 analysts -- so this was the request being
   // narrower than the feed, not a coverage gap.
   "price_target_high","price_target_low","price_target_median",
-  "recommendation_total","recommendation_buy","recommendation_hold","recommendation_sell"];
+  "recommendation_total","recommendation_buy","recommendation_hold","recommendation_sell",
+  // over/under complete the vendor's FIVE buckets. Their absence is what
+  // printed "2 of 17 not bucketed by the feed" on SEI -- this page's own
+  // missing columns, reported to the reader as the vendor's defect.
+  "recommendation_over","recommendation_under"];
 function adhocEnsureFacts(sym){
   // The permanent-cache short-circuit below never re-fetched, so a searched
   // ticker's earnings countdown went blank forever once its cached date
@@ -3173,7 +3177,8 @@ function adhocEnsureFacts(sym){
         ps:n(14), pb:n(15), ev_ebitda:n(16), yld:n(17), target:n(18), rec_mark:n(19),
         sector:t(20), industry:t(21),
         target_high:n(23), target_low:n(24), target_median:n(25),
-        rec_total:n(26), rec_buy:n(27), rec_hold:n(28), rec_sell:n(29) };
+        rec_total:n(26), rec_buy:n(27), rec_hold:n(28), rec_sell:n(29),
+        rec_over:n(30), rec_under:n(31) };
       delete ADHOC_FACTS_FAILED[sym];
       // If the daily-bars fetch already won the race, this is the call that
       // can finally see both pieces — fill it in now instead of leaving it
@@ -14433,16 +14438,25 @@ function fcCoverage(sym){
     return r && fcNum(r.eps)!=null && fcNum(r.eps_est)!=null; })) return true;
   return false;
 }
-// DELIBERATELY NO WORD. An earlier version mapped the 1-to-5 mark onto
-// TradingView's own five labels, and immediately disagreed with them: AAOI's
-// live mark of 1.4375 rendered "Strong buy" here while TradingView's gauge
-// for the same symbol reads "Buy". Their mark is not a plain average of the
-// buckets either (AAOI's 4 strong-buy / 1 buy / 3 hold weights to 1.875, not
-// 1.4375), so the band edges cannot be recovered from the data we have —
-// guessing them would put a word on this page that contradicts the page Zach
-// is comparing it against, the exact "two surfaces, one fact, two answers"
-// bug this file has spent a dozen rounds removing. The number and the scale
-// are printed instead; the buckets underneath carry the shape.
+// DELIBERATELY NO WORD -- though the 2026-09-03 REASON for it was wrong, and
+// the correction is worth keeping because it explains the scale.
+//
+// That reasoning ran: mapping the mark onto TradingView's five labels made
+// AAOI's 1.4375 read "Strong buy" while TradingView's own gauge says "Buy",
+// and the mark "is not a plain average of the buckets" (4 strong-buy / 1 buy
+// / 3 hold weighting to 1.875), so the band edges were unrecoverable.
+//
+// Both halves were artefacts of reading a 1..3 scale as 1..5 and of
+// mislabelling the buckets. The mark IS a plain weighted average, and AAOI is
+// the proof: its real split is 4 buy / 1 over / 3 hold, and at the true
+// weights (buy 1.0, over 1.5, hold 2.0, under 2.5, sell 3.0) that is
+// (4 + 1.5 + 6) / 8 = 1.4375 exactly. On a 1..3 scale 1.4375 sits just under
+// the 1.5 anchor, which is "Buy" -- TradingView's own answer. Nothing
+// disagrees.
+//
+// The word still is not printed, because Zach asked for a gauge and a number
+// and has not asked for a word. That is a display choice now, not a data
+// limit: the anchors are recoverable if he ever wants one.
 /* The forecast chart (2026-09-05). Zach's reference was TradingView's own
    Forecast page for MU on his phone: the price line, then a fan forward from
    the last price out to the highest and lowest published targets with the
@@ -14733,18 +14747,27 @@ function fcTargetSecHTML(sym, f){
     + bar + rows + skew + '</div>';
 }
 /* The rating gauge (2026-09-05, Zach's ask, overriding the earlier refusal).
-   The refusal was never to the gauge — it was to printing a WORD. An earlier
-   version mapped the 1-to-5 mark onto TradingView's five labels and
-   immediately disagreed with them: AAOI's live mark of 1.4375 rendered
-   "Strong buy" while TradingView's own gauge for the same symbol reads "Buy".
-   Their mark is not a plain average of the buckets either (AAOI's 4 strong-buy
-   / 1 buy / 3 hold weights to 1.875, not 1.4375), so the band edges cannot be
-   recovered from the data we have.
+
+   THE SCALE IS 1..3, corrected 2026-09-05 after Zach caught "17 analysts" over
+   buckets summing to 15. Chasing that turned up two more: the scanner exposes
+   FIVE buckets (over/under were never requested), and the mark those buckets
+   average to runs 1..3, not 1..5. Solving the weighted mean across 14 live
+   rows gives buy 1.0, over 1.5, hold 2.0, under 2.5, sell 3.0 -- exact every
+   time, from the market's best consensus (1.0000) to its worst (2.7143).
+   Drawing that on a 1..5 arc compressed every reading into the left half: a
+   dead-neutral 2.00 pointed at "Buy", and the most bearish name in the US
+   market stopped short of "Neutral". Everything looked more bullish than it
+   was.
+
+   The old note here said the mark "is not a plain average of the buckets"
+   (AAOI weighting to 1.875 rather than its published 1.4375). It is a plain
+   average; that sum used the wrong labels and the wrong scale. AAOI is really
+   4 buy / 1 over / 3 hold = (4 + 1.5 + 6) / 8 = 1.4375, to the digit.
 
    What makes this gauge accurate where that word was not:
-   - The five words label the vendor's own SCALE ANCHORS at the integer points
-     — its definition is 1 = every analyst a strong buy, 3 = middle, 5 = sell.
-     They are not band boundaries and nothing here claims a band.
+   - The five words label the vendor's own SCALE ANCHORS at 1, 1.5, 2, 2.5 and
+     3 — 1 = every analyst a strong buy, 2 = neutral, 3 = every analyst a
+     strong sell. They are not band boundaries and nothing here claims a band.
    - No label is emphasised, coloured or selected by where the needle lands.
      The gauge never says this name IS a Strong buy; it says the number is 1.12
      and shows where 1.12 sits on the scale.
@@ -14759,7 +14782,15 @@ function fcTargetSecHTML(sym, f){
 function fcGaugeSVG(mark, tot){
   var m = fcNum(mark);
   if(m==null) return "";
-  m = Math.max(1, Math.min(5, m));
+  // The vendor's mark runs 1..3, NOT 1..5: 1 = every analyst a strong buy,
+  // 2 = neutral, 3 = every analyst a strong sell. Derived from the buckets and
+  // checked against 14 live rows -- the weighted mean of strong buy 1, buy 1.5,
+  // hold 2, sell 2.5, strong sell 3 reproduces recommendation_mark exactly for
+  // every one of them, the market's best (1.0000, all strong buys) and its
+  // worst (2.7143) included. Drawing it on a 1..5 arc squeezed the whole real
+  // range into the left half: a dead-neutral 2.00 pointed at "Buy", and the
+  // most bearish consensus in the US market landed just short of "Neutral".
+  m = Math.max(1, Math.min(3, m));
   var narrow = (window.innerWidth || 1440) <= 760;
   var W = narrow ? 300 : 340, H = narrow ? 208 : 228;
   // The hub sits a full band above the bottom: a mark near 1 or 5 points the
@@ -14767,7 +14798,7 @@ function fcGaugeSVG(mark, tot){
   var cx = W/2, cy = H-58, R = Math.min(W*0.30, cy-32), SW = Math.max(9, R*0.15), LR = R*1.26;
   var FS = narrow ? 9.5 : 10.5;
   function pt(deg, r){ var a = deg*Math.PI/180; return [cx + r*Math.cos(a), cy - r*Math.sin(a)]; }
-  function ang(v){ return (v-1)/4*180; }        // 1 -> 0deg (right), 5 -> 180deg (left)
+  function ang(v){ return (v-1)/2*180; }        // 1 -> 0deg (right), 3 -> 180deg (left)
   function n1(v){ return v.toFixed(1); }
   var A = pt(180,R), B = pt(0,R);
   // The gradient id has to be unique per render: two gauges in one document
@@ -14778,9 +14809,9 @@ function fcGaugeSVG(mark, tot){
     + '<stop offset="1" stop-color="var(--up)"/></linearGradient></defs>'
     + '<path d="M'+n1(A[0])+' '+n1(A[1])+'A'+n1(R)+' '+n1(R)+' 0 0 1 '+n1(B[0])+' '+n1(B[1])
     + '" fill="none" stroke="url(#'+gid+')" stroke-width="'+n1(SW)+'" stroke-linecap="round"/>';
-  // Notches at the interior scale points only; 1 and 5 sit under the round
+  // Notches at the interior scale points only; 1 and 3 sit under the round
   // caps, where a notch reads as a nick in the arc.
-  [2,3,4].forEach(function(v){
+  [1.5,2,2.5].forEach(function(v){
     var t1 = pt(ang(v), R-SW/2), t2 = pt(ang(v), R+SW/2);
     out += '<line x1="'+n1(t1[0])+'" y1="'+n1(t1[1])+'" x2="'+n1(t2[0])+'" y2="'+n1(t2[1])
          + '" stroke="var(--srf)" stroke-width="1.4"/>';
@@ -14807,16 +14838,25 @@ function fcGaugeSVG(mark, tot){
        + (narrow?17:19)+'" font-weight="700">'+esc(m.toFixed(2))+'</text>'
        + (tot!=null ? ('<text x="'+n1(cx)+'" y="'+n1(cy+51)+'" text-anchor="middle" fill="var(--ink3)" font-size="'
           + FS+'">'+tot+' analysts</text>') : '');
-  var alt = "Consensus rating "+m.toFixed(2)+" on the vendor's 1-to-5 scale, where 1 is every analyst a strong "
-    + "buy and 5 is sell" + (tot!=null ? (", from "+tot+" analysts") : "") + ".";
+  var alt = "Consensus rating "+m.toFixed(2)+" on the vendor's 1-to-3 scale, where 1 is every analyst a strong "
+    + "buy, 2 is neutral and 3 is every analyst a strong sell"
+    + (tot!=null ? (", from "+tot+" analysts") : "") + ".";
   return '<div class="fcgauge"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(alt)+'">'
     + out + '</svg></div>';
 }
 function fcRatingSecHTML(sym, f){
   var mark = fcNum(f.rec_mark), tot = fcNum(f.rec_total);
-  var buy = fcNum(f.rec_buy), hold = fcNum(f.rec_hold), sell = fcNum(f.rec_sell);
+  // FIVE buckets, not three. recommendation_over and recommendation_under are
+  // real scanner columns that were simply never requested, and the arithmetic
+  // names them: solving the mark's weighted mean across live rows puts
+  // rec_buy at 1.0, rec_over at 1.5, rec_hold at 2.0, rec_under at 2.5 and
+  // rec_sell at 3.0. So the vendor's "buy" is a STRONG buy and its "sell" a
+  // STRONG sell, with over/under carrying the plain ones -- label them that
+  // way or the bars contradict the needle above them.
+  var sbuy = fcNum(f.rec_buy), buy = fcNum(f.rec_over), hold = fcNum(f.rec_hold),
+      sell = fcNum(f.rec_under), ssell = fcNum(f.rec_sell);
   if(mark==null && tot==null) return "";
-  var bucketed = (buy||0)+(hold||0)+(sell||0);
+  var bucketed = (sbuy||0)+(buy||0)+(hold||0)+(sell||0)+(ssell||0);
   var denom = Math.max(bucketed, tot||0, 1);
   var row = function(label, n, tip){
     var w = n==null ? 0 : (n/denom*100);
@@ -14824,14 +14864,16 @@ function fcRatingSecHTML(sym, f){
       + '<i><u style="width:'+w.toFixed(1)+'%"></u></i>'
       + '<b>'+(n==null?"—":n)+'</b>';
   };
-  var bars = (buy!=null||hold!=null||sell!=null)
-    ? ('<div class="fcbars">'+row("Buy",buy)+row("Hold",hold)+row("Sell",sell)+'</div>') : "";
-  // The vendor's own three buckets can sum to less than its own total: the
-  // scanner exposes buy/hold/sell where TradingView's page splits five
-  // (AAOI live: 4+3+0 against a total of 8). Print the shortfall rather than
-  // rescaling the bars to close it — a missing reading is never guessed, and
-  // silently stretching the bars would invent a placement for the analysts
-  // the vendor did not bucket.
+  var bars = (sbuy!=null||buy!=null||hold!=null||sell!=null||ssell!=null)
+    ? ('<div class="fcbars">'+row("Strong buy",sbuy)+row("Buy",buy)+row("Hold",hold)
+       +row("Sell",sell)+row("Strong sell",ssell)+'</div>') : "";
+  // Kept as a safety net, not as an expected state. With all five buckets
+  // requested they sum to recommendation_total exactly -- checked against 14
+  // live rows, every one landing on zero. The shortfall this used to print
+  // ("2 of 17 not bucketed") was never the vendor's: it was this page asking
+  // for three of five columns and reporting its own gap as the feed's defect.
+  // If it ever fires again it is a real vendor gap, so still never rescale the
+  // bars to close it.
   var gap = (tot!=null && bucketed < tot)
     ? ('<div class="note">'+(tot-bucketed)+' of '+tot+' not bucketed by the feed.</div>')
     : "";
