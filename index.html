@@ -656,6 +656,17 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
   padding:8px 12px;border-bottom:2px solid transparent;white-space:nowrap}
 .stagetabs button[aria-pressed="true"]{color:var(--acc);border-bottom-color:var(--acc)}
 .stagetabs button:hover{color:var(--ink)}
+/* A tab with nothing behind it for the focused name reads as unavailable at
+   a glance instead of only explaining itself after a tap. The Forecast tab on
+   a fund is the case that forced this: SPY is the boot symbol and carries no
+   target and no rating, so the first thing a reader tapped was an empty
+   panel. Deliberately NOT `disabled` — a disabled button dispatches no mouse
+   events, which would kill the hover tooltip carrying the reason, and it
+   stays tappable because a phone surfaces no tooltip on tap and the panel is
+   where that reason has to be legible. */
+.stagetabs button.off{opacity:.45;cursor:help}
+.stagetabs button.off:hover{color:var(--ink3)}
+.stagetabs button.off[aria-pressed="true"]{color:var(--acc);opacity:.7}
 @media (max-width:900px){ .stagechart{height:clamp(300px,46vh,480px)} }
 /* ============ sector heatmap (2026-08-19, Finviz-style) ============ */
 .viewseg{display:flex;gap:8px;align-items:center;padding:8px 14px 0}
@@ -923,6 +934,13 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 .fcbars i{display:block;height:6px;border-radius:3px;background:var(--edge);position:relative;overflow:hidden}
 .fcbars i>u{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--ink3);text-decoration:none}
 .fcgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px 14px;margin-top:6px}
+/* Forecast chart (2026-09-05). figure/figcaption carry their own margins by
+   default, which double against the .dsec gap. */
+.fcchart{margin:10px 0 2px;display:flex;flex-direction:column;gap:5px}
+.fcgauge{margin:6px auto 2px;max-width:340px}
+.fcgauge svg{width:100%;height:auto;display:block}
+.fcchart svg{width:100%;height:auto;display:block}
+.fcchart figcaption{margin:0}
 .rb.big b{width:9px;height:9px}
 .rb.big .lo,.rb.big .hi{top:9px;font-size:9.5px}
 
@@ -946,10 +964,12 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 /* ============ tooltip ============ */
 .tipb{position:fixed;z-index:90;max-width:280px;background:var(--srf2);border:1px solid var(--edge);border-radius:6px;padding:7px 10px;font-size:11px;color:var(--ink2);display:none;box-shadow:0 8px 24px rgba(0,0,0,.35)}
 [data-tip]{cursor:help}
+/* An emptied data-tip (see the TIPS comment) must not advertise itself. */
+[data-tip=""]{cursor:auto}
 /* Resting underline is --tipline (ink3 at ~40% alpha): the affordance stays
    learnable everywhere it was kept, without every label on the page carrying
    a full-strength dotted rule. Hover and keyboard focus restore full --ink3. */
-span[data-tip],.rl[data-tip]{border-bottom:1px dotted var(--tipline)}
+span[data-tip]:not([data-tip=""]),.rl[data-tip]:not([data-tip=""]){border-bottom:1px dotted var(--tipline)}
 span[data-tip]:hover,.rl[data-tip]:hover,span[data-tip]:focus-visible,.rl[data-tip]:focus-visible{border-bottom-color:var(--ink3)}
 /* 376 dotted underlines on one screen is no underline at all (UX-laws
    redesign, 2026-09-02 — Von Restorff). Inside table cells, quick-read
@@ -1261,22 +1281,22 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
 
   <!-- ======= rolling news ticker — the very top (2026-08-19, Zach's ask) ======= -->
   <div class="newsticker" id="newsticker" hidden aria-label="Latest tagged headlines"
-       data-tip="TradingView headlines tagged to desk names, refreshed hourly with the loop. Hover to pause; click a headline to open it."></div>
+      ></div>
 
   <!-- ======= top rail ======= -->
   <div class="rail">
     <h1 class="mark"><svg class="logo" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><defs><linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--acc)"/><stop offset="1" stop-color="var(--gex)"/></linearGradient></defs><rect width="24" height="24" rx="5" fill="url(#logoGrad)"/><path d="M7.5 4v16M14.5 5v14" stroke="var(--srf)" stroke-width="1.6" stroke-linecap="round"/><rect x="5.2" y="9" width="4.6" height="7" rx="1" fill="var(--srf)"/><rect x="12.2" y="7" width="4.6" height="6" rx="1" fill="var(--srf)"/></svg><span class="mk">THE<em>DESK</em><small>FLOW · BRIEF · CATALYSTS</small></span></h1>
     <span class="rl" id="railstate"><span class="lamp" id="raillamp"></span><b id="railstatetext">—</b></span>
     <span class="rl clock tn" id="clock">—</span>
-    <span class="rl" id="railverdict" data-tip="The Morning Brief engine's synthesis score, computed once pre-market — same number the daily brief computes. Most of its measured edge is the overnight gap." hidden>verdict <b id="railverdicttext">—</b></span>
-    <span class="rl opt" id="railbackdrop" data-tip="Up to seven level/trend readings: 10Y, real yield, MOVE, crude, HY spread, 2s10s, and the Fed rate-hike odds. A reading that does not resolve is dropped and the Morning Brief panel says how many graded. Display-only." hidden>backdrop <b id="railbackdroptext">—</b></span>
-    <span class="rl opt" id="railfed" data-tip="Polymarket's priced chance the Fed RAISES rates at its next meeting. A betting market, not a forecast — and the one macro reading here that is forward-looking about policy. Display-only." hidden>fed hike <b id="railfedtext">—</b></span>
+    <span class="rl" id="railverdict" hidden>verdict <b id="railverdicttext">—</b></span>
+    <span class="rl opt" id="railbackdrop" hidden>backdrop <b id="railbackdroptext">—</b></span>
+    <span class="rl opt" id="railfed" hidden>fed hike <b id="railfedtext">—</b></span>
     <!-- Focused name's own tagged headlines, rolling in the header's spare
          width left of the search box (Zach, 2026-09-03). Hidden until a
          ticker is focused; the rail's Tagged headlines panel stays the
          keyboard-reachable copy. -->
     <div class="grow"><div class="focnews" id="focnews" hidden aria-label="Focused ticker's tagged headlines"
-         data-tip="Headlines tagged to the focused ticker, from the same hourly TradingView scan as the top ticker. Hover to pause; click a headline to open it."></div></div>
+        ></div></div>
     <button class="kbtn" id="palopen"><span>Search any ticker or action…</span><kbd id="palkbd">⌘K</kbd></button>
     <button class="ic" id="theme" aria-pressed="false">◐ theme</button>
   </div>
@@ -1329,7 +1349,7 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
       <section id="s-stage">
         <div class="viewseg"><div class="seg" role="group" aria-label="Stage view">
           <button id="view-chart" aria-pressed="true">CHART</button>
-          <button id="view-heat" aria-pressed="false" data-tiphold="0" data-tip="Finviz-style sector map: tile size = market cap (the Desk map sizes by dollar volume instead, because its funds have no market cap), color = the move over the selected period. The same TradingView scanner request the watchlist prices come from — 15-minute delayed, refreshed every ~2 minutes while the map is open. Click a tile to chart it.">HEATMAP</button>
+          <button id="view-heat" aria-pressed="false">HEATMAP</button>
         </div></div>
         <div class="stagehead" id="stagehead"></div>
         <div class="stagebar" id="stagebar"></div>
@@ -1788,54 +1808,17 @@ function safeHref(url){
    synced with build_snapshot.py's scoring. Position-Guard / rail / range /
    hot-tag strings have no live-site equivalent and come from the approved
    prototype unchanged. */
-var TIPS = {
-  "tip-netflow": "Net flow = call premium traded minus put premium traded (options volume x last price x 100), across the WHOLE 0-7 day bucket at every strike. Free data can't see which side (buyer or seller) initiated a trade — this is dollars of premium changing hands, not confirmed directional order flow. NOTE the difference from Flow % beside it: this column and the BULL/BEAR pill count every strike, while Flow % counts only strikes within 20% of the price. A deep in-the-money contract costs almost exactly what it is already worth, so a handful of them can swing this column without being a bet on anything — which is why the two can point opposite ways on the same row.",
-  "tip-cpratio": "Call option volume divided by put option volume today, for 0-7 day options only. Above 1x means more call-side activity.",
-  "tip-flowpct": "The premium-weighted put/call split for 0-7 day options — of every dollar of option premium traded today on strikes NEAR the current price (within 20% either way), the share that went to the busier side. Shown as '73% PUT' or '69% CALL'. C/P counts contracts; this counts dollars, and the two disagree when one side's options are much more expensive. Why only near-the-money: an option deep in the money costs almost exactly what it's already worth, so a few of those contracts carry enormous 'premium' without being a bet on anything. Shows a dash when nothing traded near the money. This is a NARROWER universe than the Net flow column and the BULL/BEAR pill beside it, which count every strike in the bucket — so when the two disagree, this one is the read that excludes contracts bought for what they are already worth. Display only — it doesn't move the score.",
-  "tip-tilt": "Aggressor tilt: each refresh, contracts that traded are checked against their bid/ask — trades near the ask count as bought, near the bid as sold. Calls bought + puts sold = bullish premium; calls sold + puts bought = bearish. +100% = everything classified leaned bullish. This samples one trade per contract per refresh (~7 min) — a rough proxy for who's initiating, not the full tape. Shows 'sampling' until enough trades classify.",
-  "tip-score-conviction": "0-100 score, six parts: RVOL 25, momentum 20 (15 for the size of today's move, +5 only when the move is still running the way it opened), flow magnitude 25 (20 for size, +5 only when the flow's direction agrees with the price move), call/put extremity 15, volume-vs-OI 10, contract concentration 5. Then the aggressor tilt nudges the total ±5 when the sampled buy/sell lean agrees or disagrees (needs |tilt| ≥ 0.30 on $100K+ classified premium). Note the two +5 agreement bonuses reward flow CONFIRMING a move already underway — a chase lean is built into the number. It measures how loud and unusual today is; it is not a prediction, and no version of it has been backtested.",
-  "tip-score-swing": "0-100 score: persistence 35, 5-day flow magnitude 20, OI build 15, trend alignment 15 (a MIXED trend earns 7, an opposing trend 0), IV rank 10 (inverted — cheap vol scores higher; while history is still collecting it earns a neutral 5), call/put skew 5. Then OI-confirm nudges it +5 (OPENING) or -10 (CLOSING) when yesterday's side matches today's direction. Higher = stronger signal, not a guarantee — no version of this score has been backtested.",
-  "tip-firing-badge": "Score is 80+, or this ticker's flow has clearly sped up since the last refresh.",
-  "tip-persist": "How many of the last 5 trading days this name's options flow leaned the same direction (bullish or bearish).",
-  "tip-flow5d": "Total net options premium (calls minus puts) added up over the last up-to-5 trading sessions.",
-  "tip-flow5dpct": "The same 5-day net flow expressed as a percentage of all option premium (calls + puts) that traded over those sessions — i.e. how one-sided the flow was. +100% = every dollar leaned bullish, -100% = all bearish, 0% = evenly split.",
-  "tip-oiconfirm": "Did yesterday's 2wk-6mo flow OPEN new positions or close them? OPENING = open interest grew by at least 25% of yesterday's volume on the flow's side (positions being held — conviction). CLOSING = it shrank that much (unwinding). CHURN = day-traded or rolled. Needs 2 days of data and real volume to show.",
-  "tip-trend": "Whether the stock price is above its 20- and 50-day moving averages (UP), below both (DOWN), or split between them (MIXED). A dash means the scanner had no 20/50-day averages to compare at all (a thinly-traded new leveraged ETF, for example) — a different fact from MIXED, and never scored as one.",
-  "tip-ivrank": "Where today's option prices (implied volatility) sit versus this stock's own recent history — up to the last 60 trading sessions (about 3 months), not a full year. High = options are relatively expensive right now. Needs 20+ sessions of history to calculate; until then the cell shows a dash with the raw IV in its tooltip.",
-  "tip-suggested": "The highest-premium contract with a delta between 0.30 and 0.60, expiring 2 weeks to 6 months out — a middle-of-the-road strike, not a lottery ticket.",
-  // The conviction board's column is a DIFFERENT selection: it reports what
-  // the day's flow actually concentrated in, not a strike anyone should buy.
-  // It used to carry the swing board's tooltip, which described a rule this
-  // column does not apply — and then called the result a suggestion.
-  "tip-loudest": "The single contract that took the most premium today on this name, from the 0-7 day expiries inside \u00b120% of spot — the strike the day's flow actually concentrated in. This is a REPORT of where the money went, not a suggested trade: the swing board's Suggested contract column is the one that applies a delta and expiry rule. 15-minute-delayed CBOE data.",
-  "tip-entry-ref": "Entry reference = this contract's last traded price — 15-minute-delayed, and on a thin contract possibly hours old. Check the live bid/ask before treating it as a fillable price.",
-  "tip-stop-ref": "Stop reference = 30% below the entry price — a fixed constant, not tuned to this name's volatility. A reference level, never a recommendation.",
-  "tip-target-ref": "Target reference = entry price plus 105% — a fixed constant. A reference level, never a recommendation; see the 'needs ~x% on the stock' figure for what the stock must do to get there.",
-  "tip-vsnormal": "How big this one contract's day is FOR THIS NAME: its dollars traded divided by what the name usually trades in a whole day of near-money, short-dated options (averaged over its last 20 sessions). 3× means this single contract did three normal days' worth of that name's options business. The board is ranked on this column, so a quiet name having a huge day can outrank SPY, whose huge days are every day. A name with under 20 sessions of history shows 'no baseline' and sits at the bottom, ranked on raw dollars — never a guessed ratio. Display only.",
-  "tip-bigorders": "The single options contracts with the biggest day RELATIVE TO THEIR OWN NAME'S NORMAL, ranked across the whole watch list (the × normal column). Dollars = contracts traded × the contract's last price × 100. Ranking on raw dollars put SPY, QQQ and NVDA on the board every day by size alone; ranking each line against its own name's usual day lets a loud day in a smaller name show. Dollars are gross, so a deep in-the-money contract can carry money that is already in the strike rather than a bet about a move — those rows are badged MOSTLY INTRINSIC. IMPORTANT: each line is one contract's ENTIRE SESSION, not one order. Free data publishes a daily total per contract, never a trade-by-trade tape. Only strikes within 20% of the stock price count, and only expiries inside 6 months. At most 3 rows per ticker, so one busy name can't say the same thing five times. Any name that earned more rows than it shows is named in the line under the board, so the cap is never silent. Display only; it doesn't move any score.",
-  "tip-logscale": "This chart is drawn on a log price scale, which the desk switches to on its own when a window spans more than 4x high-to-low AND its recent bars have been squeezed into less than a fifth of the pane. On the usual (linear) scale a name that has fallen 99% draws its whole recent history as a flat line along the bottom — a 3x inverse ETF like SOXS does exactly that. On a log scale the same percentage move takes the same vertical space anywhere on the chart, so a 10% week reads the same at $4,000 and at $40. Prices on the axis are real prices either way; only the spacing changes.",
-  "tip-splitfix": "This ticker's older bars arrived from the price feed on the wrong scale — a split the feed never applied to the history — so the desk divided everything before the break by the factor shown and scaled those days' volumes the other way. SOXS came back with every bar before 2026-05-26 priced 15x too high, which drew the 3-month chart as a flat line. The repaired series matches Polygon and TradingView bar for bar. Said out loud here rather than fixed silently.",
-  "tip-etfflows": "Real invested money entering or leaving each semiconductor ETF, estimated as the day-over-day change in the fund's shares outstanding times its NAV (ETFs create and destroy shares as money moves in and out). One reading per session — slower than the options boards, and it mixes retail and institutional money. The 1M figure is the fund's trailing one-month net flow. Shows 'split — n/a' when a fund split that day: a split changes the share count without any money moving, so the day's flow is unknowable rather than zero. Context only; it doesn't affect any score.",
-  netflow:"Call premium traded minus put premium traded (volume × last × 100). Free data can't see buy vs sell side — this is premium changing hands, not directional order flow.",
-  flows:"Fund flows = change in shares outstanding × NAV (creations/redemptions). Flows chase returns — context, never a signal.",
-  fund:"Colored from a buyer's lens against rough thresholds: short % of float green under 2% / red over 5%; RSI green at 30 or under (washed out) / red at 70+ (hot); PEG green at 1 or under / red at 2+; net margin green at 20%+ / red below 0%; Debt/Eq green at 0.5 or under / red at 2+; analyst target green when 15%+ above price. A gauge, not a rating.",
-  framework:"Five filters testing one repricing cycle in order: is forward EPS being revised up (6mo), is NTM revenue growth above 20%, is that revision accelerating (3mo), is operating margin expanding faster than 50bps year over year, and is TTM free cash flow both POSITIVE and growing faster than revenue (self-funded growth, not just a shrinking loss — the row shows the exact figure when negative FCF is the reason a growing-faster-than-revenue reading still fails). 5/5 = BUY, 4/5 = BUY with one gap, 3/5 = ADD, 2/5 = HOLD, under 2 = AVOID. Computed once a day server-side from TradingView consensus and reported quarterly financials — never guessed: a filter with no data reads 'building' rather than pass or fail, and the verdict itself reads BUILDING HISTORY until at least 3 of the 5 have resolved. The two consensus-trend filters need 3-6 months of accumulated weekly snapshots after a fresh deployment, so a tier reached before they report shows how many measurable filters passed and how many are still to come — a pending filter can only add passes later, never subtract. A fund reads NOT APPLICABLE instead: a basket of holdings has no revenue, margin or cash flow of its own, so none of the five can ever be measured for it. Display-only: it never feeds the conviction or swing score above, and works best on growth names — mature dividend payers score lower by design, not by error.",
-  range:"Position in the 52-week range. Near the low = shopping territory, near the high = hot runner. The diamond is today.",
-  hot:"Today's move divided by this name's own average daily move — Micron swinging 2% is normal, Google swinging 2% is not. Highlights at 1.8× and up.",
-  "tip-unusual-activity": "Today's 0-7 day options contract volume divided by this ticker's own trailing 20-session average — the same “relative to its own normal” idea as RVOL and the hot-move tag above, applied to options volume. Flags at 3× and up. Needs 20 sessions of history first; until then this ticker just isn't flagged. The BULLISH/BEARISH/HEDGING/MIXED word is a heuristic on top of that, from which side (call or put) holds the bigger near-money premium share vs. today's actual price move: put-heavy flow while the stock is NOT falling reads HEDGING (the one signature free data can honestly call protective), put-heavy while it IS falling reads BEARISH, call-heavy agreeing with an up move reads BULLISH, and call-heavy disagreeing reads MIXED rather than a mirrored “hedging” claim this data can't support (covered-call writing looks identical to bought calls here). Sampled, aggregated, free data — this cannot see who initiated a trade or why. Display only; it never moves the conviction or swing score.",
-  stale:"This section is older than expected for its usual refresh cadence — showing the last good read.",
-  ta_trend:"Auto trend lines, fit on the selected window: swing highs and lows (4 bars each side, 2 on short windows), then the best line through two or more pivots that price respected. A pivot counts as a touch within roughly 0.3%-3% of the line and a wick poking through by roughly 1.2%-4% kills the fit, on EVERY interval including intraday — both scale with what the name actually moves (avg_move), converted to that interval's own typical bar-to-bar range, not a flat number the vault scanner started from. On the daily and weekly views the poke is judged on CLOSES rather than wicks, because a wick's intrabar extremes could otherwise kill a genuine daily/weekly line no close ever invalidated. The anchor, containment and break rules come from that scanner, generalized to the support side; its rising-lows condition is not applied here. A line whose break is more than 12 bars old is not drawn, one price has traded back through and walked away from is captioned as failed, and one price closed through and stayed through has FLIPPED — broken support is drawn and captioned as overhead resistance. Windows under 40 bars draw no trend line. The dashed part is the line projected forward, and a failed line gets no projection. When BOTH a resistance and a support line fit, the caption also names the shape the pair draws — ascending/descending/symmetrical triangle, rising/falling wedge, ascending/descending channel, trading range, broadening formation, or bull/bear flag when a fast prior move preceded a tight channel — read off the same two lines' slopes and convergence, never a separate detector. Said only when the geometry clearly matches one of those names; otherwise nothing is claimed. Display only — never a signal, never in any score.",
-  ta_sr:"Horizontal support/resistance: swing-point prices clustered inside half a 60-bar ATR (floored at 1%, capped at 5%, so a $900 stock and a $12 one both cluster sensibly); a level needs 2+ touches, strongest three drawn. A level that held as a floor often matters again as a ceiling, so highs and lows cluster together. Colored by where price sits against each level: red overhead (resistance ahead), green underneath (support below), blue when price is inside the band itself — the same three words the caption under the chart uses. Every level's price and touch count is named there too; only the one nearest price takes an axis badge, and even that is dropped when it would land on a moving-average badge. Levels up to 20% from price are kept on purpose — a level is a measured shelf where price actually traded, unlike a projected trend line, which is held to a tighter, volatility-scaled distance — and each level's caption prints its own %-distance so a far one reads as far. Display only.",
-  ta_bb:"Bollinger Bands: a 20-period simple moving average plus/minus 2 standard deviations of the same 20 closes, in purple. The 20 periods are whichever interval is active — 20 daily bars on the 1D view, but 20 HOURLY bars on 1H (about two and a half trading days), so on intraday views the band is a different, much faster signal than the daily one. On any one interval it is computed on the full price history, not the window selector — switching from 1M to 1Y does not change the band's shape. The caption under the chart says whether price is currently above the upper band, below the lower band, or inside them. Display only — never a signal, never in any score. The watchlist rail's Band crosses panel flags any rail ticker whose price just crossed a band — and, first in the list, any that TOUCHED its LOWER band today, sits at/below it, or is within 1% above it (the lower-band alert rule, added 2026-08-26) — from the same daily bars, whether or not this toggle is on or its chart is even open.",
-  ta_ma:"The 20, 50 and 200-DAY moving average lines — the price's own average over those many days, the most common way traders read trend. Off by default to keep the chart clean (the 2026-08-26 declutter rule); turn on to draw them. They are computed from daily bars, so they draw on the 1D view only — the button is disabled on intraday and weekly views. On 1D, the chart notes keep showing the values and the % gap to price whether the lines are drawn or not.",
-  "recap-conv":"A plain-English restatement of this board's own header counts — same numbers, in a sentence. A name counts as bullish when more option dollars moved through its calls (contracts that profit if the stock rises) than its puts (contracts that profit if it falls) in the 0-7 day bucket. That is dollars changing hands, not confirmed buying — the same caveat as the Net flow column. Firing = flow unusually loud versus that name's own normal day. A description of today's tape, never advice.",
-  "recap-swing":"A plain-English restatement of the rows shown in the table below — the count covers exactly those rows, nothing off-screen. A name counts as bullish when TODAY'S option dollars leaned toward its calls (contracts that profit if the stock rises) rather than its puts (contracts that profit if it falls), in the same 0-7 day bucket the Conviction board reads. What makes this board multi-week is its SELECTION, not this count: a name earns its row by holding the same lean across sessions (the Persist column) — but the bull/bear split here is today's flow, not a longer-dated position. Dollars changing hands, not confirmed buying. A description of the tape, never advice.",
-  "recap-orders":"A plain-English count of the rows shown below. A call is a contract that profits if the stock rises; a put profits if it falls. IMPORTANT CAVEATS, same as the board's own tooltips: these are day TOTALS of dollars changing hands per contract — free data cannot see who bought and who sold, so a call-heavy day is not proof of bullish bets. The board ranks each line against ITS OWN NAME'S usual day (the × normal column), so 'loudest for its size' and 'most raw dollars' can be two different names; and a deep in-the-money line can be mostly money already in the strike (the MOSTLY INTRINSIC badge marks those). A description of what traded, never advice.",
-  "recap-etf":"A plain-English count of the rows shown below. A fund flow is money moving into or out of the fund itself: investors creating new fund shares (money in) or redeeming them (money out) — slower, stickier money than the options tape above. One reading per session. A description, never advice.",
-  ta_gex:"Gamma levels: dotted lines at the option strikes where the most gamma-weighted open interest sits — prices that can act like magnets or speed bumps as dealers hedge around them. From settled open interest, refreshed once per session, desk names only. Off by default; a positioning map, never a direction call, never in any score.",
-  recap:"A quick plain-English read of the open chart, and nothing more. Leaning bullish = the price is trading above its own recent averages (buyers have been paying up versus the recent past). Leaning bearish = below them. Mixed = the medium-term (50-day) and long-term (200-day) reads disagree — many traders treat that as a wait. The lean is computed only from the price against its own 50-day and 200-day averages; a purple note about the Bollinger bands may follow when price is outside them, and that is a volatility fact, never part of the lean. This is a description of the chart, not advice or a prediction, and it never feeds any score.",
-  ta_vp:"Volume profile: how much volume traded at each price over the window shown, drawn as sideways bars against the right edge. Built by spreading each bar's volume across its own high-to-low range — an approximation from daily (or intraday) bars, not true tick-by-tick data, so treat the shape as a map, not a measurement. The brightest bar is the most-traded price; the shaded band is the value area, the price range holding roughly 70% of the window's volume. Heavy shelves below price are where prior buyers sit; free data cannot see WHO traded, so nothing here is labeled institutional. Turning this on hides the dashed S/R lines — both mark horizontal levels, and two versions of the same story is clutter. Display-only: it never feeds any score. On the daily view, a tracked desk name's recent sessions place their volume against 15-minute or hourly bars instead of the whole day's range when that intraday history is available — the caption says how many sessions got the finer treatment.",
-};
+/* TIPS held 43 entries of methodology prose — what each metric is and how it
+   is computed — surfaced on hover AND on tap. Zach, 2026-09-05: "Trim out all
+   explanation text. I don't want it either in mobile or on the web." The
+   object stays as an empty lookup so every `TIPS.x` call site resolves to ""
+   and showTip's own `if(!txt) return` makes it a no-op; the call sites are
+   left in place rather than unpicked from thirty string concatenations, which
+   is where a careless sweep breaks the page. DO NOT refill it. Anything that
+   states a fact about the reading on screen right now is a disclosure, not
+   explanation — those carry their own inline data-tip and printed text, and
+   they stay. See CLAUDE.md, "NO EXPLANATION TEXT ON THE PAGE". */
+var TIPS = new Proxy({}, {get:function(){ return ""; }, has:function(){ return true; }});
 
 /* =================== state =================== */
 var STATE = { data:null };
@@ -2524,7 +2507,7 @@ function staleBadgeHTML(dateLabel){
 function ageStampHTML(dateLabel, stale){
   if(stale) return staleBadgeHTML(dateLabel);
   var p = prettyStamp(dateLabel);
-  return p ? (' <span class="bc" data-tip="When this panel\u2019s data was published. It refreshes with the loop; outside 8:00-15:20 CT the last publish stands.">as of '+esc(p)+ageWordsHTML(dateLabel)+'</span>') : '';
+  return p ? (' <span class="bc">as of '+esc(p)+ageWordsHTML(dateLabel)+'</span>') : '';
 }
 
 /* =================== collapsible explainers (declutter, 2026-08-26) ===================
@@ -6520,7 +6503,7 @@ function renderNews(){
   var cov = "";
   if(newsObj && newsObj.by_ticker && data && data.facts){
     var have = Object.keys(newsObj.by_ticker).length, pinnedN = Object.keys(data.facts).length;
-    if(pinnedN) cov = ' · <span data-tip="'+esc("Desk names with at least one headline in the last hourly scan, out of every pinned name. A name with none is quiet, not missing.")+'">'+have+'/'+pinnedN+' names</span>';
+    if(pinnedN) cov = ' · <span>'+have+'/'+pinnedN+' names</span>';
   }
   document.getElementById("newsstat").innerHTML = "TradingView news · hourly" + cov + ageStampHTML(data && data.context_updated_at, stale);
   // A NULL news object means the scan did not return at all — the publisher
@@ -8226,15 +8209,14 @@ function fcell(label, text, cls, sub){
    tooltip adds the market rule of thumb where one exists. Needs the peers tab
    data, which stageShow warms in the background; before it lands the cells
    render exactly as they did. */
-var METRIC_MARKET_NOTE = {
-  peg:"Rule of thumb across the market: PEG at or below 1 is cheap for the growth, 2 or more is expensive.",
-  pe:"Market context: the S&P 500 has traded around 20-25x trailing earnings in recent years.",
-  ev_ebitda:"Market context: 10-14x EV/EBITDA is a typical large-cap range.",
-  gross_margin:"Market context: above 40% is a strong gross margin outside software; software runs 70%+.",
-  op_margin:"Market context: above 20% operating margin is strong for most industries.",
-  fcf_margin:"Market context: above 15% of revenue converting to free cash flow is strong.",
-  debt_eq:"Market context: below 0.5 is conservative leverage, above 2 is heavy."
-};
+// Seven "Market context: 10-14x EV/EBITDA is a typical large-cap range" rules
+// of thumb used to hang off these cells. They explained the metric rather than
+// reporting this name's reading, so they went with the rest of the explanation
+// text (Zach, 2026-09-05). The peer median still prints under each cell — a
+// reference computed from this name's actual peers rather than a remembered
+// market average. Kept as an empty map so peerAnnotate's lookup still works.
+// DO NOT refill.
+var METRIC_MARKET_NOTE = {};
 function peerAnnotate(sym, key, fmt){
   var st = peerStat(sym, key);
   if(!st) return {cls:"", sub:"", tip:METRIC_MARKET_NOTE[key]||""};
@@ -8424,12 +8406,10 @@ function renderFundamentals(sym, fund){
     fcellPeer("Debt/Eq", "debt_eq", numStr(f.debt_eq), sym, fmtAxisNum, deCls),
     fcell("Dividend yield", pctStr(f.yld)),
     fcell("Short % float", shortPct!=null?(shortPct.toFixed(1)+"%"+(shortFromFund?fundStaleSub:"")):"—", shortCls),
-    fcell("Beta (1y)", f.beta!=null
-      ? ('<span data-tip="'+esc("How much this name moves against the S&P 500 over the past year — TradingView's 1-year beta. 1.0 moves with the index, 2.0 twice as far, below zero moves against it. Most sites quote a 5-year beta, which will differ.")+'">'+numStr(f.beta)+'</span>')
-      : "\u2014"),
+    fcell("Beta (1y)", f.beta!=null ? numStr(f.beta) : "\u2014"),
     fcell("Avg volume", f.avol!=null?fmtShareCount(f.avol):"—"),
     fcell("RVOL today", q.rvol!=null?q.rvol.toFixed(1)+"×":"—"),
-    fcell("RSI (14)", f.rsi!=null?('<span data-tip="'+esc("TradingView's RSI(14) for this name, on 15-minute-delayed data — a scanner snapshot, recomputed once per cycle. The Trading Analysis chart no longer draws its own RSI pane (removed 2026-08-21), so this cell is the only RSI reading on the page.")+'">'+Math.round(f.rsi)+'</span>'):"—", fundCls("rsi",f), "delayed"),
+    fcell("RSI (14)", f.rsi!=null?Math.round(f.rsi):"\u2014", fundCls("rsi",f), "delayed"),
     fcell("Avg daily move", f.avg_move!=null?f.avg_move+"%":"—"),
     fcell("52w position", posPct!=null?posPct+"%":"—"),
     fcell("Analyst target", targetTxt, targetCls),
@@ -12059,7 +12039,7 @@ function stageRecapHTML(failedOv){
   // "there is nothing to see" (2026-08-26 review round 18, data honesty
   // finding #1). The full reason stays in chart notes.
   var failClause = (failedOv && failedOv.length)
-    ? (' <span class="m" data-tip="These overlays are switched on but this name/view gives them nothing to draw — usually too little price history. The exact reason for each is in chart notes.">· nothing to draw for '
+    ? (' <span class="m">· nothing to draw for '
        + esc(failedOv.join(", "))+' — why: see chart notes</span>')
     : '';
   var open = !!EXP_OPEN["stagedetail"];
@@ -12109,9 +12089,9 @@ function stageRecapHTML(failedOv){
   // in chart notes on every interval, this sentence just doesn't borrow it.
   var bb = (STAGE.iv==="1D") ? (STAGE.taSummary && STAGE.taSummary.bb) : null;
   var bbClause = (bb && (bb.side==="over" || bb.side==="under"))
-    ? ' <span style="color:var(--bb)" data-tip="'+esc(TIPS.ta_bb)+'">Price is outside its Bollinger bands — an unusually stretched move, in either direction; not a buy or sell call.</span>'
+    ? ' <span style="color:var(--bb)">Price is outside its Bollinger bands.</span>'
     : '';
-  return '<span class="m">Quick read:</span> <span data-tip="'+esc(TIPS.recap)+'">'+lean+'</span>'+bbClause+failClause+btn;
+  return '<span class="m">Quick read:</span> <span>'+lean+'</span>'+bbClause+failClause+btn;
 }
 function stageTALegend(prefs){
   // The quick-read line rides this function's own cadence (full render +
@@ -12791,7 +12771,7 @@ function renderHeatBar(){
   var wide = HEAT_WIDE_WANTED;
   el.innerHTML = '<div class="seg" role="group" aria-label="Heatmap universe">'+univBtns+'</div>'
     + '<div class="seg" role="group" aria-label="Heatmap period">'+tfBtns+'</div>'
-    + '<button class="fbtn" id="heatwide" aria-pressed="'+wide+'" data-tiphold="0" data-tip="Hide both side rails and give the map the full window, the way Finviz does. The watchlist and the brief come straight back.">'
+    + '<button class="fbtn" id="heatwide" aria-pressed="'+wide+'">'
     + (wide ? "\u21f2 shrink" : "\u21f1 expand")+'</button>'
     + (HEAT.isolate ? '<button class="fbtn" id="heatall" aria-pressed="true">'+esc(HEAT.isolate)+' only — show all sectors</button>' : '');
   if(_focusKey){
@@ -13412,11 +13392,11 @@ function wlOnRail(sym){
 function stageStarHTML(sym){
   if(WL_NOT_LISTABLE[sym]) return "";
   var on = wlOnRail(sym), pinned = railHasSym(sym);
+  // An affordance, not an explanation: what this click does, nothing about
+  // how the desk works behind it (Zach, 2026-09-05).
   var tip = on
-    ? (pinned ? "On the watchlist. Click to hide it from the rail — display only, the boards and the daily sidecar keep tracking it."
-              : "On this browser\u2019s custom list. Click to remove it.")
-    : (pinned ? "Hidden from the rail right now. Click to put it back."
-              : "Add to this browser\u2019s watchlist: 15-minute-delayed quotes and charts here. Options boards and the daily financials sidecar stay server-curated.");
+    ? (pinned ? "Click to hide it from the rail." : "Click to remove it from this browser\u2019s list.")
+    : (pinned ? "Click to put it back on the rail." : "Click to add it to this browser\u2019s list.");
   return '<button class="fbtn" id="stagestar" aria-pressed="'+on+'" data-tip="'+esc(tip)+'">'
     + (on ? "★ on watchlist · remove" : "☆ add to watchlist") + '</button>';
 }
@@ -13459,9 +13439,9 @@ function stageBar(){
   // means "show me that much history", switching back to daily candles.
   var ivBtns = IVS.map(function(t){ return '<button data-iv="'+t+'" aria-pressed="'+(t===STAGE.iv)+'">'+t+'</button>'; }).join("");
   var tfBtns = GTF.map(function(t){ return '<button data-tf="'+t+'" aria-pressed="'+(STAGE.iv==="1D" && t===STAGE.tf)+'">'+t+'</button>'; }).join("");
-  var chips = '<span class="pchip tn" id="stagepct" hidden data-tip="Price change from the first candle on screen to the last one. It follows the zoom and the pan, so it describes exactly the stretch you are looking at, not the whole range button."></span>'
+  var chips = '<span class="pchip tn" id="stagepct" hidden></span>'
     + '<span class="pchip tn m" id="stagevz" hidden></span>'
-    + '<button class="fbtn" id="stagelog" aria-pressed="'+STAGE.log+'" data-tip="'+esc(TIPS["tip-logscale"])+' The desk picks automatically; this button overrides it until the next symbol change.">log</button>';
+    + '<button class="fbtn" id="stagelog" aria-pressed="'+STAGE.log+'">log</button>';
   var fixedBy = STAGE.sym ? splitFixedFor(STAGE.sym) : null;
   if(fixedBy) chips += '<span class="pchip tn m" data-tip="'+esc(TIPS["tip-splitfix"])+'">split-rescaled '+fixedBy.toFixed(fixedBy>=10?0:1)+'×</span>';
   // Say when a bad tick was repaired, the same way the split repair says it.
@@ -14427,6 +14407,23 @@ function renderPeersTab(sym, widthOnly){
    touches the conviction or swing score. The wording is deliberately flat:
    these are opinions on record, not a forecast the desk endorses. */
 function fcNum(v){ return (typeof v==="number" && isFinite(v)) ? v : null; }
+// Does this name have anything for the Forecast tab to draw? Targets and
+// ratings ride the once-a-cycle scanner row, so data.json always answers for
+// a tracked name; the estimate trend and the actuals ride the daily sidecar,
+// which loads later, so a name that has only those still counts. 24 of the 63
+// tracked names are funds and wrappers with none of it — the tab greys out
+// for them rather than opening on an apology.
+function fcCoverage(sym){
+  if(!sym) return true;                       // nothing focused yet: judge nothing
+  var f = factsOf(sym);
+  if(f && (fcNum(f.target)!=null || fcNum(f.target_high)!=null || fcNum(f.target_low)!=null
+        || fcNum(f.target_median)!=null || fcNum(f.rec_mark)!=null || fcNum(f.rec_total)!=null)) return true;
+  var fd = FUND_CACHE[sym];
+  if(fd && fd.eps_trend && fcNum(fd.eps_trend.current)!=null) return true;
+  if(fd && Array.isArray(fd.earnings) && fd.earnings.some(function(r){
+    return r && fcNum(r.eps)!=null && fcNum(r.eps_est)!=null; })) return true;
+  return false;
+}
 // DELIBERATELY NO WORD. An earlier version mapped the 1-to-5 mark onto
 // TradingView's own five labels, and immediately disagreed with them: AAOI's
 // live mark of 1.4375 rendered "Strong buy" here while TradingView's gauge
@@ -14437,6 +14434,181 @@ function fcNum(v){ return (typeof v==="number" && isFinite(v)) ? v : null; }
 // is comparing it against, the exact "two surfaces, one fact, two answers"
 // bug this file has spent a dozen rounds removing. The number and the scale
 // are printed instead; the buckets underneath carry the shape.
+/* The forecast chart (2026-09-05). Zach's reference was TradingView's own
+   Forecast page for MU on his phone: the price line, then a fan forward from
+   the last price out to the highest and lowest published targets with the
+   average dashed through it, and each level badged at the right edge. It
+   replaces a 6px `.rb big` strip that carried the same three numbers and read
+   as a divider rule on a phone — the "not showing a graph" he reported.
+
+   Honesty rules this chart inherits from the rest of the page:
+   - The fan is GEOMETRY, not a path. Nobody forecast the line between here
+     and there, and the caption under the chart says so. Only the endpoints
+     are published.
+   - Every wedge takes its colour from its OWN sign against the last price,
+     never from which bound it is, so a name trading above every published
+     target draws two falling red wedges instead of a green one pointing down.
+     rangeBarHTML makes the same choice on a 52-week bar the price has broken.
+   - The price plotted is the same 15-minute-delayed print the rest of the
+     page uses; the line above the chart already badges it STALE when it is.
+   - The viewBox width follows the narrow/wide split every other chart in the
+     kit uses, and onViewportChange re-renders this tab across it. Text is
+     authored in viewBox units, so a single hard-coded width puts the axis at
+     6px on a phone (the bug the vs-Peers chart carried).
+   - Badges are nudged apart when two levels land within a badge of each
+     other, so a tight range cannot stack them into one illegible block. The
+     tick at the plot edge stays on the true level, so a nudged badge still
+     points at where its number actually sits. */
+function fcProjectionSVG(sym, px, avg, hi, lo){
+  if(px==null || !(px>0)) return "";
+  if(hi==null && lo==null && avg==null) return "";
+  var full = barsOf(sym), n = full.length;
+  // Under about three months of dailies the line is too short to be a
+  // reference for a one-year target, and the numbers under the chart already
+  // carry every level. The caller falls back to the range strip.
+  if(n < 60) return "";
+  var vals = [], i;
+  for(i=0;i<n;i++){ if(full[i]!=null) vals.push(full[i]); }
+  if(vals.length < 40) return "";
+  vals.push(px);
+  [hi, avg, lo].forEach(function(v){ if(v!=null) vals.push(v); });
+  var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+  var vpad = (mx-mn)*0.10 || Math.abs(mx||1)*0.1;
+  mn = Math.max(0, mn-vpad); mx = mx+vpad;
+  if(mn===mx){ mn = Math.max(0, mn-1); mx = mx+1; }
+
+  var narrow = (window.innerWidth || 1440) <= 760;
+  var W = narrow ? 360 : 620, H = narrow ? 232 : 262;
+  var FS = 11, padT = 14, padB = 22, padR = 5;
+  var ticks = niceTicks(mn, mx, 4), fmt = tickFormatter(ticks, "money");
+  var widest = 0;
+  ticks.forEach(function(t){ widest = Math.max(widest, String(fmt(t)).length); });
+  var padL = Math.ceil(widest*FS*0.62) + 8;
+  var plotW = W-padL-padR, plotH = H-padT-padB;
+  // bars.json keeps about two years of dailies and the targets are one-year
+  // forecasts, so the forward third is drawn to the same scale as the history
+  // behind it rather than to whatever width was left over.
+  var fwdW = plotW/3, histW = plotW-fwdW;
+  var x0 = padL+histW, xR = padL+plotW, yB = padT+plotH;
+  var Y = function(v){ return padT + (1-(v-mn)/(mx-mn))*plotH; };
+  var XH = function(k){ return padL + (n<=1 ? histW : k*histW/(n-1)); };
+  var yNow = Y(px), out = "";
+
+  // forward region: its own ground, so the eye reads the split before it
+  // reads the fan
+  out += '<rect x="'+x0.toFixed(1)+'" y="'+padT+'" width="'+fwdW.toFixed(1)+'" height="'+plotH.toFixed(1)
+       + '" fill="var(--srf2)"/>';
+  ticks.forEach(function(t){
+    var y = Y(t);
+    if(y < padT-1 || y > yB+1) return;
+    out += '<line x1="'+padL+'" y1="'+y.toFixed(1)+'" x2="'+xR.toFixed(1)+'" y2="'+y.toFixed(1)
+         + '" stroke="var(--grid)" stroke-width="1"/>'
+         + '<text x="'+(padL-5)+'" y="'+(y+3.6).toFixed(1)+'" text-anchor="end" fill="var(--ink3)" font-size="'
+         + FS+'">'+esc(fmt(t))+'</text>';
+  });
+
+  // the fan, under the price line so the line stays the darkest mark
+  function wedge(v){
+    if(v==null) return "";
+    return '<polygon points="'+x0.toFixed(1)+','+yNow.toFixed(1)+' '+xR.toFixed(1)+','+Y(v).toFixed(1)
+         + ' '+xR.toFixed(1)+','+yNow.toFixed(1)+'" fill="'+(v>=px?"var(--upbg)":"var(--dnbg)")+'"/>';
+  }
+  function ray(v, dash){
+    if(v==null) return "";
+    return '<line x1="'+x0.toFixed(1)+'" y1="'+yNow.toFixed(1)+'" x2="'+xR.toFixed(1)+'" y2="'+Y(v).toFixed(1)
+         + '" stroke="'+(v>=px?"var(--up)":"var(--dn)")+'" stroke-width="'+(dash?1.6:1.2)+'"'
+         + (dash?' stroke-dasharray="5 3"':'')+' fill="none"/>';
+  }
+  out += wedge(hi)+wedge(lo)+ray(hi,false)+ray(lo,false)+ray(avg,true);
+
+  // price history
+  var d = "", first = null, last = null, started = false;
+  for(i=0;i<n;i++){
+    if(full[i]==null) continue;
+    var xx = XH(i), yy = Y(full[i]);
+    d += (started?"L":"M")+xx.toFixed(1)+" "+yy.toFixed(1);
+    if(!started){ first = xx; started = true; }
+    last = xx;
+  }
+  if(!started) return "";
+  out += '<path d="'+d+'L'+last.toFixed(1)+' '+yB.toFixed(1)+'L'+first.toFixed(1)+' '+yB.toFixed(1)
+       + 'Z" fill="var(--accbg)"/>'
+       + '<path d="'+d+'" fill="none" stroke="var(--acc)" stroke-width="1.8" stroke-linejoin="round"/>';
+
+  // today: the divider, the level it anchors, and the point the fan opens from
+  out += '<line x1="'+x0.toFixed(1)+'" y1="'+padT+'" x2="'+x0.toFixed(1)+'" y2="'+yB.toFixed(1)
+       + '" stroke="var(--grid)" stroke-width="1"/>'
+       + '<line x1="'+x0.toFixed(1)+'" y1="'+yNow.toFixed(1)+'" x2="'+xR.toFixed(1)+'" y2="'+yNow.toFixed(1)
+       + '" stroke="var(--acc)" stroke-width="1.3"/>'
+       + '<circle cx="'+x0.toFixed(1)+'" cy="'+yNow.toFixed(1)+'" r="3.1" fill="var(--acc)" stroke="var(--srf)" stroke-width="1.5"/>';
+
+  // right-edge badges
+  var badges = [];
+  function badge(v, lab){
+    if(v==null) return;
+    badges.push({ y0:Y(v), y:Y(v), col:(lab==="now" ? "var(--acc)" : (v>=px ? "var(--up)" : "var(--dn)")),
+                  txt: lab + (lab==="now" ? "" : " "+fwSignedFixed((v-px)/px*100, 0)+"%") });
+  }
+  badge(hi,"max"); badge(avg,"avg"); badge(px,"now"); badge(lo,"min");
+  badges.sort(function(a2,b2){ return a2.y-b2.y; });
+  var BH = 14.5, GAP = 2.5;
+  for(i=1;i<badges.length;i++){
+    if(badges[i].y - badges[i-1].y < BH+GAP) badges[i].y = badges[i-1].y + BH + GAP;
+  }
+  var over = badges.length ? (badges[badges.length-1].y + BH/2) - yB : 0;
+  if(over > 0) badges.forEach(function(bg){ bg.y -= over; });
+  if(badges.length && badges[0].y - BH/2 < padT){
+    var up = padT - (badges[0].y - BH/2);
+    badges.forEach(function(bg){ bg.y += up; });
+  }
+  badges.forEach(function(bg){
+    // 0.58em/char measured a 400-weight label; these are 700 and clipped
+    // "max +130%" past the right edge of the viewBox at phone width.
+    var bw = Math.min(Math.max(38, bg.txt.length*7.2 + 12), plotW-4);
+    var bx = xR - bw;
+    // A nudged badge keeps a tick on its real level so the label never claims
+    // a height its number does not sit at.
+    if(Math.abs(bg.y - bg.y0) > 1){
+      out += '<line x1="'+(bx-6).toFixed(1)+'" y1="'+bg.y0.toFixed(1)+'" x2="'+bx.toFixed(1)+'" y2="'
+           + bg.y0.toFixed(1)+'" stroke="'+bg.col+'" stroke-width="1.2"/>';
+    }
+    out += '<rect x="'+bx.toFixed(1)+'" y="'+(bg.y-BH/2).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+BH
+         + '" rx="2.5" fill="'+bg.col+'"/>'
+         + '<text x="'+(bx+bw/2).toFixed(1)+'" y="'+(bg.y+3.6).toFixed(1)+'" text-anchor="middle" fill="var(--srf)"'
+         + ' font-size="10.5" font-weight="700">'+esc(bg.txt)+'</text>';
+  });
+
+  // x axis: the year each January starts, plus the year the targets run into
+  var dates = barSessionDates(sym, n), xlab = "";
+  if(dates && dates.length===n){
+    // Only real January boundaries get a label. Labelling the FIRST bar's own
+    // year too printed "20242025" — the series opens mid-year, so that label
+    // and the January tick beside it are a few units apart.
+    var marks = [];
+    for(i=1;i<n;i++){
+      var yr = dates[i].getUTCFullYear();
+      if(dates[i-1].getUTCFullYear()===yr) continue;
+      marks.push({x:XH(i), t:String(yr), tick:true});
+    }
+    // The year the targets run into owns the right edge; a January tick that
+    // lands under it is the one that gives way.
+    var placed = [{x:xR, t:String(dates[n-1].getUTCFullYear()+1), tick:false, anchor:"end"}];
+    marks.forEach(function(m){
+      var clash = placed.some(function(q){ return Math.abs(q.x-m.x) < 30; });
+      if(!clash) placed.push(m);
+    });
+    placed.forEach(function(m){
+      xlab += '<text x="'+m.x.toFixed(1)+'" y="'+(yB+14)+'" text-anchor="'+(m.anchor||"middle")
+           +  '" fill="var(--ink3)" font-size="10.5">'+m.t+'</text>';
+      if(m.tick) xlab += '<line x1="'+m.x.toFixed(1)+'" y1="'+yB+'" x2="'+m.x.toFixed(1)+'" y2="'+(yB+3.5)
+           +  '" stroke="var(--grid)"/>';
+    });
+  }
+  var alt = sym+" price over the last "+Math.round(n/252*12)+" months, then the published one-year targets: "
+    + (hi!=null?("highest "+fmtpx(hi)+", "):"") + (avg!=null?("average "+fmtpx(avg)+", "):"")
+    + (lo!=null?("lowest "+fmtpx(lo)+", "):"") + "against "+fmtpx(px)+" now.";
+  return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(alt)+'">'+out+xlab+'</svg>';
+}
 function fcTargetSecHTML(sym, f){
   var avg = fcNum(f.target), hi = fcNum(f.target_high), lo = fcNum(f.target_low),
       med = fcNum(f.target_median);
@@ -14468,8 +14640,15 @@ function fcTargetSecHTML(sym, f){
   // are plotted on it, with the price extending the bound it breaks rather
   // than clamping silently — the same honesty rangeBarHTML applies to a
   // 52-week bar that today's price has already broken through.
-  var bar = "";
-  if(hi!=null && lo!=null && hi>lo){
+  var bar = fcProjectionSVG(sym, px, avg, hi, lo);
+  if(bar){
+    // No caption. What the fan is and is not lives in the chart's own
+    // data-tip (CLAUDE.md, "NO EXPLANATION TEXT ON THE PAGE").
+    bar = '<div class="fcchart">'+bar+'</div>';
+  }
+  // No usable daily history \u2014 an ad-hoc searched ticker whose bars never
+  // loaded \u2014 still gets the range as the strip this chart replaced.
+  else if(hi!=null && lo!=null && hi>lo){
     var blo = lo, bhi = hi, broke = "";
     if(px!=null && px > bhi){ bhi = px; broke = "above"; }
     if(px!=null && px < blo){ blo = px; broke = "below"; }
@@ -14502,19 +14681,97 @@ function fcTargetSecHTML(sym, f){
   // panel, so it is printed rather than left to the reader to spot.
   var skew = "";
   if(avg!=null && med!=null && avg>0 && Math.abs(med-avg)/avg > 0.05){
-    skew = '<div class="note">The median target ('+fmtpx(med)+') sits '
-      + fwSignedFixed((med-avg)/avg*100,1)+'% from the average, so a small number of outlying targets are '
-      + 'pulling the average '+(med>avg?"down":"up")+'. The median is the steadier of the two.</div>';
+    skew = '<div class="note">Median '+fmtpx(med)+' sits '
+      + fwSignedFixed((med-avg)/avg*100,1)+'% from the average.</div>';
   }
   return '<div class="dsec"><h3>Price target</h3><div>'+head+'</div>'
     + '<div class="note" style="margin-top:2px">'+sub+'</div>'
     + bar + rows + skew + '</div>';
 }
+/* The rating gauge (2026-09-05, Zach's ask, overriding the earlier refusal).
+   The refusal was never to the gauge — it was to printing a WORD. An earlier
+   version mapped the 1-to-5 mark onto TradingView's five labels and
+   immediately disagreed with them: AAOI's live mark of 1.4375 rendered
+   "Strong buy" while TradingView's own gauge for the same symbol reads "Buy".
+   Their mark is not a plain average of the buckets either (AAOI's 4 strong-buy
+   / 1 buy / 3 hold weights to 1.875, not 1.4375), so the band edges cannot be
+   recovered from the data we have.
+
+   What makes this gauge accurate where that word was not:
+   - The five words label the vendor's own SCALE ANCHORS at the integer points
+     — its definition is 1 = every analyst a strong buy, 3 = middle, 5 = sell.
+     They are not band boundaries and nothing here claims a band.
+   - No label is emphasised, coloured or selected by where the needle lands.
+     The gauge never says this name IS a Strong buy; it says the number is 1.12
+     and shows where 1.12 sits on the scale.
+   - The needle is placed at the mark itself, so the gauge is strictly MORE
+     precise than any word: it shows 1.12 rather than rounding it into a band
+     whose edges we would have had to invent.
+   - The arc is a continuous gradient, not coloured segments. A gradient
+     encodes the scale's own polarity (sell end to buy end); segments would
+     redraw exactly the band edges this panel refuses to assert.
+   - The old kvrow coloured the number green under a hardcoded mark < 2.5.
+     That was the same invented edge in another form and is gone with it. */
+function fcGaugeSVG(mark, tot){
+  var m = fcNum(mark);
+  if(m==null) return "";
+  m = Math.max(1, Math.min(5, m));
+  var narrow = (window.innerWidth || 1440) <= 760;
+  var W = narrow ? 300 : 340, H = narrow ? 208 : 228;
+  // The hub sits a full band above the bottom: a mark near 1 or 5 points the
+  // needle almost horizontally, and at cy+14 the readout was drawn through.
+  var cx = W/2, cy = H-58, R = Math.min(W*0.30, cy-32), SW = Math.max(9, R*0.15), LR = R*1.26;
+  var FS = narrow ? 9.5 : 10.5;
+  function pt(deg, r){ var a = deg*Math.PI/180; return [cx + r*Math.cos(a), cy - r*Math.sin(a)]; }
+  function ang(v){ return (v-1)/4*180; }        // 1 -> 0deg (right), 5 -> 180deg (left)
+  function n1(v){ return v.toFixed(1); }
+  var A = pt(180,R), B = pt(0,R);
+  // The gradient id has to be unique per render: two gauges in one document
+  // sharing an id makes the second one paint with the first one's stops.
+  var gid = "fcg" + (fcGaugeSVG._n = (fcGaugeSVG._n||0) + 1);
+  var out = '<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="1" y2="0">'
+    + '<stop offset="0" stop-color="var(--dn)"/><stop offset="0.5" stop-color="var(--hi)"/>'
+    + '<stop offset="1" stop-color="var(--up)"/></linearGradient></defs>'
+    + '<path d="M'+n1(A[0])+' '+n1(A[1])+'A'+n1(R)+' '+n1(R)+' 0 0 1 '+n1(B[0])+' '+n1(B[1])
+    + '" fill="none" stroke="url(#'+gid+')" stroke-width="'+n1(SW)+'" stroke-linecap="round"/>';
+  // Notches at the interior scale points only; 1 and 5 sit under the round
+  // caps, where a notch reads as a nick in the arc.
+  [2,3,4].forEach(function(v){
+    var t1 = pt(ang(v), R-SW/2), t2 = pt(ang(v), R+SW/2);
+    out += '<line x1="'+n1(t1[0])+'" y1="'+n1(t1[1])+'" x2="'+n1(t2[0])+'" y2="'+n1(t2[1])
+         + '" stroke="var(--srf)" stroke-width="1.4"/>';
+  });
+  // Anchor labels. The two horizontal ends sit under the arc rather than out
+  // beside it, where "Strong sell" would run straight through the arc's cap.
+  function lab(x, y, anch, t){
+    out += '<text x="'+n1(x)+'" y="'+n1(y)+'" text-anchor="'+anch+'" fill="var(--ink3)" font-size="'+FS+'">'
+         + t+'</text>';
+  }
+  lab(2, cy+13, "start", "Strong sell");
+  lab(W-2, cy+13, "end", "Strong buy");
+  var p4 = pt(135, LR), p2 = pt(45, LR);
+  lab(p4[0], p4[1]+3.4, "start", "Sell");
+  lab(p2[0], p2[1]+3.4, "end", "Buy");
+  lab(cx, cy-LR-1, "middle", "Neutral");
+  // Needle
+  var tip = pt(ang(m), R-SW*0.7), tail = pt(ang(m)+180, R*0.17);
+  out += '<line x1="'+n1(tail[0])+'" y1="'+n1(tail[1])+'" x2="'+n1(tip[0])+'" y2="'+n1(tip[1])
+       + '" stroke="var(--ink)" stroke-width="2.6" stroke-linecap="round"/>'
+       + '<circle cx="'+n1(cx)+'" cy="'+n1(cy)+'" r="4.6" fill="var(--ink)"/>'
+       + '<circle cx="'+n1(cx)+'" cy="'+n1(cy)+'" r="1.7" fill="var(--srf)"/>'
+       + '<text x="'+n1(cx)+'" y="'+n1(cy+36)+'" text-anchor="middle" fill="var(--ink)" font-size="'
+       + (narrow?17:19)+'" font-weight="700">'+esc(m.toFixed(2))+'</text>'
+       + (tot!=null ? ('<text x="'+n1(cx)+'" y="'+n1(cy+51)+'" text-anchor="middle" fill="var(--ink3)" font-size="'
+          + FS+'">'+tot+' analysts</text>') : '');
+  var alt = "Consensus rating "+m.toFixed(2)+" on the vendor's 1-to-5 scale, where 1 is every analyst a strong "
+    + "buy and 5 is sell" + (tot!=null ? (", from "+tot+" analysts") : "") + ".";
+  return '<div class="fcgauge"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(alt)+'">'
+    + out + '</svg></div>';
+}
 function fcRatingSecHTML(sym, f){
   var mark = fcNum(f.rec_mark), tot = fcNum(f.rec_total);
   var buy = fcNum(f.rec_buy), hold = fcNum(f.rec_hold), sell = fcNum(f.rec_sell);
   if(mark==null && tot==null) return "";
-  var cls = mark==null ? "" : (mark<2.5 ? "u" : mark<3.5 ? "m" : "d");
   var bucketed = (buy||0)+(hold||0)+(sell||0);
   var denom = Math.max(bucketed, tot||0, 1);
   var row = function(label, n, tip){
@@ -14532,18 +14789,18 @@ function fcRatingSecHTML(sym, f){
   // silently stretching the bars would invent a placement for the analysts
   // the vendor did not bucket.
   var gap = (tot!=null && bucketed < tot)
-    ? ('<div class="note">'+(tot-bucketed)+' of the '+tot+' analysts '+((tot-bucketed)===1?'is':'are')
-       + ' counted in the rating average but not placed in one of these three buckets by the data feed. '
-       + 'The bars show only what it bucketed.</div>')
+    ? ('<div class="note" data-tip="'+esc("The scanner exposes three buckets where TradingView's own page "
+        + "splits five, so its buckets can sum to less than its own total. The shortfall is printed rather "
+        + "than closed by rescaling the bars, which would invent a placement for analysts the vendor did "
+        + "not bucket.")+'">'+(tot-bucketed)+' of '+tot+' not bucketed by the feed.</div>')
     : "";
+  // The gauge carries the mark and the analyst count, so the two kvrows that
+  // printed them are gone. Without a mark there is no needle to place, and the
+  // count falls back to a row of its own.
+  var gauge = fcGaugeSVG(mark, tot);
   return '<div class="dsec"><h3>Analyst rating</h3>'
-    + '<div class="kvrow"><span data-tip="'+esc("The vendor's 1-to-5 consensus scale: 1 means every analyst rates "
-        + "it a strong buy, 3 is the middle, 5 is sell. It counts opinions, not whether those opinions have been "
-        + "right. No label is printed for it here because the vendor's own published label does not always match "
-        + "the band the number falls in, and two different words for one reading is worse than none.")
-    + '">Consensus</span><b class="'+cls+'">'+(mark!=null?(mark.toFixed(2)+' / 5'):"—")
-    + '<span class="m" style="font-weight:400"> (1 = strong buy)</span></b></div>'
-    + (tot!=null?('<div class="kvrow"><span>Analysts covering</span><b>'+tot+'</b></div>'):'')
+    + gauge
+    + ((!gauge && tot!=null) ? ('<div class="kvrow"><span>Analysts covering</span><b>'+tot+'</b></div>') : '')
     + bars + gap + '</div>';
 }
 function fcTrendSecHTML(sym, fund){
@@ -14559,8 +14816,7 @@ function fcTrendSecHTML(sym, fund){
     + '">Next-year EPS estimate</span><b class="'+dir+'">'+numStr(cur,2)+'</b></div>'
     + '<div class="kvrow"><span>90 days ago</span><b>'+numStr(d90,2)+'</b></div>'
     + '<div class="kvrow"><span>Change</span><b class="'+dir+'">'+fwSignedFixed(pct,1)+'%</b></div>'
-    + (t.period_end ? ('<div class="note">Both figures are the estimate for the fiscal year ending '
-        + esc(t.period_end)+'.</div>') : '')
+    + (t.period_end ? ('<div class="note">Fiscal year ending '+esc(t.period_end)+'.</div>') : '')
     + '</div>';
 }
 function fcActualsSecHTML(sym, fund){
@@ -14575,9 +14831,7 @@ function fcActualsSecHTML(sym, fund){
       + numStr(r.eps_est,2)+' est</span>'
       + (sp!=null?(' · '+fwSignedFixed(sp,1)+'%'):'')+'</b></div>';
   }).join("");
-  return '<div class="dsec"><h3>Actual vs. estimate</h3>'+body
-    + '<div class="note">Reported earnings per share against the consensus estimate going into each print, '
-    + 'newest first. A beat or a miss here is history, not a forecast.</div></div>';
+  return '<div class="dsec"><h3>Actual vs. estimate</h3>'+body+'</div>';
 }
 function stageForecastHTML(sym, fund){
   var f = factsOf(sym);
@@ -14586,6 +14840,17 @@ function stageForecastHTML(sym, fund){
       + 'analyst targets or ratings here — they ride the same once-a-cycle scanner row the tracked names use.'
       + '</div>';
   }
+  // A fund has no analyst behind it at all, so the panel says that once and
+  // stops. It used to open on a "Price target" heading over an apology, which
+  // reads as a broken chart rather than as a name nobody covers.
+  if(!fcCoverage(sym)){
+    return '<div class="dsec"><h3>No analyst coverage</h3><div class="note">'
+      + (isFundSym(sym)
+          ? (esc(sym)+' is a fund. No analyst publishes a target or a rating for it. ')
+          : ('No analyst target or rating is published for '+esc(sym)+'. '))
+      + 'Focus a covered name.'
+      + '</div></div>';
+  }
   var secs = fcTargetSecHTML(sym, f) + fcRatingSecHTML(sym, f)
     + fcTrendSecHTML(sym, fund) + fcActualsSecHTML(sym, fund);
   // Staleness: the targets and ratings ride the once-a-cycle scanner row, so
@@ -14593,13 +14858,13 @@ function stageForecastHTML(sym, fund){
   // once-a-day sidecar, which the Fundamentals grid already badges.
   var stale = fundBuiltStaleDays(FUND_CACHE[sym]);
   var staleNote = (stale!=null && stale > FUND_BUILT_STALE_DAYS)
-    ? ('<div class="note"><span class="sess">STALE '+stale+'d</span> The estimate trend and the actual-vs-estimate '
-       + 'rows come from the quarterly-financials sidecar, built '+stale+' days before this session.</div>') : "";
-  return secs
-    + '<div class="dsec note">Price targets and ratings are analyst opinions on record, collected by TradingView '
-    + 'and refreshed with the rest of the desk each cycle. They are reference, not a signal: nothing here feeds '
-    + 'the conviction or swing score, and the last price they are compared against is 15-minute delayed.'
-    + staleNote + '</div>';
+    ? ('<div class="dsec note"><span class="sess">STALE '+stale+'d</span> Estimate trend and actuals: sidecar '
+       + 'built '+stale+' days ago.</div>') : "";
+  // The standing "these are opinions, collected by TradingView, reference not
+  // a signal" paragraph is gone (Zach, 2026-09-05) — it read the same for
+  // every symbol on every day, and it survives in the section tooltips.
+  // staleNote stays: it is a dynamic disclosure about this session's data.
+  return secs + staleNote;
 }
 
 /* ---- tabs under the chart: the old modal's panels, now always on screen ---- */
@@ -14607,8 +14872,17 @@ var STAGE_TABS = [["ov","Overview"],["fin","Financials"],["peers","vs Peers"],["
 function stageTabsRender(){
   var el = document.getElementById("stagetabs");
   if(!el) return;
+  var covered = fcCoverage(STAGE.sym);
+  // Switching from a covered name to a fund would otherwise leave the reader
+  // parked on a dead panel, so the tab hands back to Overview on the way.
+  if(STAGE.tab==="fcst" && !covered) STAGE.tab = "ov";
+  var offTip = esc("No analyst covers " + (STAGE.sym||"this name") + ", so there is no price target, no rating "
+    + "and nothing to chart here. Funds and wrappers carry none \u2014 analysts cover companies.");
   el.innerHTML = STAGE_TABS.map(function(t){
-    return '<button data-tab="'+t[0]+'" aria-pressed="'+(STAGE.tab===t[0])+'">'+t[1]+'</button>';
+    var off = (t[0]==="fcst" && !covered);
+    return '<button data-tab="'+t[0]+'" aria-pressed="'+(STAGE.tab===t[0])+'"'
+      + (off ? (' class="off" data-tip="'+offTip+'"') : '')
+      + '>'+t[1]+'</button>';
   }).join("");
   $$("button", el).forEach(function(b){
     b.addEventListener("click", function(){ STAGE.tab = b.dataset.tab; stageTabsRender(); renderStageTab(); });
@@ -15491,6 +15765,9 @@ document.addEventListener("click", function(e){
   // data-tiphold="0": the control changes the view underneath it, so leaving
   // its four-line tip parked over the new content is worse than useless.
   if(t && t.getAttribute("data-tiphold")==="0"){ tipb.style.display="none"; return; }
+  // An emptied tip is not a tip. showTip already no-ops on one, but without
+  // this a tooltip already open stayed parked on screen after the tap.
+  if(t && !t.getAttribute("data-tip")){ tipb.style.display="none"; return; }
   if(t){ showTip(t); e.stopPropagation(); return; }
   if(!e.target.closest(".tipb")) tipb.style.display = "none";
 });
