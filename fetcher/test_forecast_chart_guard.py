@@ -237,3 +237,23 @@ def test_both_fetch_paths_request_all_five_buckets() -> None:
         assert re.search(rf'"{key}": _num\(_COL\["{col}"\]\)', snap), (
             f"{key} is not mapped in build_snapshot"
         )
+
+
+def test_shortfall_note_requires_all_five_buckets() -> None:
+    """A null bucket is "not in this snapshot", not "zero analysts".
+
+    data.json is republished on a weekday cron, so after the fetcher gained
+    recommendation_over/under every tracked name carried nulls for them until
+    the next weekday run. Counting those as zero would have reprinted the exact
+    phantom shortfall this work removed -- "8 of 57 not bucketed" on MU -- for
+    all 69 tracked names across a weekend.
+    """
+    start = INDEX.index("function fcRatingSecHTML(")
+    body = INDEX[start : INDEX.index("\nfunction ", start + 1)]
+    assert re.search(
+        r"var haveAll = \(sbuy!=null && buy!=null && hold!=null && sell!=null && ssell!=null\);",
+        body,
+    ), "the completeness check before the shortfall note is gone"
+    assert "var gap = (haveAll && tot!=null && bucketed < tot)" in body, (
+        "the shortfall note must fire only when all five buckets are present"
+    )
