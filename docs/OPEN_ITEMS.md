@@ -413,6 +413,94 @@ closed C/D/E above. Nothing else is blocking "done."
 
 ---
 
+## Shipped 2026-09-05 — Forecast tab opened on an apology (Zach's report)
+
+Zach reported the Forecast tab "is not showing a graph." It was not a
+rendering bug. **The desk boots to SPY, and SPY has no analyst coverage**, so
+the first thing a reader taps on a fresh load is a tab whose entire content is
+one sentence saying no target is published. 24 of the 63 tracked names are in
+that state: SPY, QQQ, every XL* sector fund, SOXL/SOXS, MUU, NRGU, OILU, DRAM,
+RAM, SMH, STLL, AAOG, SKHX. On a phone, where nothing else on the panel fills
+the screen, that reads as a broken tab rather than as a name nobody covers.
+
+Fixed: `fcCoverage(sym)` answers whether the tab has anything to draw — the
+scanner row's target/rating fields, or the daily sidecar's estimate trend and
+actuals, so a name carrying only the later-loading sidecar data still counts.
+`stageTabsRender` greys the Forecast tab (`.off`, opacity .45) when it does
+not, carries the reason in a tooltip, and hands back to Overview if the reader
+was on that tab when the symbol changed. The tab stays clickable on purpose: a
+`disabled` button dispatches no mouse events, which would kill the tooltip,
+and a phone surfaces no tooltip on tap — so the panel carries the reason too,
+rewritten to a "No analyst coverage" heading that says whether the name is a
+fund (`isFundSym`) or simply thinly covered.
+
+Verified: `pytest fetcher` 377 passed, `pytest tests` 6 passed; Playwright at
+390px and 1440px, SPY/QQQ greyed with the tooltip and handing back to
+Overview, MU unchanged and still drawing its range bar and rating bars, zero
+page errors, no sideways scroll at either width.
+
+Second half of the same report, shipped the same day against Zach's reference
+picture (TradingView's own Forecast page for MU on his phone): the price-target
+"graph" on a covered name was a 6px `.rb big` hairline that reads as a divider
+rule. `fcProjectionSVG` replaces it with a real chart — the daily price line
+with an area fill, then a fan forward from the last price to the highest and
+lowest published targets with the average dashed through it, and each level
+badged at the right edge as a move from today.
+
+Decisions inside it worth not re-litigating:
+- The fan is geometry, not a path. Only its endpoints are published, and the
+  figcaption says so. Nobody forecast the line between here and there.
+- Each wedge takes its colour from its own sign against the last price, never
+  from which bound it is, so a name trading above every published target draws
+  two falling red wedges rather than a green one pointing down — the same
+  choice `rangeBarHTML` makes on a 52-week bar the price has broken.
+- Twelve months forward against the ~24 months of dailies `bars.json` keeps, so
+  the forward third is drawn to the same scale as the history behind it.
+- viewBox width follows the existing narrow/wide split (`onViewportChange`
+  already re-renders this tab across it); a single hard-coded width is what put
+  the vs-Peers axis at 6.5px on a phone.
+- The old strip survives as the fallback for a name with under 60 dailies — an
+  ad-hoc searched ticker whose bars never loaded still gets its range.
+- Two defects were caught in the render pass and fixed before shipping: badge
+  width measured at 0.58em/char clipped "max +130%" past the right edge at
+  phone width (these labels are 700-weight), and labelling the first bar's own
+  year alongside the January tick beside it printed "20242025".
+
+Two follow-on rulings from Zach the same day:
+
+**1. NO EXPLANATION TEXT ON THE PAGE.** The chart shipped under a five-line
+figcaption explaining that the fan was not a prediction; he asked for it gone
+and for the rule to be standing. It is now in CLAUDE.md under the display
+rules. Stripped from this panel: the figcaption, the standing "these are
+opinions, collected by TradingView, reference not a signal" footer, and the
+actuals footnote — all three read identically for every symbol on every day.
+Cut to the bare fact rather than deleted: the STALE note, the median-skew note,
+the not-bucketed note, the fiscal-year note, the no-coverage copy. Every
+explanation removed from view survives in a `data-tip`. The test in CLAUDE.md:
+a sentence that reads the same for every symbol on every day is explanation;
+one that changes with the data is a disclosure and stays.
+
+**2. The rating gauge is built after all — and the earlier refusal was not
+wrong, it was aimed at the wrong thing.** What this panel refuses to assert is
+a WORD: an earlier version mapped the mark onto TradingView's five labels and
+disagreed with TradingView (AAOI's 1.4375 renders "Strong buy" under any band
+edges we can derive; TradingView's own gauge reads "Buy"), and their mark is
+not a plain average of the buckets (AAOI's 4/1/3 weights to 1.875, not
+1.4375), so the edges are unrecoverable. `fcGaugeSVG` asserts no band:
+- The five words label the vendor's own scale ANCHORS at the integer points —
+  its published definition is 1 = every analyst a strong buy, 3 = middle,
+  5 = sell. No label is emphasised, coloured or selected by the needle.
+- The needle is placed at the mark itself, so the gauge is strictly more
+  precise than a word: it shows 1.12 rather than rounding into an invented band.
+- The arc is a continuous gradient, never coloured segments. Segments would
+  redraw exactly the band edges this panel refuses to assert.
+- The old Consensus kvrow coloured the number green under a hardcoded
+  `mark < 2.5`. That was the same invented edge in another form; it is gone
+  with the row the gauge replaced.
+One defect caught in the render pass and fixed before shipping: a mark near 1
+or 5 points the needle almost horizontally, and at `cy+14` it was drawn
+straight through the readout. Everything below the hub moved down a band.
+
 ## Shipped 2026-08-23, Fable architect pass (14 findings, all fixed)
 
 A Fable-model architect pass — the follow-up to pausing the automated
