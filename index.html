@@ -2549,10 +2549,15 @@ function cacheBust(url){ return url + (url.indexOf("?")===-1?"?":"&") + "t=" + D
 // Failure is a rendered state, not a silent one: failures count up, retries
 // back off (30s doubling to a 5-minute cap), and the banner says whether the
 // page is showing a last good read or nothing at all.
-var FETCH_STATE = { failures:0, lastOkTs:null, backoffUntil:0 };
+var FETCH_STATE = { failures:0, lastOkTs:null, backoffUntil:0, renderError:null };
 function renderDataBanner(){
   var el = document.getElementById("databanner");
   if(!el) return;
+  if(FETCH_STATE.failures===0 && FETCH_STATE.renderError){
+    el.hidden = false;
+    el.textContent = "data.json loaded, but the page hit an error drawing it: "+FETCH_STATE.renderError+". Sections above the error are current; the rest may be missing.";
+    return;
+  }
   if(FETCH_STATE.failures===0){ el.hidden = true; return; }
   el.hidden = false;
   el.textContent = STATE.data
@@ -2580,7 +2585,11 @@ function fetchData(){
       // Stable per-row ids for the modal's catalyst diamonds/list to jump to
       // the exact right-rail row, regardless of the rail's current filter.
       if(Array.isArray(data.catalysts)) data.catalysts.forEach(function(c,i){ if(c && typeof c==="object") c._id=i; });
-      renderAll(data);
+      // A render exception is not a network failure. Left to fall into the
+      // catch below it counted as one, armed the backoff, and the banner
+      // blamed GitHub for a bug in this file (2026-09-05, renderBrief).
+      try{ renderAll(data); FETCH_STATE.renderError = null; }
+      catch(e){ FETCH_STATE.renderError = String(e && e.message || e); renderDataBanner(); }
       return data;
     })
     .catch(function(err){
@@ -4775,8 +4784,15 @@ function renderBrief(data){
     railF.hidden = false;
     document.getElementById("railfedtext").textContent = fed.hikePct+"%"+(fed.stale?" (stale)":"");
     railF.classList.toggle("bad", !!fed.loud);
-    railF.setAttribute("data-tip", railF.getAttribute("data-tip").replace(/ NOT FROM TODAY.*$/,"")
-      + (fed.stale ? (" NOT FROM TODAY: this reading is from "+(prettyStamp(fed.asOf)||"an earlier cycle")+" — the fetcher has not refreshed it since.") : ""));
+    // The chip carries no static tooltip since the 2026-09-05 explanation
+    // sweep, so getAttribute() is null here — reading .replace off it threw
+    // inside fetchData's promise chain and the page reported a successful
+    // download as "Can't reach data.json". The stale note is a dynamic
+    // disclosure and still prints; an empty tip removes the attribute.
+    var fedTip = (railF.getAttribute("data-tip")||"").replace(/ NOT FROM TODAY.*$/,"")
+      + (fed.stale ? (" NOT FROM TODAY: this reading is from "+(prettyStamp(fed.asOf)||"an earlier cycle")+" — the fetcher has not refreshed it since.") : "");
+    fedTip = fedTip.trim();
+    if(fedTip) railF.setAttribute("data-tip", fedTip); else railF.removeAttribute("data-tip");
   } else railF.hidden = true;
   if(!brief){
     railV.hidden = true; railB.hidden = true;
