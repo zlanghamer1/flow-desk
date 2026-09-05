@@ -98,6 +98,63 @@ Never do these. Each one has a live incident or a measurement behind it in
 Every review round re-taught these. They are the general form of roughly 250
 individual findings.
 
+## Before you claim the vendor cannot do it (2026-09-05, five bugs in a row)
+
+One feature shipped five bugs on one evening, each found by Zach, each
+catchable in under a minute. Every one had the same shape: **the code asked for
+less than the source offered, then recorded its own gap as the vendor's
+limit.** Two of those became code comments asserting a vendor defect, and one
+printed that defect to Zach on screen. Run these before writing anything of the
+kind.
+
+- **Fetch the field list. It is free and it is authoritative.**
+  `curl https://scanner.tradingview.com/america/metainfo` returns 3,777 field
+  names, keyless. Grep it before writing that a column does not exist. Three
+  separate bugs here were columns that were always available and never
+  requested: `price_target_high/low/median`, `recommendation_over`,
+  `recommendation_under`.
+- **Probe a scale's real range before drawing it.** Sort the field ascending
+  and descending over the whole market and look at the extremes. Two queries.
+  `recommendation_mark` runs 1.0000 to 3.0, never 5 — the gauge drew it on a
+  1..5 arc for two days, so every name read more bullish than it was and the
+  Sell half was unreachable. The label COUNT (five words) does not tell you the
+  scale.
+- **Solve the arithmetic instead of guessing the semantics.** The bucket
+  weights fell straight out of the mark: buy 1.0, over 1.5, hold 2.0,
+  under 2.5, sell 3.0, exact on 14 rows. That also proved TV's names understate
+  two buckets — its `buy` is a STRONG buy. An earlier session declared the mark
+  "not a plain average of the buckets" after one sum with the wrong labels, and
+  that false claim then justified two more wrong decisions.
+- **A disagreement with the vendor's own page is evidence against your model.**
+  AAOI rendering "Strong buy" here against TradingView's "Buy" was the scale
+  error announcing itself. It was written up as the vendor being unrecoverable
+  instead. When your output disagrees with the source's own display, assume you
+  are wrong until you can show otherwise.
+- **Totals that do not reconcile are your bug until proven otherwise.** Never
+  print a shortfall blaming the feed without first confirming you requested
+  every component. "N of M not bucketed by the feed" was this page asking for
+  three of five columns.
+- **Check the client and server column lists together.** `ADHOC_FACTS_COLS` in
+  index.html and `TV_COLUMNS` in build_snapshot.py must carry the same taxonomy
+  — the comment on the former already says so. They silently diverged and
+  searched names got half the analyst row.
+- **A fetcher column does not reach tracked names until the loop republishes**,
+  and that cron is weekdays only. After any fetcher change, look at what the
+  CURRENTLY PUBLISHED data.json holds. Read an absent field as unknown, never
+  as zero. Skipping this made the fix for the phantom shortfall reprint the
+  phantom shortfall for a weekend.
+- **Before reading a data source, grep how the rest of the page reads it.**
+  `seriesFull()` had consulted both `barsOf()` and `ADHOC_BARS` since ad-hoc
+  search shipped; the forecast chart read only the first and drew nothing for
+  every searched name.
+- **Test the failure the user reported, not the success you want.** A harness
+  that injects data the real page will not have proves nothing. Seeding a fake
+  live price hid the fact that the chart refused to draw without one, which was
+  the entire reported bug.
+- **Verify the rendered DOM, not the source string.** Emptying the `TIPS`
+  lookup was reported as "all explanation removed" while five inline explainers
+  still opened on tap.
+
 ## Truthfulness of what's on screen
 - **One function, every surface.** A fact computed in two places will
   eventually disagree in public. Existing single-source functions: `taSrSide`
