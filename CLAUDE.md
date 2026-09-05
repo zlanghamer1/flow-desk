@@ -232,6 +232,24 @@ individual findings.
   badges, failure reasons, clamp / cap / coverage notes, currency caveats. The
   price-honesty disclosures (STALE, CLOSE ONLY, pre-market, fabricated-candle
   captions) live in the chart header and never move into a collapsed block.
+- **NO EXPLANATION TEXT ON THE PAGE (Zach's ruling, 2026-09-05).** Do not
+  write prose that explains what a panel is, how to read it, what a number
+  means, what the desk does or does not endorse, or where the data came from.
+  He asked for this after the Forecast chart shipped under a five-line
+  figcaption explaining that the fan was not a prediction. A chart that needs a
+  paragraph is a chart that has not been drawn well enough.
+  - **Explanation belongs in a `data-tip` tooltip**, which is hidden until
+    someone wants it. That is where the methodology, the scale definition and
+    the vendor caveats go, and it is not affected by this rule.
+  - **A dynamic disclosure is not an explanation and still stays printed** —
+    the rule above is unchanged. STALE badges, as-of stamps, failure reasons,
+    clamp/cap/coverage notes and "no analyst covers this name" all state a
+    fact about the reading on screen right now. Write them as the bare fact
+    ("8 of 57 not bucketed by the feed"), never as a paragraph about it.
+  - **The test:** would the sentence read the same for every symbol on every
+    day? Then it is explanation — delete it or move it into a tooltip. Does it
+    change with the data? Then it is a disclosure — keep it, and cut it to the
+    fact.
 
 ## Tests and process
 - **A test that mirrors buggy logic keeps passing against a copy of the bug.**

@@ -466,12 +466,40 @@ Decisions inside it worth not re-litigating:
   phone width (these labels are 700-weight), and labelling the first bar's own
   year alongside the January tick beside it printed "20242025".
 
-NOT built, deliberately: the rating gauge from the same screenshot. A gauge
-places a needle inside a named band, which is the assertion this panel already
-refuses to make — TradingView's own label disagrees with its own mark (AAOI
-1.4375 reads "Buy" there, "Strong buy" under any band edges we can derive), and
-the band edges are not recoverable from the data we have. The Buy/Hold/Sell
-bars stay.
+Two follow-on rulings from Zach the same day:
+
+**1. NO EXPLANATION TEXT ON THE PAGE.** The chart shipped under a five-line
+figcaption explaining that the fan was not a prediction; he asked for it gone
+and for the rule to be standing. It is now in CLAUDE.md under the display
+rules. Stripped from this panel: the figcaption, the standing "these are
+opinions, collected by TradingView, reference not a signal" footer, and the
+actuals footnote — all three read identically for every symbol on every day.
+Cut to the bare fact rather than deleted: the STALE note, the median-skew note,
+the not-bucketed note, the fiscal-year note, the no-coverage copy. Every
+explanation removed from view survives in a `data-tip`. The test in CLAUDE.md:
+a sentence that reads the same for every symbol on every day is explanation;
+one that changes with the data is a disclosure and stays.
+
+**2. The rating gauge is built after all — and the earlier refusal was not
+wrong, it was aimed at the wrong thing.** What this panel refuses to assert is
+a WORD: an earlier version mapped the mark onto TradingView's five labels and
+disagreed with TradingView (AAOI's 1.4375 renders "Strong buy" under any band
+edges we can derive; TradingView's own gauge reads "Buy"), and their mark is
+not a plain average of the buckets (AAOI's 4/1/3 weights to 1.875, not
+1.4375), so the edges are unrecoverable. `fcGaugeSVG` asserts no band:
+- The five words label the vendor's own scale ANCHORS at the integer points —
+  its published definition is 1 = every analyst a strong buy, 3 = middle,
+  5 = sell. No label is emphasised, coloured or selected by the needle.
+- The needle is placed at the mark itself, so the gauge is strictly more
+  precise than a word: it shows 1.12 rather than rounding into an invented band.
+- The arc is a continuous gradient, never coloured segments. Segments would
+  redraw exactly the band edges this panel refuses to assert.
+- The old Consensus kvrow coloured the number green under a hardcoded
+  `mark < 2.5`. That was the same invented edge in another form; it is gone
+  with the row the gauge replaced.
+One defect caught in the render pass and fixed before shipping: a mark near 1
+or 5 points the needle almost horizontally, and at `cy+14` it was drawn
+straight through the readout. Everything below the hub moved down a band.
 
 ## Shipped 2026-08-23, Fable architect pass (14 findings, all fixed)
 

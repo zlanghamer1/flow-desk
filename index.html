@@ -937,6 +937,8 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 /* Forecast chart (2026-09-05). figure/figcaption carry their own margins by
    default, which double against the .dsec gap. */
 .fcchart{margin:10px 0 2px;display:flex;flex-direction:column;gap:5px}
+.fcgauge{margin:6px auto 2px;max-width:340px}
+.fcgauge svg{width:100%;height:auto;display:block}
 .fcchart svg{width:100%;height:auto;display:block}
 .fcchart figcaption{margin:0}
 .rb.big b{width:9px;height:9px}
@@ -14495,6 +14497,9 @@ function fcCoverage(sym){
      other, so a tight range cannot stack them into one illegible block. The
      tick at the plot edge stays on the true level, so a nudged badge still
      points at where its number actually sits. */
+var FC_FAN_TIP = "The shaded fan is not a path anybody forecast \u2014 only its endpoints are published. It "
+  + "shows where the highest and lowest one-year targets sit against where the price has actually been, with "
+  + "the average dashed through the middle. Each badge reads as a move from the last price.";
 function fcProjectionSVG(sym, px, avg, hi, lo){
   if(px==null || !(px>0)) return "";
   if(hi==null && lo==null && avg==null) return "";
@@ -14679,11 +14684,9 @@ function fcTargetSecHTML(sym, f){
   // 52-week bar that today's price has already broken through.
   var bar = fcProjectionSVG(sym, px, avg, hi, lo);
   if(bar){
-    bar = '<figure class="fcchart">'+bar+'<figcaption class="note">'
-      + 'The shaded fan is not a path anybody forecast \u2014 only its endpoints are published. It shows where '
-      + 'the highest and lowest one-year targets sit against where the price has actually been, with the '
-      + 'average dashed through the middle. The badges read as a move from today.'
-      + '</figcaption></figure>';
+    // No caption. What the fan is and is not lives in the chart's own
+    // data-tip (CLAUDE.md, "NO EXPLANATION TEXT ON THE PAGE").
+    bar = '<div class="fcchart" data-tip="'+esc(FC_FAN_TIP)+'">'+bar+'</div>';
   }
   // No usable daily history \u2014 an ad-hoc searched ticker whose bars never
   // loaded \u2014 still gets the range as the strip this chart replaced.
@@ -14720,19 +14723,101 @@ function fcTargetSecHTML(sym, f){
   // panel, so it is printed rather than left to the reader to spot.
   var skew = "";
   if(avg!=null && med!=null && avg>0 && Math.abs(med-avg)/avg > 0.05){
-    skew = '<div class="note">The median target ('+fmtpx(med)+') sits '
-      + fwSignedFixed((med-avg)/avg*100,1)+'% from the average, so a small number of outlying targets are '
-      + 'pulling the average '+(med>avg?"down":"up")+'. The median is the steadier of the two.</div>';
+    skew = '<div class="note" data-tip="'+esc("A median this far from the mean means one or two outlying "
+        + "targets are pulling the average around. The median is the steadier of the two.")+'">Median '
+      + fmtpx(med)+' sits '+fwSignedFixed((med-avg)/avg*100,1)+'% from the average.</div>';
   }
   return '<div class="dsec"><h3>Price target</h3><div>'+head+'</div>'
     + '<div class="note" style="margin-top:2px">'+sub+'</div>'
     + bar + rows + skew + '</div>';
 }
+/* The rating gauge (2026-09-05, Zach's ask, overriding the earlier refusal).
+   The refusal was never to the gauge — it was to printing a WORD. An earlier
+   version mapped the 1-to-5 mark onto TradingView's five labels and
+   immediately disagreed with them: AAOI's live mark of 1.4375 rendered
+   "Strong buy" while TradingView's own gauge for the same symbol reads "Buy".
+   Their mark is not a plain average of the buckets either (AAOI's 4 strong-buy
+   / 1 buy / 3 hold weights to 1.875, not 1.4375), so the band edges cannot be
+   recovered from the data we have.
+
+   What makes this gauge accurate where that word was not:
+   - The five words label the vendor's own SCALE ANCHORS at the integer points
+     — its definition is 1 = every analyst a strong buy, 3 = middle, 5 = sell.
+     They are not band boundaries and nothing here claims a band.
+   - No label is emphasised, coloured or selected by where the needle lands.
+     The gauge never says this name IS a Strong buy; it says the number is 1.12
+     and shows where 1.12 sits on the scale.
+   - The needle is placed at the mark itself, so the gauge is strictly MORE
+     precise than any word: it shows 1.12 rather than rounding it into a band
+     whose edges we would have had to invent.
+   - The arc is a continuous gradient, not coloured segments. A gradient
+     encodes the scale's own polarity (sell end to buy end); segments would
+     redraw exactly the band edges this panel refuses to assert.
+   - The old kvrow coloured the number green under a hardcoded mark < 2.5.
+     That was the same invented edge in another form and is gone with it. */
+function fcGaugeSVG(mark, tot){
+  var m = fcNum(mark);
+  if(m==null) return "";
+  m = Math.max(1, Math.min(5, m));
+  var narrow = (window.innerWidth || 1440) <= 760;
+  var W = narrow ? 300 : 340, H = narrow ? 208 : 228;
+  // The hub sits a full band above the bottom: a mark near 1 or 5 points the
+  // needle almost horizontally, and at cy+14 the readout was drawn through.
+  var cx = W/2, cy = H-58, R = Math.min(W*0.30, cy-32), SW = Math.max(9, R*0.15), LR = R*1.26;
+  var FS = narrow ? 9.5 : 10.5;
+  function pt(deg, r){ var a = deg*Math.PI/180; return [cx + r*Math.cos(a), cy - r*Math.sin(a)]; }
+  function ang(v){ return (v-1)/4*180; }        // 1 -> 0deg (right), 5 -> 180deg (left)
+  function n1(v){ return v.toFixed(1); }
+  var A = pt(180,R), B = pt(0,R);
+  // The gradient id has to be unique per render: two gauges in one document
+  // sharing an id makes the second one paint with the first one's stops.
+  var gid = "fcg" + (fcGaugeSVG._n = (fcGaugeSVG._n||0) + 1);
+  var out = '<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="1" y2="0">'
+    + '<stop offset="0" stop-color="var(--dn)"/><stop offset="0.5" stop-color="var(--hi)"/>'
+    + '<stop offset="1" stop-color="var(--up)"/></linearGradient></defs>'
+    + '<path d="M'+n1(A[0])+' '+n1(A[1])+'A'+n1(R)+' '+n1(R)+' 0 0 1 '+n1(B[0])+' '+n1(B[1])
+    + '" fill="none" stroke="url(#'+gid+')" stroke-width="'+n1(SW)+'" stroke-linecap="round"/>';
+  // Notches at the interior scale points only; 1 and 5 sit under the round
+  // caps, where a notch reads as a nick in the arc.
+  [2,3,4].forEach(function(v){
+    var t1 = pt(ang(v), R-SW/2), t2 = pt(ang(v), R+SW/2);
+    out += '<line x1="'+n1(t1[0])+'" y1="'+n1(t1[1])+'" x2="'+n1(t2[0])+'" y2="'+n1(t2[1])
+         + '" stroke="var(--srf)" stroke-width="1.4"/>';
+  });
+  // Anchor labels. The two horizontal ends sit under the arc rather than out
+  // beside it, where "Strong sell" would run straight through the arc's cap.
+  function lab(x, y, anch, t){
+    out += '<text x="'+n1(x)+'" y="'+n1(y)+'" text-anchor="'+anch+'" fill="var(--ink3)" font-size="'+FS+'">'
+         + t+'</text>';
+  }
+  lab(2, cy+13, "start", "Strong sell");
+  lab(W-2, cy+13, "end", "Strong buy");
+  var p4 = pt(135, LR), p2 = pt(45, LR);
+  lab(p4[0], p4[1]+3.4, "start", "Sell");
+  lab(p2[0], p2[1]+3.4, "end", "Buy");
+  lab(cx, cy-LR-1, "middle", "Neutral");
+  // Needle
+  var tip = pt(ang(m), R-SW*0.7), tail = pt(ang(m)+180, R*0.17);
+  out += '<line x1="'+n1(tail[0])+'" y1="'+n1(tail[1])+'" x2="'+n1(tip[0])+'" y2="'+n1(tip[1])
+       + '" stroke="var(--ink)" stroke-width="2.6" stroke-linecap="round"/>'
+       + '<circle cx="'+n1(cx)+'" cy="'+n1(cy)+'" r="4.6" fill="var(--ink)"/>'
+       + '<circle cx="'+n1(cx)+'" cy="'+n1(cy)+'" r="1.7" fill="var(--srf)"/>'
+       + '<text x="'+n1(cx)+'" y="'+n1(cy+36)+'" text-anchor="middle" fill="var(--ink)" font-size="'
+       + (narrow?17:19)+'" font-weight="700">'+esc(m.toFixed(2))+'</text>'
+       + (tot!=null ? ('<text x="'+n1(cx)+'" y="'+n1(cy+51)+'" text-anchor="middle" fill="var(--ink3)" font-size="'
+          + FS+'">'+tot+' analysts</text>') : '');
+  var alt = "Consensus rating "+m.toFixed(2)+" on the vendor's 1-to-5 scale, where 1 is every analyst a strong "
+    + "buy and 5 is sell" + (tot!=null ? (", from "+tot+" analysts") : "") + ".";
+  return '<div class="fcgauge" data-tip="'+esc("The vendor's 1-to-5 consensus scale: 1 means every analyst rates "
+      + "it a strong buy, 3 is the middle, 5 is sell. The words label those five scale points, not bands — "
+      + "the needle sits at the number itself. It counts opinions, not whether those opinions have been right.")
+    + '"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(alt)+'"><title>'+esc(alt)+'</title>'
+    + out + '</svg></div>';
+}
 function fcRatingSecHTML(sym, f){
   var mark = fcNum(f.rec_mark), tot = fcNum(f.rec_total);
   var buy = fcNum(f.rec_buy), hold = fcNum(f.rec_hold), sell = fcNum(f.rec_sell);
   if(mark==null && tot==null) return "";
-  var cls = mark==null ? "" : (mark<2.5 ? "u" : mark<3.5 ? "m" : "d");
   var bucketed = (buy||0)+(hold||0)+(sell||0);
   var denom = Math.max(bucketed, tot||0, 1);
   var row = function(label, n, tip){
@@ -14750,18 +14835,18 @@ function fcRatingSecHTML(sym, f){
   // silently stretching the bars would invent a placement for the analysts
   // the vendor did not bucket.
   var gap = (tot!=null && bucketed < tot)
-    ? ('<div class="note">'+(tot-bucketed)+' of the '+tot+' analysts '+((tot-bucketed)===1?'is':'are')
-       + ' counted in the rating average but not placed in one of these three buckets by the data feed. '
-       + 'The bars show only what it bucketed.</div>')
+    ? ('<div class="note" data-tip="'+esc("The scanner exposes three buckets where TradingView's own page "
+        + "splits five, so its buckets can sum to less than its own total. The shortfall is printed rather "
+        + "than closed by rescaling the bars, which would invent a placement for analysts the vendor did "
+        + "not bucket.")+'">'+(tot-bucketed)+' of '+tot+' not bucketed by the feed.</div>')
     : "";
+  // The gauge carries the mark and the analyst count, so the two kvrows that
+  // printed them are gone. Without a mark there is no needle to place, and the
+  // count falls back to a row of its own.
+  var gauge = fcGaugeSVG(mark, tot);
   return '<div class="dsec"><h3>Analyst rating</h3>'
-    + '<div class="kvrow"><span data-tip="'+esc("The vendor's 1-to-5 consensus scale: 1 means every analyst rates "
-        + "it a strong buy, 3 is the middle, 5 is sell. It counts opinions, not whether those opinions have been "
-        + "right. No label is printed for it here because the vendor's own published label does not always match "
-        + "the band the number falls in, and two different words for one reading is worse than none.")
-    + '">Consensus</span><b class="'+cls+'">'+(mark!=null?(mark.toFixed(2)+' / 5'):"—")
-    + '<span class="m" style="font-weight:400"> (1 = strong buy)</span></b></div>'
-    + (tot!=null?('<div class="kvrow"><span>Analysts covering</span><b>'+tot+'</b></div>'):'')
+    + gauge
+    + ((!gauge && tot!=null) ? ('<div class="kvrow"><span>Analysts covering</span><b>'+tot+'</b></div>') : '')
     + bars + gap + '</div>';
 }
 function fcTrendSecHTML(sym, fund){
@@ -14777,8 +14862,7 @@ function fcTrendSecHTML(sym, fund){
     + '">Next-year EPS estimate</span><b class="'+dir+'">'+numStr(cur,2)+'</b></div>'
     + '<div class="kvrow"><span>90 days ago</span><b>'+numStr(d90,2)+'</b></div>'
     + '<div class="kvrow"><span>Change</span><b class="'+dir+'">'+fwSignedFixed(pct,1)+'%</b></div>'
-    + (t.period_end ? ('<div class="note">Both figures are the estimate for the fiscal year ending '
-        + esc(t.period_end)+'.</div>') : '')
+    + (t.period_end ? ('<div class="note">Fiscal year ending '+esc(t.period_end)+'.</div>') : '')
     + '</div>';
 }
 function fcActualsSecHTML(sym, fund){
@@ -14793,9 +14877,9 @@ function fcActualsSecHTML(sym, fund){
       + numStr(r.eps_est,2)+' est</span>'
       + (sp!=null?(' · '+fwSignedFixed(sp,1)+'%'):'')+'</b></div>';
   }).join("");
-  return '<div class="dsec"><h3>Actual vs. estimate</h3>'+body
-    + '<div class="note">Reported earnings per share against the consensus estimate going into each print, '
-    + 'newest first. A beat or a miss here is history, not a forecast.</div></div>';
+  return '<div class="dsec"><h3 data-tip="'+esc("Reported earnings per share against the consensus estimate "
+    + "going into each print, newest first. A beat or a miss here is history, not a forecast.")
+    + '">Actual vs. estimate</h3>'+body+'</div>';
 }
 function stageForecastHTML(sym, fund){
   var f = factsOf(sym);
@@ -14810,11 +14894,9 @@ function stageForecastHTML(sym, fund){
   if(!fcCoverage(sym)){
     return '<div class="dsec"><h3>No analyst coverage</h3><div class="note">'
       + (isFundSym(sym)
-          ? (esc(sym)+' is a fund. Nobody publishes a price target or a rating for it — analysts cover '
-             + 'companies, and a fund holds companies. ')
-          : ('No analyst price target or rating is published for '+esc(sym)+'. Thinly-covered names often '
-             + 'carry none. '))
-      + 'Focus a covered name to see the target range, the rating split and where the estimate has moved.'
+          ? (esc(sym)+' is a fund. No analyst publishes a target or a rating for it. ')
+          : ('No analyst target or rating is published for '+esc(sym)+'. '))
+      + 'Focus a covered name.'
       + '</div></div>';
   }
   var secs = fcTargetSecHTML(sym, f) + fcRatingSecHTML(sym, f)
@@ -14824,13 +14906,13 @@ function stageForecastHTML(sym, fund){
   // once-a-day sidecar, which the Fundamentals grid already badges.
   var stale = fundBuiltStaleDays(FUND_CACHE[sym]);
   var staleNote = (stale!=null && stale > FUND_BUILT_STALE_DAYS)
-    ? ('<div class="note"><span class="sess">STALE '+stale+'d</span> The estimate trend and the actual-vs-estimate '
-       + 'rows come from the quarterly-financials sidecar, built '+stale+' days before this session.</div>') : "";
-  return secs
-    + '<div class="dsec note">Price targets and ratings are analyst opinions on record, collected by TradingView '
-    + 'and refreshed with the rest of the desk each cycle. They are reference, not a signal: nothing here feeds '
-    + 'the conviction or swing score, and the last price they are compared against is 15-minute delayed.'
-    + staleNote + '</div>';
+    ? ('<div class="dsec note"><span class="sess">STALE '+stale+'d</span> Estimate trend and actuals: sidecar '
+       + 'built '+stale+' days ago.</div>') : "";
+  // The standing "these are opinions, collected by TradingView, reference not
+  // a signal" paragraph is gone (Zach, 2026-09-05) — it read the same for
+  // every symbol on every day, and it survives in the section tooltips.
+  // staleNote stays: it is a dynamic disclosure about this session's data.
+  return secs + staleNote;
 }
 
 /* ---- tabs under the chart: the old modal's panels, now always on screen ---- */
