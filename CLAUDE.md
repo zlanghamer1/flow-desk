@@ -452,6 +452,11 @@ JavaScript. Same for `f.alarm`'s banner threshold.
   quarter label per span — two primitives let the second's blocks paint over
   the first's text. With both on, each quarter's span splits 48/52, revenue
   growth left and FCF right, and the caption says which half is which.
+  **A negative quarter hangs BELOW the baseline** (2026-09-07 ask): when any
+  drawn dataset carries one, the baseline lifts to 62% of the pane, the band
+  splits evenly (18% each way, one scale in both directions), and the
+  baseline is drawn as a hairline across the blocks' extent. With nothing
+  negative the 80% baseline and the full 26% upward band stand.
 
 ## Auto-TA
 Display-only. It draws lines; it never scores, signals, or feeds an engine.
