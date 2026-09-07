@@ -239,3 +239,75 @@ def test_index_renders_a_delivered_data_json(browser, server, width, height):
         assert st["fed"].startswith("51%"), f"fed chip reads {st['fed']!r}"
     finally:
         page.close()
+
+
+# ── Watchlist growth sorts (2026-09-07) ──────────────────────────────────────
+# The rail's "rev growth" / "FCF growth" sorts read facts.<SYM>.framework
+# .metrics.*_ttm_pct — the same numbers the Framework tab prints. Ranked rows
+# lead, highest first; a name with no reading sinks below every ranked one and
+# says which reading is missing, never a zero.
+
+GROWTH_PAYLOAD = dict(BRIEF_PAYLOAD, facts={
+    "MU":   {"framework": {"verdict": "HOLD", "filters": {}, "filter_flags": {"fcf_growth": "implausible_swing"},
+                           "metrics": {"revenue_growth_ttm_pct": 41.3}}},
+    "CRWD": {"framework": {"verdict": "BUY_4", "filters": {}, "filter_flags": {},
+                           "metrics": {"revenue_growth_ttm_pct": 28.9, "fcf_growth_ttm_pct": 12.4}}},
+    "V":    {"framework": {"verdict": "HOLD", "filters": {}, "filter_flags": {},
+                           "metrics": {"revenue_growth_ttm_pct": -3.2, "fcf_growth_ttm_pct": 5.0}}},
+    "SMH":  {"framework": {"verdict": "NOT_APPLICABLE", "filters": {}, "filter_flags": {}, "metrics": {}}},
+})
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+@pytest.mark.parametrize("sort_key,order,missing", [
+    ("revg", ["MU", "CRWD", "V"], {"SMH": "rev fund"}),
+    ("fcfg", ["CRWD", "V"], {"MU": "FCF data flagged", "SMH": "FCF fund"}),
+])
+def test_watchlist_sorts_by_growth(browser, server, width, height, sort_key, order, missing):
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+    page.add_init_script(f"localStorage.setItem('desk.wl.sort', {sort_key!r});"
+                         "localStorage.setItem('desk.wl.collapsed', 'false');")
+
+    def route(r):
+        url = r.request.url
+        if "/data/data.json" in url:
+            r.fulfill(status=200, content_type="application/json", body=json.dumps(GROWTH_PAYLOAD))
+        elif url.startswith(server) or url.startswith("data:"):
+            r.continue_()
+        else:
+            r.abort()
+
+    page.route("**/*", route)
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == [], f"index.html @ {width}px threw: {page_errors}"
+        st = page.evaluate(
+            "(function(){"
+            " var rows=[].slice.call(document.querySelectorAll('#wl .wr[data-sym]'));"
+            " return {sel: document.getElementById('wlsel') && document.getElementById('wlsel').value,"
+            "  head: (document.querySelector('#wl .wg')||{}).textContent,"
+            "  syms: rows.map(function(r){return r.dataset.sym;}),"
+            "  grow: rows.map(function(r){var g=r.querySelector('.wlgrow'); return g? g.textContent.replace(/\\s+/g,' ').trim() : null;}),"
+            "  wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};"
+            "})()"
+        )
+        assert st["sel"] == sort_key, f"select reads {st['sel']!r}"
+        assert "GROWTH" in (st["head"] or "") and "HIGHEST FIRST" in st["head"], st["head"]
+        assert not st["wide"], f"sideways scroll at {width}px"
+        idx = {s: i for i, s in enumerate(st["syms"])}
+        ranked = [idx[s] for s in order]
+        assert ranked == sorted(ranked), f"ranked order wrong: {st['syms'][:8]}"
+        # every ranked row precedes every no-reading row
+        first_missing = min(i for i, g in enumerate(st["grow"]) if g and ("no reading" in g or "fund" in g or "flagged" in g))
+        assert max(ranked) < first_missing, f"a no-reading row ranked above a reading: {list(zip(st['syms'], st['grow']))[:10]}"
+        for sym, text in missing.items():
+            assert st["grow"][idx[sym]] == text, f"{sym} reads {st['grow'][idx[sym]]!r}"
+        top = st["grow"][idx[order[0]]]
+        assert "+" in top and "TTM" in top and "-" not in top, top   # U+2212, never ASCII minus
+        neg = st["grow"][idx["V"]] if sort_key == "revg" else None
+        if neg: assert "−3.2%" in neg, neg
+    finally:
+        page.close()
