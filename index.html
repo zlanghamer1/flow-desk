@@ -8588,6 +8588,239 @@ function yoyPct(arr, i, back){
   if(a==null||b==null||b===0) return null;
   return (a/b-1)*100;
 }
+/* Duplicated vendor rows: revenue AND EPS byte-identical across back-to-back
+   periods (CBRS live: two dup pairs). Returns the flagged indexes and the
+   "Qa / Qb" labels for the Financials note. One detector for every surface. */
+function revDupIdx(q){
+  var dupIdx = {}, dupPeriods = [];
+  if(q && Array.isArray(q.revenue) && Array.isArray(q.eps)){
+    var dupLen = Math.min(q.revenue.length, q.eps.length);
+    for(var di=1; di<dupLen; di++){
+      var ra=num(q.revenue[di-1]), rb=num(q.revenue[di]);
+      var ea=num(q.eps[di-1]), eb=num(q.eps[di]);
+      if(ra!=null && rb!=null && ra===rb && ea!=null && eb!=null && ea===eb){
+        var lbl = ((q.labels&&q.labels[di-1])||"?")+" / "+((q.labels&&q.labels[di])||"?");
+        if(dupPeriods.indexOf(lbl)===-1) dupPeriods.push(lbl);
+        dupIdx[di-1] = true; dupIdx[di] = true;
+      }
+    }
+  }
+  return {dupIdx:dupIdx, dupPeriods:dupPeriods};
+}
+/* A YoY comparison is invalid, not just extreme, when its DENOMINATOR
+   quarter belongs to a different business scope than the rest of the
+   series (a spinoff/restructuring) — NBIS's Q3'23 revenue is its
+   pre-restructuring parent entity's, ~15x every quarter after it.
+   Isolation-tested against the denominator's own nearest REAL neighbors
+   (walking outward past nulls — NBIS's real discontinuity has idx=0 and a
+   null on its right, so an immediate-neighbor test never ran). */
+function revDenomDiscontinuous(revNums, idx){
+  var d = revNums[idx];
+  if(d==null || d===0) return false;
+  var nb = [];
+  for(var li=idx-1; li>=0; li--){ if(revNums[li]!=null && revNums[li]!==0){ nb.push(revNums[li]); break; } }
+  for(var ri=idx+1; ri<revNums.length; ri++){ if(revNums[ri]!=null && revNums[ri]!==0){ nb.push(revNums[ri]); break; } }
+  if(!nb.length) return false;
+  var ad = Math.abs(d);
+  return nb.every(function(n){ var r = ad/Math.abs(n); return r>8 || r<0.125; });
+}
+/* Year-over-year revenue growth per period, aligned to `labels` (the first
+   `ppy` slots are null — no prior-year base). No YoY at all when the filing
+   cadence never resolved (ppyRaw null): a comparison against a guessed year
+   length is a wrong number, not a chart. A discontinuous or duplicated
+   denominator nulls that point, never guesses it. */
+function revYoyAll(revNums, labels, ppyRaw, ppy, dupIdx){
+  var discontinuity = false, dupDenom = false;
+  dupIdx = dupIdx || {};
+  var yoyAll = (ppyRaw==null) ? [] : labels.map(function(_, i){
+    if(i>=ppy && revDenomDiscontinuous(revNums, i-ppy)){ discontinuity = true; return null; }
+    if(i>=ppy && dupIdx[i-ppy]){ dupDenom = true; return null; }
+    return yoyPct(revNums, i, ppy);
+  });
+  return {yoyAll:yoyAll, discontinuity:discontinuity, dupDenom:dupDenom};
+}
+/* Where each reported period ENDS on the calendar, per label. Two label
+   shapes reach the page: the daily sidecar's "Q2 24" (fiscal quarter, 2-digit
+   fiscal year — a fiscal quarter can end in any month, so its end date is
+   read off the SAME sidecar's earnings[] rows, whose `date` is the fiscal
+   quarter end), and the ad-hoc scanner's "Aug '26" (the period-end month
+   from the scanner's own end epoch). A label with no date of its own is
+   stepped 12/ppy months from the nearest dated one and counted as such.
+   Returns {ends:[Date|null], placement, stepped}. */
+function revPeriodEnds(fund, q, ppy){
+  var byPeriod = {};
+  (fund && Array.isArray(fund.earnings) ? fund.earnings : []).forEach(function(r){
+    if(!r || r.period==null || !r.date) return;
+    var m = /^Q(\d)\s*'?(\d{2,4})$/.exec(String(r.period).trim());
+    if(m) byPeriod["Q"+m[1]+" "+m[2].slice(-2)] = r.date;
+  });
+  var placement = null;
+  var ends = q.labels.map(function(lbl){
+    var t = String(lbl==null?"":lbl).trim();
+    var m = /^Q(\d)\s*'?(\d{2,4})$/.exec(t);
+    if(m){
+      var d = byPeriod["Q"+m[1]+" "+m[2].slice(-2)];
+      if(!d) return null;
+      placement = placement || "each fiscal quarter's end date";
+      return new Date(d+"T12:00:00Z");
+    }
+    var m2 = /^([A-Z][a-z]{2})\s*'(\d{2})$/.exec(t);
+    if(m2){
+      var mi = MONTHS.indexOf(m2[1]);
+      if(mi<0) return null;
+      placement = placement || "each period's end month";
+      return new Date(Date.UTC(2000 + Number(m2[2]), mi+1, 0, 12));   // last day of that month
+    }
+    return null;
+  });
+  var mpp = Math.round(12/ppy), steppedIdx = {};
+  var dated = []; ends.forEach(function(d,i){ if(d) dated.push(i); });
+  if(dated.length){
+    ends = ends.map(function(d, i){
+      if(d) return d;
+      var j = dated[0];
+      dated.forEach(function(k){ if(Math.abs(k-i) < Math.abs(j-i)) j = k; });
+      var base = ends[j];
+      steppedIdx[i] = true;
+      return new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + (i-j)*mpp + 1, 0, 12));
+    });
+  }
+  return {ends:ends, placement:placement, steppedIdx:steppedIdx, monthsPerPeriod:mpp};
+}
+/* The chart-stage revenue-growth overlay's data: one point per period that
+   has both a YoY figure and a calendar span. Every "cannot draw" case returns
+   a reason for the caption instead of a blank chart. */
+function revOverlayPoints(fund){
+  var q = fund && fund.growth && fund.growth.quarterly;
+  if(!fund) return {points:null, reason:"no financials for this name"};
+  if(!q || !Array.isArray(q.labels) || !q.labels.length || !Array.isArray(q.revenue)) return {points:null, reason:"no quarterly revenue history"};
+  var ppyRaw = periodsPerYear(q.labels);
+  if(ppyRaw==null) return {points:null, reason:"filing cadence unresolved (too few labeled periods)"};
+  var ppy = ppyRaw;
+  var revNums = q.revenue.map(num);
+  var yoy = revYoyAll(revNums, q.labels, ppyRaw, ppy, revDupIdx(q).dupIdx);
+  var pe = revPeriodEnds(fund, q, ppy);
+  if(!pe.placement) return {points:null, reason:"no period dates to place the quarters on"};
+  var points = [], blank = 0, stepped = 0;
+  for(var i=ppy; i<q.labels.length; i++){
+    var end = pe.ends[i];
+    if(!end) continue;
+    if(yoy.yoyAll[i]==null){ if(revNums[i]!=null) blank++; continue; }
+    var start = pe.ends[i-1] || new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - pe.monthsPerPeriod + 1, 0, 12));
+    // Counted per DRAWN block, not per label — the undated older quarters
+    // that never get a block (no prior-year base) are not the reader's concern.
+    if(pe.steppedIdx[i]) stepped++;
+    points.push({label:q.labels[i], yoy:yoy.yoyAll[i], rev:revNums[i], start:start, end:end});
+  }
+  if(!points.length) return {points:null, reason:"fewer than a year of comparable periods"};
+  // The window on screen can post-date every reported quarter (a 3M range in
+  // September, when the last quarter ended May 31): the blocks are real but
+  // none is in view, and the caption must say so rather than leave a lit
+  // toggle over an unchanged chart.
+  var firstBar = STAGE.dates && STAGE.dates.length ? STAGE.dates[0] : null;
+  var lastEnd = points[points.length-1].end;
+  var offWindow = !!(firstBar && lastEnd < firstBar);
+  return {points:points, ppy:ppy, placement:pe.placement, stepped:stepped, monthsPerPeriod:pe.monthsPerPeriod,
+          blank:blank, offWindow:offWindow, lastEndLabel: MONTHS[lastEnd.getUTCMonth()]+" "+lastEnd.getUTCDate()+", "+lastEnd.getUTCFullYear()};
+}
+/* Series primitive for the revenue-growth blocks — same v5 plugin shape as
+   vpBuildPrimitive. Blocks sit along the bottom ~28% of the candle pane on
+   their OWN scale (tallest block = the largest |YoY| on file), never the
+   price axis. x-extent comes from each period's calendar span mapped onto
+   the bar index axis (fractional between bars, extrapolated past either
+   end), read through timeScale().logicalToCoordinate every frame so the
+   blocks pan and zoom with the candles. Colors resolve from cssVar() inside
+   draw() so a theme flip repaints. Positive growth is --up, negative --dn,
+   and the label always leads with its sign, so hue is never the only signal. */
+function revBuildPrimitive(){
+  var data = STAGE.revData;
+  function logicalOfDate(d){
+    var dates = STAGE.dates, n = dates.length;
+    if(!n) return null;
+    var t = d.getTime(), t0 = dates[0].getTime(), tN = dates[n-1].getTime();
+    var msPerBar = (n>1 && tN>t0) ? (tN-t0)/(n-1) : 86400000;
+    if(t <= t0) return -((t0-t)/msPerBar);
+    if(t >= tN) return (n-1) + (t-tN)/msPerBar;
+    var lo=0, hi=n-1;
+    while(hi-lo>1){ var mid=(lo+hi)>>1; if(dates[mid].getTime()<=t) lo=mid; else hi=mid; }
+    var a=dates[lo].getTime(), b=dates[hi].getTime();
+    return lo + (b>a ? (t-a)/(b-a) : 0);
+  }
+  function draw(target){
+    if(!data || !data.points || !data.points.length || !STAGE.chart || !STAGE.s.candle) return;
+    target.useBitmapCoordinateSpace(function(scope){
+      var ctx = scope.context;
+      var vpr = scope.verticalPixelRatio, hpr = scope.horizontalPixelRatio;
+      var paneW = scope.bitmapSize.width, paneH = scope.bitmapSize.height;
+      var ts; try{ ts = STAGE.chart.timeScale(); }catch(e){ return; }
+      // The vendored v5.2.1 build answers 0 (not a coordinate) for a
+      // FRACTIONAL logical index — measured live 2026-09-07: 371 -> 336px,
+      // 371.33 -> 0. Snap to the integer bar and add the fraction of a bar
+      // spacing by hand.
+      var barSp = 6; try{ barSp = ts.options().barSpacing || 6; }catch(e){}
+      function xOfLogical(l){
+        var base = Math.floor(l), c = null;
+        try{ c = ts.logicalToCoordinate(base); }catch(e){}
+        return (c==null) ? null : c + (l-base)*barSp;
+      }
+      var maxAbs = 0;
+      data.points.forEach(function(p){ var m=Math.abs(p.yoy); if(m>maxAbs) maxAbs=m; });
+      if(!(maxAbs>0)) return;
+      // The volume histogram owns the bottom 18% of the pane (its price
+      // scale's scaleMargins.top is 0.82), so the blocks stand on a baseline
+      // just above it rather than mixing into the volume bars.
+      var baseY = paneH * 0.80;
+      var bandH = paneH * 0.26;
+      var upFill = hexA(cssVar("--up"), 0.16), upLine = hexA(cssVar("--up"), 0.7);
+      var dnFill = hexA(cssVar("--dn"), 0.16), dnLine = hexA(cssVar("--dn"), 0.7);
+      var fontPx = 10 * hpr;
+      ctx.font = fontPx + "px -apple-system, system-ui, sans-serif";
+      ctx.textBaseline = "middle";
+      data.points.forEach(function(p){
+        var l0 = logicalOfDate(p.start), l1 = logicalOfDate(p.end);
+        if(l0==null || l1==null) return;
+        var x0 = xOfLogical(l0), x1 = xOfLogical(l1);
+        if(x0==null || x1==null) return;
+        x0 *= hpr; x1 *= hpr;
+        if(x1 <= 0 || x0 >= paneW) return;                 // fully off-pane
+        var left = Math.max(0, x0), right = Math.min(paneW, x1);
+        var w = right - left - 1*hpr;
+        if(!(w>0)) return;
+        var h = Math.max(1*vpr, (Math.abs(p.yoy)/maxAbs) * bandH);
+        var top = baseY - h;
+        var neg = p.yoy < 0;
+        ctx.fillStyle = neg ? dnFill : upFill;
+        ctx.fillRect(left, top, w, h);
+        ctx.strokeStyle = neg ? dnLine : upLine;
+        ctx.lineWidth = 1*hpr;
+        ctx.strokeRect(left + 0.5*hpr, top + 0.5*vpr, Math.max(0, w - 1*hpr), Math.max(0, h - 1*vpr));
+        // Growth label above the block, quarter label inside it — each only
+        // when the block is wide enough to hold it, so a zoomed-out view
+        // never smears text across neighboring blocks.
+        var lbl = fm1(p.yoy) + "%";
+        var tw = ctx.measureText(lbl).width;
+        if(w >= tw + 6*hpr){
+          ctx.fillStyle = hexA(cssVar("--ink2"), 0.95);
+          ctx.textAlign = "center";
+          var ly = top - 7*vpr;
+          if(ly < 6*vpr) ly = top + 7*vpr;
+          ctx.fillText(lbl, left + w/2, ly);
+          var qw = ctx.measureText(String(p.label)).width;
+          if(h/vpr >= 22 && w >= qw + 6*hpr){
+            ctx.fillStyle = hexA(cssVar("--ink3"), 0.95);
+            ctx.fillText(String(p.label), left + w/2, baseY - 7*vpr);
+          }
+        }
+      });
+    });
+  }
+  return {
+    updateAllViews: function(){},
+    paneViews: function(){
+      return [{ renderer: function(){ return { draw: draw }; } }];
+    }
+  };
+}
 function miniBarSVG(labels, values, opts){
   opts = opts||{};
   var back = opts.back||1, negRed = !!opts.negRed;
@@ -9347,19 +9580,11 @@ function renderGrowth(sym, fund){
     // real 45-95% ones), and yoyDenomDiscontinuous can't either — the
     // duplicate makes the neighbor ratio exactly 1.0 (2026-08-26 review
     // round 19 resumed run, financials finding #1).
-    var dupIdx = {};
-    if(Array.isArray(q.revenue) && Array.isArray(q.eps)){
-      var dupLen = Math.min(q.revenue.length, q.eps.length);
-      for(var di=1; di<dupLen; di++){
-        var ra=num(q.revenue[di-1]), rb=num(q.revenue[di]);
-        var ea=num(q.eps[di-1]), eb=num(q.eps[di]);
-        if(ra!=null && rb!=null && ra===rb && ea!=null && eb!=null && ea===eb){
-          var lbl = (q.labels[di-1]||"?")+" / "+(q.labels[di]||"?");
-          if(dupPeriods.indexOf(lbl)===-1) dupPeriods.push(lbl);
-          dupIdx[di-1] = true; dupIdx[di] = true;
-        }
-      }
-    }
+    // revDupIdx is the ONE duplicate-row detector — the chart-stage
+    // revenue-growth overlay reads the same one (2026-09-07).
+    var _dup = revDupIdx(q);
+    var dupIdx = _dup.dupIdx;
+    _dup.dupPeriods.forEach(function(lbl){ if(dupPeriods.indexOf(lbl)===-1) dupPeriods.push(lbl); });
     var money = [
       {name:"Revenue", color:seriesColor(0), values:q.revenue},
       {name:"Net income", color:seriesColor(1), values:q.ni||[]},
@@ -9450,33 +9675,11 @@ function renderGrowth(sym, fund){
     // collapse print next to real +350%-to-+770% bars (2026-08-23 review
     // round 16, Financials finding #0). Now walks outward past a null to the
     // next REAL value on each side before giving up.
-    function yoyDenomDiscontinuous(idx){
-      var d = revNums[idx];
-      if(d==null || d===0) return false;
-      var nb = [];
-      for(var li=idx-1; li>=0; li--){ if(revNums[li]!=null && revNums[li]!==0){ nb.push(revNums[li]); break; } }
-      for(var ri=idx+1; ri<revNums.length; ri++){ if(revNums[ri]!=null && revNums[ri]!==0){ nb.push(revNums[ri]); break; } }
-      if(!nb.length) return false;
-      var ad = Math.abs(d);
-      return nb.every(function(n){ var r = ad/Math.abs(n); return r>8 || r<0.125; });
-    }
-    var yoyDiscontinuity = false;
-    var yoyDupDenom = false;
-    // No YoY math at all when the filing cadence never resolved — a
-    // year-over-year comparison against a guessed year length is a wrong
-    // number, not a chart (2026-08-26 review round 17, financials
-    // finding #3). The cadenceWord header above already says why.
-    var yoyAll = (ppyRaw==null) ? [] : q.labels.map(function(_, i){
-      if(i>=ppy && yoyDenomDiscontinuous(i-ppy)){ yoyDiscontinuity = true; return null; }
-      // A denominator that is one half of a detected duplicated vendor row
-      // is compromised: the growth it implies (CBRS's +1474%) is a fetch
-      // artifact, and no clamp can catch it because the duplicate vouches
-      // for itself as a "trend neighbor" (round 19 resumed run, financials
-      // finding #1). Null, never guessed — same posture as
-      // yoyDenomDiscontinuous one line up.
-      if(i>=ppy && dupIdx[i-ppy]){ yoyDupDenom = true; return null; }
-      return yoyPct(revNums, i, ppy);
-    });
+    // revYoyAll is the ONE year-over-year revenue function — the chart
+    // stage's revenue-growth overlay (revOverlayPoints) reads the same one,
+    // discontinuity and duplicate-denominator guards included (2026-09-07).
+    var _yoy = revYoyAll(revNums, q.labels, ppyRaw, ppy, dupIdx);
+    var yoyAll = _yoy.yoyAll, yoyDiscontinuity = _yoy.discontinuity, yoyDupDenom = _yoy.dupDenom;
     var yoy = yoyAll.slice(ppy), yoyLabels = q.labels.slice(ppy);
     if(yoy.some(function(v){ return v!=null; })){
       var yoyDef = [{name:"Revenue YoY", color:seriesColor(0), values:yoy, type:"bar"}];
@@ -10337,11 +10540,11 @@ function taAmvForInterval(amv){
 // bb reads `v.bb!==false` (not `!!v.bb`) for the same reason the old ma key
 // did when IT was the default-on one: a stored blob missing the key must
 // fall to the key's default, not to undefined's false.
-function taDefaults(){ return {trend:false, sr:false, bb:true, vp:false, ma:false, gex:false}; }
+function taDefaults(){ return {trend:false, sr:false, bb:true, vp:false, ma:false, gex:false, rev:false}; }
 function taPrefs(){
   try{
     var v = JSON.parse(read("desk.stage.ta2")||"null");
-    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr, bb:(v.bb!==false), vp:!!v.vp, ma:!!v.ma, gex:!!v.gex};
+    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr, bb:(v.bb!==false), vp:!!v.vp, ma:!!v.ma, gex:!!v.gex, rev:!!v.rev};
   }catch(e){}
   return taDefaults();
 }
@@ -11186,6 +11389,11 @@ function stageTAClear(){
   STAGE.vpData = null;
   (STAGE.vpLines||[]).forEach(function(h){ try{ STAGE.s.candle.removePriceLine(h.line); }catch(e){} });
   STAGE.vpLines = [];
+  // Revenue-growth blocks ride the same primitive teardown as the volume
+  // profile, for the same reason: a symbol switch must never leave the last
+  // name's quarters drawn under the new one's candles.
+  if(STAGE.revPrim){ try{ STAGE.s.candle.detachPrimitive(STAGE.revPrim); }catch(e){} STAGE.revPrim = null; }
+  STAGE.revData = null;
   STAGE.taSummary = null;
 }
 /* Groups a tracked symbol's own intraday bars by CT session date, for
@@ -11776,6 +11984,24 @@ function stageTA(){
       summary.vp = vp;
     } else {
       summary.vp = {reason: vp.reason, usedBars: vp.usedBars, skippedBars: vp.skippedBars};
+    }
+  }
+  // Revenue-growth blocks (2026-09-07, Zach's TrendSpider ask): one block per
+  // fiscal quarter, height scaled to that quarter's year-over-year revenue
+  // growth, drawn along the bottom of the candle pane on its OWN scale —
+  // never the price axis (a block "reaching" $180 means nothing about
+  // price, which is exactly what made the TrendSpider version read oddly).
+  // Display only, never scored. The YoY math is revYoyAll, the SAME function
+  // the Financials tab's YoY chart uses, so the two can never disagree.
+  if(prefs.rev && !STAGE.intraday){
+    var rv = revOverlayPoints(STAGE.fund);
+    if(rv.points && rv.points.length){
+      STAGE.revData = rv;
+      STAGE.revPrim = revBuildPrimitive();
+      try{ STAGE.s.candle.attachPrimitive(STAGE.revPrim); }catch(e){}
+      summary.rev = rv;
+    } else {
+      summary.rev = {reason: rv.reason || "no data"};
     }
   }
   STAGE.taSummary = summary;
@@ -12384,7 +12610,28 @@ function stageTALegend(prefs){
       empty.push("volume profile: " + ((sm && sm.vp && sm.vp.reason) || "no data"));
     }
   }
-  if(!prefs.trend && !prefs.sr && !prefs.bb && !prefs.vp){ el.innerHTML = ""; writeRecap([]); return; }
+  if(prefs.rev && !STAGE.intraday){
+    if(sm && sm.rev && sm.rev.points && sm.rev.points.length){
+      var rp = sm.rev.points, rl = rp[rp.length-1];
+      var revBits = '<span style="color:var(--up)">revenue growth: </span>'
+        + esc(rl.label)+' '+fm1(rl.yoy)+'% YoY'
+        + ' <span class="m">· '+rp.length+' '+(sm.rev.ppy===4 ? 'quarter' : 'period')+(rp.length===1?'':'s')+' drawn'
+        + (sm.rev.ppy!==4 ? ', each vs the same period a year earlier' : '')
+        + ' · blocks end on '+esc(sm.rev.placement)
+        + (sm.rev.stepped>0 ? (', '+sm.rev.stepped+' placed by stepping '+sm.rev.monthsPerPeriod+' months from a dated one') : '')
+        + (sm.rev.blank>0 ? (' · '+sm.rev.blank+' left blank: prior-year base flagged') : '')
+        + (sm.rev.offWindow ? (' · none in view: the latest block ends '+esc(sm.rev.lastEndLabel)+', before this window\'s first bar — widen the range') : '')
+        + ' · own scale, not price</span>';
+      on.push(revBits);
+    } else {
+      failedOv.push("revenue growth");
+      empty.push("revenue growth: " + ((sm && sm.rev && sm.rev.reason) || "no data"));
+    }
+  }
+  // rev counts only where it can draw — intraday the button is disabled and
+  // its reason prints in the chart-notes legend, so an "auto-TA: ." stub here
+  // would be an empty sentence over nothing.
+  if(!prefs.trend && !prefs.sr && !prefs.bb && !prefs.vp && !(prefs.rev && !STAGE.intraday)){ el.innerHTML = ""; writeRecap([]); return; }
   var tail = ' <span class="m">(fit on this window — display only, never a signal)</span>';
   if(on.length){
     el.innerHTML = 'auto-TA: '+on.join(" · ")+(empty.length ? (' <span class="m">· '+esc(empty.join("; "))+'</span>') : "")+tail;
@@ -13549,9 +13796,14 @@ function stageBar(){
   // prose goes, dynamic disclosures stay printed. Don't re-add data-tip here
   // without a fresh ask.
   var maOff1D = (STAGE.iv !== "1D");
-  var taBtns = [["ma","MA"],["trend","trend"],["sr","S/R"],["bb","BB"],["vp","VP"],["gex","GEX"]]
+  // Revenue-growth blocks (2026-09-07) span fiscal quarters, so they only
+  // have an honest width on the daily and weekly axes; an intraday window
+  // covers days, not quarters. Same disabled-with-a-printed-reason pattern
+  // as MA off 1D (the reason prints in the chart-notes legend).
+  var revOffIntra = (STAGE.iv !== "1D" && STAGE.iv !== "1W");
+  var taBtns = [["ma","MA"],["trend","trend"],["sr","S/R"],["bb","BB"],["vp","VP"],["gex","GEX"],["rev","Rev"]]
     .map(function(t){
-      var dis = (t[0]==="ma" && maOff1D);
+      var dis = (t[0]==="ma" && maOff1D) || (t[0]==="rev" && revOffIntra);
       return '<button data-ta="'+t[0]+'" aria-pressed="'+(dis ? "false" : !!prefs[t[0]])+'"'
         + (dis ? ' disabled aria-disabled="true"' : '')
         + '>'+t[1]+'</button>';
@@ -13618,9 +13870,12 @@ function stageLegend(){
     // anywhere was a lit toggle over an empty chart (2026-08-26 review round
     // 18, chart stage finding #1).
     var maNote = '<span class="m" data-tip="The 20/50/200-day averages are computed from daily bars — a day-denominated line has no honest place on an hourly or weekly axis. Switch to 1D to draw them.">the 20/50/200-day moving averages draw on the 1D view only</span>';
+    // Same unconditional-print rule for the Rev toggle, which is disabled on
+    // the intraday intervals (a quarter has no honest width on an hourly axis).
+    var revNote = STAGE.intraday ? ' <span class="m">· revenue growth blocks draw on the 1D and 1W views only</span>' : '';
     el.innerHTML = maNote + (any
       ? ' <span class="m" data-tip="Earnings badges and rating arrows are snapped to daily bars, so they are drawn on the 1D view only. The countdown to the next report stays in the header on every interval.">· earnings and rating markers too</span>'
-      : "");
+      : "") + revNote;
     return;
   }
   var st = statsOf(STAGE.sym);
