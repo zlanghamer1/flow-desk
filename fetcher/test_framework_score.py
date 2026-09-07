@@ -224,6 +224,26 @@ def test_fcf_growth_unknown_on_an_implausible_ttm_swing():
     assert out["filter_flags"]["fcf_growth"] == "implausible_swing"
 
 
+def test_revenue_growth_ttm_is_published_even_when_fcf_is_flagged_or_missing():
+    # The rail's revenue-growth sort reads this metric, so it must not vanish
+    # with filter 5: an implausible FCF swing (live MU shape) or no FCF data
+    # at all still leaves eight revenue quarters to grow from.
+    revenue = [100.0, 100.0, 100.0, 100.0, 112.0, 112.0, 112.0, 112.0]   # +12%
+    fcf = [10.0, 10.0, 10.0, 10.0, 50.0, 50.0, 50.0, 50.0]               # +400%, flagged
+    out = context.score_framework("X", {}, _fund(revenue=revenue, fcf=fcf), {"weekly": {}}, SESSION)
+    assert out["filters"]["fcf_growth"] is None
+    assert "fcf_growth_ttm_pct" not in out["metrics"]
+    assert out["metrics"]["revenue_growth_ttm_pct"] == pytest.approx(12.0)
+    out = context.score_framework("X", {}, _fund(revenue=revenue), {"weekly": {}}, SESSION)
+    assert out["metrics"]["revenue_growth_ttm_pct"] == pytest.approx(12.0)
+    # Fewer than eight quarters, or a non-positive prior TTM, stays absent —
+    # never a guessed zero.
+    assert "revenue_growth_ttm_pct" not in context.score_framework(
+        "X", {}, _fund(revenue=revenue[:6]), {"weekly": {}}, SESSION)["metrics"]
+    assert "revenue_growth_ttm_pct" not in context.score_framework(
+        "X", {}, _fund(revenue=[0.0] * 4 + [5.0] * 4), {"weekly": {}}, SESSION)["metrics"]
+
+
 def test_filter_flags_empty_when_nothing_is_flagged():
     hist = {"weekly": {}}
     fund = _fund(

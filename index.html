@@ -1198,6 +1198,9 @@ footer b{color:var(--ink2)}
 /* Hick + Jakob: one native sort select instead of six equal buttons. */
 .wlsortbox .wlsort{padding:9px 14px 2px}
 .wlsortnote{padding:0 14px 4px;font-size:10.5px;color:var(--ink3)}
+.wlgrow{font-size:10.5px;color:var(--ink2);margin-top:1px}
+.wlgrow.m{color:var(--ink3)}
+.wlgrow b{font-weight:600}
 .wl.collapsed #wlsortbox{display:none}
 .wlsel{font:11px inherit;color:var(--ink);background:var(--srf2);border:1px solid var(--edge);border-radius:5px;padding:3px 6px;min-height:24px;max-width:150px}
 .wlsel:hover{border-color:var(--ink3)}
@@ -3711,7 +3714,42 @@ function rangeBarHTML(sym, big){
 // that always booted back to "groups", so a trader who works the rail sorted
 // by 52-week range or hot-move had to re-click the sort button after every
 // reload (2026-08-23 review round 16, Left watchlist rail finding #1).
-var WL_SORT_VALUES = {groups:1, range:1, chg:1, az:1, vol:1};
+var WL_SORT_VALUES = {groups:1, range:1, chg:1, az:1, vol:1, revg:1, fcfg:1};
+// The two growth sorts (2026-09-07 ask) read the fetcher's framework metrics
+// — facts.<SYM>.framework.metrics.revenue_growth_ttm_pct / fcf_growth_ttm_pct,
+// trailing-12-month vs the prior 12 months, computed once a day in
+// fetcher/context.py's score_framework — the SAME numbers the Framework tab's
+// filter-5 row prints, so the rail and the tab cannot disagree. Nothing is
+// re-derived here. Display-only, like every framework field (standing ban 10).
+// Three distinct null reasons, never a blank or a zero: the fetcher never
+// scored the name (custom adds — score_framework runs on the pinned universe
+// only), the name is a fund (NOT_APPLICABLE), or the FCF swing hit the
+// implausibility ceiling (filter_flags.fcf_growth, rendered DATA FLAGGED on the
+// Framework tab; revenue growth is published independently of that gate).
+var WL_GROWTH_SORTS = {
+  revg:{metric:"revenue_growth_ttm_pct", flag:null,         word:"rev", label:"REVENUE GROWTH (TTM) — HIGHEST FIRST"},
+  fcfg:{metric:"fcf_growth_ttm_pct",     flag:"fcf_growth", word:"FCF", label:"FCF GROWTH (TTM) — HIGHEST FIRST"}
+};
+function wlGrowthOf(sym, key){
+  var spec = WL_GROWTH_SORTS[key];
+  var f = factsOf(sym), fw = f && f.framework;
+  if(!spec || !fw) return {v:null, why:"no reading"};
+  if(fw.verdict==="NOT_APPLICABLE") return {v:null, why:"fund"};
+  var v = fw.metrics && fw.metrics[spec.metric];
+  if(typeof v==="number" && isFinite(v)) return {v:v, why:null};
+  if(spec.flag && fw.filter_flags && fw.filter_flags[spec.flag]) return {v:null, why:"data flagged"};
+  return {v:null, why:"no reading"};
+}
+// The per-row figure for the two growth sort views, drawn only in those views
+// the way rangeBarHTML draws only under "52w ↑". fm1 carries the U+2212 and
+// signed-zero guards every formatter must.
+function wlGrowthLineHTML(sym){
+  var spec = WL_GROWTH_SORTS[wlSort];
+  if(!spec) return "";
+  var g = wlGrowthOf(sym, wlSort);
+  return '<div class="wlgrow tn'+(g.v==null?' m':'')+'">'+spec.word+' '
+    + (g.v==null ? esc(g.why) : ('<b class="'+sign1(g.v)+'">'+fm1(g.v)+'%</b> TTM'))+'</div>';
+}
 var wlSort = (function(){ var v = read("desk.wl.sort"); return WL_SORT_VALUES[v] ? v : "groups"; })();
 var wlEdit = false;
 // Leveraged / inverse wrappers, by rail group. The rail deliberately carries
@@ -3969,7 +4007,8 @@ function railRowHTML(s, opts){
     // The 52-week range bar draws only in the "52w ↑" sort view (2026-08-18):
     // fifty always-on mini-charts ate ~40% of the rail's height for a datum
     // the shopping-list box and the drawer's big bar already carry.
-    +(wlSort==="range" ? rangeBarHTML(s) : "")+'</div>';
+    +(wlSort==="range" ? rangeBarHTML(s) : "")
+    +wlGrowthLineHTML(s)+'</div>';
 }
 function renderWL(){
   // Capture the io box's caret before $("#wl").innerHTML wipes it.
@@ -4006,7 +4045,10 @@ function renderWL(){
   customSyms.forEach(function(s){ if(railSyms.indexOf(s)===-1) railSyms.push(s); });
   // "az" and "vol" added at Zach's request (2026-08-23) — alphabetical and
   // today's raw share volume, alongside the existing 52w/Δ%/hot sorts.
-  var sorts = [["groups","groups"],["range","52w ↑"],["chg","Δ%"],["hot","hot"],["az","A→Z"],["vol","volume"]];
+  // "revg" and "fcfg" added at Zach's request (2026-09-07) — trailing-12-month
+  // revenue growth and free-cash-flow growth, read from the framework metrics
+  // (see WL_GROWTH_SORTS above).
+  var sorts = [["groups","groups"],["range","52w ↑"],["chg","Δ%"],["hot","hot"],["az","A→Z"],["vol","volume"],["revg","rev growth"],["fcfg","FCF growth"]];
   // One native select instead of six equal buttons (UX-laws redesign,
   // 2026-09-02 — Hick's and Jakob's laws). The sort keys and their meanings
   // are unchanged; the per-sort explanations moved into one tooltip.
@@ -4017,7 +4059,9 @@ function renderWL(){
   // one line, since a native dropdown cannot show a tooltip per option.
   var sortWhy = {groups:"The desk’s own groupings.", range:"Lowest in its 52-week range first — the value-shopping view. Hot runners sink to the bottom.",
     chg:"Today’s % move, biggest first.", hot:"Move vs each name’s own average day.", az:"Alphabetical by ticker.",
-    vol:"Today’s raw share volume, highest first (pre-market: the pre-market session’s own volume)."};
+    vol:"Today’s raw share volume, highest first (pre-market: the pre-market session’s own volume).",
+    revg:"Last 12 months’ revenue vs the 12 before, highest first. Desk names only; custom adds have no reading.",
+    fcfg:"Last 12 months’ free cash flow vs the 12 before, highest first. Desk names only; a flagged swing has no reading."};
   var sortHtml = '<div class="wlsort"><label class="m" for="wlsel">sort</label>'
     + '<select class="wlsel" id="wlsel" aria-label="Sort watchlist" data-tip="Change how the watchlist is ordered. The line under it says what the current order means.">'
     + sorts.map(function(k){ return '<option value="'+k[0]+'"'+(wlSort===k[0]?' selected':'')+'>'+k[1]+'</option>'; }).join("")
@@ -4093,6 +4137,17 @@ function renderWL(){
         return vb-va;
       }
       if(wlSort==="az") return a<b ? -1 : a>b ? 1 : 0;
+      if(WL_GROWTH_SORTS[wlSort]){
+        // Same stale-sinks-to-bottom convention every rail sort carries, then
+        // no-reading rows after every ranked one (a missing reading is never
+        // a zero), then highest growth first. Both-null guard as elsewhere.
+        var ga=liveStale(a), gb=liveStale(b);
+        if(ga !== gb) return ga ? 1 : -1;
+        var ra=wlGrowthOf(a, wlSort).v, rb=wlGrowthOf(b, wlSort).v;
+        if(ra==null && rb==null) return a<b ? -1 : a>b ? 1 : 0;
+        if(ra==null) return 1; if(rb==null) return -1;
+        return rb-ra;
+      }
       if(wlSort==="vol"){
         // liveStale() trips after 75s with no fresh scanner read for a
         // symbol — a routine occurrence this file already guards against in
@@ -4126,6 +4181,7 @@ function renderWL(){
             : wlSort==="chg" ? ((priceSessionNow()==="premarket") ? "PRE-MARKET MOVE — BIGGEST FIRST" : "TODAY'S MOVE — BIGGEST FIRST")
             : wlSort==="az" ? "A → Z"
             : wlSort==="vol" ? ((priceSessionNow()==="premarket") ? "PRE-MARKET VOLUME — HIGHEST FIRST" : "TODAY'S VOLUME — HIGHEST FIRST")
+            : WL_GROWTH_SORTS[wlSort] ? WL_GROWTH_SORTS[wlSort].label
             : "VS OWN AVERAGE — HOTTEST FIRST";
     html += '<div class="wg">'+lab+'</div>'+sorted.map(function(x){ return railRowHTML(x); }).join("");
     // The hidden-pinned "+ back" rows only existed in the grouped sort, so

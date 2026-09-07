@@ -3318,6 +3318,18 @@ def score_framework(ticker: str, f: dict, fund: Optional[dict],
     else:
         filters["opmargin_expansion"] = None
 
+    # TTM revenue growth on its own, independent of filter 5's FCF gate. The
+    # watchlist rail sorts on this number (2026-09-07 ask); before it was
+    # published only inside the FCF branch below, so a name whose FCF swing hit
+    # the implausibility ceiling (MU, COHR, TSEM, LITE, SMCI and 8 more on the
+    # 2026-09-07 payload) lost its revenue reading too — 25 of 63 scored names
+    # carried one. Same window, same arithmetic as the FCF branch, which
+    # re-derives the identical value so the two can never disagree.
+    if len(q_rev) >= 8 and all(_isnum(v) for v in q_rev[-8:]):
+        _rev_now, _rev_prior = sum(q_rev[-4:]), sum(q_rev[-8:-4])
+        if _rev_prior > 0:
+            metrics["revenue_growth_ttm_pct"] = round((_rev_now - _rev_prior) / _rev_prior * 100, 2)
+
     # Filter 5: FCF growth — TTM free cash flow growing, and growing faster
     # than TTM revenue (self-funded growth, not just growth).
     if len(q_fcf) >= 8 and len(q_rev) >= 8:

@@ -477,7 +477,12 @@ values are `null` (never a string sentinel). All strings are already plain
 >       "revenue_growth_ntm_pct": 24.3,
 >       "opmargin_expansion_bps": 230.0,
 >       "fcf_growth_ttm_pct": 18.5,
->       "revenue_growth_ttm_pct": 12.1,
+>       "revenue_growth_ttm_pct": 12.1,   // the one exception to "only when its
+>                                   // filter resolved": published whenever 8
+>                                   // numeric revenue quarters exist with a
+>                                   // positive prior TTM, even when the FCF
+>                                   // filter is null or flagged — the rail's
+>                                   // revenue-growth sort reads it (2026-09-07)
 >       "ttm_fcf_positive": true    // published alongside fcf_growth_ttm_pct so
 >                                   // the frontend can explain a FAIL whose two
 >                                   // printed percentages (FCF growing faster
