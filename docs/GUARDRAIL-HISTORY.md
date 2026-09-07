@@ -3500,3 +3500,55 @@ this added as another tab after Options Flow 'Forecast'."
   Fundamentals grid uses.
 - Verified: 377 fetcher tests, 6 page smoke tests, and a real Chromium click
   through the tab at 1440px and 390px — no page errors, no sideways scroll.
+
+## Guardrails added 2026-09-07 (revenue-growth blocks on the chart — Zach's TrendSpider ask)
+
+Zach sent a TrendSpider screenshot of CoreWeave: green blocks, one per fiscal
+quarter, stepping up under the candles with "+420.4%", "+206.5%" … "+112.5%"
+labels, and asked for the same thing as another chart button. His own read of
+that image is the spec: the blocks are revenue growth, not price; sharing the
+price axis is what makes them look odd; and the chart's value is the
+divergence between growth still landing and a multiple compressing.
+
+- **Own scale, never the price axis.** The blocks stand on a baseline at 80%
+  of the pane height and the tallest is the largest |YoY| on file. The
+  caption says "own scale, not price" so nobody reads a block top as $180.
+  The 80% baseline is not arbitrary: the volume histogram's price scale has
+  `scaleMargins.top` 0.82, and the first cut at a pane-bottom baseline drew
+  the blocks straight through the volume bars.
+- **One YoY function, two surfaces.** The Financials tab already computed
+  year-over-year revenue growth inside `renderGrowth`, with a discontinuity
+  guard (NBIS's spinoff quarter) and a duplicated-vendor-row guard (CBRS's
+  +1474%) written into a closure. The overlay could not call a closure, and
+  a second copy of that math would eventually print a different number under
+  the candles than the tab prints beside them. `revYoyAll`, `revDupIdx` and
+  `revDenomDiscontinuous` are now top-level and both surfaces call them;
+  MU's Q3 26 reads +345.7% in both places, verified in a real Chromium.
+- **A fiscal quarter's end date comes from the sidecar, not the calendar.**
+  MU's "Q3 26" ended 2026-05-31. Placing it on the calendar quarter would
+  have shifted every block a month. `earnings[].date` is the fiscal period
+  end and its `period` label matches the `quarterly.periods` label, so the
+  span is read off the same file. Only four of twelve quarters carry an
+  earnings row, so the rest are stepped three months from the nearest dated
+  one and the caption counts how many were placed that way — a disclosure,
+  not a guess presented as fact. Searched names carry "Aug '26"-style labels
+  from the scanner's own period-end epoch; those anchor to the month end.
+- **The vendored Lightweight Charts build answers 0 for a fractional logical
+  index.** `timeScale().logicalToCoordinate(371)` returned 336px and
+  `(371.33)` returned 0, so the first render drew nothing at all and looked
+  like a data problem. Measured in-page before anything was blamed. The fix
+  snaps to the integer bar and adds the fraction of `barSpacing` by hand.
+- **"Nothing in view" is said, not left silent.** In September on a 3M range
+  the newest reported quarter (ended May 31) sits entirely left of the first
+  bar, so a pressed Rev button changed nothing on screen. The caption now
+  names the latest block's end date and says to widen the range.
+- **Disabled intraday with the reason printed.** A quarter has no honest
+  width on an hourly axis. The button follows the MA-off-1D pattern and the
+  chart-notes legend prints "revenue growth blocks draw on the 1D and 1W
+  views only". The legend's empty-state early return had to learn that a
+  pressed-but-disabled Rev is not an active overlay, or it printed
+  "auto-TA: ." over an empty caption.
+- Verified: 400 fetcher tests (7 new in `test_rev_overlay_guard.py`), 8 page
+  smoke tests, and real Chromium renders of MU at 1D 1Y, 1W, 1H (disabled),
+  and 390px — no page errors, no sideways scroll, Financials tab's YoY chart
+  unchanged.

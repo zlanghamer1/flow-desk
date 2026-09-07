@@ -47,7 +47,14 @@ The page used to open charts in a popup. Now the chart is the page:
   daily RSI(14) reading). All of this is display-only. Nothing here scores
   or signals. Since the 2026-08-26 declutter, Bollinger Bands are the only
   overlay on by default — moving averages, trend lines, S/R levels, the
-  volume profile and the gamma lines are one click away on the overlay bar.
+  volume profile, the gamma lines and the revenue-growth blocks are one click
+  away on the overlay bar.
+- **Revenue-growth blocks (Rev).** One block per reported fiscal quarter,
+  its height scaled to that quarter's year-over-year revenue growth and the
+  percentage printed on it, drawn along the chart on its own scale (a block's
+  top is not a price). The growth number is the same one the Financials tab
+  charts. Daily and weekly views only, and the caption says when the latest
+  quarter ends before the window on screen.
 - **Unusual options activity.** Both flow boards flag a name whose 0-7 day
   options volume is running well above its OWN normal level (3× its trailing
   20-session average, not just whichever name traded the most), and label
@@ -91,8 +98,9 @@ width, and it leads with plain sentences instead of walls of small text:
   The full moving-average legend, the auto-TA caption and the gamma caption
   sit behind a **chart notes** button next to it.
 - **Bollinger Bands are the only chart overlay on by default.** Moving
-  averages, trend lines, support/resistance levels, the volume profile and
-  the gamma lines are one click away on the overlay bar. The gamma lines
+  averages, trend lines, support/resistance levels, the volume profile, the
+  gamma lines and the revenue-growth blocks are one click away on the
+  overlay bar. The gamma lines
   used to draw on every desk name unconditionally; they are a GEX toggle
   now.
 - **Each flow board opens with a quick read too** — "the fast options money
