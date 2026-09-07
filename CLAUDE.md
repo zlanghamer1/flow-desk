@@ -411,7 +411,7 @@ JavaScript. Same for `f.alarm`'s banner threshold.
   millisecond TTL** — `bars.json` changes once a day. That key drives both
   `ensureBars()`'s memoization and a `tick()`-driven re-fetch, so a tab left
   open across midnight picks up the new day untouched.
-- **The seven technicals buttons (MA, trend, S/R, BB, VP, GEX, Rev) carry no
+- **The eight technicals buttons (MA, trend, S/R, BB, VP, GEX, Rev, FCF) carry no
   `data-tip`.** Every fact those tooltips held is printed where the overlay
   lands: the MA disabled reason in the chart-notes legend, "S/R is hidden while
   the volume profile is on" in the auto-TA caption, and each overlay's failure
@@ -425,7 +425,7 @@ JavaScript. Same for `f.alarm`'s banner threshold.
   Its Bollinger clause is 1D-only and neutral-colored. It names any toggled-on
   overlay that produced nothing to draw.
 - `taDefaults()` is `{trend:false, sr:false, bb:true, vp:false, ma:false,
-  gex:false, rev:false}`, stored under `desk.stage.ta2`.
+  gex:false, rev:false, fcf:false}`, stored under `desk.stage.ta2`.
 - **Revenue-growth blocks (`rev`, 2026-09-07) draw on their own scale, never
   the price axis.** One block per reported period, height = |YoY revenue
   growth| against the largest on file, baseline at 80% of the pane so they
@@ -442,6 +442,16 @@ JavaScript. Same for `f.alarm`'s banner threshold.
   Charts build returns 0 for a fractional logical index** — snap to the
   integer bar and add the fraction of `barSpacing` by hand (`xOfLogical`).
   Pinned by `fetcher/test_rev_overlay_guard.py`.
+- **Free-cash-flow blocks (`fcf`, 2026-09-07) are DOLLARS, never a growth
+  rate.** FCF crosses zero, and a year-over-year percentage across a sign flip
+  is not a number. Height = |FCF| against the largest on file, negative
+  quarters red, label via `fmtCompact` (the Financials tab's own money
+  format), placed by the same `revPeriodEnds`. Non-USD reporting currency
+  prints beside the figure. **Both block overlays draw through ONE primitive
+  (`blockBuildPrimitive(keys)`)**: fills first, then every label, then one
+  quarter label per span — two primitives let the second's blocks paint over
+  the first's text. With both on, each quarter's span splits 48/52, revenue
+  growth left and FCF right, and the caption says which half is which.
 
 ## Auto-TA
 Display-only. It draws lines; it never scores, signals, or feeds an engine.

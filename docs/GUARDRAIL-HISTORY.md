@@ -3552,3 +3552,26 @@ divergence between growth still landing and a multiple compressing.
   smoke tests, and real Chromium renders of MU at 1D 1Y, 1W, 1H (disabled),
   and 390px — no page errors, no sideways scroll, Financials tab's YoY chart
   unchanged.
+
+## Guardrails added 2026-09-07 (free-cash-flow blocks — "add the same blocks for free cash flow")
+
+- **Dollars, not a growth rate.** Revenue only grows or shrinks; free cash
+  flow crosses zero. MU's own series has four negative quarters, and a
+  year-over-year percentage across a sign flip (−113M to +1.7B) is not a
+  number anyone can read. The FCF block is the quarter's reported figure in
+  `fmtCompact`, the same formatter the Financials tab's money chart uses, so
+  "17.6B" on the chart is the same "17.6B" in the tab's legend.
+- **One primitive for both datasets.** The first cut gave FCF its own
+  primitive beside Rev's. Lightweight Charts draws primitives in attach
+  order, so FCF's blocks painted over Rev's value labels, and each half wrote
+  its own "Q3 26" under itself. `blockBuildPrimitive(keys)` now draws every
+  fill first, then every value label, then one quarter label centered on the
+  full span inside the shorter block. Verified by render at 1D/1Y, 1440px.
+- **Halves, not stacks.** Two blocks on two different scales stacked in one
+  span would be unreadable; with both on, each quarter splits 48/52 and the
+  caption names the half ("left half of each", "right half of each").
+- **Trust the coordinate probe, not the eye.** The combined render looked
+  shifted a month against the axis labels. `timeToCoordinate` for the first
+  bar of March and June (339px, 514px) matched the Q3 26 block's edges
+  (338–512px) exactly; the axis labels sit where the library puts them, not
+  under the month boundary. Checked before anything was "fixed".

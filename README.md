@@ -55,6 +55,12 @@ The page used to open charts in a popup. Now the chart is the page:
   top is not a price). The growth number is the same one the Financials tab
   charts. Daily and weekly views only, and the caption says when the latest
   quarter ends before the window on screen.
+- **Free-cash-flow blocks (FCF).** Same idea, but the block is the quarter's
+  reported free cash flow in dollars, green above zero and red below, with
+  the figure printed on it. Dollars rather than a growth rate because free
+  cash flow crosses zero and a percentage across a sign flip means nothing.
+  With both buttons on, each quarter splits: revenue growth on the left half,
+  free cash flow on the right.
 - **Unusual options activity.** Both flow boards flag a name whose 0-7 day
   options volume is running well above its OWN normal level (3× its trailing
   20-session average, not just whichever name traded the most), and label

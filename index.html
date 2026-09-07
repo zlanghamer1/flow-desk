@@ -8710,7 +8710,9 @@ function revOverlayPoints(fund){
     // Counted per DRAWN block, not per label — the undated older quarters
     // that never get a block (no prior-year base) are not the reader's concern.
     if(pe.steppedIdx[i]) stepped++;
-    points.push({label:q.labels[i], yoy:yoy.yoyAll[i], rev:revNums[i], start:start, end:end});
+    var yv = yoy.yoyAll[i];
+    points.push({label:q.labels[i], yoy:yv, rev:revNums[i], start:start, end:end,
+                 mag:Math.abs(yv), neg:(yv<0), text:fm1(yv)+"%"});
   }
   if(!points.length) return {points:null, reason:"fewer than a year of comparable periods"};
   // The window on screen can post-date every reported quarter (a 3M range in
@@ -8723,17 +8725,51 @@ function revOverlayPoints(fund){
   return {points:points, ppy:ppy, placement:pe.placement, stepped:stepped, monthsPerPeriod:pe.monthsPerPeriod,
           blank:blank, offWindow:offWindow, lastEndLabel: MONTHS[lastEnd.getUTCMonth()]+" "+lastEnd.getUTCDate()+", "+lastEnd.getUTCFullYear()};
 }
-/* Series primitive for the revenue-growth blocks — same v5 plugin shape as
-   vpBuildPrimitive. Blocks sit along the bottom ~28% of the candle pane on
-   their OWN scale (tallest block = the largest |YoY| on file), never the
-   price axis. x-extent comes from each period's calendar span mapped onto
-   the bar index axis (fractional between bars, extrapolated past either
-   end), read through timeScale().logicalToCoordinate every frame so the
-   blocks pan and zoom with the candles. Colors resolve from cssVar() inside
-   draw() so a theme flip repaints. Positive growth is --up, negative --dn,
-   and the label always leads with its sign, so hue is never the only signal. */
-function revBuildPrimitive(){
-  var data = STAGE.revData;
+/* The free-cash-flow overlay's data: the quarter's reported FCF in dollars,
+   one point per period that has a value and a calendar span. The number is
+   the sidecar's own quarterly.fcf (or the scanner's for a searched name), the
+   SAME series the Financials tab's money chart draws. Not a growth rate: FCF
+   crosses zero, and a YoY percentage across a sign flip is not a number. */
+function fcfOverlayPoints(fund){
+  var q = fund && fund.growth && fund.growth.quarterly;
+  if(!fund) return {points:null, reason:"no financials for this name"};
+  if(!q || !Array.isArray(q.labels) || !q.labels.length) return {points:null, reason:"no quarterly history"};
+  if(!Array.isArray(q.fcf) || !q.fcf.some(function(v){ return num(v)!=null; })) return {points:null, reason:"no free cash flow on the feed"};
+  var ppyRaw = periodsPerYear(q.labels);
+  var ppy = ppyRaw || 4;   // placement geometry only — no YoY math here to be wrong
+  var pe = revPeriodEnds(fund, q, ppy);
+  if(!pe.placement) return {points:null, reason:"no period dates to place the quarters on"};
+  var points = [], stepped = 0;
+  for(var i=0; i<q.labels.length; i++){
+    var v = num(q.fcf[i]), end = pe.ends[i];
+    if(v==null || !end) continue;
+    var start = pe.ends[i-1] || new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - pe.monthsPerPeriod + 1, 0, 12));
+    if(pe.steppedIdx[i]) stepped++;
+    points.push({label:q.labels[i], val:v, start:start, end:end, mag:Math.abs(v), neg:(v<0), text:fmtCompact(v)});
+  }
+  if(!points.length) return {points:null, reason:"no dated free cash flow periods"};
+  var firstBar = STAGE.dates && STAGE.dates.length ? STAGE.dates[0] : null;
+  var lastEnd = points[points.length-1].end;
+  return {points:points, ppy:ppyRaw, placement:pe.placement, stepped:stepped, monthsPerPeriod:pe.monthsPerPeriod,
+          currency:(typeof fund.currency==="string" && fund.currency && fund.currency!=="USD") ? fund.currency : null,
+          offWindow: !!(firstBar && lastEnd < firstBar),
+          lastEndLabel: MONTHS[lastEnd.getUTCMonth()]+" "+lastEnd.getUTCDate()+", "+lastEnd.getUTCFullYear()};
+}
+/* Series primitive for the fundamentals blocks (revenue growth, free cash
+   flow) — same v5 plugin shape as vpBuildPrimitive. Blocks stand on a
+   baseline at 80% of the candle pane, on their OWN scale per dataset (the
+   tallest block of each is that dataset's largest magnitude), never the
+   price axis. `keys` names the STAGE datasets to draw: one key = whole
+   quarter span; two keys = left half / right half of each span, side by
+   side. ONE primitive draws both so every fill lands before any label — two
+   separate primitives let the second's blocks paint over the first's text.
+   x-extent comes from each period's calendar span mapped onto the bar index
+   axis (fractional between bars, extrapolated past either end), read through
+   timeScale().logicalToCoordinate every frame so the blocks pan and zoom
+   with the candles. Colors resolve from cssVar() inside draw() so a theme
+   flip repaints. Positive is --up, negative --dn, and every label leads with
+   its sign, so hue is never the only signal. */
+function blockBuildPrimitive(keys){
   function logicalOfDate(d){
     var dates = STAGE.dates, n = dates.length;
     if(!n) return null;
@@ -8747,7 +8783,11 @@ function revBuildPrimitive(){
     return lo + (b>a ? (t-a)/(b-a) : 0);
   }
   function draw(target){
-    if(!data || !data.points || !data.points.length || !STAGE.chart || !STAGE.s.candle) return;
+    if(!STAGE.chart || !STAGE.s.candle) return;
+    // Read the datasets from STAGE on every frame, never from a closure, so
+    // a detached overlay's points can never be drawn by a stale primitive.
+    var sets = (keys||[]).map(function(k){ return STAGE[k]; }).filter(function(d){ return d && d.points && d.points.length; });
+    if(!sets.length) return;
     target.useBitmapCoordinateSpace(function(scope){
       var ctx = scope.context;
       var vpr = scope.verticalPixelRatio, hpr = scope.horizontalPixelRatio;
@@ -8763,9 +8803,6 @@ function revBuildPrimitive(){
         try{ c = ts.logicalToCoordinate(base); }catch(e){}
         return (c==null) ? null : c + (l-base)*barSp;
       }
-      var maxAbs = 0;
-      data.points.forEach(function(p){ var m=Math.abs(p.yoy); if(m>maxAbs) maxAbs=m; });
-      if(!(maxAbs>0)) return;
       // The volume histogram owns the bottom 18% of the pane (its price
       // scale's scaleMargins.top is 0.82), so the blocks stand on a baseline
       // just above it rather than mixing into the volume bars.
@@ -8776,41 +8813,64 @@ function revBuildPrimitive(){
       var fontPx = 10 * hpr;
       ctx.font = fontPx + "px -apple-system, system-ui, sans-serif";
       ctx.textBaseline = "middle";
-      data.points.forEach(function(p){
-        var l0 = logicalOfDate(p.start), l1 = logicalOfDate(p.end);
-        if(l0==null || l1==null) return;
-        var x0 = xOfLogical(l0), x1 = xOfLogical(l1);
-        if(x0==null || x1==null) return;
-        x0 *= hpr; x1 *= hpr;
-        if(x1 <= 0 || x0 >= paneW) return;                 // fully off-pane
-        var left = Math.max(0, x0), right = Math.min(paneW, x1);
-        var w = right - left - 1*hpr;
-        if(!(w>0)) return;
-        var h = Math.max(1*vpr, (Math.abs(p.yoy)/maxAbs) * bandH);
-        var top = baseY - h;
-        var neg = p.yoy < 0;
-        ctx.fillStyle = neg ? dnFill : upFill;
-        ctx.fillRect(left, top, w, h);
-        ctx.strokeStyle = neg ? dnLine : upLine;
-        ctx.lineWidth = 1*hpr;
-        ctx.strokeRect(left + 0.5*hpr, top + 0.5*vpr, Math.max(0, w - 1*hpr), Math.max(0, h - 1*vpr));
-        // Growth label above the block, quarter label inside it — each only
-        // when the block is wide enough to hold it, so a zoomed-out view
-        // never smears text across neighboring blocks.
-        var lbl = fm1(p.yoy) + "%";
-        var tw = ctx.measureText(lbl).width;
-        if(w >= tw + 6*hpr){
-          ctx.fillStyle = hexA(cssVar("--ink2"), 0.95);
-          ctx.textAlign = "center";
-          var ly = top - 7*vpr;
-          if(ly < 6*vpr) ly = top + 7*vpr;
-          ctx.fillText(lbl, left + w/2, ly);
-          var qw = ctx.measureText(String(p.label)).width;
-          if(h/vpr >= 22 && w >= qw + 6*hpr){
-            ctx.fillStyle = hexA(cssVar("--ink3"), 0.95);
-            ctx.fillText(String(p.label), left + w/2, baseY - 7*vpr);
-          }
-        }
+      ctx.textAlign = "center";
+      var split = sets.length > 1;
+      var drawn = [];            // every block's geometry, for the label pass
+      var spans = {};            // label -> {left,right,minTop} across datasets, for one quarter label per span
+      sets.forEach(function(data, si){
+        var maxAbs = 0;
+        data.points.forEach(function(p){ if(p.mag>maxAbs) maxAbs=p.mag; });
+        if(!(maxAbs>0)) return;
+        data.points.forEach(function(p){
+          var l0 = logicalOfDate(p.start), l1 = logicalOfDate(p.end);
+          if(l0==null || l1==null) return;
+          var x0 = xOfLogical(l0), x1 = xOfLogical(l1);
+          if(x0==null || x1==null) return;
+          x0 *= hpr; x1 *= hpr;
+          var fullL = x0, fullR = x1;
+          // Side-by-side halves when both block overlays are on: split the
+          // quarter's span BEFORE clipping to the pane.
+          if(split){ var span = x1 - x0; if(si===0) x1 = x0 + span*0.48; else x0 = x0 + span*0.52; }
+          if(x1 <= 0 || x0 >= paneW) return;                 // fully off-pane
+          var left = Math.max(0, x0), right = Math.min(paneW, x1);
+          var w = right - left - 1*hpr;
+          if(!(w>0)) return;
+          var h = Math.max(1*vpr, (p.mag/maxAbs) * bandH);
+          var top = baseY - h;
+          var neg = !!p.neg;
+          ctx.fillStyle = neg ? dnFill : upFill;
+          ctx.fillRect(left, top, w, h);
+          ctx.strokeStyle = neg ? dnLine : upLine;
+          ctx.lineWidth = 1*hpr;
+          ctx.strokeRect(left + 0.5*hpr, top + 0.5*vpr, Math.max(0, w - 1*hpr), Math.max(0, h - 1*vpr));
+          drawn.push({left:left, w:w, top:top, h:h, text:p.text});
+          var key = String(p.label);
+          var sp = spans[key] || (spans[key] = {left:Math.max(0,fullL), right:Math.min(paneW,fullR), minH:Infinity});
+          sp.left = Math.min(sp.left, Math.max(0,fullL)); sp.right = Math.max(sp.right, Math.min(paneW,fullR));
+          sp.minH = Math.min(sp.minH, h);
+        });
+      });
+      // Label pass — after every fill, so no block covers a neighbor's text.
+      // Value label above its own block, gated on the block being wide
+      // enough to hold it, so a zoomed-out view never smears text across
+      // neighboring blocks.
+      drawn.forEach(function(b){
+        var tw = ctx.measureText(b.text).width;
+        if(b.w < tw + 6*hpr) return;
+        ctx.fillStyle = hexA(cssVar("--ink2"), 0.95);
+        var ly = b.top - 7*vpr;
+        if(ly < 6*vpr) ly = b.top + 7*vpr;
+        ctx.fillText(b.text, b.left + b.w/2, ly);
+      });
+      // One quarter label per span, centered on the FULL span (both halves),
+      // inside the shorter block so it never sits over a value label.
+      Object.keys(spans).forEach(function(k){
+        var sp = spans[k];
+        var w = sp.right - sp.left;
+        var qw = ctx.measureText(k).width;
+        if(!(sp.minH/vpr >= 22) || w < qw + 6*hpr) return;
+        ctx.fillStyle = hexA(cssVar("--ink3"), 0.95);
+        ctx.fillText(k, sp.left + w/2, baseY - 7*vpr);
       });
     });
   }
@@ -10540,11 +10600,11 @@ function taAmvForInterval(amv){
 // bb reads `v.bb!==false` (not `!!v.bb`) for the same reason the old ma key
 // did when IT was the default-on one: a stored blob missing the key must
 // fall to the key's default, not to undefined's false.
-function taDefaults(){ return {trend:false, sr:false, bb:true, vp:false, ma:false, gex:false, rev:false}; }
+function taDefaults(){ return {trend:false, sr:false, bb:true, vp:false, ma:false, gex:false, rev:false, fcf:false}; }
 function taPrefs(){
   try{
     var v = JSON.parse(read("desk.stage.ta2")||"null");
-    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr, bb:(v.bb!==false), vp:!!v.vp, ma:!!v.ma, gex:!!v.gex, rev:!!v.rev};
+    if(v && typeof v==="object") return {trend:!!v.trend, sr:!!v.sr, bb:(v.bb!==false), vp:!!v.vp, ma:!!v.ma, gex:!!v.gex, rev:!!v.rev, fcf:!!v.fcf};
   }catch(e){}
   return taDefaults();
 }
@@ -11394,6 +11454,7 @@ function stageTAClear(){
   // name's quarters drawn under the new one's candles.
   if(STAGE.revPrim){ try{ STAGE.s.candle.detachPrimitive(STAGE.revPrim); }catch(e){} STAGE.revPrim = null; }
   STAGE.revData = null;
+  STAGE.fcfData = null;   // drawn by the same primitive as revData
   STAGE.taSummary = null;
 }
 /* Groups a tracked symbol's own intraday bars by CT session date, for
@@ -11993,16 +12054,39 @@ function stageTA(){
   // price, which is exactly what made the TrendSpider version read oddly).
   // Display only, never scored. The YoY math is revYoyAll, the SAME function
   // the Financials tab's YoY chart uses, so the two can never disagree.
+  // When both block overlays are on they share each quarter's span side by
+  // side (revenue growth left, free cash flow right) rather than stacking
+  // one on top of the other — two blocks drawn over each other on two
+  // different scales would be unreadable.
+  var blockKeys = [];
   if(prefs.rev && !STAGE.intraday){
     var rv = revOverlayPoints(STAGE.fund);
     if(rv.points && rv.points.length){
-      STAGE.revData = rv;
-      STAGE.revPrim = revBuildPrimitive();
-      try{ STAGE.s.candle.attachPrimitive(STAGE.revPrim); }catch(e){}
+      STAGE.revData = rv; blockKeys.push("revData");
       summary.rev = rv;
     } else {
       summary.rev = {reason: rv.reason || "no data"};
     }
+  }
+  // Free cash flow blocks (2026-09-07, second ask): the quarter's reported
+  // free cash flow in DOLLARS, not a growth rate — FCF is often negative, and
+  // a year-over-year percentage across a sign flip is not a number. Height
+  // is |FCF| against the largest on file; negative quarters draw red.
+  if(prefs.fcf && !STAGE.intraday){
+    var fv = fcfOverlayPoints(STAGE.fund);
+    if(fv.points && fv.points.length){
+      STAGE.fcfData = fv; blockKeys.push("fcfData");
+      summary.fcf = fv;
+    } else {
+      summary.fcf = {reason: fv.reason || "no data"};
+    }
+  }
+  if(blockKeys.length){
+    // One primitive for both datasets (see blockBuildPrimitive) — the
+    // legend says which half is which when both are drawn.
+    if(blockKeys.length===2){ summary.rev.half = "left"; summary.fcf.half = "right"; }
+    STAGE.revPrim = blockBuildPrimitive(blockKeys);
+    try{ STAGE.s.candle.attachPrimitive(STAGE.revPrim); }catch(e){}
   }
   STAGE.taSummary = summary;
   stageTALegend(prefs);
@@ -12616,6 +12700,7 @@ function stageTALegend(prefs){
       var revBits = '<span style="color:var(--up)">revenue growth: </span>'
         + esc(rl.label)+' '+fm1(rl.yoy)+'% YoY'
         + ' <span class="m">· '+rp.length+' '+(sm.rev.ppy===4 ? 'quarter' : 'period')+(rp.length===1?'':'s')+' drawn'
+        + (sm.rev.half ? (', '+sm.rev.half+' half of each') : '')
         + (sm.rev.ppy!==4 ? ', each vs the same period a year earlier' : '')
         + ' · blocks end on '+esc(sm.rev.placement)
         + (sm.rev.stepped>0 ? (', '+sm.rev.stepped+' placed by stepping '+sm.rev.monthsPerPeriod+' months from a dated one') : '')
@@ -12631,7 +12716,27 @@ function stageTALegend(prefs){
   // rev counts only where it can draw — intraday the button is disabled and
   // its reason prints in the chart-notes legend, so an "auto-TA: ." stub here
   // would be an empty sentence over nothing.
-  if(!prefs.trend && !prefs.sr && !prefs.bb && !prefs.vp && !(prefs.rev && !STAGE.intraday)){ el.innerHTML = ""; writeRecap([]); return; }
+  if(prefs.fcf && !STAGE.intraday){
+    if(sm && sm.fcf && sm.fcf.points && sm.fcf.points.length){
+      var fp = sm.fcf.points, fl = fp[fp.length-1];
+      var negN = fp.filter(function(p){ return p.val < 0; }).length;
+      var fcfBits = '<span style="color:var('+(fl.val<0?"--dn":"--up")+')">free cash flow: </span>'
+        + esc(fl.label)+' '+esc(fl.text)
+        + (sm.fcf.currency ? (' <span class="m">'+esc(sm.fcf.currency)+'</span>') : '')
+        + ' <span class="m">· '+fp.length+' '+(sm.fcf.ppy===4 ? 'quarter' : 'period')+(fp.length===1?'':'s')+' drawn'
+        + (sm.fcf.half ? (', '+sm.fcf.half+' half of each') : '')
+        + (negN>0 ? (', '+negN+' negative') : '')
+        + ' · blocks end on '+esc(sm.fcf.placement)
+        + (sm.fcf.stepped>0 ? (', '+sm.fcf.stepped+' placed by stepping '+sm.fcf.monthsPerPeriod+' months from a dated one') : '')
+        + (sm.fcf.offWindow ? (' · none in view: the latest block ends '+esc(sm.fcf.lastEndLabel)+', before this window\'s first bar — widen the range') : '')
+        + ' · own scale, not price</span>';
+      on.push(fcfBits);
+    } else {
+      failedOv.push("free cash flow");
+      empty.push("free cash flow: " + ((sm && sm.fcf && sm.fcf.reason) || "no data"));
+    }
+  }
+  if(!prefs.trend && !prefs.sr && !prefs.bb && !prefs.vp && !((prefs.rev || prefs.fcf) && !STAGE.intraday)){ el.innerHTML = ""; writeRecap([]); return; }
   var tail = ' <span class="m">(fit on this window — display only, never a signal)</span>';
   if(on.length){
     el.innerHTML = 'auto-TA: '+on.join(" · ")+(empty.length ? (' <span class="m">· '+esc(empty.join("; "))+'</span>') : "")+tail;
@@ -13801,9 +13906,9 @@ function stageBar(){
   // covers days, not quarters. Same disabled-with-a-printed-reason pattern
   // as MA off 1D (the reason prints in the chart-notes legend).
   var revOffIntra = (STAGE.iv !== "1D" && STAGE.iv !== "1W");
-  var taBtns = [["ma","MA"],["trend","trend"],["sr","S/R"],["bb","BB"],["vp","VP"],["gex","GEX"],["rev","Rev"]]
+  var taBtns = [["ma","MA"],["trend","trend"],["sr","S/R"],["bb","BB"],["vp","VP"],["gex","GEX"],["rev","Rev"],["fcf","FCF"]]
     .map(function(t){
-      var dis = (t[0]==="ma" && maOff1D) || (t[0]==="rev" && revOffIntra);
+      var dis = (t[0]==="ma" && maOff1D) || ((t[0]==="rev" || t[0]==="fcf") && revOffIntra);
       return '<button data-ta="'+t[0]+'" aria-pressed="'+(dis ? "false" : !!prefs[t[0]])+'"'
         + (dis ? ' disabled aria-disabled="true"' : '')
         + '>'+t[1]+'</button>';
@@ -13872,7 +13977,7 @@ function stageLegend(){
     var maNote = '<span class="m" data-tip="The 20/50/200-day averages are computed from daily bars — a day-denominated line has no honest place on an hourly or weekly axis. Switch to 1D to draw them.">the 20/50/200-day moving averages draw on the 1D view only</span>';
     // Same unconditional-print rule for the Rev toggle, which is disabled on
     // the intraday intervals (a quarter has no honest width on an hourly axis).
-    var revNote = STAGE.intraday ? ' <span class="m">· revenue growth blocks draw on the 1D and 1W views only</span>' : '';
+    var revNote = STAGE.intraday ? ' <span class="m">· revenue growth and free cash flow blocks draw on the 1D and 1W views only</span>' : '';
     el.innerHTML = maNote + (any
       ? ' <span class="m" data-tip="Earnings badges and rating arrows are snapped to daily bars, so they are drawn on the 1D view only. The countdown to the next report stays in the header on every interval.">· earnings and rating markers too</span>'
       : "") + revNote;
