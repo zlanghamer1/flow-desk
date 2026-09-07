@@ -411,7 +411,7 @@ JavaScript. Same for `f.alarm`'s banner threshold.
   millisecond TTL** — `bars.json` changes once a day. That key drives both
   `ensureBars()`'s memoization and a `tick()`-driven re-fetch, so a tab left
   open across midnight picks up the new day untouched.
-- **The six technicals buttons (MA, trend, S/R, BB, VP, GEX) carry no
+- **The seven technicals buttons (MA, trend, S/R, BB, VP, GEX, Rev) carry no
   `data-tip`.** Every fact those tooltips held is printed where the overlay
   lands: the MA disabled reason in the chart-notes legend, "S/R is hidden while
   the volume profile is on" in the auto-TA caption, and each overlay's failure
@@ -425,7 +425,23 @@ JavaScript. Same for `f.alarm`'s banner threshold.
   Its Bollinger clause is 1D-only and neutral-colored. It names any toggled-on
   overlay that produced nothing to draw.
 - `taDefaults()` is `{trend:false, sr:false, bb:true, vp:false, ma:false,
-  gex:false}`, stored under `desk.stage.ta2`.
+  gex:false, rev:false}`, stored under `desk.stage.ta2`.
+- **Revenue-growth blocks (`rev`, 2026-09-07) draw on their own scale, never
+  the price axis.** One block per reported period, height = |YoY revenue
+  growth| against the largest on file, baseline at 80% of the pane so they
+  clear the volume histogram (`scaleMargins.top` 0.82). Display-only. The
+  growth figure comes from `revYoyAll` / `revDupIdx`, the SAME functions the
+  Financials tab's YoY chart calls — the discontinuity and duplicated-row
+  guards ride along, so the block and the bar cannot disagree. Period ends
+  come from `revPeriodEnds`: the sidecar's `earnings[].date` (fiscal quarter
+  END) matched by period label, or the ad-hoc "Mon 'YY" end month; an undated
+  label is stepped 12/ppy months from the nearest dated one and the caption
+  counts how many. Daily and weekly only — the button is disabled intraday
+  with the reason printed in the chart-notes legend. The caption names when
+  every block ends before the window's first bar. **The vendored Lightweight
+  Charts build returns 0 for a fractional logical index** — snap to the
+  integer bar and add the fraction of `barSpacing` by hand (`xOfLogical`).
+  Pinned by `fetcher/test_rev_overlay_guard.py`.
 
 ## Auto-TA
 Display-only. It draws lines; it never scores, signals, or feeds an engine.
