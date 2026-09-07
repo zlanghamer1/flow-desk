@@ -3575,3 +3575,23 @@ divergence between growth still landing and a multiple compressing.
   bar of March and June (339px, 514px) matched the Q3 26 block's edges
   (338–512px) exactly; the axis labels sit where the library puts them, not
   under the month boundary. Checked before anything was "fixed".
+
+## Guardrails added 2026-09-07 (negative FCF hangs below the baseline)
+
+Zach: "negative FCF should show the bar going under the baseline." The first
+FCF cut drew a negative quarter as a red block of |FCF| height standing UP
+from the baseline — the sign was carried by color and the label's minus only.
+
+- **Down means down.** A negative block starts at the baseline and extends
+  toward the volume bars. Its value label sits below it, and the baseline is
+  drawn as a hairline across the blocks whenever anything hangs from it.
+- **One scale, both directions.** The band is split evenly (18% of the pane
+  up, 18% down) rather than giving negatives a shallower range, which would
+  understate a loss quarter against a profit quarter of the same size.
+- **The lift is conditional.** With no negative quarter on file the baseline
+  stays at 80% and the full 26% band points up, so the common case gives
+  back nothing. The baseline lifts to 62% only when a drawn dataset carries
+  a negative — and it lifts for BOTH datasets, since two baselines in one
+  pane would read as two charts.
+- Verified by render: MU 1W with FCF on (−113.0M hangs below, 17.6B above)
+  and 1D/1Y with both overlays on; 402 fetcher tests, 8 smoke tests.

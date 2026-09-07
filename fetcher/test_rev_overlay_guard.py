@@ -116,3 +116,11 @@ def test_blocks_stand_above_the_volume_histogram() -> None:
     prim = _fn("blockBuildPrimitive")
     assert "paneH * 0.80" in prim, "baseline must clear the volume scale's 0.82 top margin"
     assert 'scaleMargins:{top:0.82, bottom:0}' in INDEX
+
+
+def test_negative_quarters_hang_below_the_baseline() -> None:
+    prim = _fn("blockBuildPrimitive")
+    assert "var top = neg ? baseY : baseY - h;" in prim, "a negative block must start AT the baseline and extend down"
+    assert "anyNeg ? paneH * 0.62 : paneH * 0.80" in prim, "the baseline lifts when anything hangs below it"
+    assert "anyNeg ? paneH * 0.18 : paneH * 0.26" in prim, "one scale both directions: the band splits evenly"
+    assert "b.neg ? (b.top + b.h + 7*vpr)" in prim, "a negative block's value label sits below it"
