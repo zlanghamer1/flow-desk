@@ -131,7 +131,9 @@ def test_verdict_input_set_matches_page():
         f"fetcher-only={set(fetcher_keys) - set(page_keys)} "
         f"page-only={set(page_keys) - set(fetcher_keys)}"
     )
-    assert len(fetcher_keys) == len(page_keys) == 9, (
-        "VERDICT_INPUT_ORDER and VERDICT_INPUT_LABELS must both have exactly 9 keys "
+    # eight since 2026-09-11 (attempt #3 amendment removed `market`; the
+    # brief verdict prints as a chip on the board, not as an input)
+    assert len(fetcher_keys) == len(page_keys) == 8, (
+        "VERDICT_INPUT_ORDER and VERDICT_INPUT_LABELS must both have exactly 8 keys "
         f"(fetcher has {len(fetcher_keys)}, page has {len(page_keys)})"
     )

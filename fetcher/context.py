@@ -3074,6 +3074,16 @@ def _snapshot_consensus(consensus_history: dict, facts: dict, session_date: date
         eps_ntm = f.get("eps_ntm") if isinstance(f, dict) else None
         if isinstance(eps_ntm, (int, float)) and not isinstance(eps_ntm, bool):
             row[ticker] = {"eps_ntm": eps_ntm}
+            # 2026-09-11 (attempt #3 review): the analyst consensus fields
+            # ride along so a rating / target history exists to test the
+            # verdict's two analyst legs against. Until this line the file
+            # held eps_ntm alone and the "history accumulates weekly"
+            # premise in the decisions log was false. Stored only when the
+            # scanner returned a number; never a null placeholder.
+            for key in ("rec_mark", "rec_total", "target"):
+                val = f.get(key)
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    row[ticker][key] = val
     if row:
         consensus_history["weekly"][wk] = row
         consensus_history["last_snapshot_week"] = wk

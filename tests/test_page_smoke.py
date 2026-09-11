@@ -321,11 +321,13 @@ def test_watchlist_sorts_by_growth(browser, server, width, height, sort_key, ord
 # (HOLD via the earnings gate, full coverage), RAM (coverage gate failed,
 # score/call null).
 
+# Eight inputs and the 2026-09-11 attempt #3 table (market left the
+# composite; the brief verdict is a chip on the board instead).
 VERDICT_ORDER = ["trend", "rs63", "framework", "analyst_rating", "target_upside",
-                 "flow_today", "flow_persist", "valuation", "market"]
-VERDICT_WEIGHTS = {"trend": 14, "rs63": 14, "framework": 14, "analyst_rating": 8,
-                   "target_upside": 7, "flow_today": 10, "flow_persist": 15,
-                   "valuation": 13, "market": 5}
+                 "flow_today", "flow_persist", "valuation"]
+VERDICT_WEIGHTS = {"trend": 21, "rs63": 21, "framework": 20, "analyst_rating": 5,
+                   "target_upside": 3, "flow_today": 5, "flow_persist": 5,
+                   "valuation": 20}
 VERDICT_NULL_NOTES = {
     "trend": "fewer than 200 sessions of history",
     "rs63": "fewer than 64 daily closes",
@@ -335,7 +337,6 @@ VERDICT_NULL_NOTES = {
     "flow_today": "no conviction card",
     "flow_persist": "no swing card",
     "valuation": "no PEG reading",
-    "market": "no brief",
 }
 
 
@@ -367,11 +368,20 @@ VERDICT_PAYLOAD = dict(
     conviction=[CONVICTION_MU_ROW],
     facts={"MU": {}, "XLE": {}, "LLY": {}, "RAM": {}, "ZZZ": {}},
     verdicts={
-        "v": 1,
+        "v": 2,
         "thresholds": {"buy": 35, "sell": -35},
         "min_weight": 50, "min_inputs": 3, "earnings_gate_days": 3,
+        "horizon_days": 21,
         "order": VERDICT_ORDER,
         "weights": VERDICT_WEIGHTS,
+        # 2026-09-11 attempt #3: the regime is a disclosure the board prints
+        # as a chip (bear here, so the chip carries the hostile tint), the
+        # analyst centers say which median the two analyst legs read against
+        "regime": {"name": "bear", "spy_vs_200d": -0.0312, "basis": "SPY vs its 200-day average",
+                   "note": "SPY \u22123.1% vs its 200-day"},
+        "analyst_centers": {"rec_mark": 1.17, "target_upside": 0.38, "n_rec_mark": 38,
+                            "n_target_upside": 38, "source": "desk"},
+        "failed": 0,
         "counts": {"buy": 1, "sell": 1, "hold": 2, "none": 1},
         "by_ticker": {
             # Every score below is round-half-away-from-zero(100 * sum(w*v)
@@ -381,9 +391,9 @@ VERDICT_PAYLOAD = dict(
             # eye (2026-09-11 fix: the old fixture's scores were arithmetic
             # the entries' own inputs could not produce).
             "XLE": {
-                # 14*1.0 + 14*0.32 + 8*0.68 + 7*1.0 + 15*0.40 = 36.92 over
-                # weight 58 -> 63.66 -> 64.
-                "score": 64, "call": "BUY", "note": None, "n": 5, "n_total": 9, "weight": 58,
+                # 21*1.0 + 21*0.32 + 5*0.68 + 3*1.0 + 5*0.40 = 36.12 over
+                # weight 55 -> 65.67 -> 66.
+                "score": 66, "call": "BUY", "note": None, "n": 5, "n_total": 8, "weight": 55,
                 "inputs": _verdict_inputs({
                     "trend": (1.0, "above 50d · above 200d"),
                     "rs63": (0.32, "+6.4pp vs SPY, 63 sessions"),
@@ -393,9 +403,9 @@ VERDICT_PAYLOAD = dict(
                 }),
             },
             "MU": {
-                # 14*-1.0 + 14*-0.5 + 8*-0.2 + 7*-0.3 + 10*-0.62 + 15*-0.50
-                # + 13*-0.1 + 5*-0.2 = -40.7 over weight 86 -> -47.326 -> -47.
-                "score": -47, "call": "SELL", "note": None, "n": 8, "n_total": 9, "weight": 86,
+                # 21*-1.0 + 21*-0.5 + 5*-0.2 + 3*-0.3 + 5*-0.62 + 5*-0.50
+                # + 20*-0.1 = -41.0 over weight 80 -> -51.25 -> -51.
+                "score": -51, "call": "SELL", "note": None, "n": 7, "n_total": 8, "weight": 80,
                 "inputs": _verdict_inputs({
                     "trend": (-1.0, "below 50d · below 200d"),
                     "rs63": (-0.5, "−10.2pp vs SPY, 63 sessions"),
@@ -404,19 +414,14 @@ VERDICT_PAYLOAD = dict(
                     "flow_today": (-0.62, "BEAR 62 on Conviction"),
                     "flow_persist": (-0.50, "BEAR 50 on Swing"),
                     "valuation": (-0.1, "PEG 1.6"),
-                    "market": (-0.2, "brief CAUTIOUS (3)"),
                 }),
             },
             "LLY": {
-                # 14*0.6 + 14*0.2 + 14*0.4 + 8*0.5 + 7*0.6 + 10*0.2 + 15*0.3
-                # + 13*0.5 + 5*-0.2 = 37.0 over weight 100 -> 37 -- a real
-                # BUY-range score (>= 35) that the earnings gate, not the
-                # threshold, holds to HOLD. valuation is 0.5 ("PEG 0.75"),
-                # not the pre-reweight 0.1 -- with the old 0.1 this fixture's
-                # score fell to 31.8 -> 32 under the new weights, no longer
-                # >= 35, so it could not still demonstrate an earnings-gated
-                # BUY-range HOLD (2026-09-11 reweight fix).
-                "score": 37, "call": "HOLD", "note": "earnings in 2d", "n": 9, "n_total": 9, "weight": 100,
+                # 21*0.6 + 21*0.2 + 20*0.4 + 5*0.5 + 3*0.6 + 5*0.2 + 5*0.3
+                # + 20*0.5 = 41.6 over weight 100 -> 42 -- a real BUY-range
+                # score (>= 35) that the earnings gate, not the threshold,
+                # holds to HOLD.
+                "score": 42, "call": "HOLD", "note": "earnings in 2d", "n": 8, "n_total": 8, "weight": 100,
                 "inputs": _verdict_inputs({
                     "trend": (0.6, "above 50d · above 200d"),
                     "rs63": (0.2, "+4.0pp vs SPY, 63 sessions"),
@@ -426,12 +431,11 @@ VERDICT_PAYLOAD = dict(
                     "flow_today": (0.2, "BULL 20 on Conviction"),
                     "flow_persist": (0.3, "BULL 30 on Swing"),
                     "valuation": (0.5, "PEG 0.75"),
-                    "market": (-0.2, "brief CAUTIOUS (3)"),
                 }),
             },
             "RAM": {
-                "score": None, "call": None, "note": "2 of 9 inputs · weight 24 of 100",
-                "n": 2, "n_total": 9, "weight": 24,
+                "score": None, "call": None, "note": "2 of 8 inputs · weight 26 of 100",
+                "n": 2, "n_total": 8, "weight": 26,
                 "inputs": _verdict_inputs({
                     "rs63": (0.1, "+2.0pp vs SPY, 63 sessions"),
                     "flow_today": (-0.1, "BEAR 10 on Conviction"),
@@ -441,18 +445,17 @@ VERDICT_PAYLOAD = dict(
                 # score 0 deliberately (LLY no longer holds this role — see
                 # above): P2 pins that a score of exactly zero renders
                 # neutral ("m"), never the green "u" a bare
-                # `score<0 ? "d":"u"` two-way test used to paint it. flow_today
-                # is -0.7 ("BEAR 70"), not the pre-reweight -0.5 -- with the
-                # old -0.5 this fixture's sum came to +2 (score 4) under the
-                # new weights, no longer exactly 0 (2026-09-11 reweight fix).
-                # 14*0.0 + 14*0.5 + 14*0.0 + 10*-0.7 = 0 over weight 52 -- a
-                # plain HOLD, no earnings gate involved.
-                "score": 0, "call": "HOLD", "note": None, "n": 4, "n_total": 9, "weight": 52,
+                # `score<0 ? "d":"u"` two-way test used to paint it.
+                # 21*0.0 + 21*0.25 + 20*0.0 + 5*-1.0 + 5*-0.05 = 0 over weight
+                # 72 -- a plain HOLD, no earnings gate involved (2026-09-11
+                # attempt #3 table).
+                "score": 0, "call": "HOLD", "note": None, "n": 5, "n_total": 8, "weight": 72,
                 "inputs": _verdict_inputs({
                     "trend": (0.0, "on 50d · on 200d"),
-                    "rs63": (0.5, "+10.0pp vs SPY, 63 sessions"),
+                    "rs63": (0.25, "+5.0pp vs SPY, 63 sessions"),
                     "framework": (0.0, "HOLD"),
-                    "flow_today": (-0.7, "BEAR 70 on Conviction"),
+                    "flow_today": (-1.0, "BEAR 100 on Conviction"),
+                    "flow_persist": (-0.05, "BEAR 5 on Swing"),
                 }),
             },
         },
@@ -525,10 +528,17 @@ def test_verdicts_board_renders(browser, server, width, height):
             "})()"
         )
         assert "1 buy" in st["stat"] and "1 sell" in st["stat"] and "2 hold" in st["stat"] and "1 no call" in st["stat"], st["stat"]
+        # 2026-09-11 attempt #3: two dynamic disclosures on the header -- the
+        # regime chip (bear here, with SPY's signed distance to its 200-day,
+        # U+2212 never ASCII minus) and the brief-verdict chip (the brief
+        # score left the composite; its word and score print instead).
+        assert "bear · SPY −3.1% vs 200d" in st["stat"], st["stat"]
+        assert "brief CAUTIOUS (+3)" in st["stat"], st["stat"]
+        assert "-3.1" not in st["stat"], st["stat"]
         assert st["syms"] == ["XLE", "MU"], f"default cut should show only BUY/SELL, score desc: {st['syms']}"
         assert st["roleOk"], "every verdicts row needs role=button + tabindex=0"
         assert "show all 5" in st["note"], st["note"]
-        assert st["muScore"] and "−47" in st["muScore"] and "-47" not in st["muScore"], st["muScore"]
+        assert st["muScore"] and "−51" in st["muScore"] and "-51" not in st["muScore"], st["muScore"]
         assert not st["wide"], f"sideways scroll at {width}px"
 
         # P1 (2026-09-11): a resolved input chip outside the display's neutral
@@ -576,7 +586,7 @@ def test_verdicts_board_renders(browser, server, width, height):
             "})()"
         )
         assert st2["n"] == 5, st2["n"]
-        assert st2["ramCall"] and "NO CALL" in st2["ramCall"] and "2 of 9 inputs" in st2["ramCall"], st2["ramCall"]
+        assert st2["ramCall"] and "NO CALL" in st2["ramCall"] and "2 of 8 inputs" in st2["ramCall"], st2["ramCall"]
         assert st2["llyCall"] and "HOLD" in st2["llyCall"] and "earnings in 2d" in st2["llyCall"], st2["llyCall"]
 
         # P2 (2026-09-11): a score of exactly 0 (ZZZ here — LLY's own score
@@ -648,7 +658,7 @@ def test_watchlist_sorts_by_verdict(browser, server, width, height):
         assert min(idx[s] for s in no_verdict) > idx["MU"], \
             f"a no-verdict row ranked above a scored call: {st['syms'][:10]}"
         xle_line = st["verd"][idx["XLE"]]
-        assert "+64" in xle_line and "BUY" in xle_line, xle_line
+        assert "+66" in xle_line and "BUY" in xle_line, xle_line   # XLE fixture score under the attempt #3 table
         no_verdict_line = st["verd"][idx[no_verdict[0]]]
         assert no_verdict_line == "no verdict", no_verdict_line
     finally:

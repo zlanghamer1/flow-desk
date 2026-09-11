@@ -266,3 +266,68 @@ arithmetic: the vault's `.claude/skills/portfolio-thesis/decisions-log.md`,
 entry "2026-09-11 — OUTCOME (attempt #1, as registered) and REGISTRATION of
 attempt #2". Full results table: the vault's
 `market-data/results/desk_verdict_backtest_2026-09_attempt2.md`.
+
+## Amendment 2026-09-11 (backtest attempt #3 and the adversarial review of PRs #27 and #28)
+
+Three adversarial reviews (the composite's code, attempt #2's backtest, the
+45 untested weight points) and a third pre-registered backtest attempt ran
+the same day. The tables above stay as the historical record. Production
+now runs this:
+
+| input | weight now | class |
+|---|---:|---|
+| trend | 21 | tested — equal share of 82 |
+| rs63 | 21 | tested — equal share of 82 |
+| framework | 20 | tested — equal share of 82 |
+| valuation | 20 | tested — equal share of 82 |
+| analyst_rating | 5 | judgment, centered on the desk's own median each cycle |
+| target_upside | 3 | judgment, centered on the desk's own median each cycle |
+| flow_today | 5 | judgment |
+| flow_persist | 5 | judgment |
+| market | removed | the brief verdict prints as a chip on the board |
+
+**What attempt #3 found.** Walk-forward over 2022-01 → 2026-06 (223 signal
+dates, 60 in a bear market by SPY's own 200-day), no candidate — regime
+conditional weights fitted on the desk or the S&P 500, a flat refit, or two
+fixed rules — was distinguishable from flat equal weights (best desk paired
+t 0.68) and every one failed the S&P 500 guard, so equal stands. Momentum
+does flip: desk rs63 +0.045 in bull markets, −0.042 in bear (t 2.6); S&P
+rs63 −0.095 in bear (t 3.2); trend flips on the desk too; PEG reads +0.08 in
+both. trend and rs63 are one factor (rank correlation 0.63 desk, 0.70 S&P).
+In bear dates the desk's BUY calls carried no excess return. So the regime
+is published (`verdicts.regime`) and printed as a chip, and nothing is
+conditioned on it. A bear-regime gate on BUY calls is registered as an
+attempt #4 candidate only.
+
+**Why the untestable legs moved (judgment, registered before the run).**
+flow 25 → 10: the two legs share one direction bit (58 of 58 cards), that
+bit is a per-ticker constant on 23 of 38 tickers, the direction test failed
+both gates on 2026-07-28, and 39 further sessions leaned the other way; on
+the live payload flow was 47% of resolved weight on the 19 wrapper names
+and decided 12 of 12 directional calls there. At 5 + 5 the pair can never
+cross ±35 alone. market 5 → removed: one number a day, identical across
+names, describing last night's gap (autocorrelation 0.05), with a negative
+forward sign on 63 sessions; it only moved the call count. analysts 15 → 8
+and desk-centered: under the fixed market centers the pair pushed every
+covered name +6 points with target upside pinned at +1.0 on 15 of 38; the
+consensus level reads near-null at one month in the literature and target
+upside correlates −0.68 with rs63.
+
+**Other changes from the review.** `valuation` nulls a PEG whose implied
+prior-year EPS base is under $0.05 (the Financials tab's rule). A zero
+`net_flow` is no direction. One name raising no longer drops every verdict.
+The honesty-box sentence, which had read "no backtest behind them" since
+PR #28 shipped the first backtest, is corrected. `horizon_days` (21) is
+declared in the payload. The weekly consensus snapshot now stores
+`rec_mark`, `rec_total` and `target`, so an analyst-leg test becomes
+possible; until this change it stored `eps_ntm` alone.
+
+**Corrections to the attempt #2 claim.** "Equal beat the hand-set weights on
+both universes" overstated it: paired t 1.38 on the desk, 0.34 on the S&P.
+The equal weights were still the right table to ship — they are the
+full-shrinkage prior and nothing has beaten them since.
+
+Record: the vault's `.claude/skills/portfolio-thesis/decisions-log.md`,
+entries "2026-09-11 — REGISTRATION … attempt #3", its post-review amendment,
+and "2026-09-11 — OUTCOME: attempt #3". Results:
+`market-data/results/desk_verdict_backtest_2026-09_attempt3.md`.

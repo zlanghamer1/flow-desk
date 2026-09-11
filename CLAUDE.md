@@ -699,41 +699,78 @@ are decided and clearly seen based on the weighted composite of all data."
   publishes `data.json.verdicts` once per cycle. The page reads `call`,
   `score`, `thresholds`, `weights` and `order` from the payload. It never
   re-derives a call, never hardcodes a threshold or weight.
-- **Nine inputs, each −1..+1 or null; weights sum to 100.** trend 14 (price
+- **Eight inputs, each −1..+1 or null; weights sum to 100.** trend 21 (price
   vs its own 50-day and 200-day, the SAME 50/200 and ±0.3% dead zone the
-  quick read under the chart uses, so the two cannot disagree), rs63 14,
-  framework 14, analyst_rating 8, target_upside 7, flow_today 10,
-  flow_persist 15, valuation 13, market 5. Fed-hike odds are not an input
-  (standing ruling: they never move a verdict score).
-  **Weights adopted 2026-09-11 from backtest attempt #2** (equal over the
-  four testable legs — trend, rs63, framework, valuation — beat the
-  registered set out of sample on the desk and the S&P 500; vault
-  decisions-log OUTCOME entry 2026-09-11). The registered set before that
-  was trend 20 / rs63 10 / framework 20 / valuation 5; analyst, flow and
-  market keep their registered weights, unmeasured by the test.
+  quick read under the chart uses, so the two cannot disagree), rs63 21,
+  framework 20, valuation 20, analyst_rating 5, target_upside 3, flow_today
+  5, flow_persist 5. Fed-hike odds are not an input (standing ruling: they
+  never move a verdict score). **`market` (the brief score) is NOT an input
+  since 2026-09-11**: one number a day, identical for every name, it never
+  ranked anything, only moved the call count, and its measured forward sign
+  was the wrong way. The brief verdict prints as a chip on the board.
+  **Weights, 2026-09-11, backtest attempt #3** (vault decisions-log OUTCOME
+  entry): the four tested legs are EQUAL over 82 points (21/21/20/20 is
+  rounding, not a ranking) because no regime-conditional or refit set was
+  distinguishable from flat equal walk-forward (desk paired t 0.68) or
+  cleared the S&P 500 guard; the four untestable legs are judgment,
+  registered before the run (flow 5 + 5: one shared direction bit, FAILED
+  direction test, can never cross ±35 alone; analysts 5 + 3). Attempt #2's
+  "equal beat the hand-set weights" was corrected in the record to
+  "indistinguishable" (paired t 1.38 desk, 0.34 S&P). Never cite the older
+  "proves" wording.
+- **Momentum flips in bear markets; PEG does not.** Attempt #3, SPY vs its
+  200-day: desk rs63 +0.045 bull / −0.042 bear (t 2.6), S&P rs63 −0.095 in
+  bear (t 3.2), desk trend flips too; PEG +0.078 / +0.081. trend and rs63
+  are one factor (rank correlation 0.63 desk, 0.70 S&P). The regime is
+  therefore PUBLISHED (`verdicts.regime`, SPY spot vs its 200-day on the
+  same `closes + [spot]` series `trend_input` reads) and printed as a chip,
+  but **no weight is conditioned on it** — the regime-conditional
+  candidates lost. A bear-regime gate on BUY calls is registered as an
+  attempt #4 candidate only. Never wire the regime into a weight or a gate
+  without a dated decisions-log entry and a forward test.
+- **A call is a read on the next 21 trading days** (`horizon_days`), the
+  backtests' primary window. Stated in DATA_CONTRACT and README, never on
+  the page.
 - **A null input is never a zero.** Its weight leaves the denominator. The
   coverage gate (`min_weight` 50 AND `min_inputs` 3) withholds the call
   entirely below that; the payload then carries `score: null, call: null`
   and a `note` naming the shortfall. Every surface prints `n of n_total`.
-- **The analyst inputs are centered on a market-wide baseline** (mark 1.43,
-  upside +20%; scanner probe 2026-09-10, 2,731 stocks). Raw, both read
-  bullish on every desk name. Do not remove the centering; re-probe and
-  record the date if the center is ever moved.
+- **The analyst inputs are centered on the desk's own cross-sectional
+  medians each cycle** (`analyst_centers`: median `rec_mark` and median
+  target upside over pinned names with ≥ 5 analysts; the 2026-09-10 market
+  probe, 1.43 / +20%, is the fallback under 8 names and `source` says so).
+  Under the fixed market centers the pair pushed every covered name +6
+  points with target upside pinned at +1.0 on 15 of 38. Do not remove the
+  centering, and never re-fix it to a market snapshot.
+- **`valuation` nulls a PEG whose implied prior-year EPS base is under
+  $0.05** — the Financials tab's `DERIVED_PEG_MIN_PRIOR_EPS` rule, so the two
+  surfaces grade one vendor PEG one way. The base is implied from the
+  vendor's own P/E and PEG (`implied_prior_eps`).
+- **A zero `net_flow` is no direction.** `build_snapshot` reads `>= 0` as
+  BULL; the composite reads exactly 0 as null ("no net flow").
+- **One bad name never drops the block.** `compute_verdicts` guards each
+  ticker; a raise publishes `"not computed (<ExcName>)"` with every input
+  null and increments `failed`.
 - **Thresholds ±35; earnings gate 3 days** (0 ≤ `earn_days` ≤ 3 holds a
   directional call to HOLD with `note: "earnings in Nd"`; the score still
   prints).
-- **Every constant is pre-registered and unvalidated.** Weights, centers,
-  spans, thresholds and gates are recorded in the vault's
-  `portfolio-thesis/decisions-log.md` (2026-09-11). Changing any of them
+- **Every constant is pre-registered.** Weights, centers, spans,
+  thresholds and gates are recorded in the vault's
+  `portfolio-thesis/decisions-log.md` (2026-09-11, four registration and
+  outcome entries plus the attempt #3 amendment). Changing any of them
   needs a dated amendment there first, then a labeled backtest attempt
-  reported honestly. Never tune them to fit an outcome quietly. The honesty
-  box states the limit; no other sentence on the page explains the method.
+  reported honestly (attempt #4 next). Never tune them to fit an outcome
+  quietly. The honesty box states the limit; no other sentence on the page
+  explains the method.
 - **One function per fact.** `verdictOf(sym)` returns the ticker entry or
   null; `verdictPillHTML(sym)` is the only call badge. The board, the
   flow-board rows, the Overview strip and the rail mark all call these two.
 - **Surfaces:** the Verdicts board (`#s-verd`, above the flow boards under
   its own eyebrow; default cut shows BUY and SELL rows with the standard
-  disclosed "show all"), the call pill on Conviction and Swing rows, the
+  disclosed "show all"; its header stat carries the regime chip
+  (`verdictRegimeChipHTML`) and the brief-verdict chip
+  (`verdictBriefChipHTML`) — dynamic disclosures, each printing its reason
+  when unreadable), the call pill on Conviction and Swing rows, the
   Overview tab's headline strip (`stageVerdictHTML`, first block, one row
   per input with value, points and note), the rail's `verdict` sort and
   BUY/SELL mark, and one Limits sentence in the honesty box.

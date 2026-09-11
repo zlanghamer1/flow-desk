@@ -25,20 +25,37 @@ from pathlib import Path
 
 # ── Inputs, in render order (also the page's VERDICT_INPUT_LABELS key set,
 # pinned equal by fetcher/test_sync_constants.py) ───────────────────────────
+# `market` (the brief score) left the composite 2026-09-11 (attempt #3
+# amendment): one number a day, identical for every name, so it could never
+# re-rank -- it only moved the call count, and its measured forward sign was
+# the wrong way. The brief verdict prints as a chip on the board instead.
 VERDICT_INPUT_ORDER = ("trend", "rs63", "framework", "analyst_rating",
                         "target_upside", "flow_today", "flow_persist",
-                        "valuation", "market")
+                        "valuation")
 
-# Weights adopted 2026-09-11 from backtest attempt #2 (equal weights over
-# the four testable legs beat the registered set out of sample on the desk
-# and the S&P 500; decisions-log OUTCOME entry 2026-09-11). Analyst, flow
-# and market legs are unmeasured and keep their registered weights. Any
-# change needs a dated decisions-log amendment first.
+# Weights, 2026-09-11 (backtest attempt #3, decisions-log OUTCOME entry).
+# Two classes:
+#   * the four tested legs carry 82 of 100 in EQUAL proportions -- attempt
+#     #3 judged regime-conditional and refit candidates walk-forward and
+#     none was distinguishable from flat equal (desk paired t 0.68) or
+#     cleared the S&P guard, so C0 stands. 82 does not divide by four; the
+#     registration puts the two spare points on trend and rs63 (rounding,
+#     not a ranking).
+#   * the four untestable legs are JUDGMENT, registered before the run:
+#     flow 5 + 5 (one shared direction bit, FAILED 2026-07-28 direction
+#     test, 39 further sessions leaning the other way; at 10 it can never
+#     cross +-35 alone, even at the 50-point coverage floor), analysts 5 + 3
+#     (consensus LEVEL reads near-null at one month; target upside is a
+#     contrarian price proxy, -0.68 with rs63).
+# Any change needs a dated decisions-log amendment first.
 VERDICT_WEIGHTS = {
-    "trend": 14, "rs63": 14, "framework": 14, "analyst_rating": 8,
-    "target_upside": 7, "flow_today": 10, "flow_persist": 15,
-    "valuation": 13, "market": 5,
+    "trend": 21, "rs63": 21, "framework": 20, "analyst_rating": 5,
+    "target_upside": 3, "flow_today": 5, "flow_persist": 5,
+    "valuation": 20,
 }
+
+# The horizon a call is a read on: the backtests' primary forward window.
+VERDICT_HORIZON_DAYS = 21
 
 # Call thresholds and coverage/earnings gates. First pass, pre-registered,
 # unvalidated.
@@ -66,23 +83,45 @@ VERDICT_FRAMEWORK_TIER = {
     "BUY_5": 1.0, "BUY_4": 0.75, "ADD": 0.4, "HOLD": 0.0, "AVOID": -1.0,
 }
 
-# analyst_rating / target_upside: centers and spans come from a keyless
-# TradingView scanner probe run 2026-09-10 over 2,731 US stocks with >=5
-# analysts and a market cap above $2B (median recommendation_mark 1.43,
-# p10-p90 1.115-1.90; median 12-month target upside +20%, p10-p90 +3%..+51%).
-# Raw, both inputs read bullish on nearly every listed name, so these centers
-# keep the composite from being a one-way ratchet. See design doc "Why these
-# centers".
+# analyst_rating / target_upside: CENTERED ON THE DESK'S OWN CROSS-SECTION
+# each cycle (2026-09-11, attempt #3 amendment) -- the median over pinned
+# names with >= VERDICT_MIN_ANALYSTS analysts, so the two legs rank names
+# against each other instead of against a fixed market snapshot. Under the
+# fixed 2026-09-10 market-probe centers below (median recommendation_mark
+# 1.43, median 12-month target upside +20%, 2,731 US stocks) the pair read
+# +0.45 and +0.56 mean value on the live desk -- a +6-point push on every
+# covered name -- with target upside pinned at +1.0 on 15 of 38 names. The
+# probe centers stay as the FALLBACK when fewer than
+# VERDICT_ANALYST_CENTER_MIN_NAMES names carry a reading. Spans unchanged.
 VERDICT_MIN_ANALYSTS = 5
-VERDICT_REC_MARK_CENTER = 1.43
+VERDICT_ANALYST_CENTER_MIN_NAMES = 8
+VERDICT_REC_MARK_CENTER = 1.43      # fallback center (market probe 2026-09-10)
 VERDICT_REC_MARK_SPAN = 0.45
-VERDICT_TARGET_CENTER = 0.20
+VERDICT_TARGET_CENTER = 0.20        # fallback center (market probe 2026-09-10)
 VERDICT_TARGET_SPAN = 0.30
+ANALYST_FALLBACK_SOURCE = "market probe 2026-09-10"
 
-# valuation / market. First pass, pre-registered, unvalidated.
+# valuation. First pass, pre-registered, unvalidated. The prior-EPS floor
+# (2026-09-11, attempt #3 amendment) is the Financials tab's own
+# DERIVED_PEG_MIN_PRIOR_EPS rule: a PEG whose growth denominator is a
+# prior-year EPS base under $0.05 is a near-zero-denominator artifact, not
+# a valuation (BE's P/E 352 / PEG on a $0.0047 base, live 2026-08-22). The
+# base is implied from the vendor's own P/E and PEG: eps_ttm = spot / pe,
+# growth = pe / (100 * peg), prior = eps_ttm / (1 + growth).
 VERDICT_PEG_CENTER = 1.5
 VERDICT_PE_MAX = 150.0
-VERDICT_MARKET_SPAN = 5.0
+VERDICT_PEG_MIN_PRIOR_EPS = 0.05
+
+# Market regime (2026-09-11, attempt #3): SPY vs its own 200-session average,
+# the SAME series construction trend_input uses (settled closes + the cycle
+# spot). Published and printed as a dynamic disclosure. NO weight is
+# conditioned on it: attempt #3 found momentum flips sign in bear markets
+# on both universes (desk rs63 +0.045 bull / -0.042 bear, t 2.6; S&P
+# -0.095 bear, t 3.2) but no regime-conditional weight set was
+# distinguishable from flat equal (desk paired t 0.68), so the regime is
+# disclosed, not acted on. A bear-regime gate is registered as an attempt #4
+# candidate, never shipped on this data.
+REGIME_BASIS = "SPY vs its 200-day average"
 
 _MINUS = "−"   # U+2212 MINUS SIGN — every note printing a negative
                     # number uses this, never ASCII hyphen-minus.
@@ -343,7 +382,53 @@ def framework_input(facts_entry: dict | None) -> tuple[float | None, str]:
     return v, note
 
 
-def analyst_rating_input(facts_entry: dict | None) -> tuple[float | None, str]:
+def _covered(f: dict) -> bool:
+    rt = f.get("rec_total")
+    return isinstance(rt, (int, float)) and not isinstance(rt, bool) and rt >= VERDICT_MIN_ANALYSTS
+
+
+def _median(xs: list[float]) -> float:
+    s = sorted(xs)
+    n = len(s)
+    mid = n // 2
+    return s[mid] if n % 2 else 0.5 * (s[mid - 1] + s[mid])
+
+
+def analyst_centers(facts: dict | None, spot_of) -> dict:
+    """The cycle's own analyst centers: median recommendation mark and median
+    target upside over pinned names with >= VERDICT_MIN_ANALYSTS analysts.
+    `spot_of(ticker)` returns the cycle spot or None. Falls back to the
+    2026-09-10 market-probe constants, and says so, when fewer than
+    VERDICT_ANALYST_CENTER_MIN_NAMES names carry the reading."""
+    marks: list[float] = []
+    ups: list[float] = []
+    for ticker, f in (facts or {}).items():
+        if not isinstance(f, dict) or not _covered(f):
+            continue
+        rm = f.get("rec_mark")
+        if isinstance(rm, (int, float)) and not isinstance(rm, bool):
+            marks.append(float(rm))
+        tg = f.get("target")
+        sp = spot_of(ticker)
+        if (isinstance(tg, (int, float)) and not isinstance(tg, bool) and tg > 0
+                and isinstance(sp, (int, float)) and not isinstance(sp, bool) and sp > 0):
+            ups.append(float(tg) / float(sp) - 1.0)
+    out = {"rec_mark": VERDICT_REC_MARK_CENTER, "target_upside": VERDICT_TARGET_CENTER,
+           "n_rec_mark": len(marks), "n_target_upside": len(ups),
+           "source": ANALYST_FALLBACK_SOURCE}
+    if len(marks) >= VERDICT_ANALYST_CENTER_MIN_NAMES:
+        out["rec_mark"] = round(_median(marks), 4)
+        out["source"] = "desk"
+    if len(ups) >= VERDICT_ANALYST_CENTER_MIN_NAMES:
+        out["target_upside"] = round(_median(ups), 4)
+        out["source"] = "desk" if len(marks) >= VERDICT_ANALYST_CENTER_MIN_NAMES else "mixed"
+    return out
+
+
+def analyst_rating_input(facts_entry: dict | None, center: float | None = None
+                          ) -> tuple[float | None, str]:
+    """`center` is the cycle's desk median mark (analyst_centers); None means
+    the fixed fallback center."""
     f = facts_entry or {}
     rm = f.get("rec_mark")
     rt = f.get("rec_total")
@@ -351,12 +436,16 @@ def analyst_rating_input(facts_entry: dict | None) -> tuple[float | None, str]:
         return None, "no analyst rating"
     if rt is None or rt < VERDICT_MIN_ANALYSTS:
         return None, "fewer than 5 analysts"
-    v = clamp((VERDICT_REC_MARK_CENTER - rm) / VERDICT_REC_MARK_SPAN)
+    c = VERDICT_REC_MARK_CENTER if center is None else center
+    v = clamp((c - rm) / VERDICT_REC_MARK_SPAN)
     note = f"{rm:.2f} of 3 {_MIDDOT} {int(rt)} analysts"
     return v, note
 
 
-def target_upside_input(facts_entry: dict | None, spot: float | None) -> tuple[float | None, str]:
+def target_upside_input(facts_entry: dict | None, spot: float | None,
+                        center: float | None = None) -> tuple[float | None, str]:
+    """`center` is the cycle's desk median target upside (analyst_centers);
+    None means the fixed fallback center."""
     f = facts_entry or {}
     target = f.get("target")
     rt = f.get("rec_total")
@@ -365,7 +454,8 @@ def target_upside_input(facts_entry: dict | None, spot: float | None) -> tuple[f
     if rt is None or rt < VERDICT_MIN_ANALYSTS:
         return None, "fewer than 5 analysts"
     upside = target / spot - 1
-    v = clamp((upside - VERDICT_TARGET_CENTER) / VERDICT_TARGET_SPAN)
+    c = VERDICT_TARGET_CENTER if center is None else center
+    v = clamp((upside - c) / VERDICT_TARGET_SPAN)
     note = f"{_signed(upside * 100, 0)}% to the average target"
     return v, note
 
@@ -377,6 +467,13 @@ def _flow_input(card: dict | None, board_name: str, no_card_note: str) -> tuple[
     score = card.get("score")
     if direction not in ("BULL", "BEAR") or score is None:
         return None, no_card_note
+    # build_snapshot reads `net_flow >= 0` as BULL, so a chain with exactly
+    # zero net premium would lend its whole score to the bull side. A zero
+    # is no direction (2026-09-11 review). A missing net_flow key (older
+    # cards, trimmed fixtures) is not a zero and passes through.
+    nf = card.get("net_flow")
+    if isinstance(nf, (int, float)) and not isinstance(nf, bool) and nf == 0:
+        return None, "no net flow"
     sign = 1.0 if direction == "BULL" else -1.0
     v = clamp(sign * score / 100.0)
     note = f"{direction} {int(score)} on {board_name}"
@@ -391,13 +488,26 @@ def flow_persist_input(swing_card: dict | None) -> tuple[float | None, str]:
     return _flow_input(swing_card, "Swing", "no swing card")
 
 
-def valuation_input(facts_entry: dict | None) -> tuple[float | None, str]:
+def implied_prior_eps(spot: float | None, pe: float, peg: float) -> float | None:
+    """The prior-year TTM EPS base the vendor's PEG rests on, implied from its
+    own P/E and PEG: eps_ttm = spot / pe; growth = pe / (100 * peg); prior =
+    eps_ttm / (1 + growth). None when there is no spot to anchor it."""
+    if spot is None or spot <= 0 or pe <= 0 or peg <= 0:
+        return None
+    eps_ttm = spot / pe
+    growth = pe / (100.0 * peg)
+    return eps_ttm / (1.0 + growth)
+
+
+def valuation_input(facts_entry: dict | None, spot: float | None = None) -> tuple[float | None, str]:
     """F3 (2026-09-11 fix): each null branch names the fact it actually is,
     not a guessed cause. A null PEG with a healthy positive P/E (CRWD pe
     5850, SNDK 23, MRVL 75 and seven more the day this was found) used to
     print "no PEG (loss-making)" -- a real vendor gap misdiagnosed as an
     unprofitable company. A missing `pe` printed the unrelated "P/E out of
-    range". Six distinct facts now get six distinct sentences."""
+    range". Seven distinct facts now get seven distinct sentences; the
+    seventh (2026-09-11, attempt #3 amendment) is the prior-EPS floor the
+    Financials tab already applies to the same vendor PEG."""
     f = facts_entry or {}
     if f.get("sec_type") == "fund":
         return None, "fund"
@@ -413,23 +523,31 @@ def valuation_input(facts_entry: dict | None) -> tuple[float | None, str]:
         return None, f"P/E {_signed(pe, 1)}"
     if pe > VERDICT_PE_MAX:
         return None, f"P/E {pe:.0f}, above {VERDICT_PE_MAX:.0f}"
+    prior = implied_prior_eps(spot, pe, peg)
+    if prior is not None and prior < VERDICT_PEG_MIN_PRIOR_EPS:
+        return None, f"PEG {peg:.2f} on a ${prior:.3f} prior-year EPS base"
     v = clamp((VERDICT_PEG_CENTER - peg) / VERDICT_PEG_CENTER)
     note = f"PEG {peg:.2f}"
     return v, note
 
 
-def market_input(brief: dict | None) -> tuple[float | None, str]:
-    if not brief:
-        return None, "no brief"
-    if brief.get("stale"):
-        return None, "brief stale"
-    score = brief.get("score")
-    if score is None:
-        return None, "no market score"
-    v = clamp(score / VERDICT_MARKET_SPAN)
-    word = brief.get("verdict") or "?"
-    note = f"brief {word} ({_signed(score, 0)})"
-    return v, note
+def compute_regime(spy_closes: list[float], spy_spot: float | None) -> dict:
+    """The market regime this cycle, from SPY's settled closes plus its cycle
+    spot (the same `closes + [spot]` series trend_input reads): `bear` when
+    SPY sits below its own 200-session average, `bull` otherwise, null with
+    the reason when it cannot be read. `spy_vs_200d` is the signed distance
+    (spot / SMA200 - 1). Disclosure only; no weight reads it."""
+    if spy_spot is None or spy_spot <= 0:
+        return {"name": None, "spy_vs_200d": None, "basis": REGIME_BASIS, "note": "no SPY spot"}
+    series = list(spy_closes) + [float(spy_spot)]
+    if len(series) < VERDICT_SMA_LONG:
+        return {"name": None, "spy_vs_200d": None, "basis": REGIME_BASIS,
+                "note": "fewer than 200 SPY sessions of history"}
+    sma200 = sum(series[-VERDICT_SMA_LONG:]) / VERDICT_SMA_LONG
+    dist = float(spy_spot) / sma200 - 1.0
+    name = "bear" if dist < 0 else "bull"
+    return {"name": name, "spy_vs_200d": round(dist, 4), "basis": REGIME_BASIS,
+            "note": f"SPY {_signed(dist * 100)}% vs its 200-day"}
 
 
 # ── per-ticker and whole-payload assembly ───────────────────────────────────
@@ -437,18 +555,22 @@ def market_input(brief: dict | None) -> tuple[float | None, str]:
 def compute_verdict(ticker: str, *, spot: float | None, closes: list[float],
                      spy_closes: list[float], facts_entry: dict | None,
                      conv_card: dict | None, swing_card: dict | None,
-                     brief: dict | None, dates: list[str] | None = None,
-                     spy_dates: list[str] | None = None) -> dict:
+                     brief: dict | None = None, dates: list[str] | None = None,
+                     spy_dates: list[str] | None = None,
+                     centers: dict | None = None) -> dict:
+    """`brief` is accepted for call-site compatibility and unused: the brief
+    score left the composite 2026-09-11. `centers` is analyst_centers()'s
+    dict for this cycle; None means the fixed fallback centers."""
+    c = centers or {}
     raw = {
         "trend": trend_input(spot, closes),
         "rs63": rs63_input(ticker, closes, spy_closes, dates, spy_dates),
         "framework": framework_input(facts_entry),
-        "analyst_rating": analyst_rating_input(facts_entry),
-        "target_upside": target_upside_input(facts_entry, spot),
+        "analyst_rating": analyst_rating_input(facts_entry, c.get("rec_mark")),
+        "target_upside": target_upside_input(facts_entry, spot, c.get("target_upside")),
         "flow_today": flow_today_input(conv_card),
         "flow_persist": flow_persist_input(swing_card),
-        "valuation": valuation_input(facts_entry),
-        "market": market_input(brief),
+        "valuation": valuation_input(facts_entry, spot),
     }
 
     inputs_out: dict[str, dict] = {}
@@ -512,30 +634,48 @@ def compute_verdicts(conviction_cards, swing_cards, facts: dict | None,
     spy_closes = closes_of(bars_payload, "SPY")
     spy_dates = dates_of(bars_payload, "SPY", len(spy_closes))
 
+    def spot_of(ticker: str) -> float | None:
+        sp = (spot_by_ticker or {}).get(ticker)
+        if isinstance(sp, (int, float)) and not isinstance(sp, bool) and sp > 0:
+            return float(sp)
+        qc = ((quotes or {}).get(ticker) or {}).get("close")
+        if isinstance(qc, (int, float)) and not isinstance(qc, bool) and qc > 0:
+            return float(qc)
+        return None
+
+    centers = analyst_centers(facts, spot_of)
+    regime = compute_regime(spy_closes, spot_of("SPY"))
+
     by_ticker: dict[str, dict] = {}
     counts = {"buy": 0, "sell": 0, "hold": 0, "none": 0}
+    n_total = len(VERDICT_INPUT_ORDER)
+    failed = 0
 
     for ticker in sorted(facts.keys()):
         facts_entry = facts.get(ticker) or {}
-
-        spot: float | None = None
-        sp = (spot_by_ticker or {}).get(ticker)
-        if isinstance(sp, (int, float)) and not isinstance(sp, bool) and sp > 0:
-            spot = float(sp)
-        else:
-            qc = ((quotes or {}).get(ticker) or {}).get("close")
-            if isinstance(qc, (int, float)) and not isinstance(qc, bool) and qc > 0:
-                spot = float(qc)
-
+        spot = spot_of(ticker)
         closes = closes_of(bars_payload, ticker)
         dates = dates_of(bars_payload, ticker, len(closes))
 
-        entry = compute_verdict(
-            ticker, spot=spot, closes=closes, spy_closes=spy_closes,
-            dates=dates, spy_dates=spy_dates,
-            facts_entry=facts_entry, conv_card=conv_by_ticker.get(ticker),
-            swing_card=swing_by_ticker.get(ticker), brief=brief,
-        )
+        # One name's bad data must never take the whole block down: the
+        # caller wraps compute_verdicts in a single try (build_snapshot), so
+        # an exception here used to drop every verdict (2026-09-11 review).
+        # The failed name publishes a null entry naming the failure class.
+        try:
+            entry = compute_verdict(
+                ticker, spot=spot, closes=closes, spy_closes=spy_closes,
+                dates=dates, spy_dates=spy_dates,
+                facts_entry=facts_entry, conv_card=conv_by_ticker.get(ticker),
+                swing_card=swing_by_ticker.get(ticker), brief=brief, centers=centers,
+            )
+        except Exception as e:  # noqa: BLE001 -- fail-soft per name, by design
+            failed += 1
+            entry = {
+                "score": None, "call": None,
+                "note": f"not computed ({type(e).__name__})",
+                "n": 0, "n_total": n_total, "weight": 0,
+                "inputs": {k: {"v": None, "note": "not computed"} for k in VERDICT_INPUT_ORDER},
+            }
         by_ticker[ticker] = entry
 
         call = entry["call"]
@@ -549,13 +689,20 @@ def compute_verdicts(conviction_cards, swing_cards, facts: dict | None,
             counts["none"] += 1
 
     return {
-        "v": 1,
+        "v": 2,   # 2026-09-11: eight inputs (market removed), regime,
+                  # analyst_centers, horizon_days, failed
         "thresholds": {"buy": VERDICT_BUY_MIN, "sell": VERDICT_SELL_MAX},
         "min_weight": VERDICT_MIN_WEIGHT,
         "min_inputs": VERDICT_MIN_INPUTS,
         "earnings_gate_days": VERDICT_EARNINGS_GATE_DAYS,
+        "horizon_days": VERDICT_HORIZON_DAYS,
         "order": list(VERDICT_INPUT_ORDER),
         "weights": dict(VERDICT_WEIGHTS),
+        # the regime this cycle (disclosure; no weight reads it) and the
+        # analyst centers the two analyst legs were measured against
+        "regime": regime,
+        "analyst_centers": centers,
+        "failed": failed,
         # F10 (2026-09-11): the vintage of bars.json this cycle's trend/rs63
         # legs were computed from -- null when bars_payload wasn't a dict at
         # all (load_bars_from_disk found nothing), string otherwise.
