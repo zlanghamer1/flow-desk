@@ -246,6 +246,14 @@ Evidence class: **unvalidated** — every constant below is pre-registered by
 judgment; changing one needs a dated amendment in the vault's
 `portfolio-thesis/decisions-log.md` first.
 
+**Weights adopted 2026-09-11 from backtest attempt #2** (equal over the four
+testable legs — trend, rs63, framework, valuation — beat the registered set
+out of sample on the desk and the S&P 500; decisions-log OUTCOME entry
+2026-09-11, results in `market-data/results/desk_verdict_backtest_2026-09_attempt2.md`
+in the vault). The registered set before that was trend 20 / rs63 10 /
+framework 20 / valuation 5. Analyst, flow and market legs are unmeasured and
+keep their registered weights.
+
 ```jsonc
 "verdicts": {
   "v": 1,                                   // schema version of this block
@@ -257,24 +265,24 @@ judgment; changing one needs a dated amendment in the vault's
             "flow_today", "flow_persist", "valuation", "market"],
                                             // render order; the page's VERDICT_INPUT_LABELS keys must
                                             // equal this set (pinned by fetcher/test_sync_constants.py)
-  "weights": { "trend": 20, "rs63": 10, "framework": 20, "analyst_rating": 8,
+  "weights": { "trend": 14, "rs63": 14, "framework": 14, "analyst_rating": 8,
                "target_upside": 7, "flow_today": 10, "flow_persist": 15,
-               "valuation": 5, "market": 5 },        // sum 100
+               "valuation": 13, "market": 5 },        // sum 100
   "bars_built": "2026-09-10",               // bars.json's own "built" date this cycle read closes from;
                                             // null when no bars payload was available at all
-  "counts": { "buy": 8, "sell": 8, "hold": 40, "none": 7 },   // over by_ticker; none = call null
+  "counts": { "buy": 9, "sell": 7, "hold": 37, "none": 10 },   // over by_ticker; none = call null
   "by_ticker": {
     "MU": {
-      "score": 34,          // int -100..+100 = round(100 * sum(w*v) / sum(w) over RESOLVED inputs);
+      "score": 35,          // int -100..+100 = round(100 * sum(w*v) / sum(w) over RESOLVED inputs);
                             // null when the coverage gate fails (never a score on 2 inputs)
-      "call": "HOLD",       // "BUY" | "HOLD" | "SELL" | null (null = coverage gate failed)
+      "call": "BUY",        // "BUY" | "HOLD" | "SELL" | null (null = coverage gate failed)
       "note": null,         // one-line reason a call was held or withheld:
                             //   "earnings in 2d"                 (earnings gate; score still published)
                             //   "3 of 9 inputs · weight 35 of 100" (coverage gate; score null)
                             //   null otherwise
       "n": 8,               // inputs that resolved (v not null)
       "n_total": 9,         // len(order)
-      "weight": 80,         // sum of weights over resolved inputs
+      "weight": 86,         // sum of weights over resolved inputs
       "inputs": {           // one entry per key in `order`, ALWAYS present
         "trend":          { "v": 1.0,   "note": "above 50d · above 200d" },
         "rs63":           { "v": 0.32,  "note": "+6.4pp vs SPY, 63 sessions" },

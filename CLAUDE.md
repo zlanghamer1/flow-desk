@@ -699,12 +699,18 @@ are decided and clearly seen based on the weighted composite of all data."
   publishes `data.json.verdicts` once per cycle. The page reads `call`,
   `score`, `thresholds`, `weights` and `order` from the payload. It never
   re-derives a call, never hardcodes a threshold or weight.
-- **Nine inputs, each −1..+1 or null; weights sum to 100.** trend 20 (price
+- **Nine inputs, each −1..+1 or null; weights sum to 100.** trend 14 (price
   vs its own 50-day and 200-day, the SAME 50/200 and ±0.3% dead zone the
-  quick read under the chart uses, so the two cannot disagree), rs63 10,
-  framework 20, analyst_rating 8, target_upside 7, flow_today 10,
-  flow_persist 15, valuation 5, market 5. Fed-hike odds are not an input
+  quick read under the chart uses, so the two cannot disagree), rs63 14,
+  framework 14, analyst_rating 8, target_upside 7, flow_today 10,
+  flow_persist 15, valuation 13, market 5. Fed-hike odds are not an input
   (standing ruling: they never move a verdict score).
+  **Weights adopted 2026-09-11 from backtest attempt #2** (equal over the
+  four testable legs — trend, rs63, framework, valuation — beat the
+  registered set out of sample on the desk and the S&P 500; vault
+  decisions-log OUTCOME entry 2026-09-11). The registered set before that
+  was trend 20 / rs63 10 / framework 20 / valuation 5; analyst, flow and
+  market keep their registered weights, unmeasured by the test.
 - **A null input is never a zero.** Its weight leaves the denominator. The
   coverage gate (`min_weight` 50 AND `min_inputs` 3) withholds the call
   entirely below that; the payload then carries `score: null, call: null`
