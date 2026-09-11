@@ -1334,3 +1334,25 @@ def test_integration_against_fixture_payload():
         rs63 = entry["inputs"]["rs63"]
         assert rs63["v"] is None, (short_history_ticker, rs63)
         assert rs63["note"] == "fewer than 64 daily closes", (short_history_ticker, rs63)
+
+
+def test_regime_note_and_field_round_the_same_way():
+    """Live 2026-09-11: spot/SMA200 - 1 = 0.06749 published spy_vs_200d 0.0675
+    (the page's chip rounds that to +6.8%) while the note, worded from the
+    unrounded value, said +6.7%. Two numbers for one fact on one screen must
+    agree, so the note is worded from the rounded field."""
+    closes = [100.0] * 199
+    # pick a spot whose distance lands on a rounding boundary: 0.06749...
+    sma = None
+    for spot in (106.72, 106.73, 106.74, 106.75):
+        series = closes + [spot]
+        sma = sum(series[-200:]) / 200
+        d = spot / sma - 1
+        if round(d, 4) * 100 != round(d * 100, 1):
+            break
+    rg = verdict.compute_regime(closes, spot)
+    shown = f"{rg['spy_vs_200d'] * 100:+.1f}".replace("-", "−")
+    assert rg["note"] == f"SPY {shown}% vs its 200-day", (rg, shown)
+    # and a plain case
+    rg2 = verdict.compute_regime(closes, 95.0)
+    assert rg2["note"] == f"SPY −{abs(rg2['spy_vs_200d'] * 100):.1f}% vs its 200-day"
