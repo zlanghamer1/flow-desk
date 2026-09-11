@@ -123,12 +123,13 @@ values are `null` (never a string sentinel). All strings are already plain
   "facts": { "MU": { "hi52": null, "...": "..." } },  // OPTIONAL
   "desk_private": { "v": 1 },                    // OPTIONAL, opaque — see note below
   "fed_odds": { "hike_pct": 28.4, "...": "..." },  // OPTIONAL — see note below
+  "verdicts": { "v": 1, "by_ticker": { "MU": { "...": "..." } } },  // OPTIONAL — see "Verdicts" below (2026-09-11)
   "context_updated_at": "2026-08-15T14:32:00Z"   // OPTIONAL — see note below
 }
 ```
 
-> **All seven keys above are OPTIONAL and were added in the context-layer build
-> (2026-08; `fed_odds` 2026-08-18).** Absent on old snapshots and the site renders nothing for a
+> **All eight keys above are OPTIONAL and were added in the context-layer build
+> (2026-08; `fed_odds` 2026-08-18; `verdicts` 2026-09-11).** Absent on old snapshots and the site renders nothing for a
 > missing key — the same "old readers keep working" rule every prior addition
 > in this file follows. Each is OMITTED entirely (not present as a key) when
 > its own build produced nothing that cycle, never present with a `null`/`{}`
@@ -230,6 +231,92 @@ values are `null` (never a string sentinel). All strings are already plain
 > and the rail is curated by design. `"LOW"` therefore appears only on
 > market-calendar rows (weekly OpEx) or rows the hand-kept CSV mirror
 > deliberately carries.
+
+### Verdicts (added 2026-09-11)
+
+`data.json.verdicts` is the desk's one decision layer: a weighted composite of
+nine readings the desk already publishes, computed once per cycle in
+`fetcher/verdict.py` and read — never re-derived — by the page. It is
+**additive and separate**: `conviction_score` and `swing_score` are unchanged
+and are two of its inputs. OPTIONAL top-level key, omitted when the cycle
+computed nothing (never present as `null` or `{}`).
+
+Design record: `docs/superpowers/specs/2026-09-11-desk-verdicts-design.md`.
+Evidence class: **unvalidated** — every constant below is pre-registered by
+judgment; changing one needs a dated amendment in the vault's
+`portfolio-thesis/decisions-log.md` first.
+
+```jsonc
+"verdicts": {
+  "v": 1,                                   // schema version of this block
+  "thresholds": { "buy": 35, "sell": -35 }, // call = BUY at score >= buy, SELL at <= sell, else HOLD
+  "min_weight": 50,                         // coverage gate: resolved-input weight must reach this...
+  "min_inputs": 3,                          // ...AND at least this many inputs must resolve, else no call
+  "earnings_gate_days": 3,                  // 0 <= facts.earn_days <= this -> call held to HOLD
+  "order": ["trend", "rs63", "framework", "analyst_rating", "target_upside",
+            "flow_today", "flow_persist", "valuation", "market"],
+                                            // render order; the page's VERDICT_INPUT_LABELS keys must
+                                            // equal this set (pinned by fetcher/test_sync_constants.py)
+  "weights": { "trend": 20, "rs63": 10, "framework": 20, "analyst_rating": 8,
+               "target_upside": 7, "flow_today": 10, "flow_persist": 15,
+               "valuation": 5, "market": 5 },        // sum 100
+  "counts": { "buy": 9, "sell": 8, "hold": 39, "none": 7 },   // over by_ticker; none = call null
+  "by_ticker": {
+    "MU": {
+      "score": 34,          // int -100..+100 = round(100 * sum(w*v) / sum(w) over RESOLVED inputs);
+                            // null when the coverage gate fails (never a score on 2 inputs)
+      "call": "HOLD",       // "BUY" | "HOLD" | "SELL" | null (null = coverage gate failed)
+      "note": null,         // one-line reason a call was held or withheld:
+                            //   "earnings in 2d"                 (earnings gate; score still published)
+                            //   "3 of 9 inputs · weight 35 of 100" (coverage gate; score null)
+                            //   null otherwise
+      "n": 8,               // inputs that resolved (v not null)
+      "n_total": 9,         // len(order)
+      "weight": 80,         // sum of weights over resolved inputs
+      "inputs": {           // one entry per key in `order`, ALWAYS present
+        "trend":          { "v": 1.0,   "note": "above 50d · above 200d" },
+        "rs63":           { "v": 0.32,  "note": "+6.4pp vs SPY, 63 sessions" },
+        "framework":      { "v": null,  "note": "building" },
+        "analyst_rating": { "v": 0.68,  "note": "1.12 of 3 · 57 analysts" },
+        "target_upside":  { "v": 1.0,   "note": "+61% to the average target" },
+        "flow_today":     { "v": -0.62, "note": "BEAR 62 on Conviction" },
+        "flow_persist":   { "v": -0.40, "note": "BEAR 40 on Swing" },
+        "valuation":      { "v": 0.98,  "note": "PEG 0.03" },
+        "market":         { "v": -0.2,  "note": "brief NEUTRAL (−1)" }
+      }
+    }
+  }
+}
+```
+
+**Input mappings** (each `v` is −1..+1 or null; `clamp` bounds to ±1):
+
+| key | source | v | null when |
+|---|---|---|---|
+| `trend` | settled closes from `bars.json` (SMA50, SMA200) + the cycle spot | leg(m) = 0 if abs(spot/m − 1) < 0.003 else sign(spot − m); v = 0.5·leg(SMA50) + 0.5·leg(SMA200) | < 200 closes or no spot |
+| `rs63` | closes for the name and SPY | clamp(((c[-1]/c[-64] − 1) − (spy[-1]/spy[-64] − 1)) / 0.20) | < 64 closes for either |
+| `framework` | `facts.<T>.framework.verdict`, `_BUILDING`/`_CAPPED` stripped | BUY_5 1.0 · BUY_4 0.75 · ADD 0.4 · HOLD 0.0 · AVOID −1.0 | BUILDING, NOT_APPLICABLE, absent |
+| `analyst_rating` | `facts.<T>.rec_mark`, `rec_total` | clamp((1.43 − mark) / 0.45) | rec_mark null or rec_total < 5 |
+| `target_upside` | `facts.<T>.target`, spot, `rec_total` | clamp(((target/spot − 1) − 0.20) / 0.30) | target/spot null or rec_total < 5 |
+| `flow_today` | the name's ConvictionCard | (+1 BULL / −1 BEAR) × score/100 | no card |
+| `flow_persist` | the name's SwingCard | (+1 BULL / −1 BEAR) × score/100 | no card |
+| `valuation` | `facts.<T>.peg`, `pe`, `sec_type` | clamp((1.5 − peg) / 1.5) | peg null/≤0; pe null/≤0/>150; fund |
+| `market` | `data.brief.score` | clamp(score / 5) | brief absent, stale, or score null |
+
+The analyst centers (1.43; +20%) and spans (0.45; 0.30) come from a keyless
+scanner probe on 2026-09-10 over 2,731 US stocks with ≥5 analysts and a cap
+above $2B (median mark 1.43, p10–p90 1.115–1.90; median target upside +20%,
+p10–p90 +3%…+51%). The spot is the CBOE chain spot when the name has one,
+else the scanner close. `bars.json` is the copy on disk in OUT_DIR (the data
+branch checkout) unless this cycle rebuilt it. Fed-hike odds are not an input
+(standing ruling: they never move a verdict score; `brief.score` excludes
+them).
+
+**Frontend rules:** never re-derive `call` or `score`; read `thresholds`,
+`weights` and `order` from the payload rather than hardcoding them; an absent
+`verdicts` key renders the board's slot with a one-line reason, never an
+empty board; a ticker absent from `by_ticker` (a searched, non-pinned name)
+has no verdict, which is a different fact from `call: null`.
 
 ### Catalyst
 > ```json

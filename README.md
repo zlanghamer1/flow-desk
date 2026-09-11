@@ -445,6 +445,32 @@ need, what it would cost, and in what order to do it is written up in
 until someone pays a data vendor for the right to show its numbers to other
 people.
 
+## Desk verdicts (added 2026-09-11)
+
+The desk now makes one call per name. Above the flow boards, a Verdicts board
+lists every tracked name with a BUY, HOLD or SELL call and a score from −100
+to +100. The score is a weighted average of nine readings the desk already
+had: price against its own 50-day and 200-day averages, its three-month move
+against the S&P 500, the 5-metric framework tier, the analyst rating and the
+analyst price target (both centered on what analysts say about the whole
+market, because they are bullish on almost everything), today's option flow,
+the Swing board's persistent flow, the PEG ratio, and the Morning Brief's
+market score. A score of +35 or higher is a BUY, −35 or lower is a SELL, and
+anything between is a HOLD.
+
+Three honesty rules ride along. A reading the desk does not have drops out
+instead of counting as zero, and the row says how many of the nine it had. If
+fewer than three readings, or less than half the weight, resolve, the name
+gets no call at all. A name reporting earnings inside three days is held to
+HOLD, and the row says so.
+
+The same call shows beside every name on the flow boards, at the top of a
+name's Overview tab with the nine readings listed, and as a sort and a mark
+on the watchlist. **None of the weights have been tested against what the
+stocks did next.** They are a first pass, written down in the vault's
+decisions log, and any change needs a dated note there before it ships. The
+design record is `docs/superpowers/specs/2026-09-11-desk-verdicts-design.md`.
+
 ## Its limits
 
 - **Options data is 15 minutes delayed.** It's free CBOE data, not a live feed.
@@ -460,8 +486,9 @@ people.
 - **The Fed-hike odds are a betting market, not the Fed.** Polymarket prices
   what gamblers expect, and it has been wrong before. It also never moves the
   verdict score — see that section above for why.
-- **This is not financial advice.** It's a personal research tool. Nothing on
-  the boards is a recommendation to buy or sell anything.
+- **This is not financial advice.** It's a personal research tool. The
+  BUY / HOLD / SELL calls on the Verdicts board are research reads from a
+  hand-weighted composite with no backtest behind them, not instructions.
 
 ## How to restart the loop if it stops
 

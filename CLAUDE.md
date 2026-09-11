@@ -70,10 +70,16 @@ Never do these. Each one has a live incident or a measurement behind it in
    ever found, relabeling is a separate change with its own measurement.
 9. **Never skip, disable, or quarantine a test to get CI green**, and never
    push an empty commit or close-and-reopen a PR to kick CI.
-10. **Never let a display-only field feed a score.** `flow_pct`, the aggressor
-    tilt, `opt_rvol`, `activity_tag`, `unusual_activity`, `facts.*.framework`,
-    `facts.op_margin` and `facts.short_pct` are reference data. Wiring any of
-    them into `conviction_score` / `swing_score` needs its own backtest first.
+10. **Never let a display-only field feed a board score.** `flow_pct`, the
+    aggressor tilt, `opt_rvol`, `activity_tag`, `unusual_activity`,
+    `facts.*.framework`, `facts.op_margin` and `facts.short_pct` are reference
+    data. Wiring any of them into `conviction_score` / `swing_score` needs its
+    own backtest first. **The one sanctioned reader of those fields is the
+    separate desk-verdict composite (`fetcher/verdict.py`, 2026-09-11),** which
+    is additive: it reads both board scores and the framework tier as inputs
+    and never writes back into either board score. Never wire the composite
+    into `conviction_score` / `swing_score`, and never re-derive its `call` or
+    `score` in JavaScript.
 11. **Never widen the server universe from the page.** Custom watchlist adds
     and hidden pinned names live in `localStorage` (`desk.wl.custom`,
     `desk.wl.hidden`), per browser, disclosed in the UI. Boards, `bars.json`,
@@ -355,6 +361,7 @@ Change one, change the other in the same commit.
 | Holiday + half-day tables | `fetcher/market_guard.py` ↔ `fetcher/build_snapshot.py` ↔ `index.html` | `fetcher/test_sync_constants.py` |
 | TRACK_ONLY names | `fetcher` `TRACK_ONLY` ↔ frontend `TRACK_ONLY_SYMS` | `fetcher/test_sync_constants.py` |
 | Board score floor | Morning Brief `high_conviction` ↔ `BOARD_SCORE_FLOOR` | `fetcher/test_sync_constants.py` |
+| Verdict input set | `fetcher/verdict.py` `VERDICT_INPUT_ORDER` ↔ `index.html` `VERDICT_INPUT_LABELS` keys | `fetcher/test_sync_constants.py` |
 | Root HTML pages | all three lists in `pages.yml` (`paths:`, `git checkout main --`, `git add`) | `fetcher/test_pages_ship.py` |
 | Color tokens | `index.html` ↔ `legal.html` | — |
 | Bollinger math | on-chart overlay (`STAGE.rows`) ↔ rail scanner (`bollingerOf`) — two call sites, one `BB_PERIOD`/`BB_MULT`/`rollMA`/`rollStd` | — |
@@ -682,6 +689,58 @@ constants (`TA_PIVOT_K`, `TA_MIN_SPAN`, `TA_TOUCH_TOL`, `TA_CONTAIN_TOL`).
 - The BUY/ADD/HOLD/AVOID vocabulary is deliberately unchanged, flagged for a
   future attorney conversation.
 
+## Desk verdicts (added 2026-09-11)
+The one decision layer. Design record:
+`docs/superpowers/specs/2026-09-11-desk-verdicts-design.md`; payload shape:
+DATA_CONTRACT.md → Verdicts. Zach's ask: "recommendations for buys and sells
+are decided and clearly seen based on the weighted composite of all data."
+
+- **Computed in the fetcher, read by the page.** `fetcher/verdict.py`
+  publishes `data.json.verdicts` once per cycle. The page reads `call`,
+  `score`, `thresholds`, `weights` and `order` from the payload. It never
+  re-derives a call, never hardcodes a threshold or weight.
+- **Nine inputs, each −1..+1 or null; weights sum to 100.** trend 20 (price
+  vs its own 50-day and 200-day, the SAME 50/200 and ±0.3% dead zone the
+  quick read under the chart uses, so the two cannot disagree), rs63 10,
+  framework 20, analyst_rating 8, target_upside 7, flow_today 10,
+  flow_persist 15, valuation 5, market 5. Fed-hike odds are not an input
+  (standing ruling: they never move a verdict score).
+- **A null input is never a zero.** Its weight leaves the denominator. The
+  coverage gate (`min_weight` 50 AND `min_inputs` 3) withholds the call
+  entirely below that; the payload then carries `score: null, call: null`
+  and a `note` naming the shortfall. Every surface prints `n of n_total`.
+- **The analyst inputs are centered on a market-wide baseline** (mark 1.43,
+  upside +20%; scanner probe 2026-09-10, 2,731 stocks). Raw, both read
+  bullish on every desk name. Do not remove the centering; re-probe and
+  record the date if the center is ever moved.
+- **Thresholds ±35; earnings gate 3 days** (0 ≤ `earn_days` ≤ 3 holds a
+  directional call to HOLD with `note: "earnings in Nd"`; the score still
+  prints).
+- **Every constant is pre-registered and unvalidated.** Weights, centers,
+  spans, thresholds and gates are recorded in the vault's
+  `portfolio-thesis/decisions-log.md` (2026-09-11). Changing any of them
+  needs a dated amendment there first, then a labeled backtest attempt
+  reported honestly. Never tune them to fit an outcome quietly. The honesty
+  box states the limit; no other sentence on the page explains the method.
+- **One function per fact.** `verdictOf(sym)` returns the ticker entry or
+  null; `verdictPillHTML(sym)` is the only call badge. The board, the
+  flow-board rows, the Overview strip and the rail mark all call these two.
+- **Surfaces:** the Verdicts board (`#s-verd`, above the flow boards under
+  its own eyebrow; default cut shows BUY and SELL rows with the standard
+  disclosed "show all"), the call pill on Conviction and Swing rows, the
+  Overview tab's headline strip (`stageVerdictHTML`, first block, one row
+  per input with value, points and note), the rail's `verdict` sort and
+  BUY/SELL mark, and one Limits sentence in the honesty box.
+- **A searched, non-pinned name has no verdict.** That is a different fact
+  from `call: null` and prints as one line naming the symbol.
+- **An absent `verdicts` key keeps the board's slot** with a one-line reason
+  (the loop republishes on weekdays only, so a fetcher change reaches the
+  page at the next cycle). The header stat and as-of stamp print before any
+  early return, like every other board.
+- Per-input `note` strings are dynamic facts ("above 50d · below 200d",
+  "1.12 of 3 · 57 analysts", "fewer than 200 daily closes"). Never a
+  sentence that reads the same for every symbol every day.
+
 ## Flow boards
 - **Biggest Orders ranks on `vs_normal`, never raw premium** — `premium /
   normal_prem`, where `normal_prem` averages the ticker's near-money 0-7 DTE
@@ -734,8 +793,10 @@ constants (`TA_PIVOT_K`, `TA_MIN_SPAN`, `TA_TOUCH_TOL`, `TA_CONTAIN_TOL`).
   a `{}` fallback — an empty object is truthy and defeats its own null guard.
   Its PRE branch gates on `prepx` alone; a null `prech` renders a price with no
   percentage, never yesterday's change beside this morning's price.
-- Direction pills are outline. **FIRING and NEW are the only filled badges on a
-  board.**
+- Direction pills are outline. **FIRING, NEW and the verdict call (BUY / SELL)
+  are the only filled badges on a board.** The call pill uses the tinted-fill
+  convention FIRING already uses (`--upbg` / `--dnbg` behind `--up` / `--dn`
+  text); HOLD is a quiet outline; no verdict renders nothing.
 - Live price sits on its own line in the Name cell (`.livepx`, its own class —
   sharing `.nm` let a mobile rule hide it). The delta badge has `.deltabadge`
   for the same reason. VOL > OI lives in the Side cell, which mobile never
