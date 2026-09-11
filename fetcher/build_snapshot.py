@@ -172,6 +172,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import context  # sibling module: vault brief/catalysts/news/facts + bars.json
 import market_guard  # sibling module: holiday/half-day/window awareness
+import verdict  # sibling module: the verdicts composite (data.json.verdicts)
 
 TZ_CT = ZoneInfo("America/Chicago")
 
@@ -2245,6 +2246,24 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     apply_gamma_history_cycle(gamma_history, gamma_by_ticker, spot_by_ticker,
                                session_str, write_history)
 
+    # ── verdicts: the one decision layer (added 2026-09-11) ─────────────────
+    # fetcher/verdict.py. Fail-soft the same way etf_flows and the context
+    # layer above are: a bug here can never take down the rest of the cycle,
+    # and a cycle where this raises simply omits the key (see the
+    # optional-key spread below), never publishes a null/partial verdicts
+    # block. bars_payload is only set on a cycle that rebuilt bars.json
+    # itself (context.build_context's daily gate) — every other cycle reads
+    # the copy already on disk in OUT_DIR.
+    verdicts = None
+    try:
+        bars_for_verdicts = (bars_payload if bars_payload is not None
+                              else verdict.load_bars_from_disk(out_dir))
+        verdicts = verdict.compute_verdicts(
+            conviction_cards, swing_cards, context_fields.get("facts"),
+            spot_by_ticker, quotes, bars_for_verdicts, context_fields.get("brief"))
+    except Exception as e:
+        log(f"WARN verdicts failed: {e}")
+
     bullish_flow = sum(1 for v in by_ticker.values() if v["direction"] == "BULL")
     bearish_flow = sum(1 for v in by_ticker.values() if v["direction"] == "BEAR")
     firing_count = sum(1 for v in by_ticker.values() if v.get("firing"))
@@ -2336,6 +2355,10 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
         # DATA_CONTRACT.md). context_fields is {} when context.build_context
         # raised (caught above), so this is a no-op in that case.
         **context_fields,
+        # verdicts — OPTIONAL, omitted entirely when the cycle computed
+        # nothing (empty/absent facts, or the try/except above caught a
+        # failure), never published as null or {} (DATA_CONTRACT.md).
+        **({"verdicts": verdicts} if verdicts else {}),
     }
 
     out_dir.mkdir(parents=True, exist_ok=True)

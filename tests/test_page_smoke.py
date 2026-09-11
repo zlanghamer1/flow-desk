@@ -311,3 +311,405 @@ def test_watchlist_sorts_by_growth(browser, server, width, height, sort_key, ord
         if neg: assert "−3.2%" in neg, neg
     finally:
         page.close()
+
+
+# ── Desk verdicts (2026-09-11) ───────────────────────────────────────────────
+# The one decision layer: data.json.verdicts, read and never re-derived by the
+# page. Four tickers exercise every call/coverage state at once: XLE (BUY,
+# partial coverage), MU (SELL, one input missing — also carries a Conviction
+# board row so the flow-board pill can be checked on the same fixture), LLY
+# (HOLD via the earnings gate, full coverage), RAM (coverage gate failed,
+# score/call null).
+
+VERDICT_ORDER = ["trend", "rs63", "framework", "analyst_rating", "target_upside",
+                 "flow_today", "flow_persist", "valuation", "market"]
+VERDICT_WEIGHTS = {"trend": 20, "rs63": 10, "framework": 20, "analyst_rating": 8,
+                   "target_upside": 7, "flow_today": 10, "flow_persist": 15,
+                   "valuation": 5, "market": 5}
+VERDICT_NULL_NOTES = {
+    "trend": "fewer than 200 sessions of history",
+    "rs63": "fewer than 64 daily closes",
+    "framework": "no framework score",
+    "analyst_rating": "fewer than 5 analysts",
+    "target_upside": "fewer than 5 analysts",
+    "flow_today": "no conviction card",
+    "flow_persist": "no swing card",
+    "valuation": "no PEG reading",
+    "market": "no brief",
+}
+
+
+def _verdict_inputs(resolved):
+    """resolved: {key: (v, note)}. Every other key in VERDICT_ORDER gets v=null
+    with its own reason, never a zero — same rule the page renders under."""
+    out = {}
+    for key in VERDICT_ORDER:
+        if key in resolved:
+            v, note = resolved[key]
+            out[key] = {"v": v, "note": note}
+        else:
+            out[key] = {"v": None, "note": VERDICT_NULL_NOTES[key]}
+    return out
+
+
+CONVICTION_MU_ROW = {
+    "ticker": "MU", "tv_symbol": "NASDAQ:MU", "direction": "BEAR", "firing": False,
+    "score": 62, "spot": 976.49, "spot_at_alert": None,
+    "net_flow": None, "cp_ratio": None, "flow_pct": None, "flow_side": None, "flow_pct_basis": None,
+    "rvol": None, "change_pct": None, "tilt": None, "tilt_prem": None,
+    "opt_rvol": None, "vol_collecting": False, "unusual_activity": False, "activity_tag": None,
+    "popular_contract": None,
+}
+
+VERDICT_PAYLOAD = dict(
+    BRIEF_PAYLOAD,
+    generated_at_ct="2026-09-10 15:18 CT",
+    conviction=[CONVICTION_MU_ROW],
+    facts={"MU": {}, "XLE": {}, "LLY": {}, "RAM": {}, "ZZZ": {}},
+    verdicts={
+        "v": 1,
+        "thresholds": {"buy": 35, "sell": -35},
+        "min_weight": 50, "min_inputs": 3, "earnings_gate_days": 3,
+        "order": VERDICT_ORDER,
+        "weights": VERDICT_WEIGHTS,
+        "counts": {"buy": 1, "sell": 1, "hold": 2, "none": 1},
+        "by_ticker": {
+            # Every score below is round-half-away-from-zero(100 * sum(w*v)
+            # / weight) over that entry's OWN resolved inputs and the
+            # payload's own weights -- checked by
+            # test_verdict_payload_scores_match_own_inputs, not asserted by
+            # eye (2026-09-11 fix: the old fixture's scores were arithmetic
+            # the entries' own inputs could not produce).
+            "XLE": {
+                # 20*1.0 + 10*0.32 + 8*0.68 + 7*1.0 + 15*0.40 = 41.64 over
+                # weight 60 -> 69.4 -> 69.
+                "score": 69, "call": "BUY", "note": None, "n": 5, "n_total": 9, "weight": 60,
+                "inputs": _verdict_inputs({
+                    "trend": (1.0, "above 50d · above 200d"),
+                    "rs63": (0.32, "+6.4pp vs SPY, 63 sessions"),
+                    "analyst_rating": (0.68, "1.12 of 3 · 57 analysts"),
+                    "target_upside": (1.0, "+61% to the average target"),
+                    "flow_persist": (0.40, "BULL 40 on Swing"),
+                }),
+            },
+            "MU": {
+                # 20*-1.0 + 10*-0.5 + 8*-0.2 + 7*-0.3 + 10*-0.62 + 15*-0.50
+                # + 5*-0.1 + 5*-0.2 = -43.9 over weight 80 -> -54.875 -> -55.
+                "score": -55, "call": "SELL", "note": None, "n": 8, "n_total": 9, "weight": 80,
+                "inputs": _verdict_inputs({
+                    "trend": (-1.0, "below 50d · below 200d"),
+                    "rs63": (-0.5, "−10.2pp vs SPY, 63 sessions"),
+                    "analyst_rating": (-0.2, "1.7 of 3 · 42 analysts"),
+                    "target_upside": (-0.3, "+4% to the average target"),
+                    "flow_today": (-0.62, "BEAR 62 on Conviction"),
+                    "flow_persist": (-0.50, "BEAR 50 on Swing"),
+                    "valuation": (-0.1, "PEG 1.6"),
+                    "market": (-0.2, "brief CAUTIOUS (3)"),
+                }),
+            },
+            "LLY": {
+                # 20*0.6 + 10*0.2 + 20*0.4 + 8*0.5 + 7*0.6 + 10*0.2 + 15*0.3
+                # + 5*0.1 + 5*-0.2 = 36.2 over weight 100 -> 36 -- a real
+                # BUY-range score (>= 35) that the earnings gate, not the
+                # threshold, holds to HOLD. The old fixture declared this
+                # entry's score as 0, arithmetic its own inputs cannot
+                # produce (2026-09-11 fix).
+                "score": 36, "call": "HOLD", "note": "earnings in 2d", "n": 9, "n_total": 9, "weight": 100,
+                "inputs": _verdict_inputs({
+                    "trend": (0.6, "above 50d · above 200d"),
+                    "rs63": (0.2, "+4.0pp vs SPY, 63 sessions"),
+                    "framework": (0.4, "ADD"),
+                    "analyst_rating": (0.5, "1.2 of 3 · 30 analysts"),
+                    "target_upside": (0.6, "+35% to the average target"),
+                    "flow_today": (0.2, "BULL 20 on Conviction"),
+                    "flow_persist": (0.3, "BULL 30 on Swing"),
+                    "valuation": (0.1, "PEG 1.3"),
+                    "market": (-0.2, "brief CAUTIOUS (3)"),
+                }),
+            },
+            "RAM": {
+                "score": None, "call": None, "note": "2 of 9 inputs · weight 20 of 100",
+                "n": 2, "n_total": 9, "weight": 20,
+                "inputs": _verdict_inputs({
+                    "rs63": (0.1, "+2.0pp vs SPY, 63 sessions"),
+                    "flow_today": (-0.1, "BEAR 10 on Conviction"),
+                }),
+            },
+            "ZZZ": {
+                # score 0 deliberately (LLY no longer holds this role — see
+                # above): P2 pins that a score of exactly zero renders
+                # neutral ("m"), never the green "u" a bare
+                # `score<0 ? "d":"u"` two-way test used to paint it. Inputs
+                # sum to exactly 0: 20*0.0 + 10*0.5 + 20*0.0 + 10*-0.5 = 0
+                # over weight 60 -- a plain HOLD, no earnings gate involved.
+                "score": 0, "call": "HOLD", "note": None, "n": 4, "n_total": 9, "weight": 60,
+                "inputs": _verdict_inputs({
+                    "trend": (0.0, "on 50d · on 200d"),
+                    "rs63": (0.5, "+10.0pp vs SPY, 63 sessions"),
+                    "framework": (0.0, "HOLD"),
+                    "flow_today": (-0.5, "BEAR 50 on Conviction"),
+                }),
+            },
+        },
+    },
+)
+
+
+def test_verdict_payload_scores_match_own_inputs():
+    """Every fixture score is round-half-away-from-zero(100 * sum(w*v) /
+    weight) over that entry's own resolved inputs and VERDICT_WEIGHTS --
+    the same rounding convention fetcher/verdict.py's compute_verdict uses.
+    A fixture whose declared score its own inputs cannot produce is a bug in
+    the TEST, not a real reading (2026-09-11 fix: this exact drift shipped
+    for MU and LLY)."""
+    import math
+
+    def round_half_away_from_zero(x):
+        return int(math.floor(x + 0.5)) if x >= 0 else int(-math.floor(-x + 0.5))
+
+    for ticker, entry in VERDICT_PAYLOAD["verdicts"]["by_ticker"].items():
+        if entry["score"] is None:
+            continue
+        wsum = 0.0
+        weight = 0
+        for key, inp in entry["inputs"].items():
+            if inp["v"] is None:
+                continue
+            w = VERDICT_WEIGHTS[key]
+            wsum += w * inp["v"]
+            weight += w
+        assert weight == entry["weight"], (ticker, weight, entry["weight"])
+        expected = round_half_away_from_zero(100.0 * wsum / weight)
+        assert entry["score"] == expected, (ticker, entry["score"], expected)
+
+
+def _route_json(server, payload):
+    def route(r):
+        url = r.request.url
+        if "/data/data.json" in url:
+            r.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+        elif url.startswith(server) or url.startswith("data:"):
+            r.continue_()
+        else:
+            r.abort()
+    return route
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_verdicts_board_renders(browser, server, width, height):
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+    page.route("**/*", _route_json(server, VERDICT_PAYLOAD))
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == [], f"index.html @ {width}px threw: {page_errors}"
+        st = page.evaluate(
+            "(function(){"
+            " var rows=[].slice.call(document.querySelectorAll('#verd tr.rw[data-sym]'));"
+            " var mu=document.querySelector('#verd tr[data-sym=\"MU\"]');"
+            " var muChips=mu ? [].slice.call(mu.children[3].querySelectorAll('.vin')) : [];"
+            " return {stat: document.getElementById('verdstat').textContent,"
+            "  syms: rows.map(function(r){return r.dataset.sym;}),"
+            "  roleOk: rows.every(function(r){return r.getAttribute('role')==='button' && r.getAttribute('tabindex')==='0';}),"
+            "  note: (document.querySelector('#verd .boardcut')||{}).textContent,"
+            "  muScore: mu ? mu.children[2].textContent : null,"
+            "  muChips: muChips.map(function(c){return {cls:c.className, text:c.textContent, tip:c.getAttribute('data-tip')};}),"
+            "  wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};"
+            "})()"
+        )
+        assert "1 buy" in st["stat"] and "1 sell" in st["stat"] and "2 hold" in st["stat"] and "1 no call" in st["stat"], st["stat"]
+        assert st["syms"] == ["XLE", "MU"], f"default cut should show only BUY/SELL, score desc: {st['syms']}"
+        assert st["roleOk"], "every verdicts row needs role=button + tabindex=0"
+        assert "show all 5" in st["note"], st["note"]
+        assert st["muScore"] and "−55" in st["muScore"] and "-55" not in st["muScore"], st["muScore"]
+        assert not st["wide"], f"sideways scroll at {width}px"
+
+        # P1 (2026-09-11): a resolved input chip outside the display's neutral
+        # band leads with its own sign, never hue alone (u/d chips); a chip
+        # inside the band ("m") or with no reading at all ("x", dashed) stays
+        # unsigned — MU's fixture exercises all three (u/d, m, and x chips).
+        resolved_chips = [c for c in st["muChips"] if "x" not in c["cls"].split()]
+        assert resolved_chips, "MU should have resolved input chips"
+        signed_chips = [c for c in resolved_chips if "u" in c["cls"].split() or "d" in c["cls"].split()]
+        neutral_chips = [c for c in resolved_chips if "m" in c["cls"].split()]
+        assert signed_chips and neutral_chips, f"MU fixture should exercise both signed and neutral chips: {st['muChips']}"
+        for c in signed_chips:
+            assert c["text"][0] in ("+", "−"), f"chip {c['text']!r} ({c['cls']}) has no sign lead"
+        for c in neutral_chips:
+            assert c["text"][0] not in ("+", "−"), f"neutral chip {c['text']!r} should be unsigned"
+        null_chips = [c for c in st["muChips"] if "x" in c["cls"].split()]
+        for c in null_chips:
+            assert c["text"][0] not in ("+", "−"), f"null chip {c['text']!r} should be unsigned"
+
+        # P3 (2026-09-11): every resolved chip's own displayed points figure
+        # sums EXACTLY to the row's own displayed score — largest-remainder
+        # allocation (verdictPointsFor), not each chip rounding independently.
+        pts_total = 0
+        for c in resolved_chips:
+            m = re.search(r"·\s*([+−]?\d+)\s*pt", c["tip"] or "")
+            assert m, f"chip tip carries no points figure: {c['tip']!r}"
+            pts_total += int(m.group(1).replace("−", "-"))
+        mu_score_val = int(st["muScore"].strip().replace("−", "-"))
+        assert pts_total == mu_score_val, f"chip points {pts_total} != displayed score {mu_score_val}"
+
+        page.click("#showall-verd")
+        page.wait_for_timeout(200)
+        st2 = page.evaluate(
+            "(function(){"
+            " var rows=[].slice.call(document.querySelectorAll('#verd tr.rw[data-sym]'));"
+            " var ram=document.querySelector('#verd tr[data-sym=\"RAM\"]');"
+            " var lly=document.querySelector('#verd tr[data-sym=\"LLY\"]');"
+            " var zzz=document.querySelector('#verd tr[data-sym=\"ZZZ\"]');"
+            " var zzzScoreEl=zzz ? zzz.children[2].querySelector('b.vscore') : null;"
+            " return {n: rows.length,"
+            "  ramCall: ram ? ram.children[1].textContent : null,"
+            "  llyCall: lly ? lly.children[1].textContent : null,"
+            "  zzzScoreText: zzzScoreEl ? zzzScoreEl.textContent : null,"
+            "  zzzScoreCls: zzzScoreEl ? zzzScoreEl.className : null};"
+            "})()"
+        )
+        assert st2["n"] == 5, st2["n"]
+        assert st2["ramCall"] and "NO CALL" in st2["ramCall"] and "2 of 9 inputs" in st2["ramCall"], st2["ramCall"]
+        assert st2["llyCall"] and "HOLD" in st2["llyCall"] and "earnings in 2d" in st2["llyCall"], st2["llyCall"]
+
+        # P2 (2026-09-11): a score of exactly 0 (ZZZ here — LLY's own score
+        # moved to a real BUY-range number the earnings gate holds to HOLD,
+        # 2026-09-11 fixture fix) renders neutral ("m"), never the green "u"
+        # a bare `score<0 ? "d":"u"` two-way test used to paint it.
+        assert st2["zzzScoreText"] == "0", st2["zzzScoreText"]
+        zzz_cls = (st2["zzzScoreCls"] or "").split()
+        assert "m" in zzz_cls and "u" not in zzz_cls and "d" not in zzz_cls, st2["zzzScoreCls"]
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_verdict_pill_on_conviction_row(browser, server, width, height):
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+    page.route("**/*", _route_json(server, VERDICT_PAYLOAD))
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == [], f"index.html @ {width}px threw: {page_errors}"
+        st = page.evaluate(
+            "(function(){"
+            " var el=document.querySelector('#conv tr[data-sym=\"MU\"] .pill.vs');"
+            " return {found: !!el, text: el ? el.textContent : null};"
+            "})()"
+        )
+        assert st["found"], "no .pill.vs on the Conviction MU row — MU scores 62 so it clears the default cut"
+        assert st["text"] == "SELL", st["text"]
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_watchlist_sorts_by_verdict(browser, server, width, height):
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+    # XLE isn't in RAIL_GROUPS — add it as a custom pin so its verdict has a
+    # rail row to sort, same mechanism a real reader would use.
+    page.add_init_script(
+        "localStorage.setItem('desk.wl.sort', 'verd');"
+        "localStorage.setItem('desk.wl.collapsed', 'false');"
+        "localStorage.setItem('desk.wl.custom', JSON.stringify([{sym:'XLE'}]));"
+    )
+    page.route("**/*", _route_json(server, VERDICT_PAYLOAD))
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == [], f"index.html @ {width}px threw: {page_errors}"
+        st = page.evaluate(
+            "(function(){"
+            " var rows=[].slice.call(document.querySelectorAll('#wl .wr[data-sym]'));"
+            " return {sel: document.getElementById('wlsel') && document.getElementById('wlsel').value,"
+            "  syms: rows.map(function(r){return r.dataset.sym;}),"
+            "  verd: rows.map(function(r){var v=r.querySelector('.wlverd'); return v ? v.textContent.replace(/\\s+/g,' ').trim() : null;})};"
+            "})()"
+        )
+        assert st["sel"] == "verd", f"select reads {st['sel']!r}"
+        idx = {s: i for i, s in enumerate(st["syms"])}
+        assert idx["XLE"] < idx["LLY"] < idx["MU"], f"ranked order wrong: {st['syms'][:10]}"
+        # RAM has a verdict entry but a null score (coverage gate failed) — it
+        # sinks below every ranked call, same as a name with no entry at all.
+        assert idx["RAM"] > idx["MU"], f"RAM (no call) ranked above a scored call: {st['syms'][:10]}"
+        no_verdict = [s for s in st["syms"] if s not in ("XLE", "MU", "LLY", "RAM")]
+        assert no_verdict, "expected at least one rail name with no verdict entry at all"
+        assert min(idx[s] for s in no_verdict) > idx["MU"], \
+            f"a no-verdict row ranked above a scored call: {st['syms'][:10]}"
+        xle_line = st["verd"][idx["XLE"]]
+        assert "+69" in xle_line and "BUY" in xle_line, xle_line
+        no_verdict_line = st["verd"][idx[no_verdict[0]]]
+        assert no_verdict_line == "no verdict", no_verdict_line
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_verdicts_absent_keeps_slot(browser, server, width, height):
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+    page.route("**/*", _route_json(server, BRIEF_PAYLOAD))  # no "verdicts" key
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == [], f"index.html @ {width}px threw: {page_errors}"
+        st = page.evaluate(
+            "(function(){"
+            " return {stat: document.getElementById('verdstat').textContent,"
+            "  msg: (document.querySelector('#verd .boardmsg')||{}).textContent};"
+            "})()"
+        )
+        assert "No verdicts in this publish" in (st["msg"] or ""), st["msg"]
+        # ageStampHTML(undefined, ...) prints "" either way (BRIEF_PAYLOAD carries
+        # no generated_at_ct), so the stat is the bare "—" the empty branch
+        # prints, with ageStampHTML's own age/stale text (if any) appended
+        # after it — startswith rather than equality since which follows
+        # depends on the wall-clock hour the suite runs at (2026-09-11 P9).
+        assert st["stat"].startswith("—"), st["stat"]
+    finally:
+        page.close()
+
+
+# ── P4 (2026-09-11) ──────────────────────────────────────────────────────────
+# stageVerdictHTML's "no entry" branch must distinguish a PINNED name the
+# fetcher simply missed this cycle from a searched name outside the desk's
+# tracked universe entirely — the same pinned test stageFrameworkHTML already
+# uses (railHasSym(sym) || facts[sym] present).
+
+P4_PAYLOAD = dict(
+    BRIEF_PAYLOAD,
+    facts={"MU": {}},
+    verdicts={
+        "v": 1, "thresholds": {"buy": 35, "sell": -35},
+        "min_weight": 50, "min_inputs": 3, "earnings_gate_days": 3,
+        "order": VERDICT_ORDER, "weights": VERDICT_WEIGHTS,
+        "counts": {"buy": 0, "sell": 0, "hold": 0, "none": 0},
+        "by_ticker": {},   # MU is pinned (carries a facts entry) but scanner-missed this cycle
+    },
+)
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_stage_verdict_pinned_name_missing_this_cycle(browser, server, width, height):
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+    page.route("**/*", _route_json(server, P4_PAYLOAD))
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == [], f"index.html @ {width}px threw: {page_errors}"
+        page.evaluate("stageShow('MU')")
+        page.wait_for_timeout(300)
+        text = page.evaluate("document.getElementById('stagetabbody').textContent")
+        assert "in this publish" in text, text
+        assert "outside" not in text, text
+    finally:
+        page.close()

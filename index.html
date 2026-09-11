@@ -479,6 +479,32 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .pill.s{color:var(--dn);background:transparent;box-shadow:inset 0 0 0 1px var(--dn);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dn) 72%,transparent)}
 .pill.f{color:var(--hi);background:var(--hibg)} .pill.n{color:var(--ink2);background:var(--srf2);border:1px solid var(--edge)}
 .pill.h{color:var(--bb);background:var(--bbbg)}
+/* Desk verdicts (2026-09-11) — the call pill (tinted fill, same convention
+   FIRING already uses), the diverging score bar, the per-input chips, the
+   rail's BUY/SELL mark and the rail's per-row verdict line. */
+.pill.vb{color:var(--up);background:var(--upbg)}
+.pill.vs{color:var(--dn);background:var(--dnbg)}
+.pill.vh{color:var(--ink2);background:transparent;box-shadow:inset 0 0 0 1px var(--edge)}
+.pill.vn{color:var(--ink3);background:transparent;box-shadow:inset 0 0 0 1px var(--edge)}
+.vscore{font-size:18px;font-weight:700}
+.vbar{position:relative;display:inline-block;vertical-align:middle;width:120px;height:6px;margin-left:8px;background:var(--srf2);border-radius:3px}
+.vbar .c{position:absolute;left:50%;top:0;width:1px;height:100%;background:var(--ink3)}
+.vbar .f{position:absolute;top:0;height:100%;border-radius:3px}
+.vbar .f.u{background:var(--up)}
+.vbar .f.d{background:var(--dn)}
+.vbar .t{position:absolute;top:-1px;width:1px;height:8px;background:var(--ink3);opacity:.7}
+.vin{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:0 4px;border-radius:3px;margin-right:3px;border:1px solid transparent;line-height:1.6}
+.vin.u{color:var(--up);background:var(--upbg)}
+.vin.d{color:var(--dn);background:var(--dnbg)}
+.vin.m{color:var(--ink2);border-color:var(--edge)}
+.vin.x{color:var(--ink3);border:1px dashed var(--edge);opacity:.75}
+.vmark{font-size:10px;font-weight:700;letter-spacing:.04em;border-radius:3px;padding:0 4px;margin-left:5px}
+.vmark.vb{color:var(--up);background:var(--upbg)}
+.vmark.vs{color:var(--dn);background:var(--dnbg)}
+.wlverd{font-size:10.5px;color:var(--ink2);margin-top:1px}
+.wlverd.m{color:var(--ink3)}
+.wlverd b{font-weight:600}
+.t-verd td:nth-child(4){white-space:nowrap}
 /* IN/OUT as a dot on the ticker: the pill needed a column the 372px rail does
    not have. Color is not the only channel — the dot's tooltip says it, and the
    $1w figure it reads from is two cells away. */
@@ -1144,7 +1170,7 @@ footer b{color:var(--ink2)}
    the ticker and its badges, so the cell is ~90px narrower and the whole
    table fits the column at 1440px instead of cutting its last column. The
    badges themselves never break mid-chip. */
-.t-conv .livepx,.t-swing .livepx{display:block;margin-left:0;margin-top:2px}
+.t-conv .livepx,.t-swing .livepx,.t-verd .livepx{display:block;margin-left:0;margin-top:2px}
 .chasef,.pill{white-space:nowrap}
 /* The Swing board overflows its column at every desktop width (eight
    columns), and once a table overflows, auto layout hands a wrapping cell
@@ -1384,6 +1410,13 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
         </div>
       </section>
 
+      <div class="eyebrow">Verdicts — the call</div>
+
+      <section id="s-verd">
+        <div class="sh" data-collapse="s-verd"><span class="car">▼</span><h2>Desk verdicts</h2><span class="st" id="verdstat"></span></div>
+        <div class="sb xwrap" id="verd"></div>
+      </section>
+
       <div class="eyebrow">Flow boards — the signal</div>
 
       <section id="s-conv">
@@ -1453,6 +1486,7 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
       <div><h4>Limits</h4><p>Net flow is premium changing hands; free data can't see buyer vs seller. FLOW % describes what traded today, not what happens next.
         Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
         Auto trend lines and levels are drawn from this page's own pivot math — display only, never a signal.
+        Desk verdicts are a hand-weighted composite of nine readings on this page, with no backtest behind them.
         Nothing here is financial advice.</p></div>
     </div>
     <div class="credit">Charts render with <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a>,
@@ -1504,6 +1538,20 @@ var FED_ODDS_STALE_MS = 3 * 60 * 60 * 1000; // fed_odds fetched hourly -> stale 
 // DATA_CONTRACT.md stats.high_conviction); "show all" reveals the rest. A
 // DISPLAY filter only — no score, weight, or pipeline change.
 var BOARD_SCORE_FLOOR = 60;
+// Desk verdicts (2026-09-11) — the page's label/code/pill-class maps for the
+// nine-input composite the fetcher publishes as data.json.verdicts. Keys here
+// are the cross-file pair fetcher/verdict.py's VERDICT_INPUT_ORDER is pinned
+// against (fetcher/test_sync_constants.py) — never re-derive `call` or
+// `score`, and never hardcode a weight or threshold; those come off the
+// payload (vd.weights, vd.thresholds, vd.order).
+var VERDICT_INPUT_LABELS = {trend:"Trend", rs63:"Rel str", framework:"5-metric", analyst_rating:"Rating", target_upside:"Target", flow_today:"Flow 0–7d", flow_persist:"Flow swing", valuation:"PEG", market:"Market"};
+var VERDICT_INPUT_CODES = {trend:"TR", rs63:"RS", framework:"FW", analyst_rating:"AR", target_upside:"TG", flow_today:"F7", flow_persist:"FS", valuation:"PG", market:"MK"};
+var VERDICT_CALL_CLS = {BUY:"vb", SELL:"vs", HOLD:"vh"};
+// Display band only — not published on the payload. A resolved input inside
+// ±0.25 reads neutral (no sign lead, "m" chip class); the fetcher's own
+// thresholds (buy/sell ±35 on the aggregated SCORE) are a separate, published
+// concern and never derived from this.
+var VERDICT_INPUT_NEUTRAL_BAND = 0.25;
 // $ floor under the FLOW % display — a "95% CALL" computed on $6K of near-money
 // premium is noise wearing a percent sign. Mirrors the fetcher's
 // BIG_ORDERS_MIN_PREMIUM ($100K). Cells under the floor render an em dash with
@@ -3314,6 +3362,17 @@ function liveStale(sym){
   if(!d || d.at == null) return false;
   return (Date.now() - d.at) > LIVE_STALE_MS;
 }
+// The one frozen-QUOTE STALE badge every per-symbol price site renders
+// (2026-09-11 dedup — this same ~200-character paragraph was copied at
+// five call sites and read the same for every symbol every day, which is
+// explanation, not a disclosure: CLAUDE.md's "NO EXPLANATION TEXT ON THE
+// PAGE" rule). The bare fact still prints, on hover/tap same as before.
+// Distinct from staleBadgeHTML(dateLabel) above, which is a board-level
+// "as of" staleness stamp for a whole feed, not a single frozen quote —
+// same word, two different facts, so this one carries its own name.
+function staleQuoteBadgeHTML(){
+  return '<span class="sess" data-tip="last returned price, not a current quote">STALE</span>';
+}
 function macroSymStale(tv){
   var d = MACRO_LIVE[tv];
   if(!d || d.at == null) return false;
@@ -3714,7 +3773,7 @@ function rangeBarHTML(sym, big){
 // that always booted back to "groups", so a trader who works the rail sorted
 // by 52-week range or hot-move had to re-click the sort button after every
 // reload (2026-08-23 review round 16, Left watchlist rail finding #1).
-var WL_SORT_VALUES = {groups:1, range:1, chg:1, az:1, vol:1, revg:1, fcfg:1};
+var WL_SORT_VALUES = {groups:1, range:1, chg:1, az:1, vol:1, revg:1, fcfg:1, verd:1};
 // The two growth sorts (2026-09-07 ask) read the fetcher's framework metrics
 // — facts.<SYM>.framework.metrics.revenue_growth_ttm_pct / fcf_growth_ttm_pct,
 // trailing-12-month vs the prior 12 months, computed once a day in
@@ -3749,6 +3808,29 @@ function wlGrowthLineHTML(sym){
   var g = wlGrowthOf(sym, wlSort);
   return '<div class="wlgrow tn'+(g.v==null?' m':'')+'">'+spec.word+' '
     + (g.v==null ? esc(g.why) : ('<b class="'+sign1(g.v)+'">'+fm1(g.v)+'%</b> TTM'))+'</div>';
+}
+// The rail's verdict sort line — drawn only in that view, same pattern as
+// wlGrowthLineHTML above. verdictOf/verdictPillHTML are declared further down
+// the file (Desk verdicts section) but function declarations hoist, so the
+// call here is safe regardless of source order.
+function wlVerdLineHTML(sym){
+  if(wlSort!=="verd") return "";
+  var e = verdictOf(sym);
+  if(!e) return '<div class="wlverd tn m">no verdict</div>';
+  var score = num(e.score);
+  var word = e.call ? e.call : "no call";
+  return '<div class="wlverd tn'+(score==null?' m':'')+'"><b class="'+verdictSideCls(score)+'">'
+    + (score==null?"—":fm1SignedInt(score))+'</b> '+esc(word)+'</div>';
+}
+// A small BUY/SELL mark on the ticker line, drawn in every view — including
+// "verd", where wlVerdLineHTML also prints the full score+word line beneath
+// it (a small duplication, not a conflict: the mark is a quick scan cue on
+// the ticker itself). HOLD and no-call print nothing here — the pill on the
+// boards and the score line already say so.
+function verdictMarkHTML(sym){
+  var e = verdictOf(sym);
+  if(!e || (e.call!=="BUY" && e.call!=="SELL")) return "";
+  return '<span class="vmark '+(e.call==="BUY"?"vb":"vs")+'">'+e.call+'</span>';
 }
 var wlSort = (function(){ var v = read("desk.wl.sort"); return WL_SORT_VALUES[v] ? v : "groups"; })();
 var wlEdit = false;
@@ -3990,15 +4072,11 @@ function railRowHTML(s, opts){
     else manageBtn = '<button class="wlx" data-wlx="'+esc(s)+'" data-tip="'+(railHasSym(s)?"Hide this pinned name from the rail (boards still track it — the universe is server-curated).":"Remove this custom name from this browser\u2019s list.")+'">×</button>';
   }
   return '<div class="wr '+(isHot?"hot":"")+(opts && opts.ghost?" ghost":"")+'" data-sym="'+esc(s)+'" role="button" tabindex="0">'
-    +'<div class="l1"><span class="sy">'+esc(s)+'</span>'+newsMarkHTML(s)
+    +'<div class="l1"><span class="sy">'+esc(s)+'</span>'+newsMarkHTML(s)+verdictMarkHTML(s)
     +(unresolved
         ? '<span class="noq" data-tip="No exchange listing resolves for this symbol, so the 30-second poll has nothing to ask for. It is not a slow quote — it will stay blank until the symbol is corrected.">no quote</span>'
         : ('<span class="px tn">'+pxStr+'</span><span class="ch tn '+cls+'">'+chStr+'</span>'
-           + (liveStale(s)
-               ? ('<span class="sess" data-tip="'+esc("The scanner has stopped returning this symbol while the rest of the request "
-                   + "keeps succeeding — it omits a row it cannot resolve rather than sending a null. This price is the last one it "
-                   + "returned, not a current quote.")+'">STALE</span>')
-               : '')))
+           + (liveStale(s) ? staleQuoteBadgeHTML() : '')))
     +'</div>'
     +'<div class="l2"><span class="meta">'+metaHtml+'</span>'+earnHtml
     +(isHot? '<span class="hotb" data-tip="'+esc(TIPS.hot)+' Today: '+h.toFixed(1)+'× its usual '+(f.avg_move!=null?f.avg_move:"?")+'% day.">'+h.toFixed(1)+'×</span>' : "")
@@ -4008,7 +4086,7 @@ function railRowHTML(s, opts){
     // fifty always-on mini-charts ate ~40% of the rail's height for a datum
     // the shopping-list box and the drawer's big bar already carry.
     +(wlSort==="range" ? rangeBarHTML(s) : "")
-    +wlGrowthLineHTML(s)+'</div>';
+    +wlGrowthLineHTML(s)+wlVerdLineHTML(s)+'</div>';
 }
 function renderWL(){
   // Capture the io box's caret before $("#wl").innerHTML wipes it.
@@ -4048,7 +4126,7 @@ function renderWL(){
   // "revg" and "fcfg" added at Zach's request (2026-09-07) — trailing-12-month
   // revenue growth and free-cash-flow growth, read from the framework metrics
   // (see WL_GROWTH_SORTS above).
-  var sorts = [["groups","groups"],["range","52w ↑"],["chg","Δ%"],["hot","hot"],["az","A→Z"],["vol","volume"],["revg","rev growth"],["fcfg","FCF growth"]];
+  var sorts = [["groups","groups"],["range","52w ↑"],["chg","Δ%"],["hot","hot"],["az","A→Z"],["vol","volume"],["revg","rev growth"],["fcfg","FCF growth"],["verd","verdict"]];
   // One native select instead of six equal buttons (UX-laws redesign,
   // 2026-09-02 — Hick's and Jakob's laws). The sort keys and their meanings
   // are unchanged; the per-sort explanations moved into one tooltip.
@@ -4061,7 +4139,8 @@ function renderWL(){
     chg:"Today’s % move, biggest first.", hot:"Move vs each name’s own average day.", az:"Alphabetical by ticker.",
     vol:"Today’s raw share volume, highest first (pre-market: the pre-market session’s own volume).",
     revg:"Last 12 months’ revenue vs the 12 before, highest first. Desk names only; custom adds have no reading.",
-    fcfg:"Last 12 months’ free cash flow vs the 12 before, highest first. Desk names only; a flagged swing has no reading."};
+    fcfg:"Last 12 months’ free cash flow vs the 12 before, highest first. Desk names only; a flagged swing has no reading.",
+    verd:"Desk verdict score, highest first. Names without a verdict sink to the bottom."};
   var sortHtml = '<div class="wlsort"><label class="m" for="wlsel">sort</label>'
     + '<select class="wlsel" id="wlsel" aria-label="Sort watchlist" data-tip="Change how the watchlist is ordered. The line under it says what the current order means.">'
     + sorts.map(function(k){ return '<option value="'+k[0]+'"'+(wlSort===k[0]?' selected':'')+'>'+k[1]+'</option>'; }).join("")
@@ -4137,6 +4216,18 @@ function renderWL(){
         return vb-va;
       }
       if(wlSort==="az") return a<b ? -1 : a>b ? 1 : 0;
+      if(wlSort==="verd"){
+        // Same stale-sinks-to-bottom convention every rail sort carries, then
+        // no-verdict names after every ranked one (never a zero), highest
+        // score first. Both-null guard as elsewhere.
+        var va2=liveStale(a), vb2=liveStale(b);
+        if(va2 !== vb2) return va2 ? 1 : -1;
+        var ea2=verdictOf(a), eb2=verdictOf(b);
+        var sa3 = ea2 ? num(ea2.score) : null, sb3 = eb2 ? num(eb2.score) : null;
+        if(sa3==null && sb3==null) return a<b ? -1 : a>b ? 1 : 0;
+        if(sa3==null) return 1; if(sb3==null) return -1;
+        return sb3-sa3;
+      }
       if(WL_GROWTH_SORTS[wlSort]){
         // Same stale-sinks-to-bottom convention every rail sort carries, then
         // no-reading rows after every ranked one (a missing reading is never
@@ -4181,6 +4272,7 @@ function renderWL(){
             : wlSort==="chg" ? ((priceSessionNow()==="premarket") ? "PRE-MARKET MOVE — BIGGEST FIRST" : "TODAY'S MOVE — BIGGEST FIRST")
             : wlSort==="az" ? "A → Z"
             : wlSort==="vol" ? ((priceSessionNow()==="premarket") ? "PRE-MARKET VOLUME — HIGHEST FIRST" : "TODAY'S VOLUME — HIGHEST FIRST")
+            : wlSort==="verd" ? "DESK VERDICT — HIGHEST SCORE FIRST"
             : WL_GROWTH_SORTS[wlSort] ? WL_GROWTH_SORTS[wlSort].label
             : "VS OWN AVERAGE — HOTTEST FIRST";
     html += '<div class="wg">'+lab+'</div>'+sorted.map(function(x){ return railRowHTML(x); }).join("");
@@ -5308,7 +5400,7 @@ function suggestedContractLine(c, spot){
 }
 
 /* =================== board threshold + shared row chips (2026-08-18) =================== */
-var showAllBoards = { conv:false, swing:false };
+var showAllBoards = { conv:false, swing:false, verd:false };
 function boardCutApply(arr, key){
   // A firing name always stays above the line. The header and the Morning
   // Brief both count "1 firing", and the shortlist used to hide the very row
@@ -5522,6 +5614,299 @@ function boardScaffold(el, key){
   return {recap: document.getElementById(key+"-recap"), body: body};
 }
 
+/* =================== Desk verdicts (2026-09-11) ===================
+   The one decision layer, computed in fetcher/verdict.py and published as
+   data.json.verdicts. Every surface below reads `call`/`score` off the
+   payload and never re-derives either (standing ban 10). `verdictOf` and
+   `verdictPillHTML` are the two functions every other surface (the flow-board
+   rows, the Overview strip, the rail) calls — nothing else builds a call. */
+// Both take an OPTIONAL payload `d`, defaulting to STATE.data (2026-09-11
+// fix) -- every call site that omits it keeps reading the live global
+// exactly as before, but a caller mid-render of a SPECIFIC payload (like
+// renderVerdicts, below) can thread that same payload through instead of
+// silently re-reading whatever STATE.data holds by the time this runs.
+function verdictsOf(d){ d = d || STATE.data; return (d && d.verdicts) || null; }
+function verdictOf(sym, d){ var vs = verdictsOf(d); return (vs && vs.by_ticker && vs.by_ticker[sym]) || null; }
+function verdictPillHTML(sym, d){
+  var e = verdictOf(sym, d);
+  if(!e) return "";
+  if(e.call==null) return '<span class="pill vn">NO CALL</span>';
+  var cls = VERDICT_CALL_CLS[e.call] || "vh";
+  return '<span class="pill '+cls+'">'+esc(e.call)+'</span>';
+}
+// One side-class for a SCORE (not a per-input value — see verdictInputCls for
+// that). A null score, or one inside ±0.5, reads neutral: LLY's 0 used to hit
+// the `score<0 ? "d":"u"` two-way test in three places and painted flat-out
+// green (2026-09-11 P2). Every surface that colors a score reads this, never
+// its own ternary.
+function verdictSideCls(score){
+  var n = num(score);
+  if(n==null || Math.abs(n) < 0.5) return "m";
+  return n<0 ? "d" : "u";
+}
+// One side-class for a per-input VALUE (-1..+1), display-band only — see
+// VERDICT_INPUT_NEUTRAL_BAND. Null reads "m" here; callers with a distinct
+// dashed/no-reading style (the board chips) test v==null themselves first.
+function verdictInputCls(v){
+  var n = num(v);
+  if(n==null) return "m";
+  return n>=VERDICT_INPUT_NEUTRAL_BAND ? "u" : n<=-VERDICT_INPUT_NEUTRAL_BAND ? "d" : "m";
+}
+function ptsWord(pts){ return Math.abs(pts)===1 ? "pt" : "pts"; }
+// Exact per-input point allocation for ONE entry, largest-remainder (the same
+// pattern fedLegPct uses for the Fed-odds legs): floor every input's raw
+// 100*w*v/weight share, then spread the residual against `entry.score` (not
+// the raw float sum, which the fetcher's own half-away-from-zero rounding can
+// differ from by up to the number of resolved inputs) across every entry by
+// even quotient first and the largest fractional remainders after — so the
+// displayed chips and the Overview rows always sum to EXACTLY the displayed
+// score (2026-09-11 P3), never 56 of 56 on a good day. Returns {key: int}
+// for resolved inputs only.
+function verdictPointsFor(entry, vd){
+  var out = {};
+  if(!entry || !vd) return out;
+  var order = vd.order || [];
+  var weights = vd.weights || {};
+  var inputs = entry.inputs || {};
+  var weight = num(entry.weight);
+  var target = num(entry.score);
+  if(!weight || target==null) return out;
+  var keys = [], raws = [];
+  order.forEach(function(key){
+    var inp = inputs[key] || {};
+    var v = num(inp.v);
+    var w = num(weights[key]);
+    if(v==null || w==null) return;
+    keys.push(key);
+    raws.push(100*w*v/weight);
+  });
+  var n = keys.length;
+  if(!n) return out;
+  var base = raws.map(Math.floor);
+  var rema = raws.map(function(r,i){ return r - base[i]; });
+  var L = base.reduce(function(a,b){ return a+b; }, 0);
+  var diff = target - L;
+  var per = Math.floor(diff/n);
+  var left = diff - per*n;   // 0 <= left < n, floor-division remainder
+  var pts = base.map(function(b){ return b+per; });
+  var order2 = keys.map(function(_,i){ return i; });
+  order2.sort(function(a,b){ return rema[b]-rema[a]; });
+  for(var k=0;k<left;k++) pts[order2[k]]++;
+  keys.forEach(function(key,i){ out[key] = pts[i]; });
+  return out;
+}
+// The diverging bar alone (score -100..+100 mapped onto a 120px track, 0 at
+// center) — shared by the board's Score cell and the Overview strip, so the
+// two draw identically. Ticks read the buy/sell thresholds off the payload,
+// never a hardcoded 35. aria-hidden: verdictScoreHTML's own number beside it
+// already carries the same reading for a screen reader.
+function verdictBarHTML(entry, vd){
+  var score = entry ? num(entry.score) : null;
+  var th = (vd && vd.thresholds) || {};
+  var buy = num(th.buy), sell = num(th.sell);
+  var mag = score==null ? 0 : Math.min(100, Math.abs(score))/2;
+  var side = (score!=null && score<0) ? "d" : "u";
+  var left = (score!=null && score<0) ? (50-mag) : 50;
+  var buyPct = buy!=null ? (50 + Math.min(100,Math.abs(buy))/2) : null;
+  var sellPct = sell!=null ? (50 - Math.min(100,Math.abs(sell))/2) : null;
+  return '<div class="vbar" aria-hidden="true">'
+    + '<div class="c"></div>'
+    + (score!=null ? ('<div class="f '+side+'" style="left:'+left.toFixed(2)+'%;width:'+mag.toFixed(2)+'%"></div>') : '')
+    + (buyPct!=null ? ('<div class="t" style="left:'+buyPct.toFixed(2)+'%"></div>') : '')
+    + (sellPct!=null ? ('<div class="t" style="left:'+sellPct.toFixed(2)+'%"></div>') : '')
+    + '</div>';
+}
+function verdictScoreHTML(entry, vd){
+  var score = entry ? num(entry.score) : null;
+  var side = verdictSideCls(score);
+  return '<b class="vscore '+side+'">'+(score==null?"—":fm1SignedInt(score))+'</b>'+verdictBarHTML(entry, vd);
+}
+// Nine chips in vd.order — two-letter code, sign-led (hue is never the only
+// signal: CLAUDE.md, interaction rules) and colored by sign, dashed/dimmed
+// and unsigned when null. Every tip is a dynamic fact built from this row's
+// own data (label, value, points, and the input's own note) — never a fixed
+// sentence. A <span data-tip> (not <i>) so the page's own span[data-tip]
+// hover/focus affordance applies.
+function verdictInputsHTML(entry, vd){
+  if(!entry || !vd) return "";
+  var order = vd.order || [];
+  var inputs = entry.inputs || {};
+  var pts = verdictPointsFor(entry, vd);
+  return order.map(function(key){
+    var inp = inputs[key] || {};
+    var v = num(inp.v);
+    var label = VERDICT_INPUT_LABELS[key] || key;
+    var code = VERDICT_INPUT_CODES[key] || key;
+    var note = inp.note;
+    var tip, cls, text;
+    if(v==null){
+      cls = "x";
+      text = code;
+      tip = label+" · no reading"+(note?(" · "+note):"");
+    } else {
+      cls = verdictInputCls(v);
+      text = (v>=VERDICT_INPUT_NEUTRAL_BAND ? "+" : v<=-VERDICT_INPUT_NEUTRAL_BAND ? "−" : "") + code;
+      var p = pts[key];
+      tip = label+" "+fm2(v)+" · "+(p!=null ? (fm1SignedInt(p)+" "+ptsWord(p)) : "—")+(note?(" · "+note):"");
+    }
+    return '<span class="vin '+cls+'" data-tip="'+esc(tip)+'">'+esc(text)+'</span>';
+  }).join("");
+}
+// Default cut: BUY/SELL only (a decision board leads with decisions). Unlike
+// boardCutApply's score/firing floor, this cuts on the published `call`.
+function verdCutApply(rows){
+  var strong = rows.filter(function(r){ return r.call==="BUY" || r.call==="SELL"; });
+  var showAll = showAllBoards.verd;
+  return { rows: showAll ? rows : strong, strong: strong.length, total: rows.length, showAll: showAll };
+}
+function verdCutNoteHTML(cut, rows){
+  if(cut.total===0) return "";
+  var btn = '<button id="showall-verd">';
+  if(cut.showAll) return '<div class="boardcut">showing all '+cut.total+' names · '+btn+'back to the calls</button></div>';
+  var nBuy = rows.filter(function(r){ return r.call==="BUY"; }).length;
+  var nSell = rows.filter(function(r){ return r.call==="SELL"; }).length;
+  var head = nBuy+' buy · '+nSell+' sell shown.';
+  if(cut.strong===cut.total) return '<div class="boardcut">'+head+' Every name shown.</div>';
+  var nHold = rows.filter(function(r){ return r.call==="HOLD"; }).length;
+  var nNone = rows.filter(function(r){ return r.call==null; }).length;
+  var clauses = [];
+  if(nHold) clauses.push(nHold+' hold'+(nHold===1?'':'s'));
+  if(nNone) clauses.push(nNone+' name'+(nNone===1?'':'s')+' with no call');
+  var rest = clauses.length ? (' '+clauses.join(' and ')+' sit below the line.') : '';
+  return '<div class="boardcut">'+head+rest+' '+btn+'show all '+cut.total+'</button></div>';
+}
+function renderVerdicts(data, livePoll){
+  var stale = isStaleFlow(data);
+  var vd = data && data.verdicts;
+  var el = document.getElementById("verd");
+  var stat = document.getElementById("verdstat");
+  // Header stat and as-of stamp FIRST, before any early return — every board
+  // on this page keeps that contract, verdicts included.
+  if(!vd){
+    stat.innerHTML = "—" + ageStampHTML(data && data.generated_at_ct, stale);
+    var sc0 = boardScaffold(el, "verd");
+    sc0.recap.innerHTML = "";
+    sc0.body.innerHTML = '<div class="boardmsg">No verdicts in this publish. They arrive with the next data cycle.</div>';
+    return;
+  }
+  var byTicker = vd.by_ticker || {};
+  var rows = Object.keys(byTicker).map(function(t){
+    var e = byTicker[t] || {};
+    var r = {ticker:t};
+    for(var k in e) r[k] = e[k];
+    r.call_rank = e.call==="BUY" ? 2 : e.call==="HOLD" ? 1 : e.call==="SELL" ? 0 : null;
+    return r;
+  });
+  var nBuy = rows.filter(function(r){ return r.call==="BUY"; }).length;
+  var nSell = rows.filter(function(r){ return r.call==="SELL"; }).length;
+  var nHold = rows.filter(function(r){ return r.call==="HOLD"; }).length;
+  var nNone = rows.filter(function(r){ return r.call==null; }).length;
+  stat.innerHTML = '<span class="u">'+nBuy+' buy</span> · <span class="d">'+nSell+' sell</span> · '+nHold+' hold · '+nNone+' no call'
+    + ageStampHTML(data && data.generated_at_ct, stale);
+  var sc = boardScaffold(el, "verd");
+  if(rows.length===0){
+    sc.recap.innerHTML = "";
+    sc.body.innerHTML = '<div class="boardmsg">No name had enough inputs for a call this cycle.</div>';
+    return;
+  }
+  var buys = rows.filter(function(r){ return r.call==="BUY"; });
+  var sells = rows.filter(function(r){ return r.call==="SELL"; });
+  var topBuy = buys.slice().sort(function(a,b){ return (num(b.score)||0)-(num(a.score)||0); })[0];
+  var topSell = sells.slice().sort(function(a,b){ return (num(a.score)||0)-(num(b.score)||0); })[0];
+  var buyTh = num(vd.thresholds && vd.thresholds.buy);
+  if(!nBuy && !nSell){
+    sc.recap.innerHTML = '<span class="m">Quick read:</span> '
+      + (buyTh!=null ? ('No name clears the ±'+buyTh+' line today.') : 'No name clears the call line today.');
+  } else {
+    var bits = [nBuy+' '+(nBuy===1?'buy':'buys')+' and '+nSell+' '+(nSell===1?'sell':'sells')+' today'];
+    if(topBuy) bits.push('strongest buy '+esc(topBuy.ticker)+' ('+fm1SignedInt(topBuy.score)+')');
+    if(topSell) bits.push('strongest sell '+esc(topSell.ticker)+' ('+fm1SignedInt(topSell.score)+')');
+    sc.recap.innerHTML = '<span class="m">Quick read:</span> '+bits.join(' · ')+'.';
+  }
+  var cut = verdCutApply(rows);
+  var rerender = function(){ renderVerdicts(STATE.data); };
+  if(cut.rows.length===0){
+    sc.body.innerHTML = '<div class="boardmsg">No BUY or SELL call today — every name reads HOLD or has no call.</div>'
+      + verdCutNoteHTML(cut, rows);
+    wireBoardCut(sc.body, "verd", rerender);
+    return;
+  }
+  function rowHTMLVerd(r){
+    var qRaw = liveBySym(r.ticker);
+    var dq = dispQuote(qRaw);
+    var frozen = liveStale(r.ticker);
+    var px = dq.px, ch = dq.ch;
+    var order = vd.order || [];
+    var inputs = r.inputs || {};
+    var missing = order.filter(function(k){ var i = inputs[k]; return !i || i.v==null; });
+    var covTip = missing.map(function(k){
+      var i = inputs[k] || {};
+      var lab = VERDICT_INPUT_LABELS[k] || k;
+      return lab+": "+(i.note||"no reading");
+    }).join(" · ");
+    var n = r.n, nTotal = r.n_total;
+    return '<tr class="rw" data-sym="'+esc(r.ticker||"")+'" role="button" tabindex="0">'
+      +'<td><span class="sy2">'+esc(r.ticker||"?")+'</span>'
+      +'<span class="livepx">'+(px!=null?px.toFixed(2):"—")
+      + (ch!=null ? (' · <span class="'+sign1(ch)+'">'+fm1(ch)+'%</span>') : '')
+      + sessTagHTML(dq.tag) + (dq.ext?extChipHTML(dq.ext):"")
+      + (frozen ? (' '+staleQuoteBadgeHTML()) : "")
+      + '</span></td>'
+      +'<td>'+verdictPillHTML(r.ticker, data)+(r.note?(' <span class="m tn">'+esc(r.note)+'</span>'):'')+'</td>'
+      +'<td>'+verdictScoreHTML(r, vd)+'</td>'
+      +'<td>'+verdictInputsHTML(r, vd)+'</td>'
+      +'<td'+(covTip?(' data-tip="'+esc(covTip)+'"'):'')+' class="'+((n!=null && nTotal!=null && n<nTotal)?"m":"")+'">'
+        +(n!=null?n:"—")+' of '+(nTotal!=null?nTotal:"—")+'</td>'
+      +'</tr>';
+  }
+  table(sc.body, "t-verd", [
+    {l:"Name",key:"ticker"},{l:"Call",key:"call_rank"},{l:"Score",key:"score"},{l:"Inputs"},{l:"Coverage",key:"n"}
+  ], cut.rows, rowHTMLVerd, "score",
+  {html: verdCutNoteHTML(cut, rows), wire: function(){ wireBoardCut(sc.body, "verd", rerender); }},
+  {liveKeys:[], freeze:!!livePoll});
+}
+// Overview tab headline strip (first block, above the 52-week range).
+function stageVerdictHTML(sym){
+  var vs = verdictsOf();
+  if(!vs) return '<div class="dsec note">No desk verdict in this publish. It arrives with the next data cycle.</div>';
+  var e = verdictOf(sym);
+  if(!e){
+    // Same pinned test stageFrameworkHTML uses: a name absent from
+    // verdicts.by_ticker this cycle (one scanner miss for a pinned name) is a
+    // different fact from a searched name the desk never tracks at all
+    // (2026-09-11 P4).
+    var pinned = railHasSym(sym) || !!(STATE.data && STATE.data.facts && STATE.data.facts[sym]);
+    return '<div class="dsec note">' + (pinned
+        ? ('No desk verdict for '+esc(sym)+' in this publish.')
+        : ('No desk verdict for '+esc(sym)+' — it is outside the desk’s tracked universe.'))
+      + '</div>';
+  }
+  var score = num(e.score);
+  var side = verdictSideCls(score);
+  var nTotal = num(e.n_total);
+  var head = verdictPillHTML(sym)
+    + ' <b class="vscore '+side+'">'+(score==null?"—":fm1SignedInt(score))+'</b>'
+    + ' on '+(e.n!=null?e.n:"—")+(nTotal!=null ? (' of '+nTotal+' inputs') : ' inputs')
+    + ageStampHTML(STATE.data && STATE.data.generated_at_ct, isStaleFlow(STATE.data))
+    + (e.note ? (' <span class="m">'+esc(e.note)+'</span>') : '');
+  var pts = verdictPointsFor(e, vs);
+  var rows = (vs.order||[]).map(function(key){
+    var inp = (e.inputs||{})[key] || {};
+    var v = num(inp.v);
+    var label = VERDICT_INPUT_LABELS[key] || key;
+    var p = pts[key];
+    var cls = verdictInputCls(v);
+    var detail = ' <span class="m">'+(p==null?"—":(fm1SignedInt(p)+" "+ptsWord(p)))+(inp.note?(' · '+esc(inp.note)):'')+'</span>';
+    return '<div class="kvrow'+(v==null?" m":"")+'"><span>'+esc(label)+'</span><b class="'+cls+'">'+(v==null?"—":fm2(v))+'</b></div>'
+      + '<div class="kvrow" style="margin-top:-4px"><span></span>'+detail+'</div>';
+  }).join("");
+  return '<div class="dsec"><h3>Desk verdict</h3>'
+    + '<div>'+head+'</div>'
+    + verdictBarHTML(e, vs)
+    + rows
+    + '</div>';
+}
+
 /* =================== Conviction board (0-7 DTE) =================== */
 function renderConv(data, livePoll){
   var arr = (data && Array.isArray(data.conviction)) ? data.conviction : [];
@@ -5665,16 +6050,16 @@ function renderConv(data, livePoll){
                  : ("Live now "+q.rvol.toFixed(2)+"×"))
          + " · the score used "+snapRv.toFixed(2)+"× from the last publish.")
       : (rv==null && snapRv!=null ? ("The score used "+snapRv.toFixed(2)+"× from the last publish.") : "");
+    var vpill = verdictPillHTML(c.ticker);
     return '<tr class="rw" data-sym="'+esc(c.ticker||"")+'" role="button" tabindex="0">'
       +'<td><span class="sy2">'+esc(c.ticker||"?")+'</span> <span class="pill '+(c.direction==="BULL"?"b":"s")+'">'+(c.direction==="BULL"?"BULL":"BEAR")+'</span>'
+      +(vpill?(' '+vpill):'')
       +(c.firing?' <span class="pill f" data-tip="'+esc(TIPS["tip-firing-badge"])+'">FIRING</span>':'')
       + activityBadgeHTML(c) + eHtml + chaseChipHTML(c, px, "conv")
       +'<span class="livepx">'+(px!=null?px.toFixed(2):"—")+' · <span class="'+sign1(ch)+'"'
       + (chTip?(' data-tip="'+esc(chTip)+'"'):'')+'>'+fm1(ch)+'%</span>'
       + sessTagHTML(dq.tag) + (dq.ext?extChipHTML(dq.ext):"")
-      + (frozen ? (' <span class="sess" data-tip="'+esc("The scanner has stopped returning this symbol while the rest of the request "
-          + "keeps succeeding — it omits a row it cannot resolve rather than sending a null. This price is the last one it "
-          + "returned, not a current quote.")+'">STALE</span>') : "")
+      + (frozen ? (' '+staleQuoteBadgeHTML()) : "")
       + '</span></td>'
       +'<td><b>'+(num(c.score)!=null?Math.round(c.score):"—")+'</b></td>'
       +'<td class="'+sign(c.net_flow)+'">'+fmM(c.net_flow)+'</td>'
@@ -5760,14 +6145,14 @@ function renderSwing(data){
     var ed = edRaw!=null ? earnDaysNow({earn_days: edRaw}) : null;
     var eHtml = c.earnings_in_window
       ? ' <span class="pill f" data-tip="An earnings report lands '+(ed!=null?("in "+Math.round(ed)+" day"+(Math.round(ed)===1?"":"s")+" "):"")+'inside this contract’s life. Earnings gap straight through option positions — a flow signal that spans a report is a bet on the report.">E'+(ed!=null?(" "+Math.round(ed)+"d"):"")+'</span>' : "";
+    var vpill = verdictPillHTML(c.ticker);
     return '<tr class="rw" data-sym="'+esc(c.ticker||"")+'" role="button" tabindex="0">'
       +'<td><span class="sy2">'+esc(c.ticker||"?")+'</span> <span class="pill '+(c.direction==="BULL"?"b":"s")+'">'+(c.direction==="BULL"?"BULL":"BEAR")+'</span>'
+      +(vpill?(' '+vpill):'')
       + activityBadgeHTML(c) + eHtml + chaseChipHTML(c, px, "swing")
       +'<span class="livepx">'+(px!=null?px.toFixed(2):"—")+' · <span class="'+sign1(ch)+'">'+fm1(ch)+'%</span>'
       + sessTagHTML(dq.tag) + (dq.ext?extChipHTML(dq.ext):"")
-      + (frozen ? (' <span class="sess" data-tip="'+esc("The scanner has stopped returning this symbol while the rest of the request "
-          + "keeps succeeding — it omits a row it cannot resolve rather than sending a null. This price is the last one it "
-          + "returned, not a current quote.")+'">STALE</span>') : "")
+      + (frozen ? (' '+staleQuoteBadgeHTML()) : "")
       + '</span></td>'
       +'<td><b>'+(num(c.score)!=null?Math.round(c.score):"—")+'</b></td>'
       +'<td>'+(persist!=null?Math.round(persist):"—")+'/'+(persistMax!=null?Math.round(persistMax):"5")+'</td>'
@@ -13789,11 +14174,7 @@ function stageHeaderHTML(sym){
   // above the very same chart kept looking current (2026-08-21 review, data
   // honesty finding #2).
   var stale = liveStale(sym);
-  var staleTag = stale
-    ? ('<span class="sess" data-tip="'+esc("The scanner has stopped returning this symbol while the rest of the request "
-        + "keeps succeeding — it omits a row it cannot resolve rather than sending a null. This price is the last one it "
-        + "returned, not a current quote.")+'">STALE</span>')
-    : '';
+  var staleTag = stale ? staleQuoteBadgeHTML() : '';
   return '<span class="sy">'+esc(sym)+'</span>'
     + '<span class="nm2">'+esc(nameFor(sym))+sessTagHTML(d.tag)+(d.ext?extChipHTML(d.ext):"")+'</span>'
     + (clsf ? '<span class="clsf">'+esc(clsf)+'</span>' : '')
@@ -15549,7 +15930,8 @@ function renderStageTab(){
       }, function(){});
     }
   } else {
-    body.innerHTML = '<div id="rangesec">'+rangeSecHTML(sym)+'</div>'
+    body.innerHTML = stageVerdictHTML(sym)
+      + '<div id="rangesec">'+rangeSecHTML(sym)+'</div>'
       + stageFrameworkHTML(sym)
       + renderFundamentals(sym, fund)
       + '<div id="catlist"></div>'
@@ -15936,6 +16318,7 @@ function renderAll(data){
   renderMarketState(data);
   renderBrief(data);
   renderSectorSection(data);
+  renderVerdicts(data);
   renderConv(data);
   renderSwing(data);
   renderOrders(data);
@@ -15967,6 +16350,7 @@ function refreshLiveUI(){
   renderWL();
   // The BOARD half needs the snapshot the boards are built from.
   if(data){
+    renderVerdicts(data, true);
     renderConv(data, true);
     // ...and the orders board. Its age stamp is painted inside renderOrders,
     // which only runs from renderAll — and renderAll short-circuits when
