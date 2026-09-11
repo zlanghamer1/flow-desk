@@ -472,6 +472,14 @@ fewer than three readings, or less than half the weight, resolve, the name
 gets no call at all. A name reporting earnings inside three days is held to
 HOLD, and the row says so.
 
+Three rules, written down as judgment calls before the fourth backtest ran,
+change how three of those readings are used. The 5-metric reading is the
+share of measurable filters a company passes, not the tier word: 3 of 3
+reads +1 and 0 of 3 reads −1. Nine leveraged and inverse funds (SOXL, SOXS,
+MUU, RAM, SKHX, NRGU, OILU, STLL, AAOG) get no call, because on those funds
+the price readings measure decay, not direction. An option-flow reading
+under $100,000 of premium does not count toward a call.
+
 The same call shows beside every name on the flow boards, at the top of a
 name's Overview tab with the eight readings listed, and as a sort and a mark
 on the watchlist. **The four price-and-fundamentals weights come from three
@@ -502,7 +510,8 @@ record is `docs/superpowers/specs/2026-09-11-desk-verdicts-design.md`.
   BUY / HOLD / SELL calls on the Verdicts board are research reads from a
   composite where four of the eight weights have a pre-registered backtest
   behind them and four do not, not instructions. In past bear markets the
-  BUY calls carried no edge.
+  BUY calls carried no edge, and while the market was pricing Fed hikes the
+  calls ranked names backwards on both universes tested.
 
 ## How to restart the loop if it stops
 

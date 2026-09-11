@@ -77,11 +77,28 @@ VERDICT_SMA_LONG = 200
 VERDICT_RS_SESSIONS = 63
 VERDICT_RS_SPAN = 0.20
 
-# framework: 5-metric tier -> signed value. First pass, pre-registered,
-# unvalidated.
-VERDICT_FRAMEWORK_TIER = {
-    "BUY_5": 1.0, "BUY_4": 0.75, "ADD": 0.4, "HOLD": 0.0, "AVOID": -1.0,
-}
+# framework: the share of measurable filters passed, not the tier word
+# (attempt #4 amendment, 2026-09-11 -- mirrors context.FRAMEWORK_MIN_EVALUATED,
+# the same "at least 3 resolved filters" floor the framework panel itself
+# applies before rendering a tier at all; pinned equal by
+# fetcher/test_sync_constants.py).
+VERDICT_FRAMEWORK_MIN_EVALUATED = 3
+
+# The nine leveraged/inverse wrappers every backtest attempt has excluded
+# (attempt #4 REGISTRATION, 2026-09-11, vault decisions-log "Judgment-class
+# amendments"). On a +-3x pair, rs63 and trend measure decay, not direction
+# -- live 2026-09-11: SOXL SELL -53 and SOXS SELL -67 in the same column
+# while SMH (their underlying) was down only 1.9% over 63 sessions. Every
+# input still publishes; only the call and score are withheld.
+VERDICT_NO_CALL_WRAPPERS = frozenset({
+    "SOXL", "SOXS", "MUU", "RAM", "SKHX", "NRGU", "OILU", "STLL", "AAOG",
+})
+
+# flow: the desk's own $100K premium floor (attempt #4 amendment, 2026-09-11)
+# -- build_snapshot.TILT_MIN_PREM and BIG_ORDERS_MIN_PREMIUM, and the page's
+# FLOWPCT_MIN_BASIS. A net-flow reading under this is noise, not a signal;
+# pinned equal to all three by fetcher/test_sync_constants.py.
+VERDICT_FLOW_MIN_PREMIUM = 100_000.0
 
 # analyst_rating / target_upside: CENTERED ON THE DESK'S OWN CROSS-SECTION
 # each cycle (2026-09-11, attempt #3 amendment) -- the median over pinned
@@ -215,7 +232,16 @@ def dates_of(bars_payload: dict | None, ticker: str, n_rows: int) -> list[str] |
     bar_dates = bars_payload.get("bar_dates")
     if isinstance(bar_dates, dict) and ticker in bar_dates:
         d = bar_dates[ticker]
-        return d if isinstance(d, list) else None
+        if not isinstance(d, list):
+            return None
+        if len(d) != n_rows:
+            # F (2026-09-11 repair): a length-mismatched override is as
+            # unusable as no calendar at all -- pairing it against the
+            # caller's `n_rows` closes would silently misalign every date,
+            # the same length bug the "more rows than sessions" branch below
+            # already guards against on the "sessions" path.
+            return None
+        return d
     sessions = bars_payload.get("sessions")
     if not isinstance(sessions, list):
         return None
@@ -344,6 +370,14 @@ def rs63_input(ticker: str, closes: list[float], spy_closes: list[float],
     if len(closes) < n or dates[0] > anchor_date:
         return None, "fewer than 64 daily closes"
 
+    # F (2026-09-11 repair): the name's own newest bar must be the SAME
+    # session as SPY's newest bar, or the two returns are not measured
+    # through the same "today" -- a feed that stalled a day (or a totally
+    # disjoint calendar) would otherwise silently pair a stale close against
+    # SPY's return through a later date.
+    if dates[-1] != spy_dates[-1]:
+        return None, f"newest bar {dates[-1]} vs SPY {spy_dates[-1]}"
+
     try:
         name_idx = dates.index(anchor_date)
     except ValueError:
@@ -358,27 +392,41 @@ def rs63_input(ticker: str, closes: list[float], spy_closes: list[float],
 
 
 def framework_input(facts_entry: dict | None) -> tuple[float | None, str]:
+    """The share of measurable filters passed, not the tier word (attempt
+    #4 amendment, 2026-09-11): v = 2*passed/evaluated - 1, so 3 of 3 reads
+    +1.0 and 0 of 3 reads -1.0 -- the TESTED proxy is the pass ratio itself,
+    never `score_framework`'s own tier cutoffs (BUY_5/BUY_4/ADD/HOLD/AVOID),
+    which were never backtested as a scale. The note still carries the
+    rendered tier word (F2, 2026-09-11: never the raw "_BUILDING"/"_CAPPED"
+    enum), now followed by the counts that actually drove `v`.
+    """
     f = facts_entry or {}
     fw = f.get("framework")
     verdict = fw.get("verdict") if isinstance(fw, dict) else None
     if not verdict:
         return None, "no framework score"
-    if verdict == "BUILDING":
-        return None, "building"
     if verdict == "NOT_APPLICABLE":
         return None, "fund"
+    passed = fw.get("filters_passed")
+    failed = fw.get("filters_failed")
+    if (not isinstance(passed, int) or isinstance(passed, bool)
+            or not isinstance(failed, int) or isinstance(failed, bool)):
+        # A missing reading is null, never a guessed pass or fail (CLAUDE.md
+        # "5-metric framework"): a raw verdict of "BUILDING"/"NOT_APPLICABLE"
+        # always carries real counts from score_framework, but an older or
+        # hand-built payload might not.
+        return None, "no filter counts"
+    evaluated = passed + failed
+    if evaluated < VERDICT_FRAMEWORK_MIN_EVALUATED:
+        # Plain "BUILDING" (and any other raw verdict whose own counts are
+        # still under the floor) reads null here, on the SAME threshold
+        # score_framework itself uses before rendering a tier at all -- no
+        # need to special-case the raw "BUILDING" string.
+        return None, "building"
+    v = 2.0 * passed / evaluated - 1.0
     capped = verdict.endswith("_CAPPED")
     tier = verdict.replace("_BUILDING", "").replace("_CAPPED", "")
-    v = VERDICT_FRAMEWORK_TIER.get(tier)
-    if v is None:
-        return None, "unrecognized framework verdict"
-    # F2 (2026-09-11 fix): the note is the rendered TIER, never the raw
-    # enum -- CLAUDE.md's framework rule is "a tier carries no '(building)'
-    # suffix at render; '(capped)' does print". This is the one function
-    # every surface reads the note from, so the Overview strip and the
-    # framework panel can no longer print two different words for the same
-    # fact ("ADD_BUILDING" one block above the panel's own plain "ADD").
-    note = tier + (" (capped)" if capped else "")
+    note = f"{tier}{' (capped)' if capped else ''} {_MIDDOT} {passed} of {evaluated} passed"
     return v, note
 
 
@@ -413,15 +461,25 @@ def analyst_centers(facts: dict | None, spot_of) -> dict:
         if (isinstance(tg, (int, float)) and not isinstance(tg, bool) and tg > 0
                 and isinstance(sp, (int, float)) and not isinstance(sp, bool) and sp > 0):
             ups.append(float(tg) / float(sp) - 1.0)
-    out = {"rec_mark": VERDICT_REC_MARK_CENTER, "target_upside": VERDICT_TARGET_CENTER,
-           "n_rec_mark": len(marks), "n_target_upside": len(ups),
-           "source": ANALYST_FALLBACK_SOURCE}
-    if len(marks) >= VERDICT_ANALYST_CENTER_MIN_NAMES:
-        out["rec_mark"] = round(_median(marks), 4)
+    # F (2026-09-11 repair): "source" reads "mixed" whenever EXACTLY ONE of
+    # the two medians fell back, in EITHER direction. The old version only
+    # caught the direction where target_upside used the desk median while
+    # rec_mark fell back; the reverse (rec_mark from the desk, target_upside
+    # fell back) fell through to "desk" -- a false certainty that both legs
+    # were desk-centered when only one was.
+    mark_from_desk = len(marks) >= VERDICT_ANALYST_CENTER_MIN_NAMES
+    up_from_desk = len(ups) >= VERDICT_ANALYST_CENTER_MIN_NAMES
+    out = {
+        "rec_mark": round(_median(marks), 4) if mark_from_desk else VERDICT_REC_MARK_CENTER,
+        "target_upside": round(_median(ups), 4) if up_from_desk else VERDICT_TARGET_CENTER,
+        "n_rec_mark": len(marks), "n_target_upside": len(ups),
+    }
+    if mark_from_desk and up_from_desk:
         out["source"] = "desk"
-    if len(ups) >= VERDICT_ANALYST_CENTER_MIN_NAMES:
-        out["target_upside"] = round(_median(ups), 4)
-        out["source"] = "desk" if len(marks) >= VERDICT_ANALYST_CENTER_MIN_NAMES else "mixed"
+    elif mark_from_desk or up_from_desk:
+        out["source"] = "mixed"
+    else:
+        out["source"] = ANALYST_FALLBACK_SOURCE
     return out
 
 
@@ -449,7 +507,11 @@ def target_upside_input(facts_entry: dict | None, spot: float | None,
     f = facts_entry or {}
     target = f.get("target")
     rt = f.get("rec_total")
-    if target is None or spot is None or spot <= 0:
+    # F (2026-09-11 repair): a target that is not a real positive number
+    # (missing, zero, or negative -- a vendor artifact) is "no price
+    # target", never a silent divide-by/compare against a bad value.
+    if (not isinstance(target, (int, float)) or isinstance(target, bool)
+            or target <= 0 or spot is None or spot <= 0):
         return None, "no price target"
     if rt is None or rt < VERDICT_MIN_ANALYSTS:
         return None, "fewer than 5 analysts"
@@ -472,8 +534,16 @@ def _flow_input(card: dict | None, board_name: str, no_card_note: str) -> tuple[
     # is no direction (2026-09-11 review). A missing net_flow key (older
     # cards, trimmed fixtures) is not a zero and passes through.
     nf = card.get("net_flow")
-    if isinstance(nf, (int, float)) and not isinstance(nf, bool) and nf == 0:
-        return None, "no net flow"
+    if isinstance(nf, (int, float)) and not isinstance(nf, bool):
+        if nf == 0:
+            return None, "no net flow"
+        # The desk's own $100K premium floor (attempt #4 amendment,
+        # 2026-09-11): a net-flow reading this thin never counted as a real
+        # signal anywhere else on the page (TILT_MIN_PREM,
+        # BIG_ORDERS_MIN_PREMIUM, FLOWPCT_MIN_BASIS), so it should not move
+        # a verdict either.
+        if abs(nf) < VERDICT_FLOW_MIN_PREMIUM:
+            return None, f"net flow ${abs(nf) / 1000:.0f}K under the $100K floor"
     sign = 1.0 if direction == "BULL" else -1.0
     v = clamp(sign * score / 100.0)
     note = f"{direction} {int(score)} on {board_name}"
@@ -613,6 +683,16 @@ def compute_verdict(ticker: str, *, spot: float | None, closes: list[float],
             and 0 <= earn_days <= VERDICT_EARNINGS_GATE_DAYS):
         call = "HOLD"
         note = f"earnings in {int(earn_days)}d"
+
+    # The nine leveraged/inverse wrappers get every input published but no
+    # call at all (attempt #4 amendment, 2026-09-11) -- this is LAST and
+    # wins over every other rule above, the earnings gate included: a
+    # wrapper's price legs measure decay, not direction, so there is no
+    # score worth reading, gated or not.
+    if ticker in VERDICT_NO_CALL_WRAPPERS:
+        score = None
+        call = None
+        note = "leveraged wrapper"
 
     return {
         "score": score,
