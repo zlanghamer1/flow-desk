@@ -546,8 +546,13 @@ def compute_regime(spy_closes: list[float], spy_spot: float | None) -> dict:
     sma200 = sum(series[-VERDICT_SMA_LONG:]) / VERDICT_SMA_LONG
     dist = float(spy_spot) / sma200 - 1.0
     name = "bear" if dist < 0 else "bull"
-    return {"name": name, "spy_vs_200d": round(dist, 4), "basis": REGIME_BASIS,
-            "note": f"SPY {_signed(dist * 100)}% vs its 200-day"}
+    # The note is worded from the SAME rounded figure the payload carries,
+    # so the page's chip (fm1 of spy_vs_200d) and this note can never print
+    # two different percentages for one fact (live 2026-09-11: 0.06749 read
+    # "+6.7%" here and "+6.8%" on the chip, which rounds 0.0675).
+    dist_r = round(dist, 4)
+    return {"name": name, "spy_vs_200d": dist_r, "basis": REGIME_BASIS,
+            "note": f"SPY {_signed(dist_r * 100)}% vs its 200-day"}
 
 
 # ── per-ticker and whole-payload assembly ───────────────────────────────────
