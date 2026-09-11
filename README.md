@@ -466,10 +466,12 @@ HOLD, and the row says so.
 
 The same call shows beside every name on the flow boards, at the top of a
 name's Overview tab with the nine readings listed, and as a sort and a mark
-on the watchlist. **None of the weights have been tested against what the
-stocks did next.** They are a first pass, written down in the vault's
-decisions log, and any change needs a dated note there before it ships. The
-design record is `docs/superpowers/specs/2026-09-11-desk-verdicts-design.md`.
+on the watchlist. **The four price-and-fundamentals weights were set by a
+pre-registered backtest (equal weights beat the hand-set ones out of
+sample); the analyst, flow and market weights have no test behind them.**
+The record is in the vault's decisions log, and any further change needs a
+dated note there before it ships. The design record is
+`docs/superpowers/specs/2026-09-11-desk-verdicts-design.md`.
 
 ## Its limits
 
@@ -488,7 +490,8 @@ design record is `docs/superpowers/specs/2026-09-11-desk-verdicts-design.md`.
   verdict score — see that section above for why.
 - **This is not financial advice.** It's a personal research tool. The
   BUY / HOLD / SELL calls on the Verdicts board are research reads from a
-  hand-weighted composite with no backtest behind them, not instructions.
+  composite where four of the nine weights have a pre-registered backtest
+  behind them and five do not, not instructions.
 
 ## How to restart the loop if it stops
 

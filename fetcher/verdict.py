@@ -29,12 +29,15 @@ VERDICT_INPUT_ORDER = ("trend", "rs63", "framework", "analyst_rating",
                         "target_upside", "flow_today", "flow_persist",
                         "valuation", "market")
 
-# Weights sum to 100. First pass, pre-registered, unvalidated (design doc
-# "Why flow is 25 of 100" section explains the relative sizing).
+# Weights adopted 2026-09-11 from backtest attempt #2 (equal weights over
+# the four testable legs beat the registered set out of sample on the desk
+# and the S&P 500; decisions-log OUTCOME entry 2026-09-11). Analyst, flow
+# and market legs are unmeasured and keep their registered weights. Any
+# change needs a dated decisions-log amendment first.
 VERDICT_WEIGHTS = {
-    "trend": 20, "rs63": 10, "framework": 20, "analyst_rating": 8,
+    "trend": 14, "rs63": 14, "framework": 14, "analyst_rating": 8,
     "target_upside": 7, "flow_today": 10, "flow_persist": 15,
-    "valuation": 5, "market": 5,
+    "valuation": 13, "market": 5,
 }
 
 # Call thresholds and coverage/earnings gates. First pass, pre-registered,

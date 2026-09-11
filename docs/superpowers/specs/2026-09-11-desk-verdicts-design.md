@@ -236,3 +236,33 @@ both themes.
 - Sector ETFs and leveraged wrappers get verdicts like any other name when
   they clear the coverage gate.
 - The verdict pill appears on the flow-board rows (adds one badge per row).
+
+## Amendment 2026-09-11 (backtest attempt #2)
+
+The weights table above is the ORIGINAL, registered design and is left
+unchanged as the historical record. Production now runs a different set,
+adopted the same day after a pre-registered backtest:
+
+| input | weight now |
+|---|---:|
+| trend | 14 |
+| rs63 | 14 |
+| framework | 14 |
+| analyst_rating | 8 (unmeasured, unchanged) |
+| target_upside | 7 (unmeasured, unchanged) |
+| flow_today | 10 (unmeasured, unchanged) |
+| flow_persist | 15 (unmeasured, unchanged) |
+| valuation | 13 |
+| market | 5 (unmeasured, unchanged) |
+
+Equal weights over the four testable legs (trend, rs63, framework,
+valuation — each 13.75 before rounding to integers by largest remainder)
+beat the registered set out of sample, on both the desk universe and the
+S&P 500. Centers, spans, thresholds, gates and every other constant in this
+document are unchanged.
+
+Full registration, predicted-before-run reasoning, and the adoption
+arithmetic: the vault's `.claude/skills/portfolio-thesis/decisions-log.md`,
+entry "2026-09-11 — OUTCOME (attempt #1, as registered) and REGISTRATION of
+attempt #2". Full results table: the vault's
+`market-data/results/desk_verdict_backtest_2026-09_attempt2.md`.
