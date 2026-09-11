@@ -738,7 +738,7 @@ are decided and clearly seen based on the weighted composite of all data."
   page at the next cycle). The header stat and as-of stamp print before any
   early return, like every other board.
 - Per-input `note` strings are dynamic facts ("above 50d · below 200d",
-  "1.12 of 3 · 57 analysts", "fewer than 200 daily closes"). Never a
+  "1.12 of 3 · 57 analysts", "fewer than 200 sessions of history"). Never a
   sentence that reads the same for every symbol every day.
 
 ## Flow boards

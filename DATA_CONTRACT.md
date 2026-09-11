@@ -260,7 +260,9 @@ judgment; changing one needs a dated amendment in the vault's
   "weights": { "trend": 20, "rs63": 10, "framework": 20, "analyst_rating": 8,
                "target_upside": 7, "flow_today": 10, "flow_persist": 15,
                "valuation": 5, "market": 5 },        // sum 100
-  "counts": { "buy": 9, "sell": 8, "hold": 39, "none": 7 },   // over by_ticker; none = call null
+  "bars_built": "2026-09-10",               // bars.json's own "built" date this cycle read closes from;
+                                            // null when no bars payload was available at all
+  "counts": { "buy": 8, "sell": 8, "hold": 40, "none": 7 },   // over by_ticker; none = call null
   "by_ticker": {
     "MU": {
       "score": 34,          // int -100..+100 = round(100 * sum(w*v) / sum(w) over RESOLVED inputs);
@@ -289,13 +291,17 @@ judgment; changing one needs a dated amendment in the vault's
 }
 ```
 
+This exact MU block is re-run against `fetcher/testdata/verdict_sample_2026-09-10.json`
+(a trimmed real cycle, `fetcher/test_verdict.py`'s integration test) on every
+change; the `counts` above are that same fixture's real, current tally.
+
 **Input mappings** (each `v` is −1..+1 or null; `clamp` bounds to ±1):
 
 | key | source | v | null when |
 |---|---|---|---|
-| `trend` | settled closes from `bars.json` (SMA50, SMA200) + the cycle spot | leg(m) = 0 if abs(spot/m − 1) < 0.003 else sign(spot − m); v = 0.5·leg(SMA50) + 0.5·leg(SMA200) | < 200 closes or no spot |
-| `rs63` | closes for the name and SPY | clamp(((c[-1]/c[-64] − 1) − (spy[-1]/spy[-64] − 1)) / 0.20) | < 64 closes for either |
-| `framework` | `facts.<T>.framework.verdict`, `_BUILDING`/`_CAPPED` stripped | BUY_5 1.0 · BUY_4 0.75 · ADD 0.4 · HOLD 0.0 · AVOID −1.0 | BUILDING, NOT_APPLICABLE, absent |
+| `trend` | settled closes from `bars.json` (SMA50, SMA200) **with the cycle spot appended as the newest bar** | leg(m) = 0 if abs(spot/m − 1) < 0.003 else sign(spot − m); v = 0.5·leg(SMA50) + 0.5·leg(SMA200) | < 200 total (closes + spot) or no spot |
+| `rs63` | closes for the name and SPY, anchored on SPY's own calendar | clamp(((c[-1]/c[anchor] − 1) − (spy[-1]/spy[-64] − 1)) / 0.20) — see below | < 64 SPY sessions; the name has < 64 closes or its own history starts after the anchor date; no calendar date match within a history that does span the anchor; or the name IS the benchmark |
+| `framework` | `facts.<T>.framework.verdict`, rendered TIER | BUY_5 1.0 · BUY_4 0.75 · ADD 0.4 · HOLD 0.0 · AVOID −1.0 | BUILDING, NOT_APPLICABLE, absent |
 | `analyst_rating` | `facts.<T>.rec_mark`, `rec_total` | clamp((1.43 − mark) / 0.45) | rec_mark null or rec_total < 5 |
 | `target_upside` | `facts.<T>.target`, spot, `rec_total` | clamp(((target/spot − 1) − 0.20) / 0.30) | target/spot null or rec_total < 5 |
 | `flow_today` | the name's ConvictionCard | (+1 BULL / −1 BEAR) × score/100 | no card |
@@ -303,14 +309,86 @@ judgment; changing one needs a dated amendment in the vault's
 | `valuation` | `facts.<T>.peg`, `pe`, `sec_type` | clamp((1.5 − peg) / 1.5) | peg null/≤0; pe null/≤0/>150; fund |
 | `market` | `data.brief.score` | clamp(score / 5) | brief absent, stale, or score null |
 
+**`trend`'s series is `closes + [spot]`**, exactly the page's own `seriesFull()`
+(index.html): `bars.json`'s newest row is the PRIOR settled session (the daily
+build drops the in-progress bar), so the cycle spot is appended as the newest
+bar before either average is taken — 199 settled closes plus the spot now
+suffice, matching the page's own quick read bar for bar so the two verdicts
+about the same fact can never disagree (2026-09-11 fix; before it, `trend`
+read one bar short of the chart and could disagree with it on the same name
+the same day).
+
+**`rs63` is anchored on SPY's own calendar, not a shared list position**
+(2026-09-11 fix). The anchor date is the session 63 sessions before SPY's
+newest (`spy_dates[-64]`); the name's return is its close on THAT SAME
+calendar date, found by lookup in `bars.json`'s per-ticker date list
+(`bar_dates`, for the handful of tickers whose own tail differs from the
+equity calendar) or `sessions` otherwise — never by counting back 64
+positions in the name's own `closes`, which silently pairs mismatched
+calendars for any ticker whose history has a gap or starts later than SPY's.
+`v = clamp(((name_ret) − (spy_ret)) / 0.20)`, where `name_ret =
+closes[-1]/closes[anchor_date] − 1` and `spy_ret = spy[-1]/spy[-64] − 1`.
+
+Two distinct **null** notes cover the two failure modes, and they are not
+the same sentence the resolved-and-positional case below prints:
+**"fewer than 64 daily closes"** covers every short-history case — SPY
+itself under 64 sessions, the name under 64 closes, or a name whose own
+history starts after the anchor date entirely (checked *before* the date
+lookup, 2026-09-11 fix: RAM, SKHY, SKHX and STLL — all well under 64 rows —
+used to fall through to the date lookup anyway, raise on the missing date,
+and print the wrong reason below) — and **"calendar gap in the 63-session
+window"**, reserved for a name whose history genuinely *spans* the anchor
+date (>= 64 closes, starting no later than it) but is missing that one
+specific session, a real hole rather than a short history.
+
+The **"(positional; no calendar in bars)"** qualifier is not a null note at
+all — it never appears alongside either sentence above. It rides only on a
+**resolved** reading (a real `v`), appended to the ordinary `"{pp} vs SPY,
+63 sessions"` note when `bars.json` carries no calendar at all (v1–v3, no
+`sessions` key, so `dates_of` returns `None`) and the read falls back to
+plain positional indexing — the fallback is disclosed on the number it
+produced, never on a null.
+
+**SPY measured against itself is a tautology**: the ticker `"SPY"`, or any
+ticker whose `closes` list is literally the same list object as
+`spy_closes`, reads `null` with note `"benchmark"` rather than a guaranteed
++0pp.
+
+**`framework`'s note is the rendered TIER, never the raw enum** (2026-09-11
+fix): `"_BUILDING"` is stripped and never printed; `"_CAPPED"` renders as a
+disclosed `" (capped)"` suffix on the tier (`"BUY_4 (capped)"`), matching
+CLAUDE.md's framework-panel rule that a tier carries no "(building)" suffix at
+render but "(capped)" does print. Before the fix, 19 of 63 names on the day
+this was found rendered the raw enum (`"ADD_BUILDING"`) on the Overview strip,
+one block above the framework panel's own plain tier word for the same name.
+
+**`valuation`'s null note names the fact it actually is** (2026-09-11 fix):
+`"fund"` (checked first) → `"no PEG reading"` (peg absent) → `"PEG <value>"`
+(peg present but ≤ 0 — a real negative or zero PEG, not "loss-making": a null
+PEG with a healthy positive P/E used to print the misleading "no PEG
+(loss-making)") → `"no P/E reading"` (pe absent) → `"P/E <value>"` (pe present
+but ≤ 0) → `"P/E <value>, above 150"` (pe over `VERDICT_PE_MAX`) → otherwise a
+real `v`.
+
+**Every note printing a signed number guards signed zero.** A value that
+rounds to zero at its printed precision renders as unsigned zero ("0", "0.0",
+"0%", "0.0pp"), never a false "+0" or "−0" — a real negative number that
+rounds to zero is not a negative fact worth a minus sign. U+2212 (never ASCII
+hyphen-minus) is the only character that ever prints a negative. This applies
+to every note that can carry a sign: `rs63` (percentage-point gap),
+`target_upside` (percent to target), `market` (the brief score in
+parentheses), and `valuation`'s `peg <= 0` / `pe <= 0` null-note values.
+
 The analyst centers (1.43; +20%) and spans (0.45; 0.30) come from a keyless
 scanner probe on 2026-09-10 over 2,731 US stocks with ≥5 analysts and a cap
 above $2B (median mark 1.43, p10–p90 1.115–1.90; median target upside +20%,
 p10–p90 +3%…+51%). The spot is the CBOE chain spot when the name has one,
 else the scanner close. `bars.json` is the copy on disk in OUT_DIR (the data
-branch checkout) unless this cycle rebuilt it. Fed-hike odds are not an input
-(standing ruling: they never move a verdict score; `brief.score` excludes
-them).
+branch checkout) unless this cycle rebuilt it — its own `"bars_built"`
+(verbatim from that payload's `"built"` field, or `null` when no bars payload
+was available) discloses which cycle's closes `trend`/`rs63` actually used.
+Fed-hike odds are not an input (standing ruling: they never move a verdict
+score; `brief.score` excludes them).
 
 **Frontend rules:** never re-derive `call` or `score`; read `thresholds`,
 `weights` and `order` from the payload rather than hardcoding them; an absent

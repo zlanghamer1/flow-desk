@@ -19,12 +19,16 @@ drifts got through:
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 INDEX = (ROOT / "index.html").read_text(encoding="utf-8")
 SNAP = (ROOT / "fetcher" / "build_snapshot.py").read_text(encoding="utf-8")
 GUARD = (ROOT / "fetcher" / "market_guard.py").read_text(encoding="utf-8")
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import verdict  # noqa: E402 -- fetcher-side VERDICT_INPUT_ORDER, imported not regex-parsed (F6)
 
 
 def test_track_only_sets_match():
@@ -95,3 +99,39 @@ def test_big_orders_baseline_sessions_match():
     # The tooltip that used to print this number is gone with TIPS
     # (Zach's 2026-09-05 no-explanation-text ruling); the two-file constant
     # check above is what this test was really for.
+
+
+def test_verdict_input_set_matches_page():
+    """VERDICT_INPUT_ORDER (fetcher/verdict.py) <-> VERDICT_INPUT_LABELS
+    (index.html) — the design doc requires the two key sets to match
+    exactly, same count included, or the Verdicts board renders a chip with
+    no label (or a label with no chip) for whichever key drifted
+    (2026-09-11 desk-verdicts design).
+
+    F6 (2026-09-11 fix): the fetcher side used to be regex-parsed with
+    `"([a-z_]+)"`, which cannot match a key with a digit in it -- "rs63"
+    silently vanished from BOTH sides' parsed sets (8 of the real 9 keys
+    each), so a renamed or dropped rs63 on either file would still have
+    passed. The fetcher side is now imported directly; only the page side
+    (no Python symbol to import) still needs a regex, corrected to admit
+    digits.
+    """
+    fetcher_keys = list(verdict.VERDICT_INPUT_ORDER)
+    assert fetcher_keys, "VERDICT_INPUT_ORDER is empty"
+    assert len(fetcher_keys) == len(set(fetcher_keys)), "VERDICT_INPUT_ORDER has a duplicate key"
+
+    m2 = re.search(r'var VERDICT_INPUT_LABELS = \{([^}]*)\};', INDEX)
+    assert m2, "VERDICT_INPUT_LABELS not found in index.html"
+    page_keys = re.findall(r'([A-Za-z_][A-Za-z0-9_]*)\s*:', m2.group(1))
+    assert page_keys, "VERDICT_INPUT_LABELS parsed empty — regex drifted from the source"
+    assert len(page_keys) == len(set(page_keys)), "VERDICT_INPUT_LABELS has a duplicate key"
+
+    assert set(fetcher_keys) == set(page_keys), (
+        f"VERDICT_INPUT_ORDER (fetcher) and VERDICT_INPUT_LABELS (page) disagree: "
+        f"fetcher-only={set(fetcher_keys) - set(page_keys)} "
+        f"page-only={set(page_keys) - set(fetcher_keys)}"
+    )
+    assert len(fetcher_keys) == len(page_keys) == 9, (
+        "VERDICT_INPUT_ORDER and VERDICT_INPUT_LABELS must both have exactly 9 keys "
+        f"(fetcher has {len(fetcher_keys)}, page has {len(page_keys)})"
+    )
