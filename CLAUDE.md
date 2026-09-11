@@ -699,6 +699,33 @@ are decided and clearly seen based on the weighted composite of all data."
   publishes `data.json.verdicts` once per cycle. The page reads `call`,
   `score`, `thresholds`, `weights` and `order` from the payload. It never
   re-derives a call, never hardcodes a threshold or weight.
+- **Weights unchanged by attempt #4 (2026-09-11):** no macro-conditional
+  or fixed rule was distinguishable from flat equal (best desk paired NW t
+  0.86, failed the S&P guard); see the vault decisions log. What attempt #4
+  established: on the desk's names the momentum legs' ranking power falls to
+  about a tenth when two of rates / oil / breakevens sit above their 200-day
+  averages, and while the market priced Fed hikes the calls ranked names
+  backwards on both universes. The pre-registered rule for printing a macro
+  chip (both universes) was not met, so nothing new prints; the honesty box's
+  Limits sentence carries the fact.
+- **The framework leg is `2·passed/(passed+failed) − 1`, the leg the
+  backtests tested, never the tier word.** Read from the framework block's
+  own `filters_passed` / `filters_failed`; null under
+  `VERDICT_FRAMEWORK_MIN_EVALUATED` (3, pinned to
+  `context.FRAMEWORK_MIN_EVALUATED`), for `NOT_APPLICABLE`, and for a block
+  without counts. The note keeps the rendered tier word and adds "· N of M
+  passed". The old tier map could only read [−1, +0.4] while filters 1 and 3
+  are structurally null (settled question 11).
+- **The nine leveraged and inverse wrappers get no call.**
+  `VERDICT_NO_CALL_WRAPPERS` (SOXL, SOXS, MUU, RAM, SKHX, NRGU, OILU, STLL,
+  AAOG, the backtests' exclusion list) publish every input with `score:
+  null, call: null, note: "leveraged wrapper"`; the rule is last and wins
+  over the earnings gate. On a ±3x pair rs63 and trend measure path decay,
+  not direction (SOXL SELL beside SOXS SELL, 2026-09-11).
+- **A flow leg under `VERDICT_FLOW_MIN_PREMIUM` ($100K) reads null** with
+  the amount in the note ("net flow $24K under the $100K floor"). One floor
+  across the page: `TILT_MIN_PREM`, `BIG_ORDERS_MIN_PREMIUM`,
+  `FLOWPCT_MIN_BASIS`, pinned by `fetcher/test_sync_constants.py`.
 - **Eight inputs, each −1..+1 or null; weights sum to 100.** trend 21 (price
   vs its own 50-day and 200-day, the SAME 50/200 and ±0.3% dead zone the
   quick read under the chart uses, so the two cannot disagree), rs63 21,

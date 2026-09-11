@@ -323,17 +323,42 @@ def test_rs63_aligned_tails_positional_equals_calendar():
     assert note_cal == note_pos.replace(" (positional; no calendar in bars)", "")
 
 
-def test_rs63_calendar_gap_is_null():
-    # the name has 64 closes but its OWN calendar never carries SPY's anchor
-    # date (its history starts on a different run of dates entirely) --
-    # this is a real calendar mismatch, distinct from "too few closes".
+# ── newest-bar mismatch (F, 2026-09-11 repair): the name's own tail must
+# land on SPY's own newest bar, or the two returns are not measured
+# through the same "today". Checked after the length checks and before the
+# anchor lookup, so it also reclassifies a totally disjoint calendar (see
+# the renamed test below) that used to fall through to "calendar gap".
+
+def test_rs63_newest_bar_mismatch_is_null():
+    # Everything about this name's calendar is otherwise fine (right
+    # length, the anchor date is present) -- only the very last entry
+    # disagrees with SPY's, exactly what a one-day-stale feed would produce.
+    spy = _rs_closes(0.0)
+    spy_dates = _rs_dates()
+    name_closes = _rs_closes(0.0)
+    stale_date = (datetime.date.fromisoformat(spy_dates[-1])
+                  - datetime.timedelta(days=1)).isoformat()
+    name_dates = spy_dates[:-1] + [stale_date]
+    v, note = verdict.rs63_input("T1", name_closes, spy, name_dates, spy_dates)
+    assert v is None
+    assert note == f"newest bar {stale_date} vs SPY {spy_dates[-1]}"
+
+
+def test_rs63_disjoint_calendar_reads_newest_bar_mismatch_not_gap():
+    # F (2026-09-11 repair): a name whose calendar never comes near SPY's
+    # at all (a totally different run of dates) now reads as a newest-bar
+    # mismatch, not "calendar gap" -- the newest-bar check runs first and is
+    # the more accurate fact here: this name's own tail (2020) and SPY's
+    # (2026) are not even the same "today", so there is no single missing
+    # session to name. (Renamed from test_rs63_calendar_gap_is_null, which
+    # pinned the pre-repair behavior.)
     spy = _rs_closes(0.0)
     spy_dates = _rs_dates()
     name_closes = _rs_closes(0.0)
     name_dates = _rs_dates(start="2020-01-01")  # nowhere near spy_dates
     v, note = verdict.rs63_input("T1", name_closes, spy, name_dates, spy_dates)
     assert v is None
-    assert note == "calendar gap in the 63-session window"
+    assert note == f"newest bar {name_dates[-1]} vs SPY {spy_dates[-1]}"
 
 
 # ── F1 (2026-09-11 fix): short-history names must never reach the calendar-
@@ -366,13 +391,20 @@ def test_rs63_calendar_gap_when_dates_span_anchor_but_skip_it():
     # SPANS the anchor date (starts earlier, has >= 64 closes) but is
     # missing that one specific session -- a real hole, distinct from the
     # short-history case above, which must never reach this branch.
+    #
+    # F (2026-09-11 repair): offset from the anchor by 1 day, not 2 -- with
+    # the newest-bar-mismatch check now running first, the constructed tail
+    # must land exactly on spy_dates[-1] or this test would hit that check
+    # instead of the gap it means to isolate.
     spy = _rs_closes(0.0)
     spy_dates = _rs_dates()
     anchor_date = spy_dates[-64]
-    d0 = datetime.date.fromisoformat(anchor_date) - datetime.timedelta(days=2)
+    d0 = datetime.date.fromisoformat(anchor_date) - datetime.timedelta(days=1)
     name_dates = [(d0 + datetime.timedelta(days=i)).isoformat() for i in range(65)]
     name_dates.remove(anchor_date)
     assert len(name_dates) == 64
+    assert name_dates[-1] == spy_dates[-1]  # newest bars must agree, or the
+                                             # newest-bar check fires instead
     name_closes = [100.0] * 64
     v, note = verdict.rs63_input("T1", name_closes, spy, name_dates, spy_dates)
     assert v is None
@@ -380,35 +412,80 @@ def test_rs63_calendar_gap_when_dates_span_anchor_but_skip_it():
 
 
 # ── framework ────────────────────────────────────────────────────────────
-# F2 (2026-09-11 fix): the note is the rendered TIER ("ADD"), never the raw
-# enum ("ADD_BUILDING") -- 19 of 63 names on the day this was found rendered
-# the raw enum on the Overview strip one block above the framework panel's
-# own plain tier word. "_BUILDING" never survives to the note; "_CAPPED"
-# survives as the disclosed "(capped)" suffix, per CLAUDE.md's framework
-# rule ("a tier verdict carries no '(building)' suffix at render... '(capped)'
-# does print, because there the ceiling is the honest thing to name").
+# Attempt #4 amendment (2026-09-11): `v` is the TESTED proxy, the share of
+# measurable filters passed (2*passed/evaluated - 1), never
+# `score_framework`'s own tier cutoffs -- a scale that was never backtested
+# on its own. F2 (2026-09-11 fix, still in force): the note carries the
+# rendered TIER ("ADD"), never the raw enum ("ADD_BUILDING"). "_BUILDING"
+# never survives to the note; "_CAPPED" survives as the disclosed
+# "(capped)" suffix, per CLAUDE.md's framework rule ("a tier verdict
+# carries no '(building)' suffix at render... '(capped)' does print,
+# because there the ceiling is the honest thing to name").
 
-@pytest.mark.parametrize("raw_verdict,expected_v,expected_note", [
-    ("BUY_5", 1.0, "BUY_5"),
-    ("BUY_4", 0.75, "BUY_4"),
-    ("ADD", 0.4, "ADD"),
-    ("HOLD", 0.0, "HOLD"),
-    ("AVOID", -1.0, "AVOID"),
-    ("ADD_BUILDING", 0.4, "ADD"),
-    ("HOLD_CAPPED", 0.0, "HOLD (capped)"),
-    ("BUY_4_CAPPED", 0.75, "BUY_4 (capped)"),
+@pytest.mark.parametrize("passed,failed,expected_v", [
+    (3, 0, 1.0),          # 3 of 3 -> +1.0
+    (2, 1, 1.0 / 3),       # 2 of 3 -> +0.333...
+    (1, 2, -1.0 / 3),      # 1 of 3 -> -0.333...
+    (0, 3, -1.0),          # 0 of 3 -> -1.0
+    (4, 1, 0.6),           # 4 of 5 -> +0.6
 ])
-def test_framework_tiers(raw_verdict, expected_v, expected_note):
-    facts_entry = {"framework": {"verdict": raw_verdict}}
+def test_framework_symmetric_pass_ratio(passed, failed, expected_v):
+    facts_entry = {"framework": {"verdict": "HOLD", "filters_passed": passed,
+                                  "filters_failed": failed}}
     v, note = verdict.framework_input(facts_entry)
     assert v == pytest.approx(expected_v)
-    assert note == expected_note
+    assert note == f"HOLD {verdict._MIDDOT} {passed} of {passed + failed} passed"
 
 
-def test_framework_building_is_null():
-    v, note = verdict.framework_input({"framework": {"verdict": "BUILDING"}})
+def test_framework_capped_note_keeps_the_suffix_before_the_middot():
+    v, note = verdict.framework_input(
+        {"framework": {"verdict": "AVOID_CAPPED", "filters_passed": 1, "filters_failed": 2}})
+    assert v == pytest.approx(-1.0 / 3)
+    assert note == f"AVOID (capped) {verdict._MIDDOT} 1 of 3 passed"
+
+
+def test_framework_building_suffix_stripped_from_note_regardless_of_counts():
+    v, note = verdict.framework_input(
+        {"framework": {"verdict": "ADD_BUILDING", "filters_passed": 3, "filters_failed": 0}})
+    assert v == pytest.approx(1.0)
+    assert note == f"ADD {verdict._MIDDOT} 3 of 3 passed"
+
+
+def test_framework_missing_counts_is_null():
+    # A verdict word with no counts at all -- an older or hand-built
+    # payload -- is null, never a guessed pass/fail (CLAUDE.md's "a filter
+    # with no data is null, never a guessed pass or fail").
+    v, note = verdict.framework_input({"framework": {"verdict": "ADD"}})
+    assert v is None
+    assert note == "no filter counts"
+    v2, note2 = verdict.framework_input(
+        {"framework": {"verdict": "ADD", "filters_passed": 2}})  # failed missing
+    assert v2 is None and note2 == "no filter counts"
+    v3, note3 = verdict.framework_input(
+        {"framework": {"verdict": "ADD", "filters_passed": 2.0, "filters_failed": 1}})  # float, not int
+    assert v3 is None and note3 == "no filter counts"
+
+
+def test_framework_evaluated_under_floor_is_building():
+    # 1 of 2 evaluated is under VERDICT_FRAMEWORK_MIN_EVALUATED (3) -- null,
+    # regardless of the raw verdict word carrying real counts of its own.
+    v, note = verdict.framework_input(
+        {"framework": {"verdict": "HOLD", "filters_passed": 1, "filters_failed": 1}})
     assert v is None
     assert note == "building"
+    # the raw "BUILDING" enum with the same shortfall reads the same way --
+    # no special-casing of that one string is needed any more.
+    v2, note2 = verdict.framework_input(
+        {"framework": {"verdict": "BUILDING", "filters_passed": 1, "filters_failed": 0}})
+    assert v2 is None and note2 == "building"
+
+
+def test_framework_building_verdict_without_counts_reads_no_filter_counts():
+    # A bare "BUILDING" with no counts at all is the missing-counts branch,
+    # not a hardcoded check on the raw enum string.
+    v, note = verdict.framework_input({"framework": {"verdict": "BUILDING"}})
+    assert v is None
+    assert note == "no filter counts"
 
 
 def test_framework_not_applicable_is_null():
@@ -490,6 +567,16 @@ def test_target_upside_null_no_target():
     assert v2 is None
 
 
+def test_target_upside_null_when_target_not_positive():
+    # F (2026-09-11 repair): a target that is not a real positive number
+    # (zero, negative, or a vendor artifact) is "no price target", not a
+    # silent bad comparison.
+    v, note = verdict.target_upside_input({"target": 0.0, "rec_total": 20}, spot=100.0)
+    assert v is None and note == "no price target"
+    v2, note2 = verdict.target_upside_input({"target": -5.0, "rec_total": 20}, spot=100.0)
+    assert v2 is None and note2 == "no price target"
+
+
 # ── flow_today / flow_persist ────────────────────────────────────────────
 
 def test_flow_today_bear_62():
@@ -519,6 +606,29 @@ def test_flow_persist_null_no_card():
     v, note = verdict.flow_persist_input(None)
     assert v is None
     assert note == "no swing card"
+
+
+# ── flow: $100K premium floor (attempt #4 amendment, 2026-09-11) ─────────
+
+def test_flow_under_100k_floor_is_null():
+    v, note = verdict.flow_today_input({"direction": "BULL", "score": 40, "net_flow": 23_823})
+    assert v is None
+    assert note == "net flow $24K under the $100K floor"
+
+
+def test_flow_at_exactly_100k_resolves():
+    # the floor is strict-less-than -- exactly 100,000 still counts.
+    v, note = verdict.flow_persist_input({"direction": "BEAR", "score": 40, "net_flow": 100_000.0})
+    assert v == pytest.approx(-0.40)
+    assert note == "BEAR 40 on Swing"
+
+
+def test_flow_negative_net_flow_under_floor_is_null():
+    # the floor is on MAGNITUDE -- a thin negative net flow is just as
+    # unreadable as a thin positive one.
+    v, note = verdict.flow_today_input({"direction": "BEAR", "score": 40, "net_flow": -50_000})
+    assert v is None
+    assert note == "net flow $50K under the $100K floor"
 
 
 # ── valuation ────────────────────────────────────────────────────────────
@@ -647,6 +757,33 @@ def test_analyst_centers_skip_names_under_five_analysts_and_without_spot():
     c = verdict.analyst_centers(facts, lambda t: None if t == "T1" else 100.0)
     assert c["n_rec_mark"] == 9
     assert c["n_target_upside"] == 8      # T1 has no spot -> no upside reading
+
+
+def test_analyst_centers_mixed_when_only_rec_mark_falls_back():
+    # rec_mark falls back to the fixed center (< 8 readings); target upside
+    # uses the desk median (>= 8). Exactly one leg fell back -> "mixed".
+    facts = _facts_with_analysts(9, 1.10, 0.40)
+    for i in range(3):
+        del facts[f"T{i}"]["rec_mark"]
+    c = verdict.analyst_centers(facts, lambda t: 100.0)
+    assert c["n_rec_mark"] == 6 and c["n_target_upside"] == 9
+    assert c["source"] == "mixed"
+    assert c["rec_mark"] == verdict.VERDICT_REC_MARK_CENTER
+    assert c["target_upside"] == pytest.approx(0.40)
+
+
+def test_analyst_centers_mixed_when_only_target_upside_falls_back():
+    # F (2026-09-11 repair): the reverse direction used to read "desk" --
+    # a false certainty that both legs were desk-centered when only
+    # rec_mark actually was.
+    facts = _facts_with_analysts(9, 1.10, 0.40)
+    for i in range(3):
+        del facts[f"T{i}"]["target"]
+    c = verdict.analyst_centers(facts, lambda t: 100.0)
+    assert c["n_rec_mark"] == 9 and c["n_target_upside"] == 6
+    assert c["source"] == "mixed"
+    assert c["rec_mark"] == pytest.approx(1.14)
+    assert c["target_upside"] == verdict.VERDICT_TARGET_CENTER
 
 
 def test_analyst_inputs_take_the_cycle_center():
@@ -952,6 +1089,62 @@ def test_earnings_gate_holds_a_sell_too(earn_days):
     assert entry["note"] == f"earnings in {earn_days}d"
 
 
+# ── leveraged/inverse wrapper carve-out (attempt #4 amendment, 2026-09-11) ──
+
+def test_wrapper_gets_no_call_but_keeps_its_published_inputs():
+    closes = _closes_for_smas(100.0, 100.0)
+    spot = 105.0
+    conv = {"direction": "BULL", "score": 90}
+    entry = verdict.compute_verdict(
+        "SOXL", spot=spot, closes=closes, spy_closes=list(closes),
+        facts_entry={}, conv_card=conv, swing_card=None, brief=None)
+    assert entry["call"] is None
+    assert entry["score"] is None
+    assert entry["note"] == "leveraged wrapper"
+    # every ticker in VERDICT_NO_CALL_WRAPPERS carries this rule
+    assert "SOXL" in verdict.VERDICT_NO_CALL_WRAPPERS
+    # inputs still publish -- only the call and score are withheld
+    assert entry["inputs"]["trend"]["v"] == pytest.approx(1.0)
+    assert entry["inputs"]["flow_today"]["v"] == pytest.approx(0.9)
+
+
+def test_wrapper_rule_overrides_the_earnings_gate():
+    # A wrapper that would otherwise earn a directional call AND trip the
+    # earnings gate still reads "leveraged wrapper", never "earnings in
+    # Nd" -- the wrapper rule is checked last and always wins.
+    closes = _closes_for_smas(100.0, 100.0)
+    spot = 105.0
+    facts_entry = {
+        "target": spot * (1.0 + verdict.VERDICT_TARGET_CENTER),
+        "rec_total": 10, "earn_days": 1,
+    }
+    conv = {"direction": "BEAR", "score": 70}  # would score +35 BUY on an ordinary name
+    entry = verdict.compute_verdict(
+        "SOXL", spot=spot, closes=closes, spy_closes=list(closes), facts_entry=facts_entry,
+        conv_card=conv, swing_card=None, brief=None)
+    assert entry["call"] is None
+    assert entry["score"] is None
+    assert entry["note"] == "leveraged wrapper"
+
+
+def test_wrapper_rule_applies_even_with_no_coverage_at_all():
+    # A wrapper with almost nothing resolved still reads the wrapper note,
+    # never a coverage-gate note.
+    entry = verdict.compute_verdict(
+        "STLL", spot=None, closes=[], spy_closes=[], facts_entry={},
+        conv_card=None, swing_card=None, brief=None)
+    assert entry["call"] is None and entry["score"] is None
+    assert entry["note"] == "leveraged wrapper"
+
+
+def test_non_wrapper_ticker_unaffected_by_the_rule():
+    closes = _closes_for_smas(100.0, 100.0)
+    entry = verdict.compute_verdict(
+        "SMH", spot=105.0, closes=closes, spy_closes=list(closes), facts_entry={},
+        conv_card=None, swing_card=None, brief=None)
+    assert entry["note"] != "leveraged wrapper"
+
+
 # ── payload shape / determinism ──────────────────────────────────────────
 
 def test_compute_verdict_payload_shape():
@@ -1070,18 +1263,27 @@ def test_compute_verdicts_spot_falls_back_to_quotes_close():
 
 def test_compute_verdicts_one_bad_name_never_drops_the_block():
     # 2026-09-11 review: build_snapshot wraps compute_verdicts in ONE try,
-    # so a single name raising used to omit the whole verdicts key. A
-    # framework verdict that is not a string makes framework_input raise
-    # (str.endswith on an int); that name publishes a null entry naming the
-    # failure class and every other name is untouched.
-    facts = {"BAD": {"framework": {"verdict": 12345}}, "OK": {"framework": {"verdict": "ADD"}}}
+    # so a single name raising used to omit the whole verdicts key.
+    #
+    # F (2026-09-11 repair): framework_input's own type guards on
+    # filters_passed/filters_failed close off the old raise shape (a
+    # non-string verdict used to make str.endswith raise AttributeError;
+    # now it reads "no filter counts" instead, gracefully). A non-comparable
+    # rec_total is the new shape that still reaches the per-name
+    # try/except: analyst_rating_input's `rt < VERDICT_MIN_ANALYSTS` raises
+    # TypeError comparing a str to an int.
+    facts = {
+        "BAD": {"framework": {"verdict": "ADD", "filters_passed": 2, "filters_failed": 1},
+                "rec_mark": 1.0, "rec_total": "five"},
+        "OK": {"framework": {"verdict": "ADD", "filters_passed": 3, "filters_failed": 0}},
+    }
     out = verdict.compute_verdicts([], [], facts, {}, {}, None, None)
     assert out["failed"] == 1
     bad = out["by_ticker"]["BAD"]
     assert bad["call"] is None and bad["score"] is None
-    assert bad["note"] == "not computed (AttributeError)"
+    assert bad["note"] == "not computed (TypeError)"
     assert set(bad["inputs"]) == set(verdict.VERDICT_INPUT_ORDER)
-    assert out["by_ticker"]["OK"]["inputs"]["framework"] == {"v": 0.4, "note": "ADD"}
+    assert out["by_ticker"]["OK"]["inputs"]["framework"] == {"v": 1.0, "note": f"ADD {verdict._MIDDOT} 3 of 3 passed"}
 
 
 def test_compute_verdicts_spot_none_when_neither_positive():
@@ -1136,6 +1338,17 @@ def test_dates_of_falls_back_to_sessions_for_other_tickers():
     payload = {"bar_dates": {"VIX": ["2026-01-01"]},
                "sessions": ["2026-02-01", "2026-02-02"]}
     assert verdict.dates_of(payload, "MU", 2) == ["2026-02-01", "2026-02-02"]
+
+
+def test_dates_of_none_when_bar_dates_override_length_mismatches_n_rows():
+    # F (2026-09-11 repair): a length-mismatched bar_dates override is as
+    # unusable as no calendar at all -- pairing it against the caller's
+    # n_rows closes would silently misalign every date. None signals "no
+    # usable calendar", the same positional-fallback trigger the "sessions"
+    # path already uses.
+    payload = {"bar_dates": {"VIX": ["2026-01-01", "2026-01-02", "2026-01-03"]},
+               "sessions": ["2026-02-01", "2026-02-02"]}
+    assert verdict.dates_of(payload, "VIX", 2) is None
 
 
 def test_dates_of_slices_sessions_to_match_a_shorter_history():
@@ -1207,11 +1420,14 @@ def test_build_snapshot_has_verdicts_optional_spread():
 # ── integration against a real, trimmed sample payload (F7, 2026-09-11) ──
 # The old version pointed at THIS SESSION's own /tmp scratchpad path, so the
 # one test that ever ran against real desk data was skipped everywhere else.
-# fetcher/testdata/verdict_sample_2026-09-10.json is a trimmed, checked-in
+# fetcher/testdata/verdict_sample_2026-09-11.json is a trimmed, checked-in
 # copy of a real cycle's data.json + bars.json (see its own "note" field for
-# exactly what was kept) -- this test always runs.
+# exactly what was kept -- regenerated for the attempt #4 amendments, which
+# need framework's filters_passed/filters_failed and each flow card's
+# net_flow, neither of which the 2026-09-10 fixture carried) -- this test
+# always runs.
 
-FIXTURE = ROOT / "fetcher" / "testdata" / "verdict_sample_2026-09-10.json"
+FIXTURE = ROOT / "fetcher" / "testdata" / "verdict_sample_2026-09-11.json"
 
 
 def test_integration_against_fixture_payload():
@@ -1221,7 +1437,7 @@ def test_integration_against_fixture_payload():
     spots = {c["ticker"]: c["spot"] for c in conv + sw if c.get("spot")}
     out = verdict.compute_verdicts(conv, sw, d["facts"], spots, {}, d["bars"], d["brief"])
     assert out is not None
-    assert out["bars_built"] == d["bars"]["built"] == "2026-09-10"
+    assert out["bars_built"] == d["bars"]["built"] == "2026-09-11"
     assert sum(out["counts"].values()) == len(d["facts"])
 
     # every counts bucket equals a fresh tally over by_ticker -- the two can
@@ -1248,37 +1464,39 @@ def test_integration_against_fixture_payload():
             assert "_BUILDING" not in fw_note
             assert "_CAPPED" not in fw_note
 
-    # Pinned counts on this exact fixture under the 2026-09-11 attempt #3
-    # table (trend 21, rs63 21, framework 20, valuation 20, analysts 5 + 3,
-    # flow 5 + 5, market removed; analyst legs centered on the desk's own
-    # medians -- here 1.1722 of 3 and +37.85% over 38 covered names).
-    # History of this line: registered weights buy 8 / sell 8 / hold 40 /
-    # none 7; attempt #2 equal weights buy 9 / sell 7 / hold 37 / none 10.
-    # What the attempt #3 table moved, and why:
-    #   * SELL 7 -> 14: the sector wrappers (XLI, XLP, XLU, XLY) and the
-    #     leveraged pair (SOXL, SOXS) now read their own momentum. Under the
-    #     old table flow was 47% of a wrapper's resolved weight and its
-    #     direction bit (mostly BULL, a per-ticker constant) masked a
-    #     negative trend/rs63; at 5 + 5 the momentum pair is 81% of a
-    #     wrapper's 52 points and decides.
-    #   * none 10 -> 12: SKHY (no price legs; analysts + flow + PEG = 38)
-    #     and CBRS lose their call -- a name with no price reading cannot
-    #     reach 50 any more, which is the point.
-    #   * MSFT BUY -> HOLD (35 -> 32): its target upside sat below the
-    #     desk median, so desk-centering turned a +1.0 into a negative.
-    #   * MU BUY 35 -> BUY 56: trend, rs63 and PEG gained weight; its
-    #     analyst legs fell toward zero under desk-centering (1.12 vs the
-    #     desk median 1.17 -> +0.11; +61% vs +38% -> +0.78).
-    assert out["counts"] == {"buy": 9, "sell": 14, "hold": 28, "none": 12}
+    # Pinned counts on this exact fixture (2026-09-11 data) under the
+    # attempt #4 table -- weights UNCHANGED from attempt #3 (trend 21, rs63
+    # 21, framework 20, valuation 20, analysts 5 + 3, flow 5 + 5); attempt #4
+    # is judgment-class amendments to how three legs are READ, registered in
+    # the vault decisions log ("Desk verdict composite backtest, attempt #4"
+    # / "Judgment-class amendments"). Isolating just those amendments by
+    # running the PRE-amendment code against this SAME fixture: buy 10 /
+    # sell 16 / hold 27 / none 10. Attempt #4 changed exactly six calls:
+    #   * CAMT HOLD -> SELL (-30 -> -37): its Conviction card carried
+    #     $2,195 of net premium, under the new $100K flow floor, so the
+    #     BULL 42 flow_today leg (+0.42 x 5) drops out of the composite and
+    #     the remaining legs read -37. Its framework leg is "building" both
+    #     before and after (1 of 5 filters evaluated).
+    #   * MUU, SOXL, SOXS HOLD/SELL -> no call: all nine leveraged/inverse
+    #     wrappers (VERDICT_NO_CALL_WRAPPERS) publish every input but never
+    #     a call -- their price legs measure decay, not direction.
+    #   * WTI, XLRE SELL/BUY -> no call: each one's Conviction net_flow
+    #     ($24K, $1K) falls under the new $100K premium floor, dropping
+    #     flow_today out and their resolved weight to 47 -- under the
+    #     50-point coverage gate.
+    # (The 2026-09-10 fixture this replaced pinned buy 9 / sell 14 / hold 28
+    # / none 12 under attempt #3 alone -- a different day's data, not
+    # directly comparable to either set of counts above.)
+    assert out["counts"] == {"buy": 9, "sell": 14, "hold": 25, "none": 15}
     assert out["failed"] == 0
     assert out["v"] == 2
     assert out["horizon_days"] == 21
-    assert out["regime"] == {"name": "bull", "spy_vs_200d": pytest.approx(0.0617, abs=1e-4),
-                             "basis": verdict.REGIME_BASIS, "note": "SPY +6.2% vs its 200-day"}
+    assert out["regime"] == {"name": "bull", "spy_vs_200d": pytest.approx(0.0675, abs=1e-4),
+                             "basis": verdict.REGIME_BASIS, "note": "SPY +6.8% vs its 200-day"}
     assert out["analyst_centers"]["source"] == "desk"
     assert out["analyst_centers"]["n_rec_mark"] == 38
     assert out["analyst_centers"]["rec_mark"] == pytest.approx(1.1722, abs=1e-4)
-    assert out["analyst_centers"]["target_upside"] == pytest.approx(0.3785, abs=1e-4)
+    assert out["analyst_centers"]["target_upside"] == pytest.approx(0.4198, abs=1e-4)
 
     xlf = out["by_ticker"]["XLF"]
     assert xlf["call"] == "HOLD"
@@ -1288,18 +1506,28 @@ def test_integration_against_fixture_payload():
     for moved_ticker, expect_call in (
         ("MOD", "SELL"), ("MSFT", "HOLD"), ("MU", "BUY"),
         ("SPY", None), ("WTI", None), ("XLRE", None), ("SKHY", None),
-        ("XLP", "SELL"), ("XLU", "SELL"), ("SOXL", "SELL"), ("SOXS", "SELL"),
+        ("CAMT", "SELL"),
+        ("XLP", "SELL"), ("XLU", "SELL"), ("SOXL", None), ("SOXS", None),
+        ("MUU", None),
     ):
         assert out["by_ticker"][moved_ticker]["call"] == expect_call, moved_ticker
-    # SKHY: no price leg at all -> no call. Under the old table it read BUY
-    # 63 on analysts + flow alone (2026-09-11 review).
+    # every leveraged/inverse wrapper in the fixture reads the wrapper note,
+    # never a coverage-gate note, whatever its own resolved weight is.
+    for wrapper in verdict.VERDICT_NO_CALL_WRAPPERS:
+        if wrapper in out["by_ticker"]:
+            assert out["by_ticker"][wrapper]["note"] == "leveraged wrapper", wrapper
+            assert out["by_ticker"][wrapper]["call"] is None
+
+    # SKHY: no price leg at all -> no call (a name with no price reading
+    # cannot reach the 50-weight coverage gate on the analyst/flow/PEG legs
+    # alone).
     skhy = out["by_ticker"]["SKHY"]
     assert skhy["inputs"]["trend"]["v"] is None and skhy["inputs"]["rs63"]["v"] is None
     assert skhy["weight"] == 38
 
     mu = out["by_ticker"]["MU"]
     assert mu["call"] == "BUY"
-    assert mu["score"] == 56
+    assert mu["score"] == 69
     assert mu["note"] is None
     assert mu["n"] == 7
     assert mu["n_total"] == 8
@@ -1307,25 +1535,27 @@ def test_integration_against_fixture_payload():
     assert "market" not in mu["inputs"]
     mu_inputs = mu["inputs"]
     assert mu_inputs["trend"] == {"v": pytest.approx(1.0), "note": "above 50d · above 200d"}
-    assert mu_inputs["rs63"]["note"] == "+6.4pp vs SPY, 63 sessions"
-    assert mu_inputs["rs63"]["v"] == pytest.approx(0.3189, abs=1e-4)
+    assert mu_inputs["rs63"]["note"] == "+5.1pp vs SPY, 63 sessions"
+    assert mu_inputs["rs63"]["v"] == pytest.approx(0.2562, abs=1e-4)
+    # MU's framework verdict this cycle (1 of 5 filters resolved, "BUILDING")
+    # is under VERDICT_FRAMEWORK_MIN_EVALUATED (3) either way -- still null.
     assert mu_inputs["framework"] == {"v": None, "note": "building"}
     assert mu_inputs["analyst_rating"]["note"] == "1.12 of 3 · 57 analysts"
-    assert mu_inputs["analyst_rating"]["v"] == pytest.approx((1.1722225 - 1.122807) / 0.45, abs=1e-3)
-    assert mu_inputs["target_upside"]["note"] == "+61% to the average target"
-    assert mu_inputs["target_upside"]["v"] == pytest.approx(0.7826, abs=1e-3)
-    assert mu_inputs["flow_today"] == {"v": pytest.approx(-0.62), "note": "BEAR 62 on Conviction"}
-    assert mu_inputs["flow_persist"] == {"v": pytest.approx(-0.4), "note": "BEAR 40 on Swing"}
+    assert mu_inputs["analyst_rating"]["v"] == pytest.approx(0.1098, abs=1e-3)
+    assert mu_inputs["target_upside"]["note"] == "+62% to the average target"
+    assert mu_inputs["target_upside"]["v"] == pytest.approx(0.6726, abs=1e-3)
+    assert mu_inputs["flow_today"] == {"v": pytest.approx(0.54), "note": "BULL 54 on Conviction"}
+    assert mu_inputs["flow_persist"] == {"v": pytest.approx(0.76), "note": "BULL 76 on Swing"}
     assert mu_inputs["valuation"]["note"] == "PEG 0.03"
     assert mu_inputs["valuation"]["v"] == pytest.approx(0.9778, abs=1e-4)
-    # score = round(100 * (21*1.0 + 21*0.3189 + 5*0.1098 + 3*0.7826
-    #   + 5*-0.62 + 5*-0.4 + 20*0.9778) / 80) = round(100 * 44.67 / 80)
-    #        = round(55.8) = 56 -> BUY
+    # score = round(100 * (21*1.0 + 21*0.2562 + 5*0.1098 + 3*0.6726
+    #   + 5*0.54 + 5*0.76 + 20*0.9778) / 80) = round(100 * 55.001 / 80)
+    #        = round(68.75) = 69 -> BUY
 
     # F1 (2026-09-11 fix): RAM, SKHY, SKHX and STLL all carry far fewer than
-    # 64 rows in this fixture (54, 43, 41, 21) with no bar_dates override,
-    # so dates_of hands each a dates list drawn from the TAIL of "sessions"
-    # -- entirely AFTER SPY's anchor date. dates.index(anchor_date) used to
+    # 64 rows in this fixture (55, 44, 42, 22) with no bar_dates override, so
+    # dates_of hands each a dates list drawn from the TAIL of "sessions" --
+    # entirely AFTER SPY's anchor date. dates.index(anchor_date) used to
     # raise ValueError there and print "calendar gap in the 63-session
     # window", the wrong reason (that note is reserved for a name whose
     # dates genuinely span the anchor but skip that one session).

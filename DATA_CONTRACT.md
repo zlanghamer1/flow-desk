@@ -285,43 +285,45 @@ verdict as a chip on the board instead. History: registered 20 / 10 / 20 /
   "regime": {                               // the market regime this cycle -- a DISCLOSURE the board
                                             // prints as a chip; no weight reads it (attempt #3)
     "name": "bull",                         // "bull" | "bear" | null (unreadable; see note)
-    "spy_vs_200d": 0.0617,                  // SPY spot / its 200-session average - 1; null when name is null
+    "spy_vs_200d": 0.0675,                  // SPY spot / its 200-session average - 1; null when name is null
     "basis": "SPY vs its 200-day average",
-    "note": "SPY +6.2% vs its 200-day"      // or the reason it is null: "no SPY spot",
+    "note": "SPY +6.8% vs its 200-day"      // or the reason it is null: "no SPY spot",
                                             // "fewer than 200 SPY sessions of history"
   },
   "analyst_centers": {                      // what the two analyst legs were centered on this cycle
     "rec_mark": 1.1722,                     // median recommendation mark over covered pinned names...
-    "target_upside": 0.3785,                // ...and median 12-month target upside (target/spot - 1)
+    "target_upside": 0.4198,                // ...and median 12-month target upside (target/spot - 1)
     "n_rec_mark": 38, "n_target_upside": 38,// names with >= 5 analysts that fed each median
     "source": "desk"                        // "desk" | "market probe 2026-09-10" (fallback under 8
                                             // names: 1.43 / 0.20) | "mixed" (one of each)
   },
   "failed": 0,                              // names whose entry raised and published as "not computed"
-  "bars_built": "2026-09-10",               // bars.json's own "built" date this cycle read closes from;
+  "bars_built": "2026-09-11",               // bars.json's own "built" date this cycle read closes from;
                                             // null when no bars payload was available at all
-  "counts": { "buy": 9, "sell": 14, "hold": 28, "none": 12 },  // over by_ticker; none = call null
+  "counts": { "buy": 9, "sell": 14, "hold": 25, "none": 15 },  // over by_ticker; none = call null
   "by_ticker": {
     "MU": {
-      "score": 56,          // int -100..+100 = round(100 * sum(w*v) / sum(w) over RESOLVED inputs);
+      "score": 69,           // int -100..+100 = round(100 * sum(w*v) / sum(w) over RESOLVED inputs);
                             // null when the coverage gate fails (never a score on 2 inputs)
-      "call": "BUY",        // "BUY" | "HOLD" | "SELL" | null (null = coverage gate failed)
+      "call": "BUY",        // "BUY" | "HOLD" | "SELL" | null (coverage gate failed, OR the ticker is
+                            // one of the nine leveraged/inverse wrappers — see below)
       "note": null,         // one-line reason a call was held or withheld:
                             //   "earnings in 2d"                 (earnings gate; score still published)
                             //   "3 of 8 inputs · weight 47 of 100" (coverage gate; score null)
                             //   "not computed (KeyError)"        (this name raised; every input null)
+                            //   "leveraged wrapper"              (one of the nine; score null too)
                             //   null otherwise
       "n": 7,               // inputs that resolved (v not null)
       "n_total": 8,         // len(order)
       "weight": 80,         // sum of weights over resolved inputs
       "inputs": {           // one entry per key in `order`, ALWAYS present
         "trend":          { "v": 1.0,   "note": "above 50d · above 200d" },
-        "rs63":           { "v": 0.32,  "note": "+6.4pp vs SPY, 63 sessions" },
+        "rs63":           { "v": 0.26,  "note": "+5.1pp vs SPY, 63 sessions" },
         "framework":      { "v": null,  "note": "building" },
         "analyst_rating": { "v": 0.11,  "note": "1.12 of 3 · 57 analysts" },
-        "target_upside":  { "v": 0.78,  "note": "+61% to the average target" },
-        "flow_today":     { "v": -0.62, "note": "BEAR 62 on Conviction" },
-        "flow_persist":   { "v": -0.40, "note": "BEAR 40 on Swing" },
+        "target_upside":  { "v": 0.67,  "note": "+62% to the average target" },
+        "flow_today":     { "v": 0.54,  "note": "BULL 54 on Conviction" },
+        "flow_persist":   { "v": 0.76,  "note": "BULL 76 on Swing" },
         "valuation":      { "v": 0.98,  "note": "PEG 0.03" }
       }
     }
@@ -329,7 +331,7 @@ verdict as a chip on the board instead. History: registered 20 / 10 / 20 /
 }
 ```
 
-This exact MU block is re-run against `fetcher/testdata/verdict_sample_2026-09-10.json`
+This exact MU block is re-run against `fetcher/testdata/verdict_sample_2026-09-11.json`
 (a trimmed real cycle, `fetcher/test_verdict.py`'s integration test) on every
 change; the `counts`, `regime` and `analyst_centers` above are that same
 fixture's real, current values.
@@ -340,11 +342,11 @@ fixture's real, current values.
 |---|---|---|---|
 | `trend` | settled closes from `bars.json` (SMA50, SMA200) **with the cycle spot appended as the newest bar** | leg(m) = 0 if abs(spot/m − 1) < 0.003 else sign(spot − m); v = 0.5·leg(SMA50) + 0.5·leg(SMA200) | < 200 total (closes + spot) or no spot |
 | `rs63` | closes for the name and SPY, anchored on SPY's own calendar | clamp(((c[-1]/c[anchor] − 1) − (spy[-1]/spy[-64] − 1)) / 0.20) — see below | < 64 SPY sessions; the name has < 64 closes or its own history starts after the anchor date; no calendar date match within a history that does span the anchor; or the name IS the benchmark |
-| `framework` | `facts.<T>.framework.verdict`, rendered TIER | BUY_5 1.0 · BUY_4 0.75 · ADD 0.4 · HOLD 0.0 · AVOID −1.0 | BUILDING, NOT_APPLICABLE, absent |
+| `framework` | `facts.<T>.framework.filters_passed` / `.filters_failed` (+ the rendered tier word in the note) | v = 2·passed/(passed+failed) − 1 | NOT_APPLICABLE; verdict absent; passed/failed absent or not a plain int; fewer than 3 evaluated (passed+failed) |
 | `analyst_rating` | `facts.<T>.rec_mark`, `rec_total`; the cycle's `analyst_centers.rec_mark` | clamp((center − mark) / 0.45) | rec_mark null or rec_total < 5 |
-| `target_upside` | `facts.<T>.target`, spot, `rec_total`; the cycle's `analyst_centers.target_upside` | clamp(((target/spot − 1) − center) / 0.30) | target/spot null or rec_total < 5 |
-| `flow_today` | the name's ConvictionCard | (+1 BULL / −1 BEAR) × score/100 | no card; `net_flow` exactly 0 ("no net flow") |
-| `flow_persist` | the name's SwingCard | (+1 BULL / −1 BEAR) × score/100 | no card; `net_flow` exactly 0 ("no net flow") |
+| `target_upside` | `facts.<T>.target`, spot, `rec_total`; the cycle's `analyst_centers.target_upside` | clamp(((target/spot − 1) − center) / 0.30) | target/spot not a real positive number, or spot null/≤0; rec_total < 5 |
+| `flow_today` | the name's ConvictionCard | (+1 BULL / −1 BEAR) × score/100 | no card; `net_flow` exactly 0 ("no net flow"); `\|net_flow\|` under $100,000 ("net flow $NNK under the $100K floor") |
+| `flow_persist` | the name's SwingCard | (+1 BULL / −1 BEAR) × score/100 | no card; `net_flow` exactly 0 ("no net flow"); `\|net_flow\|` under $100,000 ("net flow $NNK under the $100K floor") |
 | `valuation` | `facts.<T>.peg`, `pe`, `sec_type`, spot | clamp((1.5 − peg) / 1.5) | peg null/≤0; pe null/≤0/>150; fund; prior-year EPS base under $0.05 (see below) |
 
 **`market` is not an input since 2026-09-11.** `data.brief` is still published
@@ -396,13 +398,24 @@ ticker whose `closes` list is literally the same list object as
 `spy_closes`, reads `null` with note `"benchmark"` rather than a guaranteed
 +0pp.
 
+**`framework`'s `v` is the tested proxy, not the tier word** (2026-09-11
+attempt #4 amendment): `v = 2·passed/(passed+failed) − 1`, the plain share of
+measurable filters passed — 3 of 3 reads `+1.0`, 0 of 3 reads `−1.0` — never
+`score_framework`'s own tier cutoffs (BUY_5/BUY_4/ADD/HOLD/AVOID), which were
+never backtested as a scale on their own. `VERDICT_FRAMEWORK_MIN_EVALUATED`
+(3, mirroring `context.FRAMEWORK_MIN_EVALUATED`, pinned equal by
+`fetcher/test_sync_constants.py`) is the same evaluated-filter floor the
+framework panel itself applies before rendering a tier at all.
+
 **`framework`'s note is the rendered TIER, never the raw enum** (2026-09-11
-fix): `"_BUILDING"` is stripped and never printed; `"_CAPPED"` renders as a
-disclosed `" (capped)"` suffix on the tier (`"BUY_4 (capped)"`), matching
-CLAUDE.md's framework-panel rule that a tier carries no "(building)" suffix at
-render but "(capped)" does print. Before the fix, 19 of 63 names on the day
-this was found rendered the raw enum (`"ADD_BUILDING"`) on the Overview strip,
-one block above the framework panel's own plain tier word for the same name.
+fix), now followed by the counts that actually drove `v`
+(`"HOLD · 2 of 3 passed"`): `"_BUILDING"` is stripped and never printed;
+`"_CAPPED"` renders as a disclosed `" (capped)"` suffix on the tier
+(`"BUY_4 (capped) · 1 of 3 passed"`), matching CLAUDE.md's framework-panel
+rule that a tier carries no "(building)" suffix at render but "(capped)" does
+print. Before the fix, 19 of 63 names on the day this was found rendered the
+raw enum (`"ADD_BUILDING"`) on the Overview strip, one block above the
+framework panel's own plain tier word for the same name.
 
 **`valuation`'s null note names the fact it actually is** (2026-09-11 fix):
 `"fund"` (checked first) → `"no PEG reading"` (peg absent) → `"PEG <value>"`
@@ -446,6 +459,15 @@ Attempt #3 measured momentum (trend, rs63) reading backwards in bear markets
 on both the desk and the S&P 500 while PEG did not, and found no
 regime-conditional weight set distinguishable from flat equal, so the regime
 is disclosed and nothing is conditioned on it.
+
+**Nine leveraged/inverse wrappers get every input published but no call**
+(2026-09-11 attempt #4 amendment, `VERDICT_NO_CALL_WRAPPERS`): SOXL, SOXS,
+MUU, RAM, SKHX, NRGU, OILU, STLL, AAOG read `score: null, call: null, note:
+"leveraged wrapper"` regardless of coverage or the earnings gate — on a ±3x
+pair, `trend` and `rs63` measure decay, not direction (live 2026-09-11: SOXL
+SELL −53 and SOXS SELL −67 in the same column while SMH, their underlying,
+was down only 1.9% over 63 sessions). This rule is checked last and overrides
+every other rule, the earnings gate included.
 
 The spot is the CBOE chain spot when the name has one,
 else the scanner close. `bars.json` is the copy on disk in OUT_DIR (the data

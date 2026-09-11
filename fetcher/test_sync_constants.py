@@ -28,6 +28,8 @@ SNAP = (ROOT / "fetcher" / "build_snapshot.py").read_text(encoding="utf-8")
 GUARD = (ROOT / "fetcher" / "market_guard.py").read_text(encoding="utf-8")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import build_snapshot  # noqa: E402 -- TILT_MIN_PREM / BIG_ORDERS_MIN_PREMIUM
+import context  # noqa: E402 -- FRAMEWORK_MIN_EVALUATED
 import verdict  # noqa: E402 -- fetcher-side VERDICT_INPUT_ORDER, imported not regex-parsed (F6)
 
 
@@ -137,3 +139,26 @@ def test_verdict_input_set_matches_page():
         "VERDICT_INPUT_ORDER and VERDICT_INPUT_LABELS must both have exactly 8 keys "
         f"(fetcher has {len(fetcher_keys)}, page has {len(page_keys)})"
     )
+
+
+def test_verdict_framework_min_evaluated_matches_context():
+    """verdict.VERDICT_FRAMEWORK_MIN_EVALUATED (attempt #4 amendment,
+    2026-09-11) mirrors context.FRAMEWORK_MIN_EVALUATED -- the same "at
+    least 3 resolved filters" floor score_framework itself applies before
+    rendering a tier at all. Both modules import cleanly (stdlib only), so
+    this pins the real attributes rather than regex-parsing either file."""
+    assert verdict.VERDICT_FRAMEWORK_MIN_EVALUATED == context.FRAMEWORK_MIN_EVALUATED
+
+
+def test_verdict_flow_floor_matches_build_snapshot_and_page():
+    """verdict.VERDICT_FLOW_MIN_PREMIUM (attempt #4 amendment, 2026-09-11)
+    is the SAME $100K floor as build_snapshot.TILT_MIN_PREM,
+    build_snapshot.BIG_ORDERS_MIN_PREMIUM and the page's own
+    FLOWPCT_MIN_BASIS -- four numbers, one floor, so a net-flow reading
+    too thin to count anywhere else on the page cannot move a verdict."""
+    assert verdict.VERDICT_FLOW_MIN_PREMIUM == build_snapshot.TILT_MIN_PREM
+    assert verdict.VERDICT_FLOW_MIN_PREMIUM == build_snapshot.BIG_ORDERS_MIN_PREMIUM
+
+    m = re.search(r'var FLOWPCT_MIN_BASIS = (\d+);', INDEX)
+    assert m, "FLOWPCT_MIN_BASIS not found in index.html"
+    assert verdict.VERDICT_FLOW_MIN_PREMIUM == float(m.group(1))
