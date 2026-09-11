@@ -449,29 +449,39 @@ people.
 
 The desk now makes one call per name. Above the flow boards, a Verdicts board
 lists every tracked name with a BUY, HOLD or SELL call and a score from −100
-to +100. The score is a weighted average of nine readings the desk already
-had: price against its own 50-day and 200-day averages, its three-month move
-against the S&P 500, the 5-metric framework tier, the analyst rating and the
-analyst price target (both centered on what analysts say about the whole
-market, because they are bullish on almost everything), today's option flow,
-the Swing board's persistent flow, the PEG ratio, and the Morning Brief's
-market score. A score of +35 or higher is a BUY, −35 or lower is a SELL, and
-anything between is a HOLD.
+to +100. A call is a read on the next 21 trading days. The score is a
+weighted average of eight readings the desk already had: price against its
+own 50-day and 200-day averages, its three-month move against the S&P 500,
+the 5-metric framework tier, the PEG ratio, the analyst rating and the
+analyst price target (both measured against the desk's own median that day,
+because analysts are bullish on almost everything), today's option flow, and
+the Swing board's persistent flow. A score of +35 or higher is a BUY, −35 or
+lower is a SELL, and anything between is a HOLD.
+
+Two chips sit on the board's header. One says whether the S&P 500 is above or
+below its own 200-day average (the market regime) and by how much. The other
+is the Morning Brief's verdict and score. Neither moves the score. The
+regime is printed because past bear markets ran the momentum readings
+backwards and left BUY calls with no edge; the brief is printed because it
+used to be a weighted input and left the composite on 2026-09-11 (one number
+a day, the same for every name, cannot rank names).
 
 Three honesty rules ride along. A reading the desk does not have drops out
-instead of counting as zero, and the row says how many of the nine it had. If
+instead of counting as zero, and the row says how many of the eight it had. If
 fewer than three readings, or less than half the weight, resolve, the name
 gets no call at all. A name reporting earnings inside three days is held to
 HOLD, and the row says so.
 
 The same call shows beside every name on the flow boards, at the top of a
-name's Overview tab with the nine readings listed, and as a sort and a mark
-on the watchlist. **The four price-and-fundamentals weights were set by a
-pre-registered backtest (equal weights beat the hand-set ones out of
-sample); the analyst, flow and market weights have no test behind them.**
-The record is in the vault's decisions log, and any further change needs a
-dated note there before it ships. The design record is
-`docs/superpowers/specs/2026-09-11-desk-verdicts-design.md`.
+name's Overview tab with the eight readings listed, and as a sort and a mark
+on the watchlist. **The four price-and-fundamentals weights come from three
+pre-registered backtest attempts and are equal (21 / 21 / 20 / 20): nothing
+tested, including weights that change with the market regime, was
+distinguishable from equal. The four flow and analyst weights (5 / 5 / 5 / 3)
+are judgment: flow's own direction test failed, and analyst levels have no
+free history to test against.** The record is in the vault's decisions log,
+and any further change needs a dated note there before it ships. The design
+record is `docs/superpowers/specs/2026-09-11-desk-verdicts-design.md`.
 
 ## Its limits
 
@@ -490,8 +500,9 @@ dated note there before it ships. The design record is
   verdict score — see that section above for why.
 - **This is not financial advice.** It's a personal research tool. The
   BUY / HOLD / SELL calls on the Verdicts board are research reads from a
-  composite where four of the nine weights have a pre-registered backtest
-  behind them and five do not, not instructions.
+  composite where four of the eight weights have a pre-registered backtest
+  behind them and four do not, not instructions. In past bear markets the
+  BUY calls carried no edge.
 
 ## How to restart the loop if it stops
 

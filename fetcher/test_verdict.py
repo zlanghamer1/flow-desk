@@ -30,7 +30,8 @@ def test_weights_sum_to_100():
 
 def test_order_and_weights_keys_match():
     assert set(verdict.VERDICT_INPUT_ORDER) == set(verdict.VERDICT_WEIGHTS.keys())
-    assert len(verdict.VERDICT_INPUT_ORDER) == len(set(verdict.VERDICT_INPUT_ORDER)) == 9
+    # eight since 2026-09-11 (attempt #3 amendment removed `market`)
+    assert len(verdict.VERDICT_INPUT_ORDER) == len(set(verdict.VERDICT_INPUT_ORDER)) == 8
 
 
 # ── _signed: signed-zero guard (F1, 2026-09-11) ───────────────────────────
@@ -584,33 +585,120 @@ def test_valuation_null_fund_regardless_of_peg():
     assert note == "fund"
 
 
-# ── market ───────────────────────────────────────────────────────────────
+# ── regime (2026-09-11, attempt #3): disclosure, never an input ──────────
 
-def test_market_score_minus1():
-    v, note = verdict.market_input({"score": -1, "verdict": "NEUTRAL", "stale": False})
-    assert v == pytest.approx(-0.2)
-    assert note == "brief NEUTRAL (−1)"
+def test_regime_bull_and_bear_from_spy_series_plus_spot():
+    closes = [100.0] * 199
+    bull = verdict.compute_regime(closes, 105.0)
+    assert bull["name"] == "bull"
+    assert bull["spy_vs_200d"] == pytest.approx(105.0 / ((199 * 100.0 + 105.0) / 200) - 1, abs=1e-4)
+    assert bull["note"].startswith("SPY +")
+    bear = verdict.compute_regime(closes, 95.0)
+    assert bear["name"] == "bear"
+    assert bear["spy_vs_200d"] < 0
+    assert bear["note"].startswith("SPY \u2212")   # U+2212, never ASCII minus
 
 
-def test_market_null_stale():
-    v, note = verdict.market_input({"score": -1, "verdict": "NEUTRAL", "stale": True})
+def test_regime_null_reasons():
+    assert verdict.compute_regime([100.0] * 300, None) == {
+        "name": None, "spy_vs_200d": None, "basis": verdict.REGIME_BASIS, "note": "no SPY spot"}
+    short = verdict.compute_regime([100.0] * 100, 101.0)
+    assert short["name"] is None
+    assert short["note"] == "fewer than 200 SPY sessions of history"
+
+
+def test_regime_reads_the_same_series_as_trend_input():
+    # 199 settled closes + the spot is enough for BOTH (the page's seriesFull
+    # appends the live bar); 198 + spot is enough for neither.
+    closes = [100.0] * 199
+    assert verdict.compute_regime(closes, 101.0)["name"] == "bull"
+    assert verdict.trend_input(101.0, closes)[0] is not None
+    assert verdict.compute_regime(closes[:-1], 101.0)["name"] is None
+    assert verdict.trend_input(101.0, closes[:-1])[0] is None
+
+
+# ── analyst centers (2026-09-11, attempt #3): the desk's own median ────────
+
+def _facts_with_analysts(n, mark, upside, spot=100.0):
+    return {f"T{i}": {"rec_mark": mark + 0.01 * i, "rec_total": 10, "target": spot * (1 + upside)}
+            for i in range(n)}
+
+
+def test_analyst_centers_use_desk_median_when_enough_names():
+    facts = _facts_with_analysts(9, 1.10, 0.40)
+    c = verdict.analyst_centers(facts, lambda t: 100.0)
+    assert c["source"] == "desk"
+    assert c["n_rec_mark"] == 9 and c["n_target_upside"] == 9
+    assert c["rec_mark"] == pytest.approx(1.14)          # median of 1.10..1.18
+    assert c["target_upside"] == pytest.approx(0.40)
+
+
+def test_analyst_centers_fall_back_to_market_probe_under_eight_names():
+    facts = _facts_with_analysts(7, 1.10, 0.40)
+    c = verdict.analyst_centers(facts, lambda t: 100.0)
+    assert c["source"] == verdict.ANALYST_FALLBACK_SOURCE
+    assert c["rec_mark"] == verdict.VERDICT_REC_MARK_CENTER
+    assert c["target_upside"] == verdict.VERDICT_TARGET_CENTER
+
+
+def test_analyst_centers_skip_names_under_five_analysts_and_without_spot():
+    facts = _facts_with_analysts(10, 1.10, 0.40)
+    facts["T0"]["rec_total"] = 4          # under the analyst floor: excluded from both
+    c = verdict.analyst_centers(facts, lambda t: None if t == "T1" else 100.0)
+    assert c["n_rec_mark"] == 9
+    assert c["n_target_upside"] == 8      # T1 has no spot -> no upside reading
+
+
+def test_analyst_inputs_take_the_cycle_center():
+    f = {"rec_mark": 1.20, "rec_total": 20, "target": 140.0}
+    # fixed fallback center 1.43 -> (1.43-1.20)/0.45 = +0.511
+    assert verdict.analyst_rating_input(f)[0] == pytest.approx(0.5111, abs=1e-3)
+    # desk center 1.20 -> exactly the median -> 0
+    assert verdict.analyst_rating_input(f, center=1.20)[0] == pytest.approx(0.0)
+    # target: +40% upside; fallback center +20% -> +0.667; desk center +40% -> 0
+    assert verdict.target_upside_input(f, 100.0)[0] == pytest.approx(0.6667, abs=1e-3)
+    assert verdict.target_upside_input(f, 100.0, center=0.40)[0] == pytest.approx(0.0)
+
+
+# ── valuation: prior-EPS floor (2026-09-11, attempt #3) ────────────────────
+
+def test_implied_prior_eps_arithmetic():
+    # spot 100, pe 20 -> eps_ttm 5; peg 0.10 -> growth = 20/(100*0.10) = 2.0
+    # (200%) -> prior = 5 / 3 = 1.667
+    assert verdict.implied_prior_eps(100.0, 20.0, 0.10) == pytest.approx(5.0 / 3.0)
+    assert verdict.implied_prior_eps(None, 20.0, 0.10) is None
+
+
+def test_valuation_nulls_a_peg_on_a_near_zero_prior_eps_base():
+    # BE-shaped: pe 140, peg 0.02 -> growth 70x -> eps_ttm 0.714, prior 0.010
+    v, note = verdict.valuation_input({"pe": 140.0, "peg": 0.02}, spot=100.0)
     assert v is None
-    assert note == "brief stale"
+    assert note == "PEG 0.02 on a $0.010 prior-year EPS base"
 
 
-def test_market_null_absent():
-    v, note = verdict.market_input(None)
-    assert v is None
-    assert note == "no brief"
-    v2, note2 = verdict.market_input({})
-    assert v2 is None
-    assert note2 == "no brief"
+def test_valuation_keeps_a_real_trough_recovery_peg():
+    # MU-shaped: pe 22.2, peg 0.033 -> growth 6.7x, prior EPS ~$5.7 on a
+    # $976 spot -- a real cyclical recovery, not an artifact; stays +0.98
+    v, note = verdict.valuation_input({"pe": 22.184, "peg": 0.0334}, spot=976.49)
+    assert v == pytest.approx((1.5 - 0.0334) / 1.5)
+    assert note == "PEG 0.03"
 
 
-def test_market_null_no_score():
-    v, note = verdict.market_input({"stale": False})
-    assert v is None
-    assert note == "no market score"
+def test_valuation_without_spot_cannot_apply_the_floor_and_keeps_the_peg():
+    v, note = verdict.valuation_input({"pe": 140.0, "peg": 0.02})
+    assert v == pytest.approx((1.5 - 0.02) / 1.5)
+
+
+# ── flow: a zero net flow is no direction (2026-09-11 review) ─────────────
+
+def test_flow_zero_net_flow_reads_null():
+    v, note = verdict.flow_today_input({"direction": "BULL", "score": 40, "net_flow": 0})
+    assert v is None and note == "no net flow"
+    # a missing key is not a zero
+    v2, _ = verdict.flow_today_input({"direction": "BULL", "score": 40})
+    assert v2 == pytest.approx(0.4)
+    v3, _ = verdict.flow_persist_input({"direction": "BEAR", "score": 40, "net_flow": None})
+    assert v3 == pytest.approx(-0.4)
 
 
 # ── fund still gets trend/rs/flow ────────────────────────────────────────
@@ -648,7 +736,7 @@ def test_track_only_style_name_no_cards():
 # ── compute_verdict: coverage gate, renormalization, thresholds ──────────
 
 def test_renormalization_and_coverage_gate():
-    # trend +1 (w14), rs63 -1 (w14), flow_persist +0.5 (w15) -> weight 43,
+    # trend +1 (w21), rs63 -1 (w21), flow_persist +0.5 (w5) -> weight 47,
     # n=3: weight < 50 -> coverage gate fails even though n_inputs is enough.
     closes = _closes_for_smas(100.0, 100.0)
     spot = 105.0  # +5% above both SMAs -> trend v = +1.0
@@ -666,59 +754,56 @@ def test_renormalization_and_coverage_gate():
     assert entry["inputs"]["trend"]["v"] == pytest.approx(1.0)
     assert entry["inputs"]["rs63"]["v"] == pytest.approx(-1.0)
     assert entry["inputs"]["flow_persist"]["v"] == pytest.approx(0.5)
-    assert entry["weight"] == 43
+    assert entry["weight"] == 47
     assert entry["n"] == 3
     assert entry["score"] is None
     assert entry["call"] is None
-    assert entry["note"] == "3 of 9 inputs · weight 43 of 100"
+    assert entry["note"] == "3 of 8 inputs · weight 47 of 100"
 
-    # add flow_today +1.0 (w10) -> weight 53, n=4. trend (14) and rs63 (-14)
-    # now carry the SAME weight and opposite-unit values, so they cancel to
-    # 0 regardless of magnitude -- the whole sum comes from flow_persist and
-    # flow_today: score = round(100 * (14*1 + 14*-1 + 15*0.5 + 10*1) / 53)
-    #                    = round(100 * 17.5 / 53) = round(33.019) = 33 -> HOLD
-    # (below the registered set's arithmetic gave 50 -> BUY here; the new
-    # equal weights on trend/rs63 no longer let one of them dominate).
+    # add flow_today +1.0 (w5) -> weight 52, n=4. trend (21) and rs63 (-21)
+    # carry the SAME weight and opposite-unit values, so they cancel to 0
+    # regardless of magnitude -- the whole sum comes from the flow pair:
+    # score = round(100 * (21*1 + 21*-1 + 5*0.5 + 5*1) / 52)
+    #       = round(100 * 7.5 / 52) = round(14.42) = 14 -> HOLD
+    # (2026-09-11 attempt #3 table: the flow pair at 5 + 5 can never carry a
+    # name to +-35 on its own, which is the point of the cut).
     conv = {"direction": "BULL", "score": 100}  # v = +1.0
     entry2 = verdict.compute_verdict(
         "T1", spot=spot, closes=combined, spy_closes=spy, facts_entry={},
         conv_card=conv, swing_card=swing, brief=None)
-    assert entry2["weight"] == 53
+    assert entry2["weight"] == 52
     assert entry2["n"] == 4
-    assert entry2["score"] == 33
+    assert entry2["score"] == 14
     assert entry2["call"] == "HOLD"
     assert entry2["note"] is None
 
 
 def test_min_inputs_gate_two_inputs_weight_35():
-    # trend (14) + flow_persist (15) = weight 29, n=2 -> no call. Note this
+    # trend (21) + flow_persist (5) = weight 26, n=2 -> no call. Note this
     # does NOT isolate VERDICT_MIN_INPUTS as an independent gate: weight
-    # (29) is also short of VERDICT_MIN_WEIGHT (50) here, and F8 (below)
+    # (26) is also short of VERDICT_MIN_WEIGHT (50) here, and F8 (below)
     # shows that under the CURRENT weight table no 2-input combination can
     # ever reach weight 50 in the first place, so an n<3 case whose weight
-    # gate passes is not constructible today. (2026-09-11 reweight: this was
-    # 35 under the registered trend=20 weight; the test name is now a loose
-    # label, not the literal weight value.)
+    # gate passes is not constructible today. (The test name is a loose
+    # label from the registered table, not the literal weight value.)
     closes = _closes_for_smas(100.0, 100.0)
     swing = {"direction": "BULL", "score": 50}
     entry = verdict.compute_verdict(
         "T2", spot=105.0, closes=closes, spy_closes=[], facts_entry={},
         conv_card=None, swing_card=swing, brief=None)
-    assert entry["weight"] == 29
+    assert entry["weight"] == 26
     assert entry["n"] == 2
     assert entry["score"] is None
     assert entry["call"] is None
-    assert entry["note"] == "2 of 9 inputs · weight 29 of 100"
+    assert entry["note"] == "2 of 8 inputs · weight 26 of 100"
 
 
 def test_min_inputs_gate_is_currently_unreachable_by_itself():
     # F8 (2026-09-11): VERDICT_MIN_INPUTS (3) is subsumed by the weight gate
-    # under the current table -- the two largest weights (flow_persist 15 +
-    # a 14-weight leg = 29, after the 2026-09-11 reweight put trend, rs63
-    # and framework in a three-way tie at 14) already fall short of
-    # VERDICT_MIN_WEIGHT (50), so no 2-input combination can ever pass the
-    # weight leg, and the n>=3 check can never be the SOLE reason a call is
-    # withheld. This guard fails the moment a future weight-table change
+    # under the current table -- the two largest weights (trend 21 + rs63 21
+    # = 42 after attempt #3) already fall short of VERDICT_MIN_WEIGHT (50),
+    # so no 2-input combination can ever pass the weight leg, and the n>=3
+    # check can never be the SOLE reason a call is withheld. This guard fails the moment a future weight-table change
     # lets some pair of inputs alone clear 50 -- at that point
     # VERDICT_MIN_INPUTS starts doing real, independent work and deserves
     # its own passing test.
@@ -726,58 +811,55 @@ def test_min_inputs_gate_is_currently_unreachable_by_itself():
     assert sum(top_two) < verdict.VERDICT_MIN_WEIGHT
 
 
-def _weight50_entry(trend_v_sign: int, fw_verdict: str, conv_score: float, conv_dir: str):
-    """trend (w14) + framework (w14) + target_upside (w7) + flow_today (w10)
-    + market (w5) = weight 50. Framework is pinned HOLD (v=0.0), target is
-    pinned exactly at the analyst-upside center (VERDICT_TARGET_CENTER,
-    0.20 -> v=0.0) and the brief score is pinned at 0 (v=0.0), so three of
-    the five legs are always-zero padding that brings the weight to exactly
-    50 without touching the sum -- only trend and flow_today ever move the
-    score. (2026-09-11 reweight: the registered table's trend+framework+
-    flow_today alone summed to 50; the new table's 14+14+10=38 needed two
-    more zero-valued legs to reach the same coverage-gate boundary.)"""
+def _weight50_entry(trend_v_sign: int, flow_dir: str, conv_score: float):
+    """trend (w21) + rs63 (w21, pinned at exactly 0 by handing the name SPY's
+    own closes as a copy) + target_upside (w3, pinned at the fallback center
+    so v=0) + flow_today (w5) = weight 50. Only trend and flow_today move the
+    score: score = 100 * (21*trend + 5*flow) / 50 = 42*trend + 0.1*flow_pts,
+    so a BEAR conviction card of 70 pulls a +1 trend to exactly +35, 80 to
+    +34, 75 to +34.5 (rounds away from zero to 35). (2026-09-11 attempt #3
+    table: the old padding used framework and market; market is gone and
+    framework's 20 no longer fits a 50-point padding.)"""
     closes = _closes_for_smas(100.0, 100.0)
     spot = 100.0 * (1.05 if trend_v_sign > 0 else 0.95)
     facts_entry = {
-        "framework": {"verdict": fw_verdict},
         "target": spot * (1.0 + verdict.VERDICT_TARGET_CENTER),  # upside == center -> v=0
         "rec_total": 10,
     }
-    conv = {"direction": conv_dir, "score": conv_score}
-    brief = {"score": 0, "verdict": "NEUTRAL", "stale": False}  # market center -> v=0
+    conv = {"direction": flow_dir, "score": conv_score}
     return verdict.compute_verdict(
-        "T3", spot=spot, closes=closes, spy_closes=[], facts_entry=facts_entry,
-        conv_card=conv, swing_card=None, brief=brief)
+        "T3", spot=spot, closes=closes, spy_closes=list(closes), facts_entry=facts_entry,
+        conv_card=conv, swing_card=None, brief=None)
 
 
 def test_threshold_exactly_35_is_buy():
-    # trend +1 (14) + flow_today BULL 35 (10*0.35=3.5); framework, target_upside
-    # and market all contribute 0 (see _weight50_entry).
-    # wsum = 14 + 3.5 = 17.5; weight = 50; score = 100*17.5/50 = 35.0
-    entry = _weight50_entry(+1, "HOLD", 35, "BULL")
+    # trend +1 (21) + flow_today BEAR 70 (5*-0.70 = -3.5); rs63 and target
+    # contribute 0 (see _weight50_entry). wsum = 17.5; weight 50; score 35.
+    entry = _weight50_entry(+1, "BEAR", 70)
     assert entry["weight"] == 50
+    assert entry["inputs"]["rs63"]["v"] == pytest.approx(0.0)
+    assert entry["inputs"]["target_upside"]["v"] == pytest.approx(0.0)
     assert entry["score"] == 35
     assert entry["call"] == "BUY"
 
 
 def test_threshold_34_is_hold():
-    # wsum = 14 + 10*0.30 = 17.0; score = 100*17/50 = 34.0
-    entry = _weight50_entry(+1, "HOLD", 30, "BULL")
+    # wsum = 21 - 5*0.80 = 17.0; score = 34.0
+    entry = _weight50_entry(+1, "BEAR", 80)
     assert entry["score"] == 34
     assert entry["call"] == "HOLD"
 
 
 def test_threshold_minus35_is_sell():
-    # trend -1 (-14) + flow_today BEAR 35 (-3.5)
-    # wsum = -14 - 3.5 = -17.5; score = 100*-17.5/50 = -35.0
-    entry = _weight50_entry(-1, "HOLD", 35, "BEAR")
+    # trend -1 (-21) + flow_today BULL 70 (+3.5); wsum = -17.5; score -35
+    entry = _weight50_entry(-1, "BULL", 70)
     assert entry["score"] == -35
     assert entry["call"] == "SELL"
 
 
 def test_threshold_minus34_is_hold():
-    # wsum = -14 - 3.0 = -17.0; score = -34.0
-    entry = _weight50_entry(-1, "HOLD", 30, "BEAR")
+    # wsum = -21 + 4.0 = -17.0; score = -34.0
+    entry = _weight50_entry(-1, "BULL", 80)
     assert entry["score"] == -34
     assert entry["call"] == "HOLD"
 
@@ -795,60 +877,55 @@ def test_round_half_away_from_zero_helper():
 
 
 def test_score_rounds_half_away_from_zero_at_sell_threshold():
-    # trend -1 (-14) + flow_today BEAR 32.5 (-3.25)
+    # trend -1 (-21) + flow_today BULL 75 (+3.75)
     # wsum = -17.25, weight = 50 -> ratio -34.5 -> rounds to -35 -> SELL,
     # NOT Python round()'s banker's-rounding -34 (which would stay HOLD).
-    entry = _weight50_entry(-1, "HOLD", 32.5, "BEAR")
+    entry = _weight50_entry(-1, "BULL", 75)
     assert entry["score"] == -35
     assert entry["call"] == "SELL"
 
 
 def test_score_rounds_half_away_from_zero_at_buy_threshold():
-    # trend +1 (14) + flow_today BULL 32.5 (+3.25); wsum = 17.25 -> 34.5 -> 35
-    entry = _weight50_entry(+1, "HOLD", 32.5, "BULL")
+    # trend +1 (21) + flow_today BEAR 75 (-3.75); wsum = 17.25 -> 34.5 -> 35
+    entry = _weight50_entry(+1, "BEAR", 75)
     assert entry["score"] == 35
     assert entry["call"] == "BUY"
 
 
 # ── earnings gate ─────────────────────────────────────────────────────────
-# Same weight-50 padding as _weight50_entry (framework HOLD, target pinned at
-# the analyst-upside center, market pinned at 0 -- all three v=0.0), so only
-# trend and flow_today move the score. 2026-09-11 reweight: trend+framework+
-# flow_today alone summed to the registered table's 50; the new table needs
-# the same two extra zero-valued legs _weight50_entry added.
+# Same weight-50 padding as _weight50_entry (rs63 pinned at 0 via a copy of
+# the name's own closes as SPY, target pinned at the analyst-upside center),
+# so only trend and flow_today move the score: trend +1 with a BEAR 70
+# conviction card lands exactly on +35.
 
 def _buy_entry(earn_days):
     closes = _closes_for_smas(100.0, 100.0)
     spot = 105.0
     facts_entry = {
-        "framework": {"verdict": "HOLD"},
         "target": spot * (1.0 + verdict.VERDICT_TARGET_CENTER),  # upside == center -> v=0
         "rec_total": 10,
     }
     if earn_days is not None:
         facts_entry["earn_days"] = earn_days
-    conv = {"direction": "BULL", "score": 35}  # v=+0.35 -> wsum 17.5, score 35 BUY
-    brief = {"score": 0, "verdict": "NEUTRAL", "stale": False}  # market center -> v=0
+    conv = {"direction": "BEAR", "score": 70}  # v=-0.70 -> wsum 17.5, score 35 BUY
     return verdict.compute_verdict(
-        "T4", spot=spot, closes=closes, spy_closes=[], facts_entry=facts_entry,
-        conv_card=conv, swing_card=None, brief=brief)
+        "T4", spot=spot, closes=closes, spy_closes=list(closes), facts_entry=facts_entry,
+        conv_card=conv, swing_card=None, brief=None)
 
 
 def _sell_entry(earn_days):
     closes = _closes_for_smas(100.0, 100.0)
     spot = 95.0
     facts_entry = {
-        "framework": {"verdict": "HOLD"},
         "target": spot * (1.0 + verdict.VERDICT_TARGET_CENTER),
         "rec_total": 10,
     }
     if earn_days is not None:
         facts_entry["earn_days"] = earn_days
-    conv = {"direction": "BEAR", "score": 35}  # mirrors to score -35 SELL
-    brief = {"score": 0, "verdict": "NEUTRAL", "stale": False}
+    conv = {"direction": "BULL", "score": 70}  # mirrors to score -35 SELL
     return verdict.compute_verdict(
-        "T5", spot=spot, closes=closes, spy_closes=[], facts_entry=facts_entry,
-        conv_card=conv, swing_card=None, brief=brief)
+        "T5", spot=spot, closes=closes, spy_closes=list(closes), facts_entry=facts_entry,
+        conv_card=conv, swing_card=None, brief=None)
 
 
 @pytest.mark.parametrize("earn_days", [0, 1, 3])
@@ -885,7 +962,7 @@ def test_compute_verdict_payload_shape():
         swing_card=None, brief=None)
     for key in ("score", "call", "note", "n", "n_total", "weight", "inputs"):
         assert key in entry
-    assert entry["n_total"] == 9
+    assert entry["n_total"] == 8   # eight inputs since 2026-09-11 (market removed)
     assert set(entry["inputs"].keys()) == set(verdict.VERDICT_INPUT_ORDER)
     for k in verdict.VERDICT_INPUT_ORDER:
         assert set(entry["inputs"][k].keys()) == {"v", "note"}
@@ -915,11 +992,18 @@ def test_compute_verdicts_shape_and_counts():
     conv = [{"ticker": "AAA", "direction": "BULL", "score": 90, "spot": 100.0},
             {"ticker": "BBB", "direction": "BEAR", "score": 90, "spot": 50.0}]
     out = verdict.compute_verdicts(conv, [], facts, {}, {}, None, None)
-    assert out["v"] == 1
+    assert out["v"] == 2
     assert out["order"] == list(verdict.VERDICT_INPUT_ORDER)
+    assert "market" not in out["order"]
     assert out["weights"] == verdict.VERDICT_WEIGHTS
     assert out["thresholds"] == {"buy": 35, "sell": -35}
+    assert out["horizon_days"] == 21
     assert out["bars_built"] is None
+    assert out["failed"] == 0
+    # no SPY bars, no SPY spot -> the regime is null with its reason, never absent
+    assert out["regime"]["name"] is None and out["regime"]["note"] == "no SPY spot"
+    # two names, neither with analysts -> the fallback centers, and it says so
+    assert out["analyst_centers"]["source"] == verdict.ANALYST_FALLBACK_SOURCE
     assert set(out["by_ticker"].keys()) == {"AAA", "BBB"}
     total = sum(out["counts"].values())
     assert total == len(facts)
@@ -979,7 +1063,25 @@ def test_compute_verdicts_spot_prefers_spot_by_ticker():
 def test_compute_verdicts_spot_falls_back_to_quotes_close():
     facts = {"AAA": {}}
     out = verdict.compute_verdicts([], [], facts, {}, {"AAA": {"close": 99.0}}, None, None)
-    assert "AAA" in out["by_ticker"]
+    # the trend note is the proof the spot resolved: with no spot it would
+    # read "no spot"; with a spot and no bars it reads the history shortfall
+    assert out["by_ticker"]["AAA"]["inputs"]["trend"]["note"] == "fewer than 200 sessions of history"
+
+
+def test_compute_verdicts_one_bad_name_never_drops_the_block():
+    # 2026-09-11 review: build_snapshot wraps compute_verdicts in ONE try,
+    # so a single name raising used to omit the whole verdicts key. A
+    # framework verdict that is not a string makes framework_input raise
+    # (str.endswith on an int); that name publishes a null entry naming the
+    # failure class and every other name is untouched.
+    facts = {"BAD": {"framework": {"verdict": 12345}}, "OK": {"framework": {"verdict": "ADD"}}}
+    out = verdict.compute_verdicts([], [], facts, {}, {}, None, None)
+    assert out["failed"] == 1
+    bad = out["by_ticker"]["BAD"]
+    assert bad["call"] is None and bad["score"] is None
+    assert bad["note"] == "not computed (AttributeError)"
+    assert set(bad["inputs"]) == set(verdict.VERDICT_INPUT_ORDER)
+    assert out["by_ticker"]["OK"]["inputs"]["framework"] == {"v": 0.4, "note": "ADD"}
 
 
 def test_compute_verdicts_spot_none_when_neither_positive():
@@ -1146,34 +1248,37 @@ def test_integration_against_fixture_payload():
             assert "_BUILDING" not in fw_note
             assert "_CAPPED" not in fw_note
 
-    # Pinned counts, re-derived AFTER the F1-F5 fixes on this exact fixture
-    # (pre-F1-F5, registered-weight counts on the same fixture: buy 9, sell
-    # 8, hold 39, none 7; with the F1-F5 fixes and the REGISTERED weights,
-    # counts were buy 8, sell 8, hold 40, none 7, with exactly one ticker
-    # moved by the fixes alone: XLF, BUY -> HOLD -- see the trend/rs63 notes
-    # below, which are fix behavior and unaffected by the reweight).
-    #
-    # 2026-09-11 REWEIGHT (backtest attempt #2, equal weights over the four
-    # testable legs -- decisions-log OUTCOME entry 2026-09-11): re-running
-    # the same fixture at the new weights moves six more tickers relative to
-    # the registered-weight counts above:
-    #   MOD:  SELL -> HOLD   (-36 -> -29; lost weight off framework/trend)
-    #   MSFT: HOLD -> BUY    (28 -> 35)
-    #   MU:   HOLD -> BUY    (34 -> 35; trend+rs63+valuation gained weight)
-    #   SPY:  HOLD -> no call (-10 -> null; resolved weight fell under 50 --
-    #         SPY's rs63 is always null (benchmark) and it carries no
-    #         framework/analyst/target/valuation, so losing 6 points of
-    #         weight off trend+framework dropped its total from 54 to 44)
-    #   WTI:  BUY -> no call  (58 -> null; no analyst/target/valuation/flow-
-    #         today coverage, so its resolved weight fell from 50 to 48)
-    #   XLRE: HOLD -> no call (3 -> null; same shape as WTI/SPY, 50 -> 48)
-    # Every one of these three "-> no call" moves is the SAME mechanism:
-    # trend and framework each dropped 6 points of weight (20 -> 14) while
-    # only names that also carry rs63 and/or valuation picked up the
-    # difference elsewhere: SPY/WTI/XLRE do not, so their resolved weight
-    # crossed below VERDICT_MIN_WEIGHT (50) even though nothing about their
-    # OWN inputs changed.
-    assert out["counts"] == {"buy": 9, "sell": 7, "hold": 37, "none": 10}
+    # Pinned counts on this exact fixture under the 2026-09-11 attempt #3
+    # table (trend 21, rs63 21, framework 20, valuation 20, analysts 5 + 3,
+    # flow 5 + 5, market removed; analyst legs centered on the desk's own
+    # medians -- here 1.1722 of 3 and +37.85% over 38 covered names).
+    # History of this line: registered weights buy 8 / sell 8 / hold 40 /
+    # none 7; attempt #2 equal weights buy 9 / sell 7 / hold 37 / none 10.
+    # What the attempt #3 table moved, and why:
+    #   * SELL 7 -> 14: the sector wrappers (XLI, XLP, XLU, XLY) and the
+    #     leveraged pair (SOXL, SOXS) now read their own momentum. Under the
+    #     old table flow was 47% of a wrapper's resolved weight and its
+    #     direction bit (mostly BULL, a per-ticker constant) masked a
+    #     negative trend/rs63; at 5 + 5 the momentum pair is 81% of a
+    #     wrapper's 52 points and decides.
+    #   * none 10 -> 12: SKHY (no price legs; analysts + flow + PEG = 38)
+    #     and CBRS lose their call -- a name with no price reading cannot
+    #     reach 50 any more, which is the point.
+    #   * MSFT BUY -> HOLD (35 -> 32): its target upside sat below the
+    #     desk median, so desk-centering turned a +1.0 into a negative.
+    #   * MU BUY 35 -> BUY 56: trend, rs63 and PEG gained weight; its
+    #     analyst legs fell toward zero under desk-centering (1.12 vs the
+    #     desk median 1.17 -> +0.11; +61% vs +38% -> +0.78).
+    assert out["counts"] == {"buy": 9, "sell": 14, "hold": 28, "none": 12}
+    assert out["failed"] == 0
+    assert out["v"] == 2
+    assert out["horizon_days"] == 21
+    assert out["regime"] == {"name": "bull", "spy_vs_200d": pytest.approx(0.0617, abs=1e-4),
+                             "basis": verdict.REGIME_BASIS, "note": "SPY +6.2% vs its 200-day"}
+    assert out["analyst_centers"]["source"] == "desk"
+    assert out["analyst_centers"]["n_rec_mark"] == 38
+    assert out["analyst_centers"]["rec_mark"] == pytest.approx(1.1722, abs=1e-4)
+    assert out["analyst_centers"]["target_upside"] == pytest.approx(0.3785, abs=1e-4)
 
     xlf = out["by_ticker"]["XLF"]
     assert xlf["call"] == "HOLD"
@@ -1181,34 +1286,41 @@ def test_integration_against_fixture_payload():
     assert xlf["inputs"]["trend"]["v"] == pytest.approx(0.0)
 
     for moved_ticker, expect_call in (
-        ("MOD", "HOLD"), ("MSFT", "BUY"), ("MU", "BUY"),
-        ("SPY", None), ("WTI", None), ("XLRE", None),
+        ("MOD", "SELL"), ("MSFT", "HOLD"), ("MU", "BUY"),
+        ("SPY", None), ("WTI", None), ("XLRE", None), ("SKHY", None),
+        ("XLP", "SELL"), ("XLU", "SELL"), ("SOXL", "SELL"), ("SOXS", "SELL"),
     ):
         assert out["by_ticker"][moved_ticker]["call"] == expect_call, moved_ticker
+    # SKHY: no price leg at all -> no call. Under the old table it read BUY
+    # 63 on analysts + flow alone (2026-09-11 review).
+    skhy = out["by_ticker"]["SKHY"]
+    assert skhy["inputs"]["trend"]["v"] is None and skhy["inputs"]["rs63"]["v"] is None
+    assert skhy["weight"] == 38
 
     mu = out["by_ticker"]["MU"]
     assert mu["call"] == "BUY"
-    assert mu["score"] == 35
+    assert mu["score"] == 56
     assert mu["note"] is None
-    assert mu["n"] == 8
-    assert mu["n_total"] == 9
-    assert mu["weight"] == 86
+    assert mu["n"] == 7
+    assert mu["n_total"] == 8
+    assert mu["weight"] == 80
+    assert "market" not in mu["inputs"]
     mu_inputs = mu["inputs"]
     assert mu_inputs["trend"] == {"v": pytest.approx(1.0), "note": "above 50d · above 200d"}
     assert mu_inputs["rs63"]["note"] == "+6.4pp vs SPY, 63 sessions"
-    assert mu_inputs["rs63"]["v"] == pytest.approx(0.31890031626220505)
+    assert mu_inputs["rs63"]["v"] == pytest.approx(0.3189, abs=1e-4)
     assert mu_inputs["framework"] == {"v": None, "note": "building"}
     assert mu_inputs["analyst_rating"]["note"] == "1.12 of 3 · 57 analysts"
-    assert mu_inputs["analyst_rating"]["v"] == pytest.approx(0.6826511111111108)
-    assert mu_inputs["target_upside"] == {"v": pytest.approx(1.0), "note": "+61% to the average target"}
+    assert mu_inputs["analyst_rating"]["v"] == pytest.approx((1.1722225 - 1.122807) / 0.45, abs=1e-3)
+    assert mu_inputs["target_upside"]["note"] == "+61% to the average target"
+    assert mu_inputs["target_upside"]["v"] == pytest.approx(0.7826, abs=1e-3)
     assert mu_inputs["flow_today"] == {"v": pytest.approx(-0.62), "note": "BEAR 62 on Conviction"}
     assert mu_inputs["flow_persist"] == {"v": pytest.approx(-0.4), "note": "BEAR 40 on Swing"}
     assert mu_inputs["valuation"]["note"] == "PEG 0.03"
-    assert mu_inputs["valuation"]["v"] == pytest.approx(0.9777543567196417)
-    assert mu_inputs["market"] == {"v": pytest.approx(-0.2), "note": "brief NEUTRAL (−1)"}
-    # score = round(100 * (14*1.0 + 14*0.31890031626220505 + 8*0.6826511111111108
-    #   + 7*1.0 + 10*-0.62 + 15*-0.4 + 13*0.9777543567196417 + 5*-0.2) / 86)
-    #        = round(100 * 30.4366201537151 / 86) = round(35.391...) = 35 -> BUY
+    assert mu_inputs["valuation"]["v"] == pytest.approx(0.9778, abs=1e-4)
+    # score = round(100 * (21*1.0 + 21*0.3189 + 5*0.1098 + 3*0.7826
+    #   + 5*-0.62 + 5*-0.4 + 20*0.9778) / 80) = round(100 * 44.67 / 80)
+    #        = round(55.8) = 56 -> BUY
 
     # F1 (2026-09-11 fix): RAM, SKHY, SKHX and STLL all carry far fewer than
     # 64 rows in this fixture (54, 43, 41, 21) with no bar_dates override,

@@ -739,3 +739,17 @@ def test_forecast_columns_are_fetched_and_reach_facts():
     # discloses the shortfall rather than reshaping the bars, so this stays
     # a documented property of the data, not a bug to "fix" by rescaling.
     assert facts["rec_buy"] + facts["rec_hold"] + facts["rec_sell"] < facts["rec_total"]
+
+
+def test_snapshot_stores_analyst_consensus_fields_beside_eps_ntm():
+    """2026-09-11 (attempt #3 review): the weekly snapshot used to store
+    eps_ntm alone, so no rating / target history was accumulating for the
+    verdict's analyst legs. The three scanner fields ride along when they
+    are numbers, and a null one is simply absent -- never a null placeholder."""
+    hist = {"weekly": {}}
+    facts = {"X": {"eps_ntm": 10.0, "rec_mark": 1.4, "rec_total": 30, "target": 250.5},
+             "Y": {"eps_ntm": 5.0, "rec_mark": None, "rec_total": None, "target": None}}
+    hist = context._snapshot_consensus(hist, facts, SESSION)
+    wk = context._iso_week_key(SESSION)
+    assert hist["weekly"][wk]["X"] == {"eps_ntm": 10.0, "rec_mark": 1.4, "rec_total": 30, "target": 250.5}
+    assert hist["weekly"][wk]["Y"] == {"eps_ntm": 5.0}

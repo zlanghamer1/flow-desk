@@ -1486,7 +1486,7 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
       <div><h4>Limits</h4><p>Net flow is premium changing hands; free data can't see buyer vs seller. FLOW % describes what traded today, not what happens next.
         Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
         Auto trend lines and levels are drawn from this page's own pivot math — display only, never a signal.
-        Desk verdicts are a hand-weighted composite of nine readings on this page, with no backtest behind them.
+        Desk verdicts weigh eight readings on this page toward the next 21 trading days; the four price-and-fundamentals weights come from a pre-registered backtest, the four flow and analyst weights are judgment. In past bear markets (S&amp;P 500 below its 200-day) the momentum readings ran backwards and BUY calls carried no edge.
         Nothing here is financial advice.</p></div>
     </div>
     <div class="credit">Charts render with <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a>,
@@ -1544,7 +1544,7 @@ var BOARD_SCORE_FLOOR = 60;
 // against (fetcher/test_sync_constants.py) — never re-derive `call` or
 // `score`, and never hardcode a weight or threshold; those come off the
 // payload (vd.weights, vd.thresholds, vd.order).
-var VERDICT_INPUT_LABELS = {trend:"Trend", rs63:"Rel str", framework:"5-metric", analyst_rating:"Rating", target_upside:"Target", flow_today:"Flow 0–7d", flow_persist:"Flow swing", valuation:"PEG", market:"Market"};
+var VERDICT_INPUT_LABELS = {trend:"Trend", rs63:"Rel str", framework:"5-metric", analyst_rating:"Rating", target_upside:"Target", flow_today:"Flow 0–7d", flow_persist:"Flow swing", valuation:"PEG"};
 var VERDICT_INPUT_CODES = {trend:"TR", rs63:"RS", framework:"FW", analyst_rating:"AR", target_upside:"TG", flow_today:"F7", flow_persist:"FS", valuation:"PG", market:"MK"};
 var VERDICT_CALL_CLS = {BUY:"vb", SELL:"vs", HOLD:"vh"};
 // Display band only — not published on the payload. A resolved input inside
@@ -5775,6 +5775,35 @@ function verdCutNoteHTML(cut, rows){
   var rest = clauses.length ? (' '+clauses.join(' and ')+' sit below the line.') : '';
   return '<div class="boardcut">'+head+rest+' '+btn+'show all '+cut.total+'</button></div>';
 }
+// Two dynamic disclosures on the Verdicts board header (2026-09-11, backtest
+// attempt #3). Neither is an input: the market regime is published by the
+// fetcher (verdicts.regime -- SPY against its own 200-day) because attempt
+// #3 measured momentum reading backwards in bear markets and no weight was
+// adopted on it; the Morning Brief verdict is printed because it LEFT the
+// composite the same day (an identical constant across names never ranked
+// anything). Both change with the data, so they are disclosures, not
+// explanation. A missing reading prints its reason, never nothing.
+function verdictRegimeChipHTML(vd){
+  var rg = vd && vd.regime;
+  if(!rg) return '';
+  if(!rg.name){
+    return ' <span class="bc gone" data-tip="'+esc(rg.note||"no regime reading")+'">regime —</span>';
+  }
+  var dist = num(rg.spy_vs_200d);
+  var word = rg.name==="bear" ? "bear" : "bull";
+  var tip = rg.note || (rg.basis||"");
+  return ' <span class="bc'+(rg.name==="bear"?' h':'')+'" data-tip="'+esc(tip)+'">'
+    + word + (dist!=null ? (' · SPY '+fm1(dist*100)+'% vs 200d') : '') + '</span>';
+}
+function verdictBriefChipHTML(data){
+  var b = data && data.brief;
+  if(!b || typeof b!=="object") return ' <span class="bc gone">brief —</span>';
+  if(b.stale) return ' <span class="bc stale">brief stale</span>';
+  var sc = num(b.score);
+  var v = b.verdict || "?";
+  var cls = v==="RISK-OFF" ? " h" : v==="RISK-ON" ? " s" : "";
+  return ' <span class="bc'+cls+'">brief '+esc(v)+(sc!=null?(' ('+fm1SignedInt(sc)+')'):'')+'</span>';
+}
 function renderVerdicts(data, livePoll){
   var stale = isStaleFlow(data);
   var vd = data && data.verdicts;
@@ -5802,6 +5831,7 @@ function renderVerdicts(data, livePoll){
   var nHold = rows.filter(function(r){ return r.call==="HOLD"; }).length;
   var nNone = rows.filter(function(r){ return r.call==null; }).length;
   stat.innerHTML = '<span class="u">'+nBuy+' buy</span> · <span class="d">'+nSell+' sell</span> · '+nHold+' hold · '+nNone+' no call'
+    + verdictRegimeChipHTML(vd) + verdictBriefChipHTML(data)
     + ageStampHTML(data && data.generated_at_ct, stale);
   var sc = boardScaffold(el, "verd");
   if(rows.length===0){

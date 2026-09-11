@@ -235,64 +235,94 @@ values are `null` (never a string sentinel). All strings are already plain
 ### Verdicts (added 2026-09-11)
 
 `data.json.verdicts` is the desk's one decision layer: a weighted composite of
-nine readings the desk already publishes, computed once per cycle in
+eight readings the desk already publishes, computed once per cycle in
 `fetcher/verdict.py` and read — never re-derived — by the page. It is
 **additive and separate**: `conviction_score` and `swing_score` are unchanged
 and are two of its inputs. OPTIONAL top-level key, omitted when the cycle
-computed nothing (never present as `null` or `{}`).
+computed nothing (never present as `null` or `{}`). **A call is a read on the
+next 21 trading days** (`horizon_days`), the backtests' primary window.
 
 Design record: `docs/superpowers/specs/2026-09-11-desk-verdicts-design.md`.
-Evidence class: **unvalidated** — every constant below is pre-registered by
-judgment; changing one needs a dated amendment in the vault's
+Evidence class: **partly tested** — the four price-and-fundamentals weights
+come from three pre-registered backtest attempts (vault decisions log,
+2026-09-11); the four flow and analyst weights are judgment. Changing any
+constant below needs a dated amendment in the vault's
 `portfolio-thesis/decisions-log.md` first.
 
-**Weights adopted 2026-09-11 from backtest attempt #2** (equal over the four
-testable legs — trend, rs63, framework, valuation — beat the registered set
-out of sample on the desk and the S&P 500; decisions-log OUTCOME entry
-2026-09-11, results in `market-data/results/desk_verdict_backtest_2026-09_attempt2.md`
-in the vault). The registered set before that was trend 20 / rs63 10 /
-framework 20 / valuation 5. Analyst, flow and market legs are unmeasured and
-keep their registered weights.
+**Weights, 2026-09-11 (backtest attempt #3, decisions-log OUTCOME entry;
+results in `market-data/results/desk_verdict_backtest_2026-09_attempt3.md`
+in the vault).** Two classes. The four tested legs carry 82 points in EQUAL
+proportions (21 / 21 / 20 / 20 — the two spare points on trend and rs63 are
+rounding, not a ranking): attempt #3 judged regime-conditional and refit
+weight sets walk-forward against flat equal and none was distinguishable
+(desk paired t 0.68) or cleared the S&P 500 guard. The four untestable legs
+are judgment, registered before the run: flow 5 + 5 (one shared direction
+bit and a FAILED direction test — at 10 the pair can never cross ±35 alone,
+even at the 50-point coverage floor), analysts 5 + 3. **`market` left the
+composite the same day**: the brief score is one number a day, identical for
+every name, so it never ranked anything; it only moved the call count, and
+its measured forward sign was the wrong way. The page prints the brief
+verdict as a chip on the board instead. History: registered 20 / 10 / 20 /
+5 / 8 / 7 / 10 / 15 / 5 (2026-09-11 a.m.); attempt #2 14 / 14 / 14 / 8 / 7 /
+10 / 15 / 13 / 5 (2026-09-11 p.m.).
 
 ```jsonc
 "verdicts": {
-  "v": 1,                                   // schema version of this block
+  "v": 2,                                   // schema version: 2 since 2026-09-11 (eight inputs, regime,
+                                            // analyst_centers, horizon_days, failed)
   "thresholds": { "buy": 35, "sell": -35 }, // call = BUY at score >= buy, SELL at <= sell, else HOLD
   "min_weight": 50,                         // coverage gate: resolved-input weight must reach this...
   "min_inputs": 3,                          // ...AND at least this many inputs must resolve, else no call
   "earnings_gate_days": 3,                  // 0 <= facts.earn_days <= this -> call held to HOLD
+  "horizon_days": 21,                       // the forward window a call is a read on (trading days)
   "order": ["trend", "rs63", "framework", "analyst_rating", "target_upside",
-            "flow_today", "flow_persist", "valuation", "market"],
+            "flow_today", "flow_persist", "valuation"],
                                             // render order; the page's VERDICT_INPUT_LABELS keys must
                                             // equal this set (pinned by fetcher/test_sync_constants.py)
-  "weights": { "trend": 14, "rs63": 14, "framework": 14, "analyst_rating": 8,
-               "target_upside": 7, "flow_today": 10, "flow_persist": 15,
-               "valuation": 13, "market": 5 },        // sum 100
+  "weights": { "trend": 21, "rs63": 21, "framework": 20, "analyst_rating": 5,
+               "target_upside": 3, "flow_today": 5, "flow_persist": 5,
+               "valuation": 20 },                     // sum 100
+  "regime": {                               // the market regime this cycle -- a DISCLOSURE the board
+                                            // prints as a chip; no weight reads it (attempt #3)
+    "name": "bull",                         // "bull" | "bear" | null (unreadable; see note)
+    "spy_vs_200d": 0.0617,                  // SPY spot / its 200-session average - 1; null when name is null
+    "basis": "SPY vs its 200-day average",
+    "note": "SPY +6.2% vs its 200-day"      // or the reason it is null: "no SPY spot",
+                                            // "fewer than 200 SPY sessions of history"
+  },
+  "analyst_centers": {                      // what the two analyst legs were centered on this cycle
+    "rec_mark": 1.1722,                     // median recommendation mark over covered pinned names...
+    "target_upside": 0.3785,                // ...and median 12-month target upside (target/spot - 1)
+    "n_rec_mark": 38, "n_target_upside": 38,// names with >= 5 analysts that fed each median
+    "source": "desk"                        // "desk" | "market probe 2026-09-10" (fallback under 8
+                                            // names: 1.43 / 0.20) | "mixed" (one of each)
+  },
+  "failed": 0,                              // names whose entry raised and published as "not computed"
   "bars_built": "2026-09-10",               // bars.json's own "built" date this cycle read closes from;
                                             // null when no bars payload was available at all
-  "counts": { "buy": 9, "sell": 7, "hold": 37, "none": 10 },   // over by_ticker; none = call null
+  "counts": { "buy": 9, "sell": 14, "hold": 28, "none": 12 },  // over by_ticker; none = call null
   "by_ticker": {
     "MU": {
-      "score": 35,          // int -100..+100 = round(100 * sum(w*v) / sum(w) over RESOLVED inputs);
+      "score": 56,          // int -100..+100 = round(100 * sum(w*v) / sum(w) over RESOLVED inputs);
                             // null when the coverage gate fails (never a score on 2 inputs)
       "call": "BUY",        // "BUY" | "HOLD" | "SELL" | null (null = coverage gate failed)
       "note": null,         // one-line reason a call was held or withheld:
                             //   "earnings in 2d"                 (earnings gate; score still published)
-                            //   "3 of 9 inputs · weight 35 of 100" (coverage gate; score null)
+                            //   "3 of 8 inputs · weight 47 of 100" (coverage gate; score null)
+                            //   "not computed (KeyError)"        (this name raised; every input null)
                             //   null otherwise
-      "n": 8,               // inputs that resolved (v not null)
-      "n_total": 9,         // len(order)
-      "weight": 86,         // sum of weights over resolved inputs
+      "n": 7,               // inputs that resolved (v not null)
+      "n_total": 8,         // len(order)
+      "weight": 80,         // sum of weights over resolved inputs
       "inputs": {           // one entry per key in `order`, ALWAYS present
         "trend":          { "v": 1.0,   "note": "above 50d · above 200d" },
         "rs63":           { "v": 0.32,  "note": "+6.4pp vs SPY, 63 sessions" },
         "framework":      { "v": null,  "note": "building" },
-        "analyst_rating": { "v": 0.68,  "note": "1.12 of 3 · 57 analysts" },
-        "target_upside":  { "v": 1.0,   "note": "+61% to the average target" },
+        "analyst_rating": { "v": 0.11,  "note": "1.12 of 3 · 57 analysts" },
+        "target_upside":  { "v": 0.78,  "note": "+61% to the average target" },
         "flow_today":     { "v": -0.62, "note": "BEAR 62 on Conviction" },
         "flow_persist":   { "v": -0.40, "note": "BEAR 40 on Swing" },
-        "valuation":      { "v": 0.98,  "note": "PEG 0.03" },
-        "market":         { "v": -0.2,  "note": "brief NEUTRAL (−1)" }
+        "valuation":      { "v": 0.98,  "note": "PEG 0.03" }
       }
     }
   }
@@ -301,7 +331,8 @@ keep their registered weights.
 
 This exact MU block is re-run against `fetcher/testdata/verdict_sample_2026-09-10.json`
 (a trimmed real cycle, `fetcher/test_verdict.py`'s integration test) on every
-change; the `counts` above are that same fixture's real, current tally.
+change; the `counts`, `regime` and `analyst_centers` above are that same
+fixture's real, current values.
 
 **Input mappings** (each `v` is −1..+1 or null; `clamp` bounds to ±1):
 
@@ -310,12 +341,15 @@ change; the `counts` above are that same fixture's real, current tally.
 | `trend` | settled closes from `bars.json` (SMA50, SMA200) **with the cycle spot appended as the newest bar** | leg(m) = 0 if abs(spot/m − 1) < 0.003 else sign(spot − m); v = 0.5·leg(SMA50) + 0.5·leg(SMA200) | < 200 total (closes + spot) or no spot |
 | `rs63` | closes for the name and SPY, anchored on SPY's own calendar | clamp(((c[-1]/c[anchor] − 1) − (spy[-1]/spy[-64] − 1)) / 0.20) — see below | < 64 SPY sessions; the name has < 64 closes or its own history starts after the anchor date; no calendar date match within a history that does span the anchor; or the name IS the benchmark |
 | `framework` | `facts.<T>.framework.verdict`, rendered TIER | BUY_5 1.0 · BUY_4 0.75 · ADD 0.4 · HOLD 0.0 · AVOID −1.0 | BUILDING, NOT_APPLICABLE, absent |
-| `analyst_rating` | `facts.<T>.rec_mark`, `rec_total` | clamp((1.43 − mark) / 0.45) | rec_mark null or rec_total < 5 |
-| `target_upside` | `facts.<T>.target`, spot, `rec_total` | clamp(((target/spot − 1) − 0.20) / 0.30) | target/spot null or rec_total < 5 |
-| `flow_today` | the name's ConvictionCard | (+1 BULL / −1 BEAR) × score/100 | no card |
-| `flow_persist` | the name's SwingCard | (+1 BULL / −1 BEAR) × score/100 | no card |
-| `valuation` | `facts.<T>.peg`, `pe`, `sec_type` | clamp((1.5 − peg) / 1.5) | peg null/≤0; pe null/≤0/>150; fund |
-| `market` | `data.brief.score` | clamp(score / 5) | brief absent, stale, or score null |
+| `analyst_rating` | `facts.<T>.rec_mark`, `rec_total`; the cycle's `analyst_centers.rec_mark` | clamp((center − mark) / 0.45) | rec_mark null or rec_total < 5 |
+| `target_upside` | `facts.<T>.target`, spot, `rec_total`; the cycle's `analyst_centers.target_upside` | clamp(((target/spot − 1) − center) / 0.30) | target/spot null or rec_total < 5 |
+| `flow_today` | the name's ConvictionCard | (+1 BULL / −1 BEAR) × score/100 | no card; `net_flow` exactly 0 ("no net flow") |
+| `flow_persist` | the name's SwingCard | (+1 BULL / −1 BEAR) × score/100 | no card; `net_flow` exactly 0 ("no net flow") |
+| `valuation` | `facts.<T>.peg`, `pe`, `sec_type`, spot | clamp((1.5 − peg) / 1.5) | peg null/≤0; pe null/≤0/>150; fund; prior-year EPS base under $0.05 (see below) |
+
+**`market` is not an input since 2026-09-11.** `data.brief` is still published
+and the Verdicts board prints its verdict and score as a chip beside the
+regime chip.
 
 **`trend`'s series is `closes + [spot]`**, exactly the page's own `seriesFull()`
 (index.html): `bars.json`'s newest row is the PRIOR settled session (the daily
@@ -384,13 +418,36 @@ rounds to zero at its printed precision renders as unsigned zero ("0", "0.0",
 rounds to zero is not a negative fact worth a minus sign. U+2212 (never ASCII
 hyphen-minus) is the only character that ever prints a negative. This applies
 to every note that can carry a sign: `rs63` (percentage-point gap),
-`target_upside` (percent to target), `market` (the brief score in
-parentheses), and `valuation`'s `peg <= 0` / `pe <= 0` null-note values.
+`target_upside` (percent to target), `regime.note` (SPY's distance to its
+200-day) and `valuation`'s `peg <= 0` / `pe <= 0` null-note values.
 
-The analyst centers (1.43; +20%) and spans (0.45; 0.30) come from a keyless
-scanner probe on 2026-09-10 over 2,731 US stocks with ≥5 analysts and a cap
-above $2B (median mark 1.43, p10–p90 1.115–1.90; median target upside +20%,
-p10–p90 +3%…+51%). The spot is the CBOE chain spot when the name has one,
+**The analyst centers are the desk's own cross-sectional medians each cycle**
+(2026-09-11, attempt #3 amendment): the median `rec_mark` and the median
+target upside over pinned names with ≥ 5 analysts, published as
+`analyst_centers` so the reader can see what the two legs were measured
+against. Under 8 covered names the fixed 2026-09-10 market-probe centers
+(1.43; +20%; 2,731 US stocks with ≥5 analysts and a cap above $2B) are the
+fallback and `source` says so. Spans (0.45; 0.30) are unchanged. Under the
+fixed market centers the pair read +0.45 and +0.56 mean value on the live
+desk — a +6-point push on every covered name — with target upside pinned at
++1.0 on 15 of 38 names.
+
+**`valuation` carries the Financials tab's prior-EPS floor** (2026-09-11):
+the prior-year TTM EPS base the vendor's PEG rests on is implied from its own
+P/E and PEG (eps_ttm = spot / pe; growth = pe / (100 · peg); prior = eps_ttm /
+(1 + growth)); under $0.05 the PEG is a near-zero-denominator artifact and
+reads null with note `"PEG 0.02 on a $0.010 prior-year EPS base"`. With no
+spot the floor cannot be applied and the PEG stands. MU's PEG 0.03 on a
+$5.7 base is a real trough recovery and passes.
+
+**`regime`** is SPY's spot against its own 200-session average, on the same
+`closes + [spot]` series `trend` reads, `bear` below and `bull` at or above.
+Attempt #3 measured momentum (trend, rs63) reading backwards in bear markets
+on both the desk and the S&P 500 while PEG did not, and found no
+regime-conditional weight set distinguishable from flat equal, so the regime
+is disclosed and nothing is conditioned on it.
+
+The spot is the CBOE chain spot when the name has one,
 else the scanner close. `bars.json` is the copy on disk in OUT_DIR (the data
 branch checkout) unless this cycle rebuilt it — its own `"bars_built"`
 (verbatim from that payload's `"built"` field, or `null` when no bars payload
