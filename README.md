@@ -514,6 +514,24 @@ free history to test against.** The record is in the vault's decisions log,
 and any further change needs a dated note there before it ships. The design
 record is `docs/superpowers/specs/2026-09-11-desk-verdicts-design.md`.
 
+## Call scorecard (added 2026-09-12)
+
+Under the Verdicts board, a scorecard keeps the desk honest about its own
+calls. Every trading day the fetcher writes down each name's call, score and
+price at the last refresh of the day. Twenty-one trading days later it looks
+up that name's closing price and grades the call: a BUY was right if the
+stock closed higher, a SELL if it closed lower. HOLD calls are recorded with
+their move but never graded. The S&P 500's move over the same three weeks
+sits beside each row so a right call in a rising market is easy to spot.
+
+The board's header says how many calls have been logged since the first day,
+how many have been graded, and how many are still waiting. Until the first
+calls reach 21 sessions the board says exactly that, with the date of the
+oldest open call and how many sessions it has left. The grading happens in
+the fetcher and the page only prints it. Nothing on the scorecard changes a
+verdict or a weight; changing those still needs a dated note in the vault's
+decisions log first.
+
 ## Its limits
 
 - **Options data is 15 minutes delayed.** It's free CBOE data, not a live feed.

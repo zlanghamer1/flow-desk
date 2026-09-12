@@ -259,6 +259,21 @@ def dates_of(bars_payload: dict | None, ticker: str, n_rows: int) -> list[str] |
     return sessions[-n_rows:]
 
 
+def cycle_spot(ticker: str, spot_by_ticker: dict | None, quotes: dict | None) -> float | None:
+    """The one spot rule for the verdict layer AND the scorecard that grades
+    it (2026-09-12): the CBOE chain spot when the name has one, else the
+    scanner close, else None. A non-positive or non-numeric value is None.
+    Both callers reading this one function is what keeps a logged entry
+    price identical to the spot the verdict was computed from."""
+    sp = (spot_by_ticker or {}).get(ticker)
+    if isinstance(sp, (int, float)) and not isinstance(sp, bool) and sp > 0:
+        return float(sp)
+    qc = ((quotes or {}).get(ticker) or {}).get("close")
+    if isinstance(qc, (int, float)) and not isinstance(qc, bool) and qc > 0:
+        return float(qc)
+    return None
+
+
 def load_bars_from_disk(out_dir) -> dict | None:
     """bars.json from OUT_DIR, fail-soft: missing file or bad JSON -> None,
     never raises. Used when this cycle did not rebuild bars.json itself (the
@@ -720,13 +735,7 @@ def compute_verdicts(conviction_cards, swing_cards, facts: dict | None,
     spy_dates = dates_of(bars_payload, "SPY", len(spy_closes))
 
     def spot_of(ticker: str) -> float | None:
-        sp = (spot_by_ticker or {}).get(ticker)
-        if isinstance(sp, (int, float)) and not isinstance(sp, bool) and sp > 0:
-            return float(sp)
-        qc = ((quotes or {}).get(ticker) or {}).get("close")
-        if isinstance(qc, (int, float)) and not isinstance(qc, bool) and qc > 0:
-            return float(qc)
-        return None
+        return cycle_spot(ticker, spot_by_ticker, quotes)
 
     centers = analyst_centers(facts, spot_of)
     regime = compute_regime(spy_closes, spot_of("SPY"))

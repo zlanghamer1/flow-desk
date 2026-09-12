@@ -173,6 +173,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import context  # sibling module: vault brief/catalysts/news/facts + bars.json
 import market_guard  # sibling module: holiday/half-day/window awareness
 import verdict  # sibling module: the verdicts composite (data.json.verdicts)
+import scorecard  # sibling module: grades past verdicts (data.json.scorecard)
 
 TZ_CT = ZoneInfo("America/Chicago")
 
@@ -1748,6 +1749,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     vol_history = history["vol_history"]
     consensus_history = load_consensus_history(out_dir)
     gamma_history = load_gamma_history(out_dir)
+    verdict_history = scorecard.load_verdict_history(out_dir)
     prev_cycle = load_prev_cycle()
     same_session = prev_cycle["session"] == session_str
     new_prev_cycle: dict = {"session": session_str, "flows": {}, "vols": {}}
@@ -2264,6 +2266,23 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     except Exception as e:
         log(f"WARN verdicts failed: {e}")
 
+    # ── call scorecard (added 2026-09-12) ───────────────────────────────────
+    # fetcher/scorecard.py. Logs this cycle's calls into verdict_history.json
+    # (same write_history gate as every other history writer; the last cycle
+    # of the day overwrites, so the logged entry price is the one nearest the
+    # close) and grades every logged call that has reached its horizon
+    # against bars.json's closes. Fail-soft like verdicts above: a raise here
+    # omits the key and never touches the rest of the cycle.
+    scorecard_block = None
+    try:
+        scorecard.record_calls(verdict_history, verdicts, spot_by_ticker, quotes,
+                               session_str, write_history)
+        bars_for_scorecard = (bars_payload if bars_payload is not None
+                              else verdict.load_bars_from_disk(out_dir))
+        scorecard_block = scorecard.compute_scorecard(verdict_history, bars_for_scorecard)
+    except Exception as e:
+        log(f"WARN scorecard failed: {e}")
+
     bullish_flow = sum(1 for v in by_ticker.values() if v["direction"] == "BULL")
     bearish_flow = sum(1 for v in by_ticker.values() if v["direction"] == "BEAR")
     firing_count = sum(1 for v in by_ticker.values() if v.get("firing"))
@@ -2359,6 +2378,9 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
         # nothing (empty/absent facts, or the try/except above caught a
         # failure), never published as null or {} (DATA_CONTRACT.md).
         **({"verdicts": verdicts} if verdicts else {}),
+        # scorecard — OPTIONAL, omitted until the first session of calls is
+        # logged or when the block raised (DATA_CONTRACT.md).
+        **({"scorecard": scorecard_block} if scorecard_block else {}),
     }
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -2414,6 +2436,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
         save_history(out_dir, history)
         save_consensus_history(out_dir, consensus_history)
         save_gamma_history(out_dir, gamma_history)
+        scorecard.save_verdict_history(out_dir, verdict_history)
     save_prev_cycle(new_prev_cycle)
 
     log(f"wrote {data_path} ({data_path.stat().st_size} bytes)")
