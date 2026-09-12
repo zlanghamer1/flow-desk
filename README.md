@@ -366,6 +366,29 @@ volumes included. The repaired series matches Polygon day for day. A
 **split-rescaled 15×** chip on the chart says it happened, because a history
 that changes shape overnight should say why.
 
+## US fund flows (added 2026-09-12)
+
+A card in the right rail shows **whether money is going into or out of US
+stock funds as a whole**, using the Investment Company Institute's weekly
+estimates. ICI counts every US mutual fund and ETF together, split into US
+stock funds, world stock funds, bond funds and commodity funds, in dollars.
+
+The card prints the latest week, the week before, the total over the five
+weeks ICI publishes, and how many weeks in a row the money has moved the same
+way. A streak that fills all five weeks prints as "5+" because the table
+cannot see further back.
+
+Two things to know:
+
+- **It runs a week behind by construction.** ICI publishes on Wednesday for
+  the week that ended the Wednesday before. The header names the week and
+  the release date, and turns amber when a release is more than ten days
+  old, which means the desk missed a fetch, not that ICI is slow.
+- **It is context, not a signal.** Nothing on this card feeds a board score or
+  a desk verdict. The weekly headline number in the news is usually LSEG
+  Lipper's, a paid series that counts a different set of funds, so the two
+  will not match to the dollar.
+
 ## Chance of a Fed rate increase (added 2026-08-18)
 
 The Morning Brief panel carries a card showing **the odds that the Fed raises

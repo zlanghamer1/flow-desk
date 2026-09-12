@@ -1054,6 +1054,28 @@ are decided and clearly seen based on the weighted composite of all data."
   `readings.length`, so a 0-of-7 failure prints seven "no data" chips instead
   of a bold grade with no visible basis.
 
+## US fund flows (ICI weekly, added 2026-09-12)
+- **The one free series for "is money leaving US stock funds overall".**
+  `context.fetch_fund_flows` reads ICI's combined mutual-fund + ETF weekly
+  estimates on the hourly gate; `data.json.fund_flows` (DATA_CONTRACT.md)
+  carries five weeks newest first in USD millions. Display only; never a
+  board or verdict input.
+- **ICI sits behind Akamai and answers 403 to a bare GET** whatever the
+  User-Agent. The browser-navigation header set (`ICI_HEADERS`, Sec-Fetch-*
+  plus Upgrade-Insecure-Requests) is what passes, measured 3 of 3 on
+  2026-09-12. Keep the set whole; `test_context` pins it.
+  `.github/workflows/probe-ici.yml` runs one fetch from a GitHub runner on
+  demand, so the runner path is measured, not assumed.
+- **Keep-last-good, same as `fed_odds`:** a None result never overwrites
+  the cached release. The page ages the card from `released` and marks it
+  stale past `FUND_FLOWS_STALE_DAYS` (10).
+- **A streak that fills the table is "5+", never "5"** (`at_table_limit`).
+  A zero or missing week ends a streak; a zero newest week is no streak.
+- **TradingView cannot replace this.** Its `fund_flows.*` columns are
+  ETF-only and 1M at the shortest (probed 2026-09-12: no 1W or 1D), and the
+  asset-class / focus fields come back as hashed codes. The weekly figure
+  Reuters quotes is LSEG Lipper, paid.
+
 ## Fed-hike odds
 - The market-priced chance of a hike at the next meeting (Polymarket,
   keyless). It grades the macro backdrop and words the verdict; **it never

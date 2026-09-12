@@ -7,7 +7,7 @@ single warn line and returns None/[]/{} depending on its shape; nothing here
 ever raises out to build_snapshot.run_cycle. See
 /home/user/flow-desk/DATA_CONTRACT.md for the authoritative shape of every
 field this module produces (the data.json keys: brief, catalysts, news,
-facts, desk_private, fed_odds, context_updated_at; and the sidecar files
+facts, desk_private, fed_odds, fund_flows, context_updated_at; and the sidecar files
 bars.json and fund/{SYM}.json).
 
 ────────────────────────────────────────────────────────────────────────────
@@ -130,6 +130,7 @@ instruction was to gate them together.
 from __future__ import annotations
 
 import csv
+import html as html_mod
 import http.cookiejar
 import io
 import json
@@ -211,6 +212,47 @@ AVG_MOVE_BASIS = 252            # avg_move's own closes pool stays pinned at
                                 # defensive, redundant slice, not a change in
                                 # what avg_move measures (see build_bars).
 FETCH_STALE_SEC = 55 * 60       # hourly gate for vault/econ/news/fed odds
+
+# ── US fund flows (ICI weekly, added 2026-09-12 on Zach's ask) ──────────────
+# The Investment Company Institute publishes, every Wednesday, estimated net
+# flows for ALL US long-term mutual funds plus ETFs combined, split domestic
+# equity / world equity / hybrid / bond / commodity, for the week that ended
+# the PRIOR Wednesday. It is the only free, keyless series that answers
+# "is money leaving US stock funds overall" — TradingView's fund_flows.* are
+# ETF-only and monthly at best (probed 2026-09-12: 1M/3M/YTD/1Y/3Y/5Y, no
+# 1W or 1D), and the weekly LSEG Lipper figure Reuters quotes is paid.
+# Display only: it never touches a board score or a verdict.
+#
+# Access (measured 2026-09-12, 3 of 3 each way): the site sits behind
+# Akamai and answers 403 "Access Denied" to a plain GET whatever the
+# User-Agent, Accept, Accept-Language or Accept-Encoding say. Adding the
+# browser navigation headers (Sec-Fetch-*, Upgrade-Insecure-Requests) is
+# what gets a 200. Keep ICI_HEADERS whole; test_context pins the set.
+ICI_FLOWS_URL = "https://www.ici.org/research/stats/combined_flows"
+ICI_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+}
+# Row label on ICI's table -> payload key. Indented sub-rows (Domestic,
+# World, Taxable, Municipal) are children of the bold row above them; the
+# table carries them as plain labels, so the mapping is by name.
+ICI_ROW_KEYS = {
+    "equity": "equity", "domestic": "domestic_equity", "world": "world_equity",
+    "hybrid": "hybrid", "bond": "bond", "taxable": "taxable_bond",
+    "municipal": "municipal_bond", "commodity": "commodity", "total": "total",
+}
+ICI_REQUIRED_KEYS = ("domestic_equity", "bond", "total")
+ICI_MAX_WEEKS = 5               # ICI's table carries five weeks; the streak
+                                # count below can never read past it, so a
+                                # run that fills the table is flagged as such
+                                # rather than printed as "5 weeks".
 
 # ── Fed-hike odds (Polymarket, added 2026-08-18 on Zach's ask) ───────────────
 # The desk reads this live on the hourly context gate rather than taking the
@@ -2925,6 +2967,148 @@ def build_fund_universe(universe: list[str], session_date: date,
     return out
 
 
+# ── US fund flows (ICI weekly) ──────────────────────────────────────────────
+
+_ICI_CELL_RE = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.S | re.I)
+_ICI_ROW_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S | re.I)
+_ICI_TAG_RE = re.compile(r"<[^>]+>")
+_ICI_WEEK_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
+_ICI_RELEASE_RE = re.compile(
+    r"Washington,\s*DC;?\s*(?:</strong>)?\s*(?:<strong>)?\s*([A-Z][a-z]+ \d{1,2}, \d{4})", re.S)
+
+
+def _ici_text(cell: str) -> str:
+    return html_mod.unescape(_ICI_TAG_RE.sub("", cell)).replace("\xa0", " ").strip()
+
+
+def _ici_num(txt: str) -> Optional[float]:
+    """'-5,138' -> -5138.0 (USD millions). None for a blank or non-number."""
+    t = txt.replace(",", "").replace("\u2212", "-").strip()
+    if not t or t in ("-", "\u2014"):
+        return None
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def _ici_streak(weeks: list, key: str) -> Optional[dict]:
+    """Consecutive most-recent weeks with the same flow sign for `key`.
+
+    Zero or a missing reading ends the run. `at_table_limit` is True when the
+    run fills every week ICI publishes: the true streak is then AT LEAST this
+    long, and the page must say "5+ weeks", never "5 weeks"."""
+    vals = [w.get(key) for w in weeks]
+    if not vals or not isinstance(vals[0], (int, float)) or vals[0] == 0:
+        return None
+    sgn = 1 if vals[0] > 0 else -1
+    n = 0
+    for v in vals:
+        if not isinstance(v, (int, float)) or v == 0 or (v > 0) != (sgn > 0):
+            break
+        n += 1
+    return {"sign": sgn, "weeks": n, "at_table_limit": n >= len(weeks)}
+
+
+def parse_ici_combined_flows(page: str) -> Optional[dict]:
+    """Parse ICI's 'Combined Estimated Long-Term Fund Flows' page.
+
+    Returns the data.json `fund_flows` object minus `as_of`/`source`/`url`
+    (the caller stamps those), or None when the table is not where and what
+    the parser expects — never a partial or guessed row. Units are USD
+    millions, straight from the table's own caption ("Millions of dollars").
+    """
+    if not isinstance(page, str) or "<table" not in page:
+        return None
+    tbl_start = page.find("<table")
+    tbl_end = page.find("</table>", tbl_start)
+    if tbl_start < 0 or tbl_end < 0:
+        return None
+    rows = _ICI_ROW_RE.findall(page[tbl_start:tbl_end])
+    if len(rows) < 2:
+        return None
+    header = [_ici_text(c) for c in _ICI_CELL_RE.findall(rows[0])]
+    week_ends: list[str] = []
+    for h in header[1:]:
+        m = _ICI_WEEK_RE.match(h)
+        if not m:
+            return None
+        mo, dd, yy = (int(x) for x in m.groups())
+        try:
+            week_ends.append(date(yy, mo, dd).isoformat())
+        except ValueError:
+            return None
+    if not week_ends:
+        return None
+    weeks = [{"week_ended": w} for w in week_ends]
+    for r in rows[1:]:
+        cells = [_ici_text(c) for c in _ICI_CELL_RE.findall(r)]
+        if len(cells) != len(week_ends) + 1:
+            continue
+        key = ICI_ROW_KEYS.get(cells[0].lower())
+        if not key:
+            continue
+        for i, txt in enumerate(cells[1:]):
+            weeks[i][key] = _ici_num(txt)
+    for k in ICI_REQUIRED_KEYS:
+        if not isinstance(weeks[0].get(k), (int, float)):
+            log(f"WARN ici flows: latest week has no '{k}' reading")
+            return None
+    # Newest first is how ICI lays the columns out; keep that order and say
+    # so in the payload rather than relying on the reader to sort.
+    weeks.sort(key=lambda w: w["week_ended"], reverse=True)
+    released = None
+    m = _ICI_RELEASE_RE.search(page)
+    if m:
+        try:
+            released = datetime.strptime(m.group(1), "%B %d, %Y").date().isoformat()
+        except ValueError:
+            released = None
+    return {
+        "unit": "USD millions",
+        "released": released,
+        "weeks": weeks,
+        "streaks": {
+            "domestic_equity": _ici_streak(weeks, "domestic_equity"),
+            "equity": _ici_streak(weeks, "equity"),
+            "bond": _ici_streak(weeks, "bond"),
+        },
+        "n_weeks": len(weeks),
+        "max_weeks": ICI_MAX_WEEKS,
+    }
+
+
+def fetch_fund_flows(_get: Optional[Callable] = None) -> Optional[dict]:
+    """ICI's weekly combined mutual-fund + ETF flow estimates.
+
+    Returns the data.json `fund_flows` object (shape authoritative in
+    DATA_CONTRACT.md) or None on any transient condition — an HTTP error,
+    the Akamai 403, a table the parser does not recognise. The caller keeps
+    the previous cached reading on None, same as fed_odds, and the page ages
+    it from `released`. Never raises.
+    """
+    try:
+        raw = _http_get(ICI_FLOWS_URL, ICI_HEADERS, _get=_get)
+    except Exception as e:
+        log(f"WARN ici flows fetch failed ({type(e).__name__})")
+        return None
+    try:
+        page = raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    except Exception:
+        return None
+    if "Access Denied" in page[:2000] and "<table" not in page:
+        log("WARN ici flows: Access Denied (Akamai) — headers no longer pass")
+        return None
+    parsed = parse_ici_combined_flows(page)
+    if parsed is None:
+        log("WARN ici flows: page fetched but the flows table did not parse")
+        return None
+    parsed["as_of"] = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    parsed["source"] = "ICI"
+    parsed["url"] = ICI_FLOWS_URL
+    return parsed
+
+
 # ── Job-local cache (fetcher/.context_cache.json) ───────────────────────────
 
 def load_context_cache() -> dict:
@@ -2957,6 +3141,8 @@ def load_context_cache() -> dict:
         # file through, so an unlisted key survives only until the next cycle
         # and the desk's Fed card would blink out between hourly refreshes.
         "fed_odds": raw.get("fed_odds") if isinstance(raw.get("fed_odds"), dict) else None,
+        # fund_flows (ICI weekly, 2026-09-12): same keep-last-good contract as fed_odds.
+        "fund_flows": raw.get("fund_flows") if isinstance(raw.get("fund_flows"), dict) else None,
         # intraday bars gate (2026-08-18) — see build_intraday_bars
         "intraday_built_at": raw.get("intraday_built_at") if isinstance(raw.get("intraday_built_at"), str) else None,
     }
@@ -3461,6 +3647,7 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         csv_mirror = fetch_econ_calendar_csv(token, _get=_get)
         econ_rows = fetch_econ_tv(days=ECON_WINDOW_DAYS, _get=_get)
         fed_odds = fetch_fed_odds(session_date, _get=_get)
+        fund_flows = fetch_fund_flows(_get=_get)
 
         earn_map: dict[str, dict] = {}
         for ticker, q in quotes.items():
@@ -3500,12 +3687,19 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
             cache["fed_odds"] = fed_odds
         else:
             fed_odds = cache.get("fed_odds")
+        # Same contract for the ICI reading: a 403 or a parse miss keeps the
+        # previous week's table, which the page ages from its own `released`.
+        if isinstance(fund_flows, dict):
+            cache["fund_flows"] = fund_flows
+        else:
+            fund_flows = cache.get("fund_flows")
     else:
         brief = cache["brief"]
         catalysts = cache["catalysts"]
         news = cache["news"]
         desk_private = cache["desk_private"]
         fed_odds = cache.get("fed_odds")
+        fund_flows = cache.get("fund_flows")
 
     # ── once-daily bars rebuild (+ fund sidecars, same gate — Task 4) ────
     # Gated on BOTH the date AND the build signature (added 2026-08-15,
@@ -3593,6 +3787,8 @@ def build_context(quotes: dict[str, dict], pinned: list[str], session_date: date
         fields["desk_private"] = desk_private
     if fed_odds is not None:
         fields["fed_odds"] = fed_odds
+    if fund_flows is not None:
+        fields["fund_flows"] = fund_flows
     if isinstance(cache.get("context_fetched_at"), str):
         fields["context_updated_at"] = cache["context_fetched_at"]
 

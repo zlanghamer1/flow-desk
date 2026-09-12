@@ -1,0 +1,35 @@
+name: Probe ICI access
+
+# Manual diagnostic only (2026-09-12). The US fund-flows card reads ICI's
+# weekly release from the refresh loop's runner, and ICI sits behind Akamai,
+# which answered 403 to a plain GET from the build container. This job runs
+# fetch_fund_flows once from a GitHub-hosted runner and prints whether the
+# page parsed, so the runner path is measured rather than assumed. It writes
+# nothing and touches no branch.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Fetch the ICI flows page once
+        run: |
+          python3 - <<'PY'
+          import sys; sys.path.insert(0, "fetcher")
+          import context
+          out = context.fetch_fund_flows()
+          if out is None:
+              print("RESULT: ICI did not answer or did not parse from this runner")
+              sys.exit(1)
+          w = out["weeks"][0]
+          print(f"RESULT: ok released={out['released']} week_ended={w['week_ended']} "
+                f"domestic_equity={w['domestic_equity']} bond={w['bond']} total={w['total']}")
+          PY

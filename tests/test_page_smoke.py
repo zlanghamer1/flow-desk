@@ -190,6 +190,25 @@ FED_ODDS = {
     "hike_pct": 51.1, "hold_pct": 48.3, "cut_pct": 0.6,
     "grade": "HOSTILE", "alarm": True,
 }
+FUND_FLOWS = {
+    "as_of": "2026-09-12T15:40:00Z", "source": "ICI",
+    "url": "https://www.ici.org/research/stats/combined_flows",
+    "released": "2026-09-09", "unit": "USD millions", "n_weeks": 5, "max_weeks": 5,
+    "weeks": [
+        {"week_ended": "2026-09-02", "equity": -5463.0, "domestic_equity": -5138.0, "world_equity": -325.0,
+         "hybrid": -1671.0, "bond": 12680.0, "taxable_bond": 12922.0, "municipal_bond": -242.0,
+         "commodity": 2573.0, "total": 8120.0},
+        {"week_ended": "2026-08-26", "equity": -16104.0, "domestic_equity": -18300.0, "world_equity": 2196.0,
+         "hybrid": -2439.0, "bond": 13463.0, "taxable_bond": 10980.0, "municipal_bond": 2483.0,
+         "commodity": 3394.0, "total": -1686.0},
+        {"week_ended": "2026-08-19", "equity": 10463.0, "domestic_equity": 6497.0, "world_equity": 3965.0,
+         "hybrid": -723.0, "bond": 20679.0, "taxable_bond": 18319.0, "municipal_bond": 2360.0,
+         "commodity": 1835.0, "total": 32254.0},
+    ],
+    "streaks": {"domestic_equity": {"sign": -1, "weeks": 2, "at_table_limit": False},
+                "equity": {"sign": -1, "weeks": 2, "at_table_limit": False},
+                "bond": {"sign": 1, "weeks": 3, "at_table_limit": True}},
+}
 BRIEF_PAYLOAD = {
     "generated_at": "2026-09-04T20:20:52Z",
     "context_updated_at": "2026-09-04T20:20:52Z",
@@ -202,6 +221,7 @@ BRIEF_PAYLOAD = {
         "whales_hiding": [], "fed_hike": None, "semi_flow": None, "stale": False,
     },
     "fed_odds": FED_ODDS,
+    "fund_flows": FUND_FLOWS,
     "conviction": [], "swing": [], "big_orders": [], "etf_flow": [],
     "catalysts": [], "news": {"items": [], "by_ticker": {}}, "facts": {},
 }
@@ -726,5 +746,83 @@ def test_stage_verdict_pinned_name_missing_this_cycle(browser, server, width, he
         text = page.evaluate("document.getElementById('stagetabbody').textContent")
         assert "in this publish" in text, text
         assert "outside" not in text, text
+    finally:
+        page.close()
+
+
+# ── US fund flows card (ICI weekly, 2026-09-12) ─────────────────────────────
+# The card prints ICI's own figures with U+2212 minus signs, names the week
+# and the release date, says "3+" for a streak that fills the table, and keeps
+# its slot with a reason when the key is absent.
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_fund_flows_card_renders(browser, server, width, height):
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+
+    def route(r):
+        url = r.request.url
+        if "/data/data.json" in url:
+            r.fulfill(status=200, content_type="application/json", body=json.dumps(BRIEF_PAYLOAD))
+        elif url.startswith(server) or url.startswith("data:"):
+            r.continue_()
+        else:
+            r.abort()
+
+    page.route("**/*", route)
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == [], f"index.html @ {width}px threw: {page_errors}"
+        st = page.evaluate(
+            "({stat: document.getElementById('flowsstat').textContent,"
+            "  body: document.getElementById('flows').innerText,"
+            "  hidden: document.getElementById('s-flows').hidden})"
+        )
+        assert st["hidden"] is False
+        assert "week ended Wed Sep 2" in st["stat"], st["stat"]
+        assert "released Wed Sep 9" in st["stat"], st["stat"]
+        body = st["body"]
+        assert "US stock funds" in body and "Bond funds" in body
+        assert "\u2212$5.1B" in body, body          # −5,138M -> −$5.1B, U+2212
+        assert "+$12.7B" in body, body
+        assert "\u2212$325M" in body, body          # under $1B prints millions
+        assert "-$" not in body, "ASCII minus leaked into the flows card"
+        assert "out 2w" in body and "in 3+w" in body, body
+        assert "bond funds in 3+ weeks" in body, body
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_fund_flows_absent_keeps_slot(browser, server, width, height):
+    payload = {k: v for k, v in BRIEF_PAYLOAD.items() if k != "fund_flows"}
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+
+    def route(r):
+        url = r.request.url
+        if "/data/data.json" in url:
+            r.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+        elif url.startswith(server) or url.startswith("data:"):
+            r.continue_()
+        else:
+            r.abort()
+
+    page.route("**/*", route)
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == []
+        st = page.evaluate(
+            "({stat: document.getElementById('flowsstat').textContent,"
+            "  body: document.getElementById('flows').innerText,"
+            "  hidden: document.getElementById('s-flows').hidden})"
+        )
+        assert st["hidden"] is False
+        assert st["stat"].strip() == "ICI · weekly"
+        assert "did not publish this cycle" in st["body"]
     finally:
         page.close()

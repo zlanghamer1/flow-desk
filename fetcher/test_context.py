@@ -2761,3 +2761,95 @@ def test_fetch_news_reel_caps_are_24_total_and_2_per_ticker_since_2026_09_03():
     # Four names, 2 guaranteed seats each = 8; the other 16 backfill newest-first.
     assert all(v >= 2 for v in hist.values())
     assert set(hist) == {"A", "B", "C", "D"}
+
+
+# ── US fund flows (ICI weekly, 2026-09-12) ───────────────────────────────────
+# The one free series answering "is money leaving US stock funds overall".
+# Fixture is ICI's real 2026-09-09 release, trimmed to the body that carries
+# the table. What these defend: the parse lands the exact figures ICI printed
+# (never a guessed or partial row), the streak can never claim more weeks than
+# the table shows, the Akamai 403 reads as "did not answer" rather than a
+# number, and the browser-navigation headers that get past Akamai stay whole.
+
+_ICI_FIXTURE = (Path(__file__).parent / "testdata" / "ici_combined_flows_2026-09-09.html").read_text(encoding="utf-8")
+
+
+def _ici_get(body: bytes, status_ok: bool = True):
+    def _get(url, headers):
+        assert url == context.ICI_FLOWS_URL, url
+        assert headers == context.ICI_HEADERS, "ICI request must carry the exact browser-navigation header set"
+        if not status_ok:
+            raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+        return body
+    return _get
+
+
+def test_ici_flows_parse_matches_the_published_release():
+    out = context.parse_ici_combined_flows(_ICI_FIXTURE)
+    assert out is not None
+    assert out["unit"] == "USD millions"
+    assert out["released"] == "2026-09-09"
+    assert [w["week_ended"] for w in out["weeks"]] == [
+        "2026-09-02", "2026-08-26", "2026-08-19", "2026-08-12", "2026-08-05"]
+    latest = out["weeks"][0]
+    assert latest["domestic_equity"] == -5138.0
+    assert latest["world_equity"] == -325.0
+    assert latest["equity"] == -5463.0
+    assert latest["bond"] == 12680.0
+    assert latest["municipal_bond"] == -242.0
+    assert latest["total"] == 8120.0
+    assert out["weeks"][1]["domestic_equity"] == -18300.0
+
+
+def test_ici_flows_streak_never_claims_more_weeks_than_the_table_holds():
+    out = context.parse_ici_combined_flows(_ICI_FIXTURE)
+    # Domestic equity: −5,138 then −18,300 then +6,497 -> two weeks out.
+    assert out["streaks"]["domestic_equity"] == {"sign": -1, "weeks": 2, "at_table_limit": False}
+    # Bonds positive in all five visible weeks -> AT LEAST five, flagged.
+    assert out["streaks"]["bond"] == {"sign": 1, "weeks": 5, "at_table_limit": True}
+
+
+def test_ici_flows_zero_reading_ends_a_streak_and_a_zero_latest_is_no_streak():
+    weeks = [{"domestic_equity": 0.0}, {"domestic_equity": -5.0}]
+    assert context._ici_streak(weeks, "domestic_equity") is None
+    weeks = [{"bond": 3.0}, {"bond": 0.0}, {"bond": 4.0}]
+    assert context._ici_streak(weeks, "bond") == {"sign": 1, "weeks": 1, "at_table_limit": False}
+
+
+def test_ici_flows_fetch_stamps_source_and_as_of():
+    out = context.fetch_fund_flows(_get=_ici_get(_ICI_FIXTURE.encode("utf-8")))
+    assert out["source"] == "ICI"
+    assert out["url"] == context.ICI_FLOWS_URL
+    assert out["as_of"].endswith("Z")
+    assert out["weeks"][0]["bond"] == 12680.0
+
+
+def test_ici_flows_403_reads_as_no_answer_not_a_number():
+    assert context.fetch_fund_flows(_get=_ici_get(b"", status_ok=False)) is None
+    denied = b"<HTML><HEAD><TITLE>Access Denied</TITLE></HEAD><BODY><H1>Access Denied</H1></BODY></HTML>"
+    assert context.fetch_fund_flows(_get=_ici_get(denied)) is None
+
+
+def test_ici_flows_unrecognised_table_is_none_never_partial():
+    page = "<html><table><tr><td></td><td>not a date</td></tr><tr><td>Bond</td><td>1</td></tr></table></html>"
+    assert context.parse_ici_combined_flows(page) is None
+    # A table missing the domestic-equity row is not the flows table.
+    page = ("<html><table><tr><td></td><td>9/2/2026</td></tr>"
+            "<tr><td>Bond</td><td>12,680</td></tr><tr><td>Total</td><td>8,120</td></tr></table></html>")
+    assert context.parse_ici_combined_flows(page) is None
+
+
+def test_ici_headers_carry_the_browser_navigation_set():
+    # Measured 2026-09-12: without every one of these Akamai answers 403.
+    for k in ("Sec-Fetch-Dest", "Sec-Fetch-Mode", "Sec-Fetch-Site", "Sec-Fetch-User",
+              "Upgrade-Insecure-Requests", "User-Agent", "Accept", "Accept-Language"):
+        assert k in context.ICI_HEADERS, k
+    assert context.ICI_HEADERS["Sec-Fetch-Mode"] == "navigate"
+
+
+def test_context_cache_keeps_fund_flows_across_a_reload(tmp_path, monkeypatch):
+    monkeypatch.setattr(context, "CONTEXT_CACHE_FILE", tmp_path / "c.json")
+    context.save_context_cache({"fund_flows": {"source": "ICI", "weeks": []}})
+    assert context.load_context_cache()["fund_flows"] == {"source": "ICI", "weeks": []}
+    context.save_context_cache({"fund_flows": "garbage"})
+    assert context.load_context_cache()["fund_flows"] is None

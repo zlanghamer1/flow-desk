@@ -124,12 +124,13 @@ values are `null` (never a string sentinel). All strings are already plain
   "desk_private": { "v": 1 },                    // OPTIONAL, opaque — see note below
   "fed_odds": { "hike_pct": 28.4, "...": "..." },  // OPTIONAL — see note below
   "verdicts": { "v": 1, "by_ticker": { "MU": { "...": "..." } } },  // OPTIONAL — see "Verdicts" below (2026-09-11)
+  "fund_flows": { "source": "ICI", "weeks": [ { "...": "..." } ] },  // OPTIONAL — see "US fund flows" below (2026-09-12)
   "context_updated_at": "2026-08-15T14:32:00Z"   // OPTIONAL — see note below
 }
 ```
 
-> **All eight keys above are OPTIONAL and were added in the context-layer build
-> (2026-08; `fed_odds` 2026-08-18; `verdicts` 2026-09-11).** Absent on old snapshots and the site renders nothing for a
+> **All nine keys above are OPTIONAL and were added in the context-layer build
+> (2026-08; `fed_odds` 2026-08-18; `verdicts` 2026-09-11; `fund_flows` 2026-09-12).** Absent on old snapshots and the site renders nothing for a
 > missing key — the same "old readers keep working" rule every prior addition
 > in this file follows. Each is OMITTED entirely (not present as a key) when
 > its own build produced nothing that cycle, never present with a `null`/`{}`
@@ -1294,6 +1295,51 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
 > that fails keeps its slot" convention every other panel on the page
 > follows. `hidden` is for a payload the desk never carries, not one that
 > came back empty this cycle.
+
+> **`fund_flows`** (added 2026-09-12, Zach's ask: "can I note this in the
+> desk?") — the Investment Company Institute's weekly estimated net flows for
+> ALL US long-term mutual funds plus ETFs combined, the one free, keyless
+> series that answers "is money leaving US stock funds overall". Fetched by
+> `context.fetch_fund_flows` on the hourly context gate from
+> `https://www.ici.org/research/stats/combined_flows`; ICI publishes each
+> Wednesday for the week ended the Wednesday before, so the newest row is
+> about a week old by construction. Display only: it never touches a board
+> score or a verdict.
+>
+> ```jsonc
+> "fund_flows": {
+>   "as_of": "2026-09-12T15:40:00Z",   // when the fetcher read the page
+>   "source": "ICI",
+>   "url": "https://www.ici.org/research/stats/combined_flows",
+>   "released": "2026-09-09",          // ICI's release date from the page dateline; null if not found
+>   "unit": "USD millions",            // ICI's own unit, straight from the table caption
+>   "n_weeks": 5, "max_weeks": 5,      // ICI's table carries five weeks
+>   "weeks": [                          // NEWEST FIRST, one row per week ICI publishes
+>     { "week_ended": "2026-09-02",
+>       "equity": -5463.0, "domestic_equity": -5138.0, "world_equity": -325.0,
+>       "hybrid": -1671.0,
+>       "bond": 12680.0, "taxable_bond": 12922.0, "municipal_bond": -242.0,
+>       "commodity": 2573.0, "total": 8120.0 },  // any figure ICI left blank is null, never 0
+>     { "...": "..." }
+>   ],
+>   "streaks": {                        // consecutive newest weeks of one sign; null when the newest is 0 or missing
+>     "domestic_equity": { "sign": -1, "weeks": 2, "at_table_limit": false },
+>     "equity":          { "sign": -1, "weeks": 2, "at_table_limit": false },
+>     "bond":            { "sign": 1,  "weeks": 5, "at_table_limit": true }
+>   }
+> }
+> ```
+>
+> `at_table_limit: true` means the run fills every week ICI shows, so the
+> true streak is AT LEAST that long; the page prints "5+", never "5". The
+> fetcher returns None on a 403 (the site sits behind Akamai and needs the
+> browser-navigation header set in `context.ICI_HEADERS`), on any HTTP error,
+> and on a table it does not recognise; the cache then keeps the previous
+> release and the page ages it from `released`. The page keeps the card's
+> slot with a one-line reason when the key is absent, and marks the release
+> stale past 10 days (a weekly publisher plus three days' grace). Sub-rows
+> Domestic / World and Taxable / Municipal are children of Equity and Bond;
+> the table does not sum them here, ICI does.
 
 > **Note on `big_orders` — it is a DAY TOTAL PER CONTRACT, not a single order.**
 > Each row is one options contract's whole session: `volume x last x 100`, the
