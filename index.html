@@ -1453,6 +1453,10 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
         <div class="sh" data-collapse="s-etf"><span class="car">▼</span><h2>Semi ETF flows</h2><span class="st" id="etfstat">one reading per session</span></div>
         <div class="sb xwrap" id="etf"></div>
       </section>
+      <section id="s-flows">
+        <div class="sh" data-collapse="s-flows"><span class="car">▼</span><h2>US fund flows</h2><span class="st" id="flowsstat">ICI · weekly</span></div>
+        <div class="sb xwrap" id="flows"></div>
+      </section>
       <section id="s-cat">
         <div class="sh" data-collapse="s-cat"><span class="car">▼</span><h2>Catalysts</h2><span class="st" id="catstat">countdowns live</span></div>
         <div class="sb">
@@ -1482,7 +1486,8 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
         and NVDA alike — this page said "live" until 2026-08-19, when that was measured).</p></div>
       <div><h4>Sources</h4><p>History and financial statements for names off the desk come from
         stockanalysis.com; the heatmap and the searched-name fundamentals come from the same 15-minute-delayed scanner,
-        refreshed about every 2 minutes.</p></div>
+        refreshed about every 2 minutes. US fund flows are the Investment Company Institute's weekly estimates for all
+        US mutual funds and ETFs combined, published each Wednesday for the week ended the Wednesday before.</p></div>
       <div><h4>Limits</h4><p>Net flow is premium changing hands; free data can't see buyer vs seller. FLOW % describes what traded today, not what happens next.
         Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
         Auto trend lines and levels are drawn from this page's own pivot math — display only, never a signal.
@@ -6497,6 +6502,122 @@ function renderETF(data){
     },
     "d1",
     // The "what this shows" explainer button was removed 2026-09-03 (Zach).
+    null);
+}
+
+/* =================== US fund flows (ICI weekly, 2026-09-12) =================== */
+// data.fund_flows: the Investment Company Institute's combined mutual-fund +
+// ETF weekly flow estimates, USD millions, five weeks newest first, fetched by
+// fetcher/context.py (fetch_fund_flows). Display only — the one free, keyless
+// answer to "is money leaving US stock funds overall". Never a scoring input.
+// Every formatter here prints U+2212, never ASCII "-", and guards signed zero.
+function fmtFlowM(m){
+  // m is USD MILLIONS (ICI's own unit). Under $1B print millions, else one-
+  // decimal billions; the decimals keep two distinct rows from printing alike.
+  var v = num(m); if(v===null) return "—";
+  var a = Math.abs(v), sgn = v < 0 ? "−" : (v > 0 ? "+" : "");
+  if(a < 0.5) return "$0";
+  if(a < 1000) return sgn+"$"+Math.round(a)+"M";
+  // One decimal up to $100B: $12.7B and $13.5B must never both print "$13B".
+  var b = a/1000; return sgn+"$"+(b<100 ? b.toFixed(1) : Math.round(b))+"B";
+}
+// Age of the ICI release in whole days, on the CT calendar day, never UTC.
+function fundFlowsAgeDays(released){
+  if(typeof released!=="string" || released.length<10) return null;
+  var a = Date.parse(released.slice(0,10)+"T12:00:00Z");
+  var b2 = Date.parse(ctDateKey(new Date())+"T12:00:00Z");
+  if(!isFinite(a) || !isFinite(b2) || b2 < a) return null;
+  return Math.round((b2-a)/86400000);
+}
+var FUND_FLOWS_STALE_DAYS = 10;   // ICI releases weekly; a release older than
+                                  // a week plus a 3-day grace means a missed
+                                  // fetch, not a slow publisher.
+var FUND_FLOWS_ROWS = [
+  {key:"domestic_equity", l:"US stock funds"},
+  {key:"world_equity",    l:"World stock funds"},
+  {key:"bond",            l:"Bond funds"},
+  {key:"commodity",       l:"Commodity funds"},
+  {key:"total",           l:"All long-term funds"}
+];
+function fundFlowsStreakWords(st, noun){
+  // "US stock funds out 2 weeks" / "bond funds in 5+ weeks" — a run that fills
+  // ICI's whole table is AT LEAST that long, so it prints "5+", never "5".
+  if(!st || !isFinite(st.weeks) || st.weeks < 1) return null;
+  var n = st.weeks + (st.at_table_limit ? "+" : "");
+  return noun+" "+(st.sign<0?"out":"in")+" "+n+(st.weeks===1 && !st.at_table_limit ? " week" : " weeks");
+}
+function renderFundFlows(data){
+  var sec = document.getElementById("s-flows");
+  var ff = data && data.fund_flows;
+  var weeks = (ff && Array.isArray(ff.weeks)) ? ff.weeks.filter(function(w){ return w && typeof w.week_ended==="string"; }) : [];
+  // Header stat prints before any early return, like every other board.
+  var stat = "ICI · weekly";
+  var stale = false;
+  if(ff && weeks.length){
+    var age = fundFlowsAgeDays(ff.released);
+    stale = (age!=null && age > FUND_FLOWS_STALE_DAYS);
+    stat = "week ended "+esc(fmtSessionLabel(weeks[0].week_ended) || weeks[0].week_ended)
+      + (ff.released ? (" · released "+esc(fmtSessionLabel(ff.released) || ff.released)) : "")
+      + (age!=null ? (' <span class="'+(stale?"stale":"m")+'">'+(age===0?"today":(age+"d ago"))
+                      +(stale?" · next release missed":"")+'</span>') : "");
+  }
+  document.getElementById("flowsstat").innerHTML = stat;
+  // A NULL fund_flows means the source did not return — the slot stays, with
+  // the reason, same as the ETF card beside it. The loop republishes on
+  // weekdays only, so a fetcher change reaches here at the next cycle.
+  sec.hidden = false;
+  var scF = boardScaffold(document.getElementById("flows"), "flows");
+  if(!ff || !weeks.length){
+    scF.recap.innerHTML = "";
+    scF.body.innerHTML = '<div class="note">The ICI fund-flow reading did not publish this cycle — that is the source, not a week with no flows. It returns with the next hourly context refresh.</div>';
+    return;
+  }
+  var latest = weeks[0], prior = weeks[1] || {};
+  var sums = {};
+  FUND_FLOWS_ROWS.forEach(function(r){
+    var t = 0, n = 0;
+    weeks.forEach(function(w){ var v = num(w[r.key]); if(v!==null){ t += v; n++; } });
+    sums[r.key] = n ? {v:t, n:n} : null;
+  });
+  var rows = FUND_FLOWS_ROWS.map(function(r){
+    var v1 = num(latest[r.key]), v0 = num(prior[r.key]);
+    var sm = sums[r.key];
+    var st = (ff.streaks && ff.streaks[r.key]) || null;
+    return {label:r.l, key:r.key, v1:v1, v0:v0, sum:(sm?sm.v:null), sumN:(sm?sm.n:0),
+            streak:(st && st.weeks>=1) ? (st.sign<0 ? -st.weeks : st.weeks) : null,
+            streakStr:(st && st.weeks>=1) ? ((st.sign<0?"out ":"in ")+st.weeks+(st.at_table_limit?"+":"")+"w") : "—"};
+  });
+  // Quick read: the same two numbers the table's first rows print, and the
+  // two streaks the fetcher computed from the same five columns.
+  var us = num(latest.domestic_equity), bd = num(latest.bond);
+  var bits = [];
+  if(us!==null) bits.push('US stock funds <b class="'+sign(us)+'">'+fmtFlowM(us)+'</b>');
+  if(bd!==null) bits.push('bond funds <b class="'+sign(bd)+'">'+fmtFlowM(bd)+'</b>');
+  var streakBits = [];
+  var s1 = fundFlowsStreakWords(ff.streaks && ff.streaks.domestic_equity, "US stock funds");
+  var s2 = fundFlowsStreakWords(ff.streaks && ff.streaks.bond, "bond funds");
+  if(s1) streakBits.push(s1); if(s2) streakBits.push(s2);
+  scF.recap.innerHTML = '<span class="m">Quick read:</span> <span>'
+    + 'Week ended '+esc(fmtSessionLabel(latest.week_ended) || latest.week_ended)+': '+bits.join(", ")
+    + (streakBits.length ? ('. '+streakBits.join("; ")) : '')+'.</span>';
+  var nW = weeks.length;
+  table(scF.body, "flows",
+    [{l:"Funds", key:"label"},
+     {l:"Latest wk", key:"v1"},
+     {l:"Prior wk", key:"v0"},
+     {l:nW+"-wk total", key:"sum"},
+     {l:"Streak", key:"streak"}],
+    rows,
+    function(r){
+      return '<tr><td>'+esc(r.label)+'</td>'
+        +'<td class="'+sign(r.v1)+'">'+fmtFlowM(r.v1)+'</td>'
+        +'<td class="'+sign(r.v0)+'">'+fmtFlowM(r.v0)+'</td>'
+        +'<td class="'+sign(r.sum)+'">'+fmtFlowM(r.sum)+(r.sumN && r.sumN<nW ? ' <span class="m">('+r.sumN+' of '+nW+')</span>' : '')+'</td>'
+        +'<td class="m">'+esc(r.streakStr)+'</td></tr>';
+    },
+    null,
+    // No foot: the source and unit sit in the honesty box, the release date
+    // in the header stat. Nothing here reads the same for every week.
     null);
 }
 
@@ -16353,6 +16474,7 @@ function renderAll(data){
   renderSwing(data);
   renderOrders(data);
   renderETF(data);
+  renderFundFlows(data);
   renderCatFilters();
   renderCats();
   renderNews();
