@@ -750,6 +750,134 @@ def test_stage_verdict_pinned_name_missing_this_cycle(browser, server, width, he
         page.close()
 
 
+# ── Call scorecard (2026-09-12) ─────────────────────────────────────────────
+# data.json.scorecard is graded in fetcher/scorecard.py and printed here,
+# never re-graded. Three states: resolved rows on file, calls logged but none
+# old enough to grade, and no scorecard key at all (slot kept with a reason).
+
+SCORECARD_RESOLVED = {
+    "v": 1, "horizon_days": 21, "since": "2026-09-14", "sessions_logged": 25,
+    "calls_logged": 900, "bars_built": "2026-10-16",
+    "open": {"buy": 8, "sell": 12, "hold": 30}, "unresolvable": 1,
+    "earliest_open": {"date": "2026-09-19", "sessions_elapsed": 19, "sessions_left": 2},
+    "resolved": {
+        "buy": {"n": 3, "hits": 2, "misses": 1, "avg_move": 0.0123, "avg_vs_spy": 0.004, "n_vs_spy": 3},
+        "sell": {"n": 1, "hits": 0, "misses": 1, "avg_move": 0.031, "avg_vs_spy": -0.002, "n_vs_spy": 1},
+        "hold": {"n": 1, "avg_move": -0.0003, "avg_vs_spy": None, "n_vs_spy": 0},
+    },
+    "rows_total": 5,
+    "rows": [
+        {"date": "2026-09-15", "ticker": "MU", "call": "BUY", "score": 69, "spot": 977.41, "close": 1001.2,
+         "close_date": "2026-10-14", "move": 0.0243, "spy_move": 0.011, "hit": True},
+        {"date": "2026-09-15", "ticker": "CRWD", "call": "SELL", "score": -51, "spot": 206.74, "close": 213.15,
+         "close_date": "2026-10-14", "move": 0.031, "spy_move": 0.011, "hit": False},
+        {"date": "2026-09-14", "ticker": "XLE", "call": "BUY", "score": 40, "spot": 95.0, "close": 94.05,
+         "close_date": "2026-10-13", "move": -0.01, "spy_move": 0.009, "hit": False},
+        {"date": "2026-09-14", "ticker": "V", "call": "BUY", "score": 36, "spot": 300.0, "close": 306.9,
+         "close_date": "2026-10-13", "move": 0.023, "spy_move": 0.009, "hit": True},
+        {"date": "2026-09-14", "ticker": "LLY", "call": "HOLD", "score": 12, "spot": 800.0, "close": 799.44,
+         "close_date": "2026-10-13", "move": -0.0003, "spy_move": None, "hit": None},
+    ],
+}
+SCORECARD_ALL_OPEN = {
+    "v": 1, "horizon_days": 21, "since": "2026-09-14", "sessions_logged": 3,
+    "calls_logged": 120, "bars_built": "2026-09-16",
+    "open": {"buy": 9, "sell": 14, "hold": 17}, "unresolvable": 0,
+    "earliest_open": {"date": "2026-09-14", "sessions_elapsed": 2, "sessions_left": 19},
+    "resolved": {"buy": {"n": 0, "hits": 0, "misses": 0, "avg_move": None, "avg_vs_spy": None, "n_vs_spy": 0},
+                 "sell": {"n": 0, "hits": 0, "misses": 0, "avg_move": None, "avg_vs_spy": None, "n_vs_spy": 0},
+                 "hold": {"n": 0, "avg_move": None, "avg_vs_spy": None, "n_vs_spy": 0}},
+    "rows_total": 0, "rows": [],
+}
+
+
+def _scorecard_state(page):
+    return page.evaluate(
+        "(function(){"
+        " var rows=[].slice.call(document.querySelectorAll('#score tr.rw[data-sym]'));"
+        " return {stat: document.getElementById('scorestat').textContent,"
+        "  recap: (document.getElementById('score-recap')||{}).textContent,"
+        "  body: document.getElementById('score').innerText,"
+        "  syms: rows.map(function(r){return r.dataset.sym;}),"
+        "  results: rows.map(function(r){return r.children[8].textContent.trim();}),"
+        "  moves: rows.map(function(r){return r.children[6].textContent.trim();}),"
+        "  roleOk: rows.every(function(r){return r.getAttribute('role')==='button' && r.getAttribute('tabindex')==='0';}),"
+        "  hidden: document.getElementById('s-score').hidden,"
+        "  wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};"
+        "})()"
+    )
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_scorecard_renders_resolved_rows(browser, server, width, height):
+    payload = dict(VERDICT_PAYLOAD, scorecard=SCORECARD_RESOLVED)
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+    page.route("**/*", _route_json(server, payload))
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == [], f"index.html @ {width}px threw: {page_errors}"
+        st = _scorecard_state(page)
+        assert st["hidden"] is False
+        assert "900 calls since 2026-09-14" in st["stat"] and "5 resolved" in st["stat"] and "50 open" in st["stat"], st["stat"]
+        assert "1 with no close on file" in st["stat"], st["stat"]
+        assert "BUY · 2 of 3 right · avg +1.2% · +0.4% vs SPY" in st["recap"], st["recap"]
+        assert "SELL · 0 of 1 right" in st["recap"], st["recap"]
+        assert "HOLD · 1 resolved · avg 0.0%" in st["recap"], st["recap"]
+        assert "oldest open call 2026-09-19 · 19 of 21 sessions in · resolves in 2 sessions" in st["recap"], st["recap"]
+        # newest first by default (date desc), ties in fixture order
+        assert st["syms"][:2] == ["MU", "CRWD"] and set(st["syms"]) == {"MU", "CRWD", "XLE", "V", "LLY"}, st["syms"]
+        assert st["roleOk"], "every scorecard row needs role=button + tabindex=0"
+        by = dict(zip(st["syms"], st["results"]))
+        assert by["MU"] == "RIGHT" and by["CRWD"] == "WRONG" and by["LLY"] == "—", by
+        mv = dict(zip(st["syms"], st["moves"]))
+        assert mv["XLE"] == "−1.0%" and "-1.0" not in mv["XLE"], mv   # U+2212, never ASCII minus
+        assert mv["LLY"] == "0.0%", mv   # a move that rounds to zero is unsigned
+        assert not st["wide"], f"sideways scroll at {width}px"
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_scorecard_all_open_says_how_long(browser, server, width, height):
+    payload = dict(VERDICT_PAYLOAD, scorecard=SCORECARD_ALL_OPEN)
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+    page.route("**/*", _route_json(server, payload))
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == []
+        st = _scorecard_state(page)
+        assert "120 calls since 2026-09-14 · 0 resolved · 40 open" in st["stat"], st["stat"]
+        assert st["recap"].strip() == "oldest open call 2026-09-14 · 2 of 21 sessions in · resolves in 19 sessions", st["recap"]
+        assert "0 of 40 open calls have reached 21 sessions." in st["body"], st["body"]
+        assert st["syms"] == []
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_scorecard_absent_keeps_slot(browser, server, width, height):
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+    page.route("**/*", _route_json(server, VERDICT_PAYLOAD))   # no "scorecard" key
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == []
+        st = _scorecard_state(page)
+        assert st["hidden"] is False
+        assert st["stat"].startswith("—"), st["stat"]
+        assert "No calls logged yet" in st["body"], st["body"]
+    finally:
+        page.close()
+
+
 # ── US fund flows card (ICI weekly, 2026-09-12) ─────────────────────────────
 # The card prints ICI's own figures with U+2212 minus signs, names the week
 # and the release date, says "3+" for a streak that fills the table, and keeps

@@ -125,12 +125,14 @@ values are `null` (never a string sentinel). All strings are already plain
   "fed_odds": { "hike_pct": 28.4, "...": "..." },  // OPTIONAL — see note below
   "verdicts": { "v": 1, "by_ticker": { "MU": { "...": "..." } } },  // OPTIONAL — see "Verdicts" below (2026-09-11)
   "fund_flows": { "source": "ICI", "weeks": [ { "...": "..." } ] },  // OPTIONAL — see "US fund flows" below (2026-09-12)
+  "scorecard": { "v": 1, "rows": [ { "...": "..." } ] },  // OPTIONAL — see "Scorecard" below (2026-09-12)
   "context_updated_at": "2026-08-15T14:32:00Z"   // OPTIONAL — see note below
 }
 ```
 
-> **All nine keys above are OPTIONAL and were added in the context-layer build
-> (2026-08; `fed_odds` 2026-08-18; `verdicts` 2026-09-11; `fund_flows` 2026-09-12).** Absent on old snapshots and the site renders nothing for a
+> **All ten keys above are OPTIONAL and were added in the context-layer build
+> (2026-08; `fed_odds` 2026-08-18; `verdicts` 2026-09-11; `fund_flows` and
+> `scorecard` 2026-09-12).** Absent on old snapshots and the site renders nothing for a
 > missing key — the same "old readers keep working" rule every prior addition
 > in this file follows. Each is OMITTED entirely (not present as a key) when
 > its own build produced nothing that cycle, never present with a `null`/`{}`
@@ -483,6 +485,60 @@ score; `brief.score` excludes them).
 `verdicts` key renders the board's slot with a one-line reason, never an
 empty board; a ticker absent from `by_ticker` (a searched, non-pinned name)
 has no verdict, which is a different fact from `call: null`.
+
+### Scorecard (added 2026-09-12)
+
+`data.json.scorecard` reports how past verdicts did. `fetcher/scorecard.py`
+logs every call the verdict layer publishes into `verdict_history.json` (below)
+and, once bars.json carries `horizon_days` settled sessions after a call's
+session, grades the call against the close on that session. The page prints
+this block and never re-grades a call. Nothing here feeds a board score or a
+verdict. OPTIONAL top-level key, omitted until the first session of calls has
+been logged, or when the block raised that cycle.
+
+```jsonc
+"scorecard": {
+  "v": 1,
+  "horizon_days": 21,                 // verdict.VERDICT_HORIZON_DAYS, read from that module
+  "since": "2026-09-14",              // oldest session in verdict_history.json
+  "sessions_logged": 25,
+  "calls_logged": 900,                // rows across every logged session with a call and a spot
+  "bars_built": "2026-10-16",         // bars.json "built" the grading read closes from; null = no bars
+  "open": { "buy": 8, "sell": 12, "hold": 30 },   // logged, not yet 21 sessions old
+  "unresolvable": 1,                  // reached the horizon but the name has no close on that date
+  "earliest_open": {                  // the oldest call still open, or null
+    "date": "2026-09-19", "sessions_elapsed": 19, "sessions_left": 2 },
+  "resolved": {
+    "buy":  { "n": 3, "hits": 2, "misses": 1, "avg_move": 0.0123, "avg_vs_spy": 0.004, "n_vs_spy": 3 },
+    "sell": { "n": 1, "hits": 0, "misses": 1, "avg_move": 0.031,  "avg_vs_spy": -0.002, "n_vs_spy": 1 },
+    "hold": { "n": 1, "avg_move": -0.0003, "avg_vs_spy": null, "n_vs_spy": 0 }   // never graded
+  },
+  "rows_total": 5,                    // every resolved row; `rows` is capped
+  "rows": [                           // newest first, at most SCORECARD_MAX_ROWS (60)
+    { "date": "2026-09-15", "ticker": "MU", "call": "BUY", "score": 69,
+      "spot": 977.41,                 // the cycle spot the call was logged at (last cycle of the day)
+      "close": 1001.2, "close_date": "2026-10-14",   // the 21st settled session after `date`
+      "move": 0.0243,                 // close / spot - 1
+      "spy_move": 0.011,              // SPY over the same window; null when the session logged no SPY spot
+      "hit": true }                   // BUY: move > 0; SELL: move < 0; HOLD: null. A flat move is a miss.
+  ]
+}
+```
+
+**Grading rule.** The target session is the `horizon_days`-th entry of
+bars.json's `sessions` list strictly after the call date
+(`bisect_right(sessions, date) + horizon - 1`), so a call date missing from
+the calendar grades the same way as one on it. A name with no close on the
+target date (short history, a calendar gap) counts in `unresolvable` and is
+never guessed. Without a calendar (no bars payload, or a pre-v4 one) every
+call stays open and `bars_built` is null. `avg_vs_spy` averages
+`move - spy_move` over the rows that carry a `spy_move`; `n_vs_spy` says how
+many that was.
+
+**Frontend rules:** print the counts and rows; never re-grade, never average
+in JavaScript beyond what the payload carries; an absent key keeps the board's
+slot with a one-line reason; every dynamic line (counts, the oldest open call,
+sessions left) is a disclosure that changes with the data.
 
 ### Catalyst
 > ```json
@@ -1804,6 +1860,39 @@ pattern, and `loop.py`'s `git add -A` over `OUT_DIR` picks it up with no
 never reads it — `index.html` is unchanged by this feature, and nothing on
 any board, chart, or panel is affected. It exists purely so a later,
 separate backtest has the daily gamma history it needs.
+
+## verdict_history.json (published beside data.json on the `data` branch,
+added 2026-09-12, the call scorecard)
+
+```json
+{
+  "v": 1,
+  "sessions": {
+    "2026-09-14": {
+      "spy_spot": 650.12,
+      "calls": {
+        "MU": { "call": "BUY", "score": 69, "spot": 977.41 }
+      }
+    }
+  }
+}
+```
+One row per (session, ticker) for every name whose verdict that cycle carried
+a real call (BUY / HOLD / SELL) AND a positive cycle spot (`verdict.cycle_spot`,
+the same rule the verdict itself was computed from). A wrapper or
+coverage-gated name (`call: null`) is never logged: there is no call to grade.
+`spy_spot` is the session's SPY spot for the vs-SPY comparison, absent when
+SPY had none.
+
+**Write rule:** the same `write_history` gate as history.json. A same-day
+re-run OVERWRITES the session's rows, so the logged entry price is the last
+cycle's, the one nearest the close, which is the price a 21-session read
+should be measured from. A ticker absent from a later cycle keeps its earlier
+same-session row. A cycle with nothing usable leaves no empty session behind.
+
+**Retention:** `MAX_VERDICT_HISTORY_SESSIONS` (250) session keys, oldest
+pruned first on save. Same data-branch reasoning as gamma_history.json;
+`loop.py`'s `git add -A` publishes it with no loop change.
 
 ## Symbol hygiene (fetcher)
 Skip TV tickers containing `/`, `.`, `-` (preferred shares, warrants, units).

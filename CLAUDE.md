@@ -811,6 +811,41 @@ are decided and clearly seen based on the weighted composite of all data."
   "1.12 of 3 · 57 analysts", "fewer than 200 sessions of history"). Never a
   sentence that reads the same for every symbol every day.
 
+## Call scorecard (added 2026-09-12)
+How past verdicts did, so the desk's own calls carry a visible record.
+Payload shape: DATA_CONTRACT.md → Scorecard and verdict_history.json.
+
+- **Graded in the fetcher, printed by the page.** `fetcher/scorecard.py`
+  logs each session's calls (`record_calls`) into `verdict_history.json` on
+  the `data` branch and grades them (`compute_scorecard`) against bars.json
+  closes; `data.json.scorecard` is the result. The page never re-grades,
+  never averages beyond what the payload carries.
+- **The horizon is the verdict layer's own `VERDICT_HORIZON_DAYS`**, imported
+  from `verdict.py`, never a second constant. The target session is the
+  21st entry of bars.json's `sessions` strictly after the call date, so a
+  call date missing from the calendar grades the same as one on it.
+- **A BUY is right when the close is above the logged spot, a SELL when
+  below; a flat move is a miss; HOLD is never graded.** A name with no close
+  on the target date is `unresolvable`, never guessed.
+- **The logged spot is the last cycle of the day's `verdict.cycle_spot`**,
+  the one rule both the verdict and the scorecard read, so the entry price
+  is the price the call was computed from. A call with no spot is not logged.
+  A `call: null` name (wrapper, coverage gate) is not logged either.
+- **Same `write_history` gate as every history file.** A forced closed-day
+  run grades nothing new and logs nothing.
+- **Nothing here feeds a verdict or a weight.** Changing a constant on the
+  strength of the scorecard still needs a dated decisions-log amendment and
+  a labeled backtest attempt first.
+- Surfaces: the Call scorecard board (`#s-score`, under the Verdicts board):
+  header stat with calls logged, resolved, open, and any "no close on file"
+  count; a recap of one chip per graded call type plus the oldest open call
+  and its sessions left; a table of resolved rows newest first, capped at
+  `SCORECARD_MAX_ROWS` (60) with the cap disclosed. An absent key keeps the
+  slot with a one-line reason. RIGHT / WRONG are outline pills; the filled
+  badges stay FIRING, NEW and the call.
+- Pinned by `fetcher/test_scorecard.py` and three page tests in
+  `tests/test_page_smoke.py`.
+
 ## Flow boards
 - **Biggest Orders ranks on `vs_normal`, never raw premium** — `premium /
   normal_prem`, where `normal_prem` averages the ticker's near-money 0-7 DTE

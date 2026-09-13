@@ -505,6 +505,11 @@ td .nm{color:var(--ink3);font-weight:400;font-size:10.5px;margin-left:6px}
 .wlverd.m{color:var(--ink3)}
 .wlverd b{font-weight:600}
 .t-verd td:nth-child(4){white-space:nowrap}
+/* Call scorecard (2026-09-12): the recap's per-call chips wrap as a row —
+   .brecap is max-content wide, and three chips in one text run clipped at
+   390px instead of wrapping. */
+.scchips{display:flex;flex-wrap:wrap;gap:4px 6px;margin-bottom:3px}
+#score-recap{width:auto}
 /* IN/OUT as a dot on the ticker: the pill needed a column the 372px rail does
    not have. Color is not the only channel — the dot's tooltip says it, and the
    $1w figure it reads from is two cells away. */
@@ -1415,6 +1420,11 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
       <section id="s-verd">
         <div class="sh" data-collapse="s-verd"><span class="car">▼</span><h2>Desk verdicts</h2><span class="st" id="verdstat"></span></div>
         <div class="sb xwrap" id="verd"></div>
+      </section>
+
+      <section id="s-score">
+        <div class="sh" data-collapse="s-score"><span class="car">▼</span><h2>Call scorecard</h2><span class="st" id="scorestat"></span></div>
+        <div class="sb xwrap" id="score"></div>
       </section>
 
       <div class="eyebrow">Flow boards — the signal</div>
@@ -5899,6 +5909,104 @@ function renderVerdicts(data, livePoll){
   ], cut.rows, rowHTMLVerd, "score",
   {html: verdCutNoteHTML(cut, rows), wire: function(){ wireBoardCut(sc.body, "verd", rerender); }},
   {liveKeys:[], freeze:!!livePoll});
+}
+/* =================== Call scorecard (2026-09-12) ===================
+   How past verdicts did. Graded in fetcher/scorecard.py against the close
+   21 sessions after each call and published as data.json.scorecard; the page
+   prints it and never re-grades (same posture as the verdicts themselves).
+   Every line below is a dynamic disclosure — counts, dates, moves — never a
+   sentence that reads the same every day. */
+function scorecardOf(d){ d = d || STATE.data; return (d && d.scorecard) || null; }
+function scorePctHTML(v){
+  var n = num(v);
+  if(n==null) return '<span class="m">—</span>';
+  return '<span class="'+sign1(n*100)+'">'+fm1(n*100)+'%</span>';
+}
+// One chip per graded call type: "BUY 12 of 20 right · avg +1.2% · +0.4% vs SPY".
+function scoreSummaryChipHTML(label, s){
+  if(!s || !num(s.n)) return '';
+  var bits = [];
+  if(s.hits!=null) bits.push(s.hits+' of '+s.n+' right');
+  else bits.push(s.n+' resolved');
+  if(s.avg_move!=null) bits.push('avg '+fm1(s.avg_move*100)+'%');
+  if(s.avg_vs_spy!=null) bits.push(fm1(s.avg_vs_spy*100)+'% vs SPY'+(s.n_vs_spy!=null && s.n_vs_spy<s.n ? (' on '+s.n_vs_spy) : ''));
+  return '<span class="bc">'+esc(label)+' · '+bits.join(' · ')+'</span>';
+}
+function renderScorecard(data){
+  var stale = isStaleFlow(data);
+  var sc = scorecardOf(data);
+  var el = document.getElementById("score");
+  var stat = document.getElementById("scorestat");
+  if(!el || !stat) return;
+  // Header stat and as-of stamp first, before any early return.
+  if(!sc){
+    stat.innerHTML = "—" + ageStampHTML(data && data.generated_at_ct, stale);
+    var sc0 = boardScaffold(el, "score");
+    sc0.recap.innerHTML = "";
+    sc0.body.innerHTML = '<div class="boardmsg">No calls logged yet. The first session of calls is recorded with the next data cycle.</div>';
+    return;
+  }
+  var res = sc.resolved || {};
+  var nRes = (num(res.buy && res.buy.n)||0) + (num(res.sell && res.sell.n)||0) + (num(res.hold && res.hold.n)||0);
+  var op = sc.open || {};
+  var nOpen = (num(op.buy)||0) + (num(op.sell)||0) + (num(op.hold)||0);
+  var horizon = num(sc.horizon_days);
+  stat.innerHTML = (sc.calls_logged!=null ? sc.calls_logged : "—")+' calls since '+esc(sc.since||"—")
+    + ' · '+nRes+' resolved · '+nOpen+' open'
+    + (num(sc.unresolvable) ? (' · '+sc.unresolvable+' with no close on file') : '')
+    + ageStampHTML(data && data.generated_at_ct, stale);
+  var scaf = boardScaffold(el, "score");
+  var chips = scoreSummaryChipHTML("BUY", res.buy) + scoreSummaryChipHTML("SELL", res.sell) + scoreSummaryChipHTML("HOLD", res.hold);
+  var eo = sc.earliest_open;
+  var wait = '';
+  if(eo && eo.date){
+    var left = num(eo.sessions_left);
+    wait = 'oldest open call '+esc(eo.date)+' · '+(num(eo.sessions_elapsed)!=null ? eo.sessions_elapsed : '—')
+      +(horizon!=null ? (' of '+horizon) : '')+' sessions in'
+      +(left!=null ? (' · '+(left===0 ? 'resolves with the next daily bars' : ('resolves in '+left+' session'+(left===1?'':'s')))) : '');
+  }
+  if(!sc.bars_built && nOpen) wait = (wait ? wait+' · ' : '')+'no daily bars on file to grade against';
+  scaf.recap.innerHTML = (chips ? ('<div class="scchips">'+chips+'</div>') : '') + (wait ? ('<span class="m">'+wait+'</span>') : '');
+  var rows = (sc.rows||[]).map(function(r){
+    var o = {};
+    for(var k in r) o[k] = r[k];
+    o.ticker = r.ticker;
+    o.call_rank = r.call==="BUY" ? 2 : r.call==="HOLD" ? 1 : r.call==="SELL" ? 0 : null;
+    o.vs_spy = (num(r.move)!=null && num(r.spy_move)!=null) ? (r.move - r.spy_move) : null;
+    o.hit_rank = r.hit===true ? 1 : r.hit===false ? 0 : null;
+    return o;
+  });
+  if(rows.length===0){
+    scaf.body.innerHTML = '<div class="boardmsg">'+(nOpen
+      ? ('0 of '+nOpen+' open calls have reached '+(horizon!=null?horizon:'the')+' sessions.')
+      : 'No resolved calls.')+'</div>';
+    return;
+  }
+  function resultHTML(r){
+    if(r.hit===true) return '<span class="pill b">RIGHT</span>';
+    if(r.hit===false) return '<span class="pill s">WRONG</span>';
+    return '<span class="m">—</span>';
+  }
+  function rowHTMLScore(r){
+    var cls = VERDICT_CALL_CLS[r.call] || "vh";
+    return '<tr class="rw" data-sym="'+esc(r.ticker||"")+'" role="button" tabindex="0">'
+      +'<td class="m">'+esc(r.date||"—")+'</td>'
+      +'<td><span class="sy2">'+esc(r.ticker||"?")+'</span></td>'
+      +'<td><span class="pill '+cls+'">'+esc(r.call||"—")+'</span></td>'
+      +'<td>'+(num(r.score)!=null ? fm1SignedInt(r.score) : "—")+'</td>'
+      +'<td>'+(num(r.spot)!=null ? Number(r.spot).toFixed(2) : "—")+'</td>'
+      +'<td'+(r.close_date?(' data-tip="'+esc('close on '+r.close_date)+'"'):'')+'>'+(num(r.close)!=null ? Number(r.close).toFixed(2) : "—")+'</td>'
+      +'<td>'+scorePctHTML(r.move)+'</td>'
+      +'<td>'+scorePctHTML(r.vs_spy)+'</td>'
+      +'<td>'+resultHTML(r)+'</td>'
+      +'</tr>';
+  }
+  var cap = (num(sc.rows_total)!=null && sc.rows_total > rows.length)
+    ? ('<div class="boardcut">newest '+rows.length+' of '+sc.rows_total+' resolved calls shown; the counts above cover all '+sc.rows_total+'.</div>') : '';
+  table(scaf.body, "t-score", [
+    {l:"Date",key:"date"},{l:"Name",key:"ticker"},{l:"Call",key:"call_rank"},{l:"Score",key:"score"},
+    {l:"Entry",key:"spot"},{l:"Close "+(horizon!=null?horizon+"d":""),key:"close"},{l:"Move",key:"move"},{l:"vs SPY",key:"vs_spy"},{l:"Result",key:"hit_rank"}
+  ], rows, rowHTMLScore, "date", {html: cap});
 }
 // Overview tab headline strip (first block, above the 52-week range).
 function stageVerdictHTML(sym){
@@ -16470,6 +16578,7 @@ function renderAll(data){
   renderBrief(data);
   renderSectorSection(data);
   renderVerdicts(data);
+  renderScorecard(data);
   renderConv(data);
   renderSwing(data);
   renderOrders(data);
