@@ -209,6 +209,24 @@ FUND_FLOWS = {
                 "equity": {"sign": -1, "weeks": 2, "at_table_limit": False},
                 "bond": {"sign": 1, "weeks": 3, "at_table_limit": True}},
 }
+def _ffh_row(key, v):
+    return {key[0]: key[1], "total": v, "equity": v / 2, "domestic_equity": v / 4, "world_equity": v / 4,
+            "hybrid": 0.0, "bond": v / 2, "taxable_bond": v / 2, "municipal_bond": 0.0, "commodity": 0.0}
+
+
+# fund_flows_history (2026-09-21): oldest first, weekly estimates plus the
+# separate monthly actuals. US stock funds sum to -6,000 -> "-$6.0B" running
+# total; bond funds to -12,000.
+FUND_FLOWS_HISTORY = {
+    "v": 1, "source": "ICI", "unit": "USD millions",
+    "weekly": [_ffh_row(("week_ended", "2026-08-05"), 8000.0), _ffh_row(("week_ended", "2026-08-12"), -20000.0),
+               _ffh_row(("week_ended", "2026-08-19"), 4000.0), _ffh_row(("week_ended", "2026-08-26"), -16000.0)],
+    "n_weeks": 4, "first_week": "2026-08-05", "last_week": "2026-08-26",
+    "monthly": [_ffh_row(("month_ended", "2026-05-31"), 40000.0), _ffh_row(("month_ended", "2026-06-30"), -8000.0),
+                _ffh_row(("month_ended", "2026-07-31"), 12000.0)],
+    "n_months": 3, "monthly_through": "2026-07-31",
+    "seed_fetched": "2026-09-21", "last_release": "2026-09-09", "max_weeks": 520,
+}
 BRIEF_PAYLOAD = {
     "generated_at": "2026-09-04T20:20:52Z",
     "context_updated_at": "2026-09-04T20:20:52Z",
@@ -222,6 +240,7 @@ BRIEF_PAYLOAD = {
     },
     "fed_odds": FED_ODDS,
     "fund_flows": FUND_FLOWS,
+    "fund_flows_history": FUND_FLOWS_HISTORY,
     "conviction": [], "swing": [], "big_orders": [], "etf_flow": [],
     "catalysts": [], "news": {"items": [], "by_ticker": {}}, "facts": {},
 }
@@ -950,7 +969,107 @@ def test_fund_flows_absent_keeps_slot(browser, server, width, height):
             "  hidden: document.getElementById('s-flows').hidden})"
         )
         assert st["hidden"] is False
-        assert st["stat"].strip() == "ICI · weekly"
+        assert st["stat"].strip() == "ICI · weekly · 4 weeks on file"
         assert "did not publish this cycle" in st["body"]
+        # The history charts do not depend on the live release. (textContent:
+        # the h4 is upper-cased by CSS, which innerText reflects.)
+        h4s = page.evaluate("[...document.querySelectorAll('#flows .ffhist h4')].map(e=>e.textContent)")
+        assert h4s[0] == "Weekly · US stock funds · 4 weeks on file, Aug 5 – Aug 26", h4s
+    finally:
+        page.close()
+
+
+# ── US fund-flow history charts (2026-09-21) ────────────────────────────────
+# Two panes per period block (bars, running total) for the picked series, the
+# header naming weeks on file and the seed's read date, the legend in the
+# card's own money format with U+2212, the picker re-rendering from the live
+# payload, a tap on a column printing its figures, and the absent-key line.
+
+def _ffh_state(page):
+    return page.evaluate(
+        "({stat: document.getElementById('flowsstat').textContent,"
+        "  h4s: [...document.querySelectorAll('#flows .ffhist h4')].map(e=>e.textContent),"
+        "  body: document.getElementById('flows').innerText,"
+        "  svgs: document.querySelectorAll('#flows .ffhist svg').length,"
+        "  bars: document.querySelectorAll('#flows .ffhist svg rect:not(.chartband)').length,"
+        "  bands: document.querySelectorAll('#flows [data-flowread]').length,"
+        "  pressed: [...document.querySelectorAll('#ffseg button[aria-pressed=\"true\"]')].map(b=>b.textContent)})"
+    )
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_fund_flows_history_charts_render(browser, server, width, height):
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+
+    def route(r):
+        url = r.request.url
+        if "/data/data.json" in url:
+            r.fulfill(status=200, content_type="application/json", body=json.dumps(BRIEF_PAYLOAD))
+        elif url.startswith(server) or url.startswith("data:"):
+            r.continue_()
+        else:
+            r.abort()
+
+    page.route("**/*", route)
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == [], f"index.html @ {width}px threw: {page_errors}"
+        st = _ffh_state(page)
+        assert "4 weeks on file" in st["stat"], st["stat"]
+        assert st["h4s"] == ["Weekly · US stock funds · 4 weeks on file, Aug 5 – Aug 26",
+                             "Monthly · US stock funds · 3 months, May ’26 – Jul ’26 · ICI data file read Mon Sep 21"], st["h4s"]
+        assert st["svgs"] == 4 and st["bars"] == 7          # 4 weekly + 3 monthly bars, two panes each
+        assert st["bands"] == 14                            # one hover band per period per pane
+        assert st["pressed"] == ["US stock funds"]
+        body = st["body"]
+        # US stock funds = total/4: latest week -4,000 -> "-$4.0B"; running total -6,000.
+        assert "Net flow −$4.0B" in body and "Running total −$6.0B" in body, body
+        assert "-$" not in body, "ASCII minus leaked into the flows charts"
+        # The picker re-renders the same payload for another series.
+        page.click('#ffseg button[data-ffs="bond"]')
+        page.wait_for_timeout(300)
+        st2 = _ffh_state(page)
+        assert st2["h4s"][0].startswith("Weekly · Bond funds ·"), st2["h4s"]
+        assert st2["pressed"] == ["Bond funds"]
+        assert "Running total −$12.0B" in st2["body"], st2["body"]
+        # A tap on a column prints that column's figures under the charts.
+        page.click('#flows [data-flowread] >> nth=1')
+        page.wait_for_timeout(200)
+        read = page.evaluate("document.getElementById('flowsread').innerText")
+        assert read.startswith("Aug 12") and "Net flow" in read, read
+        page.evaluate("localStorage.removeItem('desk.flows.series')")
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize("width,height", WIDTHS)
+def test_fund_flows_history_absent_prints_one_line(browser, server, width, height):
+    payload = {k: v for k, v in BRIEF_PAYLOAD.items() if k != "fund_flows_history"}
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+
+    def route(r):
+        url = r.request.url
+        if "/data/data.json" in url:
+            r.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+        elif url.startswith(server) or url.startswith("data:"):
+            r.continue_()
+        else:
+            r.abort()
+
+    page.route("**/*", route)
+    page.goto(f"{server}/index.html", wait_until="load")
+    page.wait_for_timeout(3000)
+    try:
+        assert page_errors == []
+        st = _ffh_state(page)
+        assert "on file" not in st["stat"], st["stat"]
+        assert st["svgs"] == 0
+        assert "No flow history on file yet" in st["body"], st["body"]
+        assert "US stock funds" in st["body"]                 # the table still renders
     finally:
         page.close()

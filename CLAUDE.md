@@ -1110,6 +1110,27 @@ Payload shape: DATA_CONTRACT.md → Scorecard and verdict_history.json.
   ETF-only and 1M at the shortest (probed 2026-09-12: no 1W or 1D), and the
   asset-class / focus fields come back as hashed codes. The weekly figure
   Reuters quotes is LSEG Lipper, paid.
+- **History accumulates in `fund_flows_history.json` (added 2026-09-21).**
+  `fetcher/fund_flows_history.py` merges the checked-in seed
+  (`fetcher/seed/ici_flows_seed.json`, read once from ICI's yearly `.xls`)
+  and every cycle's release, and publishes `data.json.fund_flows_history`
+  oldest first (DATA_CONTRACT.md). Seed never overwrites an observed week;
+  the live release always does (ICI revises). Save shares the
+  `write_history` gate; the merge runs in memory every cycle. Retention
+  `MAX_FUND_FLOWS_HISTORY_WEEKS` (520).
+- **Weekly estimates and monthly actuals are two series.** The monthly rows
+  come only from the seed (the runner is stdlib and cannot read `.xls`), so
+  they stop at `monthly_through` until the seed is regenerated; the chart
+  header prints that month and the read date. Never sum one into the other.
+- **The page draws two panes per period block, each on its own scale**
+  (`ffChartHTML`): bars for net flow, a line for the running total from the
+  first period on file. On one axis the running total dwarfed the bars
+  within a few periods. The bar pane uses `robustClampMag` and the caption
+  names any clipped period with its real figure. The tap read-out is its own
+  element (`#flowsread`, `data-flowread` via `axisChartSVG`'s `readAttr`)
+  because `#chartread` is anchored inside the stage. The series picker is
+  per browser (`desk.flows.series`); `fmtFlowM` is the one money format on
+  the card, table and legend alike, with a trillions step.
 
 ## Fed-hike odds
 - The market-priced chance of a hike at the next meeting (Polymarket,

@@ -126,13 +126,14 @@ values are `null` (never a string sentinel). All strings are already plain
   "verdicts": { "v": 1, "by_ticker": { "MU": { "...": "..." } } },  // OPTIONAL — see "Verdicts" below (2026-09-11)
   "fund_flows": { "source": "ICI", "weeks": [ { "...": "..." } ] },  // OPTIONAL — see "US fund flows" below (2026-09-12)
   "scorecard": { "v": 1, "rows": [ { "...": "..." } ] },  // OPTIONAL — see "Scorecard" below (2026-09-12)
+  "fund_flows_history": { "v": 1, "weekly": [ { "...": "..." } ], "monthly": [ { "...": "..." } ] },  // OPTIONAL — see "US fund flows history" below (2026-09-21)
   "context_updated_at": "2026-08-15T14:32:00Z"   // OPTIONAL — see note below
 }
 ```
 
-> **All ten keys above are OPTIONAL and were added in the context-layer build
+> **All eleven keys above are OPTIONAL and were added in the context-layer build
 > (2026-08; `fed_odds` 2026-08-18; `verdicts` 2026-09-11; `fund_flows` and
-> `scorecard` 2026-09-12).** Absent on old snapshots and the site renders nothing for a
+> `scorecard` 2026-09-12; `fund_flows_history` 2026-09-21).** Absent on old snapshots and the site renders nothing for a
 > missing key — the same "old readers keep working" rule every prior addition
 > in this file follows. Each is OMITTED entirely (not present as a key) when
 > its own build produced nothing that cycle, never present with a `null`/`{}`
@@ -1397,6 +1398,41 @@ fiscal year mod 100); only `rev` is ever filled this way, never `rev_est` or
 > Domestic / World and Taxable / Municipal are children of Equity and Bond;
 > the table does not sum them here, ICI does.
 
+> **`fund_flows_history`** (added 2026-09-21, Zach's ask: "build the weekly
+> history so it charts over time — I need to see the in & outflows over time
+> accumulating") — every ICI week the loop has seen, oldest first, plus ICI's
+> monthly actuals from the checked-in seed. Built by
+> `fetcher/fund_flows_history.py` from `fund_flows_history.json` (below).
+> Display only: the page draws each period's net flow as bars and the running
+> total from the first period on file as a line, for one series at a time.
+>
+> ```jsonc
+> "fund_flows_history": {
+>   "v": 1, "source": "ICI", "unit": "USD millions",
+>   "weekly": [                          // OLDEST FIRST, one row per week on file, the nine ICI columns
+>     { "week_ended": "2026-08-05", "total": 27913.0, "equity": 9154.0, "domestic_equity": 2148.0,
+>       "world_equity": 7006.0, "hybrid": -1434.0, "bond": 19678.0, "taxable_bond": 18186.0,
+>       "municipal_bond": 1492.0, "commodity": 514.0 },
+>     { "...": "..." }
+>   ],
+>   "n_weeks": 6, "first_week": "2026-08-05", "last_week": "2026-09-09",
+>   "monthly": [                         // OLDEST FIRST, ICI's ACTUAL monthly figures — a separate series
+>     { "month_ended": "2024-01-31", "total": 48545.0, "...": "..." }
+>   ],
+>   "n_months": 31, "monthly_through": "2026-07-31",
+>   "seed_fetched": "2026-09-21",        // the day the seed was read from ICI's data file; null if no seed merged
+>   "last_release": "2026-09-16",        // `fund_flows.released` of the newest release merged
+>   "max_weeks": 520
+> }
+> ```
+>
+> The weekly rows are ICI's ESTIMATES (the same figures `fund_flows` carries)
+> and the monthly rows are ICI's ACTUAL monthly net new cash flow, which ICI
+> publishes separately; the page never sums one into the other. A live week
+> overwrites the same week on file (ICI revises). The monthly series comes
+> only from the seed, so `monthly_through` is where it stops until the seed is
+> regenerated; the page prints that date. Omitted when nothing is on file.
+
 > **Note on `big_orders` — it is a DAY TOTAL PER CONTRACT, not a single order.**
 > Each row is one options contract's whole session: `volume x last x 100`, the
 > same premium convention as `net_flow` and `flow_pct`. The free CBOE feed
@@ -1893,6 +1929,37 @@ same-session row. A cycle with nothing usable leaves no empty session behind.
 **Retention:** `MAX_VERDICT_HISTORY_SESSIONS` (250) session keys, oldest
 pruned first on save. Same data-branch reasoning as gamma_history.json;
 `loop.py`'s `git add -A` publishes it with no loop change.
+
+## fund_flows_history.json (published beside data.json on the `data` branch,
+added 2026-09-21, the US fund-flow history)
+
+```json
+{
+  "v": 1, "unit": "USD millions", "source": "ICI",
+  "weekly":  { "2026-08-05": { "total": 27913.0, "equity": 9154.0, "...": "..." } },
+  "monthly": { "2024-01-31": { "total": 48545.0, "...": "..." } },
+  "seed_fetched": "2026-09-21",
+  "last_release": "2026-09-16"
+}
+```
+Keyed by ICI's own `week_ended` / month-end date, one row of the nine ICI
+columns each (a figure ICI left blank is null; a row with no number at all is
+not stored). Two writers, in this order every cycle: the checked-in seed
+`fetcher/seed/ici_flows_seed.json` fills only dates NOT already on file, then
+the cycle's `fund_flows` release overwrites every week it carries. So the
+loop's own observations beat the static seed, and ICI's newest print beats an
+older one.
+
+**Write rule:** the same `write_history` gate as history.json — the merge
+happens in memory every cycle (so `data.json.fund_flows_history` is complete
+on a forced closed-day run too) but the file is written only on a session
+that happened. The keys are ICI dates, never sessions, so no phantom row can
+be fabricated either way.
+
+**Retention:** `MAX_FUND_FLOWS_HISTORY_WEEKS` (520) weekly keys, oldest
+pruned first on save; monthly rows are never pruned. Same data-branch
+reasoning as gamma_history.json; `loop.py`'s `git add -A` publishes it with
+no loop change.
 
 ## Symbol hygiene (fetcher)
 Skip TV tickers containing `/`, `.`, `-` (preferred shares, warrants, units).

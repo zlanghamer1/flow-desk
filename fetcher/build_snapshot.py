@@ -174,6 +174,7 @@ import context  # sibling module: vault brief/catalysts/news/facts + bars.json
 import market_guard  # sibling module: holiday/half-day/window awareness
 import verdict  # sibling module: the verdicts composite (data.json.verdicts)
 import scorecard  # sibling module: grades past verdicts (data.json.scorecard)
+import fund_flows_history  # sibling module: ICI weekly flows accumulated (data.json.fund_flows_history)
 
 TZ_CT = ZoneInfo("America/Chicago")
 
@@ -1750,6 +1751,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     consensus_history = load_consensus_history(out_dir)
     gamma_history = load_gamma_history(out_dir)
     verdict_history = scorecard.load_verdict_history(out_dir)
+    ff_history = fund_flows_history.load_history(out_dir)
     prev_cycle = load_prev_cycle()
     same_session = prev_cycle["session"] == session_str
     new_prev_cycle: dict = {"session": session_str, "flows": {}, "vols": {}}
@@ -2283,6 +2285,22 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
     except Exception as e:
         log(f"WARN scorecard failed: {e}")
 
+    # ── US fund-flow history (added 2026-09-21) ─────────────────────────────
+    # fetcher/fund_flows_history.py. Folds the checked-in seed and this
+    # cycle's ICI release (context_fields["fund_flows"], live or keep-last-
+    # good) into fund_flows_history.json in memory; the save below shares the
+    # write_history gate. Fail-soft like every optional block: a raise omits
+    # the key and never touches the rest of the cycle.
+    ff_history_block = None
+    try:
+        ff_summary = fund_flows_history.apply_cycle(
+            ff_history, context_fields.get("fund_flows"), fund_flows_history.load_seed())
+        ff_history_block = fund_flows_history.publish_block(ff_history)
+        log(f"fund-flow history: {ff_summary['weeks']} weeks / {ff_summary['months']} months on file"
+            f" (+{ff_summary['added_live']} live, +{ff_summary['added_seed']} seed, {ff_summary['revised']} revised)")
+    except Exception as e:
+        log(f"WARN fund-flow history failed: {e}")
+
     bullish_flow = sum(1 for v in by_ticker.values() if v["direction"] == "BULL")
     bearish_flow = sum(1 for v in by_ticker.values() if v["direction"] == "BEAR")
     firing_count = sum(1 for v in by_ticker.values() if v.get("firing"))
@@ -2381,6 +2399,9 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
         # scorecard — OPTIONAL, omitted until the first session of calls is
         # logged or when the block raised (DATA_CONTRACT.md).
         **({"scorecard": scorecard_block} if scorecard_block else {}),
+        # fund_flows_history — OPTIONAL, omitted when nothing is on file or
+        # the block raised (DATA_CONTRACT.md, 2026-09-21).
+        **({"fund_flows_history": ff_history_block} if ff_history_block else {}),
     }
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -2437,6 +2458,7 @@ def run_cycle(out_dir: Path, dry_run: bool = False) -> dict:
         save_consensus_history(out_dir, consensus_history)
         save_gamma_history(out_dir, gamma_history)
         scorecard.save_verdict_history(out_dir, verdict_history)
+        fund_flows_history.save_history(out_dir, ff_history)
     save_prev_cycle(new_prev_cycle)
 
     log(f"wrote {data_path} ({data_path.stat().st_size} bytes)")

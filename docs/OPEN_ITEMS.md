@@ -296,6 +296,16 @@ round 20 without a fresh ask.
 
 ## Open — in the order they are worth doing
 
+### 0. Fund-flow monthly series is a static seed (added 2026-09-21)
+The weekly ICI series accumulates on its own. The monthly actuals come from
+`fetcher/seed/ici_flows_seed.json`, read once from
+`https://www.ici.org/combined_flows_data_2026.xls` (a BIFF `.xls`; the
+GitHub runner is pure stdlib and has no `xlrd`). It stops at July 2026 until
+someone regenerates the seed. Two honest fixes, either is fine: a ~150-line
+stdlib BIFF8 reader in the fetcher (SST + NUMBER/RK/MULRK records on one
+sheet), or a monthly manual refresh. The page prints `monthly_through`, so
+the gap is disclosed, not hidden.
+
 ### 1. Automated review cycle RESUMED 2026-08-26 (paused 2026-08-23 → Fable architect pass → resumed at Zach's explicit ask)
 
 The round-16 fix pass closed all 25 confirmed findings the same day they were

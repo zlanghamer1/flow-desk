@@ -389,6 +389,25 @@ Two things to know:
   Lipper's, a paid series that counts a different set of funds, so the two
   will not match to the dollar.
 
+### The history charts (added 2026-09-21)
+
+Under the table, two charts show the same money over time for one group of
+funds at a time (pick US stock, world stock, bond, or all funds). Each chart
+has two panes: bars for each period's net flow, and a line for the running
+total since the first period on file.
+
+- **Weekly** starts on Aug 5, 2026, the oldest week the desk has, and grows by
+  one bar every week the loop runs. ICI's page only shows five weeks, so the
+  desk keeps every week it sees in its own file.
+- **Monthly** runs from January 2024 and uses ICI's actual monthly figures,
+  read once from ICI's own data file. It is a separate series from the weekly
+  estimates, so the two are never added together. The chart header names the
+  last month it covers and the day the file was read.
+
+A single runaway period (July 2025 shows a one-off −$299B for US stock funds)
+is clipped so it cannot flatten every other bar; the caption names it and the
+real figure stays in the tap read-out.
+
 ## Chance of a Fed rate increase (added 2026-08-18)
 
 The Morning Brief panel carries a card showing **the odds that the Fed raises
