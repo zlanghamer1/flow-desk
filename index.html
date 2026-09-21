@@ -933,6 +933,12 @@ body.heatwide #s-stage.heatmode>*:not(.viewseg):not(#heatbar):not(#stageheat){di
 /* .gcap b outranked .u/.d on specificity, so the good/bad colouring Zach
    asked for computed to --ink2 on every caption. */
 .gcap b.u{color:var(--up)} .gcap b.d{color:var(--dn)}
+/* US fund-flow history (2026-09-21): the picker sits above the two charts,
+   the read-out under them, all inside the card's own scroll wrapper. */
+.ffhist{margin-top:10px;min-width:0}
+.ffhist .seg{margin-bottom:6px;flex-wrap:wrap;max-width:100%}
+.ffhist .gwrap .gfull{max-width:1000px}
+.ffread{position:static;margin:6px 0 0}
 .peerkey{display:flex;gap:10px;flex-wrap:wrap;font-size:10.5px;margin:2px 0 8px}
 .peerkey span{display:inline-flex;align-items:center;gap:4px;color:var(--ink2)}
 .peerkey i{width:9px;height:9px;border-radius:2px;display:inline-block}
@@ -6627,6 +6633,9 @@ function fmtFlowM(m){
   if(a < 0.5) return "$0";
   if(a < 1000) return sgn+"$"+Math.round(a)+"M";
   // One decimal up to $100B: $12.7B and $13.5B must never both print "$13B".
+  // Past $1T (the monthly running totals reach it) print trillions with two
+  // decimals so "$1.57T" and "$1.60T" stay apart.
+  if(a >= 1e6){ return sgn+"$"+(a/1e6).toFixed(2)+"T"; }
   var b = a/1000; return sgn+"$"+(b<100 ? b.toFixed(1) : Math.round(b))+"B";
 }
 // Age of the ICI release in whole days, on the CT calendar day, never UTC.
@@ -6669,6 +6678,8 @@ function renderFundFlows(data){
       + (age!=null ? (' <span class="'+(stale?"stale":"m")+'">'+(age===0?"today":(age+"d ago"))
                       +(stale?" · next release missed":"")+'</span>') : "");
   }
+  var fh = data && data.fund_flows_history;
+  if(fh && isFinite(fh.n_weeks) && fh.n_weeks > 0) stat += ' \u00b7 '+fh.n_weeks+(fh.n_weeks===1?" week":" weeks")+' on file';
   document.getElementById("flowsstat").innerHTML = stat;
   // A NULL fund_flows means the source did not return — the slot stays, with
   // the reason, same as the ETF card beside it. The loop republishes on
@@ -6677,7 +6688,9 @@ function renderFundFlows(data){
   var scF = boardScaffold(document.getElementById("flows"), "flows");
   if(!ff || !weeks.length){
     scF.recap.innerHTML = "";
-    scF.body.innerHTML = '<div class="note">The ICI fund-flow reading did not publish this cycle — that is the source, not a week with no flows. It returns with the next hourly context refresh.</div>';
+    scF.body.innerHTML = '<div class="note">The ICI fund-flow reading did not publish this cycle — that is the source, not a week with no flows. It returns with the next hourly context refresh.</div>'
+      + fundFlowsHistoryHTML(data);
+    fundFlowsHistoryWire();
     return;
   }
   var latest = weeks[0], prior = weeks[1] || {};
@@ -6724,9 +6737,154 @@ function renderFundFlows(data){
         +'<td class="m">'+esc(r.streakStr)+'</td></tr>';
     },
     null,
-    // No foot: the source and unit sit in the honesty box, the release date
-    // in the header stat. Nothing here reads the same for every week.
-    null);
+    // The foot carries the history charts (2026-09-21). table() rewrites its
+    // own element on every sort, so anything under the table has to ride
+    // the foot mechanism, evaluated per draw, never insertAdjacentHTML.
+    {html: function(){ return fundFlowsHistoryHTML(data); }, wire: fundFlowsHistoryWire});
+}
+
+/* ---- US fund-flow history (added 2026-09-21) ----
+   data.fund_flows_history: every ICI week the loop has seen, oldest first,
+   plus ICI's monthly actuals from the checked-in seed (a separate series,
+   never summed with the weekly rows). Published by
+   fetcher/fund_flows_history.py; the page draws bars for each period's net
+   flow and a line for the running total from the first period on file.
+   Display only. The series picker is per browser (desk.flows.series). */
+var FF_SERIES_OPTS = [
+  {key:"domestic_equity", l:"US stock funds"},
+  {key:"world_equity",    l:"World stock funds"},
+  {key:"bond",            l:"Bond funds"},
+  {key:"total",           l:"All long-term funds"}
+];
+var FF_SERIES = (function(){
+  try{ var v = localStorage.getItem("desk.flows.series");
+       if(FF_SERIES_OPTS.some(function(o){ return o.key===v; })) return v; }catch(e){}
+  return "domestic_equity";
+})();
+function ffSeriesLabel(key){
+  for(var i=0;i<FF_SERIES_OPTS.length;i++) if(FF_SERIES_OPTS[i].key===key) return FF_SERIES_OPTS[i].l;
+  return key;
+}
+var FF_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+// Short axis labels: "Sep 9" for a week, "Jul '26" for a month. Parsed from
+// the ISO key by hand so no time zone can shift the day.
+function ffWeekLabel(iso){
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso||"")); if(!m) return String(iso||"");
+  return FF_MONTHS[+m[2]-1]+" "+(+m[3]);
+}
+function ffMonthLabel(iso){
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso||"")); if(!m) return String(iso||"");
+  return FF_MONTHS[+m[2]-1]+" \u2019"+m[1].slice(2);
+}
+function ffSpanWords(rows, keyName, labelFn){
+  if(!rows.length) return "";
+  var a = labelFn(rows[0][keyName]), b = labelFn(rows[rows.length-1][keyName]);
+  return rows.length===1 ? a : (a+" \u2013 "+b);
+}
+// One period block, two panes on their own scales: bars = each period's net
+// flow, line = the running total from the first period on file. On one axis
+// the running total dwarfed the bars within a few periods (measured on the
+// monthly bond series: a $1.6T line over $60B bars). Values are USD millions
+// on the payload; the chart helper's money axis wants dollars, so scale by
+// 1e6 once here. Legend figures print in the card's own money format.
+function ffLegendFmt(v){ return fmtFlowM(num(v)===null ? null : v/1e6); }
+function ffChartHTML(rows, keyName, labelFn, seriesKey, W, H){
+  var labels = rows.map(function(r){ return labelFn(r[keyName]); });
+  var run = 0, anyNum = false;
+  var flows = [], cum = [];
+  rows.forEach(function(r){
+    var v = num(r[seriesKey]);
+    if(v===null){ flows.push(null); cum.push(anyNum ? run*1e6 : null); return; }
+    anyNum = true; run += v;
+    flows.push(v*1e6); cum.push(run*1e6);
+  });
+  if(!anyNum) return "";
+  var barDef = [{name:"Net flow", color:seriesColor(0), values:flows, type:"bar"}];
+  var lineDef = [{name:"Running total", color:seriesColor(1), values:cum}];
+  // One runaway period must not flatten the rest of the bars (the same
+  // robust clamp the Financials charts use); a clipped bar keeps its arrow
+  // and its real figure in the hover band, and the caption names it.
+  var mag = robustClampMag([flows], 0, 6);
+  var clipNote = "";
+  if(mag!=null){
+    var clipped = [];
+    flows.forEach(function(v, i){ if(v!=null && Math.abs(v) > mag) clipped.push(labels[i]+" "+ffLegendFmt(v)); });
+    if(clipped.length) clipNote = '<div class="gcap">Bars clipped at \u00b1'+esc(ffLegendFmt(mag).replace(/^\+/,""))+': '+esc(clipped.join(", "))+'</div>';
+    else mag = null;
+  }
+  var hB = Math.round(H*0.55), hL = Math.round(H*0.55);
+  return axisChartSVG(labels, barDef, {kind:"money", W:W, H:hB, zeroLine:true, readAttr:"data-flowread",
+                                       clamp: mag, clampLo: mag!=null ? -mag : null})
+    + axisChartSVG(labels, lineDef, {kind:"money", W:W, H:hL, zeroLine:true, readAttr:"data-flowread"})
+    + chartLegendHTML(barDef.concat(lineDef), ffLegendFmt, labels)
+    + clipNote;
+}
+function fundFlowsHistoryHTML(data){
+  var h = data && data.fund_flows_history;
+  var wk = (h && Array.isArray(h.weekly)) ? h.weekly.filter(function(r){ return r && typeof r.week_ended==="string"; }) : [];
+  var mo = (h && Array.isArray(h.monthly)) ? h.monthly.filter(function(r){ return r && typeof r.month_ended==="string"; }) : [];
+  if(!wk.length && !mo.length){
+    // The key is absent until the loop's next weekday cycle publishes it.
+    return '<div class="note ffhist">No flow history on file yet. It builds from the next weekday cycle.</div>';
+  }
+  var host = document.getElementById("flows");
+  var hostW = host ? host.clientWidth : 0;
+  var narrow = (window.innerWidth || 1440) <= 760;
+  var W = narrow ? Math.max(240, Math.min(420, Math.round((hostW || 380) - 20)))
+                 : Math.max(420, Math.min(1000, Math.round((hostW || 700) - 24)));
+  var H = narrow ? 260 : 240;
+  var lbl = ffSeriesLabel(FF_SERIES);
+  var seg = '<div class="seg" role="group" aria-label="Fund-flow series" id="ffseg">'
+    + FF_SERIES_OPTS.map(function(o){
+        return '<button type="button" data-ffs="'+esc(o.key)+'" aria-pressed="'+(o.key===FF_SERIES?"true":"false")+'">'+esc(o.l)+'</button>';
+      }).join("")+'</div>';
+  var out = '<div class="ffhist">'+seg+'<div class="gwrap">';
+  if(wk.length){
+    var svgW = ffChartHTML(wk, "week_ended", ffWeekLabel, FF_SERIES, W, H);
+    out += '<div class="gchart gfull" id="ffwk"><h4>Weekly \u00b7 '+esc(lbl)+' \u00b7 '+wk.length+(wk.length===1?" week":" weeks")+' on file, '
+      + esc(ffSpanWords(wk, "week_ended", ffWeekLabel))+'</h4>'
+      + (svgW || '<div class="note">No '+esc(lbl)+' reading in any week on file.</div>')+'</div>';
+  }
+  if(mo.length){
+    var svgM = ffChartHTML(mo, "month_ended", ffMonthLabel, FF_SERIES, W, H);
+    out += '<div class="gchart gfull" id="ffmo"><h4>Monthly \u00b7 '+esc(lbl)+' \u00b7 '+mo.length+' months, '
+      + esc(ffSpanWords(mo, "month_ended", ffMonthLabel))
+      + (h.seed_fetched ? (' \u00b7 ICI data file read '+esc(fmtSessionLabel(h.seed_fetched) || h.seed_fetched)) : '')+'</h4>'
+      + (svgM || '<div class="note">No '+esc(lbl)+' reading in any month on file.</div>')+'</div>';
+  }
+  out += '</div><div class="chartread ffread" id="flowsread" hidden aria-live="polite"></div></div>';
+  return out;
+}
+// Delegated once on the card: the series buttons re-render the card from the
+// live payload; a tap on a chart column prints that column's figures under
+// the charts (the same read-out mechanism the Financials charts use, with
+// its own element because #chartread is anchored inside the stage).
+var FF_WIRED = false;
+function fundFlowsHistoryWire(){
+  if(FF_WIRED) return;
+  var host = document.getElementById("flows");
+  if(!host) return;
+  FF_WIRED = true;
+  host.addEventListener("click", function(e){
+    var b = e.target && e.target.closest ? e.target.closest("#ffseg button[data-ffs]") : null;
+    if(b){
+      var k = b.getAttribute("data-ffs");
+      if(FF_SERIES_OPTS.some(function(o){ return o.key===k; })){
+        FF_SERIES = k;
+        try{ localStorage.setItem("desk.flows.series", k); }catch(err){}
+        renderFundFlows(STATE.data);
+      }
+      return;
+    }
+    var band = e.target && e.target.closest ? e.target.closest("[data-flowread]") : null;
+    var out = document.getElementById("flowsread");
+    if(!out) return;
+    if(!band){ out.hidden = true; out.textContent = ""; return; }
+    var txt = band.getAttribute("data-flowread") || "";
+    var i = txt.indexOf(" \u00b7 ");
+    out.innerHTML = (i > 0) ? ('<b>'+esc(txt.slice(0, i))+'</b>'+esc(txt.slice(i))) : esc(txt);
+    out.hidden = false;
+  });
 }
 
 /* =================== catalysts =================== */
@@ -10059,7 +10217,7 @@ function axisChartSVG(labels, defs, opts){
     // into a readout line below the chart.
     var readTxt = (labels[bi2]||("period "+(bi2+1))) + " \u00b7 " + blines.join(" \u00b7 ");
     bands += '<rect x="'+bx.toFixed(1)+'" y="'+padT+'" width="'+bw2.toFixed(1)+'" height="'+plotH.toFixed(1)
-      + '" fill="transparent" pointer-events="all" class="chartband" data-chartread="'+esc(readTxt)+'"><title>'
+      + '" fill="transparent" pointer-events="all" class="chartband" '+(opts.readAttr||"data-chartread")+'="'+esc(readTxt)+'"><title>'
       + esc((labels[bi2]||("period "+(bi2+1))) + "\n" + blines.join("\n")) + '</title></rect>';
   }
   return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img">'+out+bands+'</svg>';
