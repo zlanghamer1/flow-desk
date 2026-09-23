@@ -3595,3 +3595,46 @@ from the baseline — the sign was carried by color and the label's minus only.
   pane would read as two charts.
 - Verified by render: MU 1W with FCF on (−113.0M hangs below, 17.6B above)
   and 1D/1Y with both overlays on; 402 fetcher tests, 8 smoke tests.
+
+## Guardrails added 2026-09-23 (day-trade tools)
+
+Zach's `/goal`: "easy to use tools to be a day trader", with adversarial
+agents against the status, the plan and the code. Three assessors ran first
+(a gap audit, a premise red-team, a real-time source hunt), then a Fable
+architect review of the written spec (APPROVE WITH CHANGES, twelve required
+changes, all adopted), then the build and an adversarial code review.
+
+- **The premise, measured.** Median first-15-minute move on the published
+  15m file (3 sessions): MU 2.7%, CRWD 3.4%, COHR 3.3%. A day trader's stop
+  is often 0.5–1% away, and the desk's price is 16 minutes old. So the tools
+  plan and referee and never time a trade; the red-team's rejected list
+  (delayed alerts, verdicts relabeled as day calls, flow as a trigger, P&L
+  marked to a delayed price, an opening-range tool) stays rejected.
+- **The VWAP column that is not a VWAP.** The scanner's plain `VWAP` equals
+  the daily bar's (H+L+C)/3 to the cent (MU 1074.475, and SPY, NVDA, V,
+  CRWD). The spec's first draft probed only that column and concluded a real
+  VWAP needed the desk's own 15m file — the 2026-09-05 mistake again. The
+  architect review found `VWAP|5` / `VWAP|15`; `VWAP|15` matched a hand VWAP
+  over the 15m file within 0.02% on all five names. `VWAP|5` serves every
+  name, searched ones included.
+- **The morning mislabel.** For ~16 minutes after 08:30 the delayed feed's
+  regular columns still describe yesterday; the clock says "open". The
+  row's own `time` (the 08:30 CT start of the session those columns
+  describe) is the only honest label, so every level is dated from it.
+- **bars.json lags the session it names.** `build_bars` drops bars on or
+  after `session_date`, and the rebuild runs on the loop's first cycle
+  (≥ 08:00 CT, hours late when GitHub's schedule slips). The live file read
+  `built: 2026-09-22` with sessions through 09-21. `ensureBars` used to mark
+  whatever it fetched as today's, so a tab opened at 07:00 never saw
+  yesterday's bar all day. It now re-checks a stale file every 10 minutes.
+- **Referee holes the architect closed:** deleting a loser handed back the
+  loss budget (rows are voided, DONE latches); a percent-of-account cap rose
+  with the account (the cap is dollars); a restore could remove today's rows
+  (merge-by-id only, caps never restored).
+- **Reverse splits look like gains.** JAGX read +1190% on 2026-09-22, its
+  `change` measured against the pre-split close. Rows at |move| ≥ 100% carry
+  "check for a split".
+- **The PDT rule is gone.** FINRA Regulatory Notice 26-10 replaced it and
+  its $25,000 minimum effective 2026-06-04; Fidelity's own page confirms it
+  has discontinued the rule and keeps a $2,000 margin minimum. Nothing
+  outside the trader's own caps limits trade count now.

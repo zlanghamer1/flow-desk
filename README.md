@@ -551,9 +551,88 @@ the fetcher and the page only prints it. Nothing on the scorecard changes a
 verdict or a weight; changing those still needs a dated note in the vault's
 decisions log first.
 
+## Day-trade tools (added 2026-09-23)
+
+The desk's stock prices run 15 minutes behind the market. In the first 15
+minutes after the open, MU, CRWD and COHR usually move about 3%. A day
+trader's stop is often under 1% away. So these tools help you plan a trade
+and hold yourself to limits. They never tell you when to click buy. Time
+the entry and the exit on Fidelity's or TradingView's real-time price.
+
+**Day trade tab.** It sits under the chart, beside Overview, and works for
+any ticker, searched ones included. The top half lists the price levels
+traders watch:
+
+- pre-market high and low
+- today's open, high, low and VWAP (the day's volume-weighted average price)
+- the prior session's high, low and close
+- the 50-day and 200-day averages
+- the 14-day average true range (ATR)
+
+Each level shows its distance from the current delayed price. Each carries
+the date of the session it comes from. For about 16 minutes after the bell,
+the delayed feed still shows yesterday's numbers, and the tab says so rather
+than calling them today's. **Copy levels** puts the whole list on the
+clipboard so you can paste it into TradingView alerts, which fire in real
+time.
+
+The bottom half sizes a trade. Enter your account size, the percent you are
+willing to lose (1% to start), long or short, the entry and the stop. Any
+level's **stop** button fills in the stop. The tab shows:
+
+- how many shares to buy
+- the dollars at risk
+- the position's size against your account
+- the prices one, two and three times your risk away
+- the loss if the fill slips to twice the stop distance
+
+It refuses to answer without a stop, or with a stop on the wrong side.
+
+**Day limits.** Before the open, set a daily loss cap in dollars and a
+maximum number of trades. Log each trade after you close it: ticker, side,
+shares, entry, exit, and whether you followed your plan. The panel keeps
+your realized profit and loss, trades used and loss budget left. At either
+cap it reads DONE for the rest of the day.
+
+You can lower a cap any time. You can raise one only before the open and
+before your first trade of the day. A trade logged by mistake can be voided.
+A voided trade stays on screen struck through and does not undo a DONE.
+Under 30 trades, the stats say how many are on file, because a short streak
+is luck more often than skill.
+
+The log lives in this browser only. Your phone and your PC keep separate
+logs. **Export CSV** and **Back up** save a copy. **Restore** adds trades
+from a backup and never removes any. The pattern-day-trader rule and its
+$25,000 minimum ended on 2026-06-04 (FINRA Notice 26-10), so these caps are
+now the only limit on how often you trade.
+
+**Gappers & movers.** This is a whole-market list, not just the watchlist.
+Before the open it ranks the biggest pre-market gaps. During the session it
+ranks the day's biggest moves, and after the close the after-hours moves.
+Filters pick the direction, a minimum price and stocks only. Each row shows:
+
+- the move
+- the volume
+- volume against an average full day ("× avg day": 0.5× at 9:00 means half
+  a normal day already traded)
+- the float (shares available to trade)
+- an **earnings** chip when the company just reported
+
+A move of 100% or more carries a **check for a split** chip. A reverse split
+measured against the old share price looks exactly like a huge gain.
+Clicking a row opens its Day trade tab. The list refreshes about once a
+minute while the section is open.
+
+**Keys.** Outside a text box: `[` and `]` step through the watchlist, `1`
+to `5` pick the chart interval (15m, 1H, 4H, 1D, 1W), and `d` opens the
+Day trade tab.
+
 ## Its limits
 
 - **Options data is 15 minutes delayed.** It's free CBOE data, not a live feed.
+- **Stock prices are 15 minutes delayed, so this is not an execution
+  screen.** The day-trade tools plan, size and log trades. Time the entry
+  and the exit on a real-time broker quote.
 - **"Net flow" is a proxy, not real order flow.** Free data can't tell you
   whether a trade was a buyer or a seller — it only shows how much option
   premium changed hands and in which direction the volume leaned. Treat it as
