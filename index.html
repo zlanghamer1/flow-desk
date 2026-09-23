@@ -16918,7 +16918,7 @@ function refreshLiveUI(){
   stageLivePoke();      // its first act is stageHeader(), so no second call here
   // Day-trade tools re-derive from the poll that just landed (a level's
   // distance moves with price; the day's caps roll at CT midnight).
-  try{ if(STAGE.tab==="dt") dtTabUpdate(); dayRender(); }catch(e){}
+  try{ if(STAGE.tab==="dt") dtTabUpdate(); dayRender(); }catch(e){ if(window.console) console.error("day-trade tools:", e); }
   applyFocus();
   updatePricesTimestamp();
   if(typeof markScrollables === "function") markScrollables();
@@ -17568,7 +17568,7 @@ function dtLevels(sym, now){
   var st = statsOf(sym);
   row("m50", "50-day average", st.m50, dtHistReason(sym, 50));
   row("m200", "200-day average", st.m200, dtHistReason(sym, 200));
-  row("atr", "Typical daily range", q && q.atr, "no ATR on the feed", {sub:"(ATR, 14 days)"});
+  row("atr", "Daily range", q && q.atr, "no ATR on the feed", {sub:"(ATR 14)"});
   return out;
 }
 function dtSessionFinal(q, key, now){
@@ -17998,7 +17998,7 @@ function dtTabUpdate(){
     var tt = DT.entryTouched ? ''
       : cur==null ? 'no delayed price yet'
       : dq.tag==="PRE" ? ('entry = pre-market price '+(L.asOf ? ctTimeShort(new Date(L.asOf).toISOString()) : ''))
-      : (L.phase==="plan" && L.sessKey) ? ('entry = '+dtDayLabel(L.sessKey)+' close')
+      : (L.phase==="plan" && L.sessKey) ? ('entry = '+dtDayLabel(L.sessKey)+(L.closePending ? ' last' : ' close'))
       : dq.tag==="PREV" ? ('entry = '+dtDayLabel(L.sessKey)+' close')
       : ('entry = delayed price '+(L.asOf ? ctTimeShort(new Date(L.asOf).toISOString()) : ''));
     if(tag.textContent!==tt) tag.textContent = tt;
@@ -18179,7 +18179,8 @@ function dayRender(){
   if(li && !ds.caps && !li.value && document.activeElement!==li){ var ac = dtReadAcct(); if(ac) li.value = String(Math.round(ac*0.02)); }
   var st = document.getElementById("daystate");
   var big = ds.done
-    ? ('<span class="pill done">DONE</span> <b>'+(ds.reason==="loss" ? 'Daily loss cap reached' : 'Trade cap reached')+'</b> <span class="m">· '+esc(dtMoney(ds.pnl, true))+' on '+ds.n+' trade'+(ds.n===1?'':'s')+'</span>')
+    ? ('<span class="pill done">DONE</span> <b>'+(ds.reason==="loss" ? 'Daily loss cap reached' : 'Trade cap reached')+'</b> <span class="m">· '+esc(dtMoney(ds.pnl, true))+' on '+ds.n+' trade'+(ds.n===1?'':'s')
+       + (ds.nVoid ? ' · '+ds.nVoid+' voided, still counted' : '')+'</span>')
     : ds.caps
       ? ('<b>'+esc(dtMoney(ds.pnl, true))+'</b> <span class="m">realized today · '+ds.n+' of '+ds.caps.trades+' trades · '+esc(dtMoney(ds.budgetLeft))+' of '+esc(dtMoney(ds.caps.loss))+' loss budget left'
          + (ds.nVoid ? ' · '+ds.nVoid+' voided, still counted' : '')+'</span>')
@@ -18208,7 +18209,7 @@ function dayRender(){
   }
   if(tH!==DAY.todayHtml){ document.getElementById("daytoday").innerHTML = tH; DAY.todayHtml = tH; }
   var s = dtJournalStats();
-  var sT = !s.n ? '<span class="m">No trades on file in this browser.</span>'
+  var sT = !s.n ? '<span class="m">'+(dtJournal().length ? 'Only voided trades on file in this browser.' : 'No trades on file in this browser.')+'</span>'
     : ('<span class="m">All trades on file:</span> <b>'+s.n+'</b> · net <b class="'+(s.net>0.005?'u':s.net<-0.005?'d':'m')+'">'+esc(dtMoney(s.net, true))+'</b>'
       + ' · win rate '+(s.winRate!=null ? Math.round(s.winRate*100)+'% ('+s.wins+' of '+(s.wins+s.losses)+')' : '—')
       + ' · avg win '+(s.avgWin!=null ? esc(dtMoney(s.avgWin, true)) : '—')
@@ -18224,7 +18225,7 @@ function dayRender(){
    "both" is two scans — the top gainers and the top losers — merged here
    (architect review #5). A 200 with no rows is a miss: the last good rows and
    their as-of stamp stay, and the reason prints (review #6). */
-var GAP = {rows:null, at:0, mode:null, sessKey:null, key:null, lastAttempt:0, fails:0, err:null, inflight:null, showAll:false, requery:false, tryKey:null};
+var GAP = {rows:null, at:0, mode:null, sessKey:null, key:null, lastAttempt:0, fails:0, err:null, inflight:null, showAll:false, requery:false, tryKey:null, lag:false};
 var GAP_FETCH = 40, GAP_SHOW = 12, GAP_MAX = 30;
 var GAP_VOL_FLOOR = {pre:50000, open:500000, post:50000, last:500000};
 var GAP_COLS = ["name","description","close","change","premarket_close","premarket_change","premarket_volume",
@@ -18295,6 +18296,20 @@ function gapMerge(results, mode, max, f){
   return out.slice(0, max || GAP_MAX);
 }
 function gapKey(mode, f){ return mode+"|"+f.dir+"|"+f.px+"|"+(f.stk ? 1 : 0); }
+function gapRunScan(bodies, mode, f){
+  return Promise.all(bodies.map(function(b){
+      return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:JSON.stringify(b)})
+        .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); });
+    }))
+    .then(function(results){ return gapMerge(results, mode, GAP_MAX, f); });
+}
+// The session most rows describe — during the morning roll some rows have
+// moved to today and some have not, so one row cannot speak for the list.
+function gapSessKeyOf(rows){
+  var n = {}, best = null;
+  rows.forEach(function(r){ if(r.sessKey){ n[r.sessKey] = (n[r.sessKey]||0) + 1; if(!best || n[r.sessKey] > n[best]) best = r.sessKey; } });
+  return best;
+}
 function gapFetch(){
   if(GAP.inflight) return GAP.inflight;
   var now = new Date(), mode = gapMode(now), f = gapFilters(), key = gapKey(mode, f);
@@ -18309,20 +18324,29 @@ function gapFetch(){
     // Rows from a different filter or mode are not this view's rows.
     if(GAP.key!==key){ GAP.rows = null; GAP.at = 0; }
   }
-  GAP.inflight = Promise.all(bodies.map(function(b){
-      return fetch(TV_SCANNER_URL, {method:"POST", headers:{"Content-Type":"text/plain"}, body:JSON.stringify(b)})
-        .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); });
-    }))
-    .then(function(results){
+  var today = ctDateKey(now);
+  GAP.inflight = gapRunScan(bodies, mode, f)
+    .then(function(rows){
+      // For ~16 minutes after the bell the delayed feed still carries
+      // yesterday's session, so "Movers today" would rank yesterday. Keep the
+      // pre-market list (still today's) until most rows have rolled.
+      if(mode==="open" && rows.length && gapSessKeyOf(rows)!==today){
+        return gapRunScan(gapScanBodies("pre", f, now), "pre", f)
+          .then(function(pre){ return pre.length ? {rows:pre, mode:"pre", lag:true} : {rows:rows, mode:mode}; },
+                function(){ return {rows:rows, mode:mode}; });
+      }
+      return {rows:rows, mode:mode};
+    })
+    .then(function(out){
       // A filter click (or the bell) while this scan was in flight: these
       // rows answer a question nobody is asking any more. Drop them and ask
       // the current one.
       if(gapKey(gapMode(new Date()), gapFilters())!==key){ GAP.requery = true; return; }
-      var rows = gapMerge(results, mode, GAP_MAX, f);
+      var rows = out.rows;
       if(!rows.length){ fail("scan returned no rows"); return; }
       rows.forEach(function(r){ if(!railHasSym(r.sym)) adhocRegister(r.sym, r.tv, r.name); });
-      GAP.rows = rows; GAP.at = Date.now(); GAP.mode = mode; GAP.key = key; GAP.fails = 0; GAP.err = null;
-      GAP.sessKey = rows[0].sessKey || null;
+      GAP.rows = rows; GAP.at = Date.now(); GAP.mode = out.mode; GAP.lag = !!out.lag; GAP.key = key; GAP.fails = 0; GAP.err = null;
+      GAP.sessKey = gapSessKeyOf(rows);
     }, function(e){
       if(gapKey(gapMode(new Date()), gapFilters())!==key){ GAP.requery = true; return; }
       fail("scanner did not answer"+(e && /HTTP \d+/.test(String(e.message)) ? " ("+e.message+")" : ""));
@@ -18422,6 +18446,7 @@ function renderGap(){
   // minutes after the bell the delayed feed still carries yesterday.
   var today = ctDateKey(now);
   var sessTxt = '';
+  if(GAP.rows && GAP.lag) sessTxt = ' · regular session not in the feed yet';
   if(GAP.rows && (mode==="open" || mode==="last") && GAP.sessKey){
     if(mode==="open" && GAP.sessKey!==today){ words = dtDayLabel(GAP.sessKey)+" session"; sessTxt = ' · today not in the feed yet'; }
     else if(mode==="last") words = dtDayLabel(GAP.sessKey)+" session movers";
@@ -18430,7 +18455,7 @@ function renderGap(){
   stat.innerHTML = esc(words) + esc(sessTxt) + ' · 15-min delayed' + (GAP.rows ? '' : ' · no scan yet') + asOf;
   if(note){
     var nt = GAP.err ? (GAP.err + (GAP.rows ? ' · showing the last good scan' : '')) : '';
-    if(GAP.rows && GAP.mode!==cur && !GAP.inflight) nt = (nt ? nt+' · ' : '') + 'rows are from the '+(GAP_MODE_WORDS[GAP.mode]||'previous').toLowerCase()+' scan';
+    if(GAP.rows && GAP.mode!==cur && !GAP.lag && !GAP.inflight) nt = (nt ? nt+' · ' : '') + 'rows are from the '+(GAP_MODE_WORDS[GAP.mode]||'previous').toLowerCase()+' scan';
     note.hidden = !nt; note.textContent = nt;
   }
   if(!GAP.rows){

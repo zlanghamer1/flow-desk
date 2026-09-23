@@ -910,8 +910,10 @@ feeds a score, a verdict or the fetcher.
   toward the loss cap. Refunding them let log → void → log run four trades
   and −$1,349 against a $500 / 3-trade cap while the panel read OPEN. A void
   only removes the row from the stats, and only within `DT_VOID_WINDOW_MS`
-  (10 min) of logging. Typos are caught before they count instead: a trade
-  that would reach the loss cap needs a second click (`dtWouldReachCap`).
+  (10 min) of logging. A typo that would reach the loss cap is caught before
+  it counts — that trade needs a second click (`dtWouldReachCap`); a
+  confirmed typo still locks the day, and that cost is accepted (architect
+  ruling, 2026-09-23).
   Restore is merge-by-id only and never removes, edits or un-voids a row;
   caps are never restored.
 - **Settled question 10 ruling (architect, 2026-09-23):** the journal is not
@@ -934,7 +936,10 @@ feeds a score, a verdict or the fetcher.
   backoff keys on the ATTEMPTED filter (`GAP.tryKey`), since `GAP.key` moves
   only on success. A closed section polls nothing. The price floor filters
   on the column the table shows (`premarket_close` / `postmarket_close` /
-  `close`). Gapper rows are exempt from focus dimming.
+  `close`). Gapper rows are exempt from focus dimming. **At the bell the list
+  stays on the pre-market scan** until most rows' `time` is today
+  (`gapSessKeyOf`, `GAP.lag`), since the delayed feed's "day %" is
+  yesterday's for ~16 minutes.
 - **A move of 100% or more carries "check for a split"** (JAGX +1190% on
   2026-09-22 was a reverse split against the old price). A disclosure, never
   a drop.

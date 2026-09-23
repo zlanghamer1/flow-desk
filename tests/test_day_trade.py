@@ -1322,3 +1322,50 @@ def test_opening_gappers_with_the_keyboard_scans(browser, server):
         assert errs == [], errs
     finally:
         page.close()
+
+
+def test_gappers_keep_the_premarket_list_until_the_session_reaches_the_feed(browser, server):
+    """For ~16 minutes after the bell the delayed feed's regular columns are
+    yesterday's; "Movers today" would rank yesterday's movers."""
+    yesterday = ct_s(2026, 9, 22, 8, 30)
+
+    def provider(n, body):
+        if body.get("sort", {}).get("sortBy") == "premarket_change":
+            return {"NASDAQ:PMG": gap_row(name="PMG", description="Pre Gap Co", premarket_change=12.0,
+                                          premarket_close=30.0, premarket_volume=900_000)}
+        return {"NASDAQ:OLD": gap_row(name="OLD", description="Yesterday Co", change=9.0, time=yesterday)}
+
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, gappers=provider,
+                                  pin_ms=ct_ms(2026, 9, 23, 8, 35))
+    try:
+        page.wait_for_function("() => document.querySelectorAll('#gap tr.rw[data-sym]').length > 0", timeout=8000, polling=100)
+        st = page.evaluate("({mode: GAP.mode, lag: GAP.lag, rows: GAP.rows.map(function(r){ return r.sym; }), stat: document.getElementById('gapstat').textContent})")
+        assert st["mode"] == "pre" and st["lag"] is True, st
+        assert st["rows"] == ["PMG"], st
+        assert "Pre-market gappers" in st["stat"] and "not in the feed yet" in st["stat"], st
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_entry_tag_and_done_line_during_the_lags(browser, server):
+    """Architect final pass: after the close the entry tag must say "last"
+    when the rows do; a DONE line names voided rows that still count."""
+    fx = mu_row(**{"time|5": ct_s(2026, 9, 23, 14, 45)})
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: fx}, pin_ms=ct_ms(2026, 9, 23, 15, 5))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.evaluate("dtTabUpdate()")
+        tag = page.locator("#dtentrytag").inner_text()
+        assert "last" in tag and "close" not in tag, tag
+        page.evaluate("(function(){ var n=new Date(); dayCapsSet({loss:100, trades:5}, new Date(n.getTime()-9*3600*1000));"
+                      " var a=dtJournalAdd({sym:'MU', side:'long', shares:10, entry:100, exit:85, plan:false, note:''}, n);"
+                      " dtJournalVoid(a.id, n); dayRender(); })()")
+        txt = page.locator("#daystate").inner_text()
+        assert "DONE" in txt.upper() and "voided, still counted" in txt, txt
+        assert errs == [], errs
+    finally:
+        page.close()
