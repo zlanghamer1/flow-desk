@@ -1372,6 +1372,9 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
    the focused one left 29 of 30 rows at ~2.3:1 contrast (2026-09-23 review). */
 .t-gap tr.dim{opacity:1}
 .dtmeta{font-size:10.5px;margin:-3px 0 6px}
+.dtmeta .rtpx{font-size:12.5px;color:var(--ink)}
+.rtlive{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--acc);
+  border:1px solid color-mix(in srgb, var(--acc) 55%, transparent);border-radius:3px;padding:0 4px}
 @media (min-width:641px){ .t-gap td .nm{display:inline-block;max-width:18ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom} }
 .t-gap .bc{font-size:10px;padding:0 5px;margin-left:4px}
 @media (max-width:640px){
@@ -1581,7 +1584,8 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
     <div class="honesty">
       <div><h4>Freshness</h4><p>Prices re-read every 30s (each read is 15 minutes behind the tape) · heatmap ~2 min, same delay ·
         flow boards ~7 min (8:00–15:20 CT) · brief daily · catalysts hourly · news ticker hourly with the loop ·
-        gappers about every minute while that section is open, same 15-minute delay.
+        gappers about every minute while that section is open, same 15-minute delay ·
+        the Day trade tab's price is Yahoo's streaming last trade, called real-time only while that trade is under 15 seconds old.
         Options data is 15-minute-delayed CBOE; stock prices are 15-minute-delayed TradingView,
         re-read every 30 seconds (the scanner reports <code>update_mode: delayed_streaming_900</code> for every symbol the
         desk polls, and cross-correlating 30 samples against a real-time feed puts the lag at 16 minutes on SPY, MU, CRWD
@@ -1594,7 +1598,7 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
         Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
         Auto trend lines and levels are drawn from this page's own pivot math — display only, never a signal.
         Desk verdicts weigh eight readings on this page toward the next 21 trading days; the four price-and-fundamentals weights come from a pre-registered backtest, the four flow and analyst weights are judgment. In past bear markets (S&amp;P 500 below its 200-day) the momentum readings ran backwards and BUY calls carried no edge. While the market priced Fed hikes (Oct 2021–Feb 2022, May–Aug 2026) the calls ranked names backwards.
-        The day-trade tools plan, size and log trades on these delayed prices; time an entry or exit on a real-time broker quote.
+        The day-trade tools plan, size and log trades; only the Day trade tab's price is real-time, and its levels are 15 minutes behind like every other number here.
         Day limits and the trade log live in this browser only.
         Nothing here is financial advice.</p></div>
     </div>
@@ -16443,6 +16447,7 @@ function renderStageTab(){
   var chartreadEl = document.getElementById("chartread");
   if(chartreadEl){ chartreadEl.hidden = true; chartreadEl.textContent = ""; }
   var sym = STAGE.sym, fund = STAGE.fund;
+  if(STAGE.tab!=="dt" && typeof rtWant==="function" && RT.want) rtWant(null);
   if(STAGE.tab==="fin"){
     var g = renderGrowth(sym, fund);
     if(g && g.indexOf("dsec")!==-1){ body.innerHTML = g; }
@@ -17925,6 +17930,7 @@ function dtSendToLog(){
 function dtTabRender(sym){
   var body = document.getElementById("stagetabbody");
   if(!body) return;
+  rtWant(sym);
   // A searched name's averages need its daily history; repaint when it
   // lands (or say it failed) instead of waiting for the next poll.
   if(!railHasSym(sym) && !(ADHOC_BARS[sym] && ADHOC_BARS[sym].D) && !DT_HIST_FAIL[sym] && typeof adhocEnsureDaily==="function"){
@@ -17954,14 +17960,21 @@ function dtTabUpdate(){
   if(dq.tag==="PRE" && q0 && dtKeyOfEpoch(q0.pmt)!==L.today){
     dq = {px:(q0.c!=null ? q0.c : q0.px), ch:q0.ch, tag:"PREV", ext:null, prev:true};
   }
-  var cur = dq.px;
+  // The streamed last trade while it is fresh (measured real-time, see the
+  // RT block); the delayed scanner print otherwise. Levels stay delayed.
+  var rq = rtQuote(sym), live = !!(rq && rq.fresh);
+  var cur = live ? rq.px : dq.px;
   var at = (L.asOf ? ctTimeShort(new Date(L.asOf).toISOString())+" CT" : "no quote yet");
   var head = L.phase==="pre" ? ('Levels · pre-market '+esc(dtDayLabel(L.today)))
            : L.phase==="open" ? ('Levels · '+esc(dtDayLabel(L.feedLag ? L.sessKey : L.today))+' session')
            : ('Levels for '+esc(dtDayLabel(L.nextKey))+(L.sessKey ? ' · from the '+esc(dtDayLabel(L.sessKey))+' session' : ''));
-  var meta = '<b>'+esc(sym)+'</b> '+(cur!=null ? esc(fmtpx(cur)) : '—')+(dq.tag ? ' '+esc(dq.tag) : '')
-    + (dq.ext && dq.ext.px!=null ? ' · AFT '+esc(fmtpx(dq.ext.px)) : '')
-    + ' · 15-min delayed · '+esc(at);
+  var meta = live
+    ? ('<b>'+esc(sym)+'</b> <b class="rtpx tn">'+esc(fmtpx(rq.px))+'</b> <span class="rtlive">real-time</span>'
+       + ' <span class="tn">· trade '+(rq.age < 1000 ? 'under 1 s' : Math.round(rq.age/1000)+' s')+' ago</span>'
+       + ' · levels 15-min delayed · '+esc(at))
+    : ('<b>'+esc(sym)+'</b> '+(dq.px!=null ? esc(fmtpx(dq.px)) : '—')+(dq.tag ? ' '+esc(dq.tag) : '')
+       + (dq.ext && dq.ext.px!=null ? ' · AFT '+esc(fmtpx(dq.ext.px)) : '')
+       + ' · 15-min delayed · '+esc(at)+' · '+esc(rtStatusWords(sym, rq)));
   if(head+meta!==DT.headHtml){
     var h = document.getElementById("dthead"), mt = document.getElementById("dtmeta");
     if(h) h.innerHTML = head; if(mt) mt.innerHTML = meta;
@@ -17996,6 +18009,7 @@ function dtTabUpdate(){
   var tag = document.getElementById("dtentrytag");
   if(tag){
     var tt = DT.entryTouched ? ''
+      : live ? 'entry = real-time price'
       : cur==null ? 'no delayed price yet'
       : dq.tag==="PRE" ? ('entry = pre-market price '+(L.asOf ? ctTimeShort(new Date(L.asOf).toISOString()) : ''))
       : (L.phase==="plan" && L.sessKey) ? ('entry = '+dtDayLabel(L.sessKey)+(L.closePending ? ' last' : ' close'))
@@ -18033,6 +18047,134 @@ function dtCalcUpdate(){
   if(DT.entryTouched) html += '<div class="dtfoot"><button type="button" class="linkbtn" id="dtentryreset">use the delayed price as entry</button></div>';
   if(html!==DT.outHtml){ out.innerHTML = html; DT.outHtml = html; }
 }
+
+/* ---- real-time last trade from Yahoo's streaming websocket (2026-09-23) ----
+   Ban 8 relabels a price only with its own measurement, and this one has it:
+   docs/GUARDRAIL-HISTORY.md "Ban 8 measurement". Attempt #2 read 0 minutes of
+   lag on SPY, MU, CRWD and NVDA against Robinhood's nls last trade (tick age
+   median 1.47 s, p95 3.04 s) while the TradingView scanner control read
+   15.3-15.5 minutes. Scope: the Day trade tab's price only. Every other price
+   on the page is still the 15-minute-delayed scanner print, and the tab's
+   levels are too. A price is called real-time only while its last trade is
+   under RT_FRESH_MS old; past that the tab falls back to the delayed price
+   and says how long the stream has been quiet. Attempt #1 lost its socket
+   after ~12 minutes, so the client reconnects with backoff. */
+var RT_URL = "wss://streamer.finance.yahoo.com/?version=2";
+var RT_FRESH_MS = 15000;
+var RT = {ws:null, sym:null, want:null, last:{}, state:"idle", retry:0, timer:null, paintAt:0, paintTimer:null};
+function rtYahooSym(sym){ return String(sym||"").toUpperCase().replace(/\./g, "-"); }
+// Protobuf varint as a Number: 64-bit timestamps overflow 32-bit bit ops, so
+// this multiplies instead of shifting.
+function rtVarint(b, i){
+  var r = 0, mul = 1, x;
+  do{ if(i >= b.length) throw new Error("truncated"); x = b[i++]; r += (x & 0x7f)*mul; mul *= 128; }while(x & 0x80);
+  return [r, i];
+}
+function rtZigzag(n){ return (n % 2 === 0) ? n/2 : -(n+1)/2; }
+// Yahoo's PricingData message: field 1 id (string), 2 price (float32),
+// 3 time (sint64, ms). Anything that does not parse is dropped, never guessed.
+function rtDecode(b64){
+  var bin = atob(b64), b = new Uint8Array(bin.length);
+  for(var i=0; i<bin.length; i++) b[i] = bin.charCodeAt(i);
+  var dv = new DataView(b.buffer), out = {}, p = 0;
+  while(p < b.length){
+    var kv = rtVarint(b, p); p = kv[1];
+    var f = Math.floor(kv[0]/8), wt = kv[0] % 8;
+    if(wt===0){ var v = rtVarint(b, p); p = v[1]; out[f] = v[0]; }
+    else if(wt===1){ if(p+8 > b.length) return null; out[f] = dv.getFloat64(p, true); p += 8; }
+    else if(wt===5){ if(p+4 > b.length) return null; out[f] = dv.getFloat32(p, true); p += 4; }
+    else if(wt===2){
+      var ln = rtVarint(b, p); p = ln[1];
+      if(p+ln[0] > b.length) return null;
+      var str = ""; for(var j=0; j<ln[0]; j++) str += String.fromCharCode(b[p+j]);
+      out[f] = str; p += ln[0];
+    }
+    else return null;
+  }
+  return out;
+}
+function rtOnMessage(ev){
+  var m; try{ m = JSON.parse(ev.data); }catch(e){ return; }
+  if(!m || typeof m.message!=="string") return;
+  var d; try{ d = rtDecode(m.message); }catch(e){ return; }
+  if(!d || typeof d[1]!=="string") return;
+  var px = num(d[2]), t = (typeof d[3]==="number") ? rtZigzag(d[3]) : null;
+  if(px==null || !(px>0) || t==null || !isFinite(t)) return;
+  // float32 carries ~7 significant digits; round to the cent it came from.
+  RT.last[d[1]] = {px:Math.round(px*10000)/10000, t:t};
+  rtSchedulePaint();
+}
+// Ticks land about once a second per name; the tab repaints at most once a
+// second and only while it is open.
+function rtSchedulePaint(){
+  if(RT.paintTimer || STAGE.tab!=="dt") return;
+  var wait = Math.max(0, 1000 - (Date.now() - RT.paintAt));
+  RT.paintTimer = setTimeout(function(){ RT.paintTimer = null; RT.paintAt = Date.now(); if(STAGE.tab==="dt") dtTabUpdate(); }, wait);
+}
+function rtSubscribe(){
+  if(!RT.ws || RT.ws.readyState!==1 || !RT.want) return;
+  try{
+    if(RT.sym && RT.sym!==RT.want) RT.ws.send(JSON.stringify({unsubscribe:[RT.sym]}));
+    if(RT.sym!==RT.want){ RT.ws.send(JSON.stringify({subscribe:[RT.want]})); RT.sym = RT.want; }
+  }catch(e){}
+}
+function rtOpen(){
+  clearTimeout(RT.timer); RT.timer = null;
+  if(typeof WebSocket!=="function"){ RT.state = "unsupported"; return; }
+  var ws;
+  try{ ws = new WebSocket(RT_URL); }catch(e){ RT.state = "failed"; rtRetry(); return; }
+  RT.ws = ws; RT.state = "connecting"; RT.sym = null;
+  ws.onopen = function(){ if(RT.ws!==ws) return; RT.state = "open"; RT.retry = 0; rtSubscribe(); rtSchedulePaint(); };
+  ws.onmessage = function(ev){ if(RT.ws===ws) rtOnMessage(ev); };
+  ws.onclose = function(){
+    if(RT.ws!==ws) return;
+    RT.ws = null; RT.sym = null;
+    RT.state = RT.want ? "reconnecting" : "idle";
+    if(RT.want) rtRetry();
+    rtSchedulePaint();
+  };
+  ws.onerror = function(){};   // onclose follows and owns the retry
+}
+function rtRetry(){
+  clearTimeout(RT.timer);
+  RT.retry++;
+  var wait = Math.min(60000, 2000*Math.pow(2, RT.retry-1));
+  RT.timer = setTimeout(function(){ RT.timer = null; if(RT.want && !document.hidden) rtOpen(); }, wait);
+}
+function rtClose(){
+  clearTimeout(RT.timer); RT.timer = null;
+  if(RT.ws){ var w = RT.ws; RT.ws = null; try{ w.close(); }catch(e){} }
+  RT.sym = null; RT.state = "idle";
+}
+// The Day trade tab says which name it wants; null closes the socket.
+function rtWant(sym){
+  var want = sym ? rtYahooSym(sym) : null;
+  RT.want = want;
+  if(!want || document.hidden){ rtClose(); return; }
+  if(!RT.ws){ if(!RT.timer) rtOpen(); return; }
+  if(RT.ws.readyState===1) rtSubscribe();
+}
+// {px, t, age, fresh} for the name's last streamed trade, or null. Age runs
+// from the trade's own timestamp; a viewer clock ahead of the exchange reads
+// as zero, never negative.
+function rtQuote(sym, nowMs){
+  var r = RT.last[rtYahooSym(sym)];
+  if(!r) return null;
+  var age = Math.max(0, (nowMs!=null ? nowMs : Date.now()) - r.t);
+  return {px:r.px, t:r.t, age:age, fresh:(age <= RT_FRESH_MS)};
+}
+function rtStatusWords(sym, rq){
+  if(rq && !rq.fresh) return 'no real-time trade for '+Math.round(rq.age/1000)+' s';
+  return RT.state==="connecting" ? 'real-time stream connecting'
+       : RT.state==="reconnecting" ? 'real-time stream reconnecting'
+       : RT.state==="unsupported" ? 'real-time stream unavailable in this browser'
+       : RT.state==="open" ? 'no real-time trade yet'
+       : 'real-time stream not connected';
+}
+document.addEventListener("visibilitychange", function(){
+  if(document.hidden){ var keep = RT.want; rtClose(); RT.want = keep; }
+  else if(RT.want && STAGE.tab==="dt") rtWant(STAGE.sym);
+});
 
 /* ---- Day limits section ---- */
 var DAY = {statHtml:"", stateHtml:"", todayHtml:"", statsHtml:""};

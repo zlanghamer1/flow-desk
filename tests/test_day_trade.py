@@ -299,6 +299,41 @@ def make_route(server, data_payload=None, bars_payload=None, bars_intraday=None,
     return route
 
 
+# ── Yahoo stream mock (2026-09-23) ───────────────────────────────────────────
+# The Day trade tab opens wss://streamer.finance.yahoo.com. page.route() does
+# not see websockets, so every page this file builds routes them to a mock
+# server that never connects upstream (ban 15). Tests that need ticks pass
+# their own handler.
+YAHOO_WS = re.compile(r"^wss://streamer\.finance\.yahoo\.com/")
+
+
+def _varint(n):
+    out = b""
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        if n:
+            out += bytes([b | 0x80])
+        else:
+            return out + bytes([b])
+
+
+def yahoo_frame(sym, px, t_ms):
+    """One PricingData message as the stream sends it: JSON around base64
+    protobuf (1 id string, 2 price float32, 3 time sint64 ms)."""
+    import base64
+    import struct
+    zz = (t_ms << 1) ^ (t_ms >> 63)
+    body = (bytes([(1 << 3) | 2]) + _varint(len(sym)) + sym.encode()
+            + bytes([(2 << 3) | 5]) + struct.pack("<f", px)
+            + bytes([(3 << 3) | 0]) + _varint(zz))
+    return json.dumps({"type": "pricing", "message": base64.b64encode(body).decode()})
+
+
+def _mute_ws(page, handler=None):
+    page.route_web_socket(YAHOO_WS, handler or (lambda ws: None))
+
+
 # Minimal data.json — trimmed from test_page_smoke.py's BRIEF_PAYLOAD shape.
 DT_DATA = {
     "generated_at": "2026-09-23T14:00:00Z", "generated_at_ct": "2026-09-23 09:00 CT",
@@ -322,13 +357,14 @@ def _pure_page(browser, server):
     page = browser.new_page()
     page_errors = []
     page.on("pageerror", lambda e: page_errors.append(str(e)))
+    _mute_ws(page)
     page.route("**/*", make_route(server, data_payload=DT_DATA))
     page.goto(f"{server}/index.html", wait_until="load")
     return page, page_errors
 
 
 def _dt_page(browser, server, bars_payload=None, poll_fixtures=None, gappers=None,
-             viewport=None, pin_ms=None):
+             viewport=None, pin_ms=None, ws_handler=None):
     """A page wired for DOM-level day-trade checks: data.json, bars.json and
     the scanner all served from fixtures. Pins page.clock when pin_ms is
     given (must happen before goto)."""
@@ -338,6 +374,7 @@ def _dt_page(browser, server, bars_payload=None, poll_fixtures=None, gappers=Non
     page.on("pageerror", lambda e: page_errors.append(str(e)))
     page.on("console", lambda m: console_errors.append(m.text)
             if m.type == "error" and not EXPECTED_CONSOLE.search(m.text) else None)
+    _mute_ws(page, ws_handler)
     page.route("**/*", make_route(
         server, data_payload=DT_DATA, bars_payload=bars_payload,
         scan_handler=make_scan_handler(poll_fixtures=poll_fixtures, gappers=gappers)))
@@ -627,6 +664,7 @@ def _boot_levels_page(browser, server, bars_payload, fixture):
     page = browser.new_page()
     page_errors = []
     page.on("pageerror", lambda e: page_errors.append(str(e)))
+    _mute_ws(page)
     page.route("**/*", make_route(
         server, data_payload=DT_DATA, bars_payload=bars_payload,
         scan_handler=make_scan_handler(poll_fixtures={MU_TV: fixture})))
@@ -1271,6 +1309,7 @@ def test_restore_rejects_a_bad_time_and_a_stored_one_cannot_stop_the_boot(browse
     page = browser.new_page()
     errs2 = []
     page.on("pageerror", lambda e: errs2.append(str(e)))
+    _mute_ws(page)
     page.add_init_script("try{ localStorage.setItem('desk.day.journal', JSON.stringify([{id:'x', day:'2026-09-23', t:9e15, sym:'MU', side:'long', shares:1, entry:1, exit:2}])); }catch(e){}")
     page.route("**/*", make_route(server, data_payload=DT_DATA))
     try:
@@ -1285,6 +1324,7 @@ def test_settings_stick_when_storage_throws(browser, server):
     page = browser.new_page()
     errs = []
     page.on("pageerror", lambda e: errs.append(str(e)))
+    _mute_ws(page)
     page.add_init_script("Storage.prototype.setItem = function(){ throw new Error('blocked'); };"
                          "Storage.prototype.getItem = function(){ throw new Error('blocked'); };")
     page.route("**/*", make_route(server, data_payload=DT_DATA, bars_payload=build_bars_payload(),
@@ -1307,6 +1347,7 @@ def test_opening_gappers_with_the_keyboard_scans(browser, server):
     page = browser.new_page()
     errs = []
     page.on("pageerror", lambda e: errs.append(str(e)))
+    _mute_ws(page)
     page.add_init_script("try{ localStorage.setItem('desk.s-gap', '1'); }catch(e){}")
     page.route("**/*", make_route(server, data_payload=DT_DATA, bars_payload=build_bars_payload(),
                                   scan_handler=make_scan_handler(poll_fixtures={MU_TV: mu_row()},
@@ -1366,6 +1407,104 @@ def test_entry_tag_and_done_line_during_the_lags(browser, server):
                       " dtJournalVoid(a.id, n); dayRender(); })()")
         txt = page.locator("#daystate").inner_text()
         assert "DONE" in txt.upper() and "voided, still counted" in txt, txt
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+# =============================================================================
+# 11. Real-time last trade from Yahoo's stream (ban 8 measurement PASS,
+#     2026-09-23 attempt #2) — the Day trade tab only
+# =============================================================================
+
+def test_rt_decode_reads_the_streams_protobuf(browser, server):
+    page, errs = _pure_page(browser, server)
+    try:
+        t_ms = ct_ms(2026, 9, 23, 9, 30) - 1500
+        msg = json.loads(yahoo_frame("MU", 1100.25, t_ms))["message"]
+        d = page.evaluate("(b) => { var d = rtDecode(b); return {id: d[1], px: d[2], t: rtZigzag(d[3])}; }", msg)
+        assert d == {"id": "MU", "px": 1100.25, "t": t_ms}, d
+        # A truncated frame either decodes to null or throws inside rtDecode;
+        # rtOnMessage swallows both, so a bad frame can never break the tab.
+        assert page.evaluate("(function(){ try{ return rtDecode('gA==')===null ? 'null' : 'obj'; }catch(e){ return 'threw'; } })()") in ("null", "threw")
+        assert page.evaluate("(function(){ rtOnMessage({data:'not json'}); rtOnMessage({data:JSON.stringify({message:'@@@'})}); return 1; })()") == 1
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def _rt_handler(prices, t_of, seen):
+    def handler(ws):
+        def on_msg(m):
+            d = json.loads(m)
+            seen.append(d)
+            for sym in d.get("subscribe", []):
+                if sym in prices:
+                    ws.send(yahoo_frame(sym, prices[sym], t_of()))
+        ws.on_message(on_msg)
+    return handler
+
+
+def test_rt_price_leads_the_day_trade_tab_while_fresh(browser, server):
+    pin = ct_ms(2026, 9, 23, 9, 30)
+    seen = []
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_rt_handler({"MU": 1100.25}, lambda: pin - 1500, seen))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!document.querySelector('#dtmeta .rtlive')", timeout=8000, polling=100)
+        meta = page.locator("#dtmeta").inner_text()
+        assert "1,100.25" in meta and "levels 15-min delayed" in meta, meta
+        assert {"subscribe": ["MU"]} in seen, seen
+        assert page.evaluate("DT.entry") == pytest.approx(1100.25)
+        assert page.locator("#dtentrytag").inner_text() == "entry = real-time price"
+        # distances run from the real-time price, not the delayed 1050.25
+        hi = page.evaluate("dtLevels('MU').rows.filter(function(r){ return r.k==='hi'; })[0].px")
+        dist = page.locator('#dtlev .dtrow[data-lv="hi"] .dist').inner_text()
+        expect = (hi / 1100.25 - 1) * 100
+        assert dist.replace("−", "-").rstrip("%") == f"{expect:+.2f}", (dist, expect)
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_stale_trade_falls_back_to_the_delayed_price(browser, server):
+    pin = ct_ms(2026, 9, 23, 9, 30)
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_rt_handler({"MU": 1100.25}, lambda: pin - 60000, []))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!RT.last['MU']", timeout=8000, polling=100)
+        page.evaluate("dtTabUpdate()")
+        meta = page.locator("#dtmeta").inner_text()
+        assert page.locator("#dtmeta .rtlive").count() == 0, meta
+        assert "15-min delayed" in meta and "no real-time trade for" in meta, meta
+        assert page.evaluate("DT.entry") == pytest.approx(1050.25)
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_follows_the_symbol_and_closes_off_the_tab(browser, server):
+    pin = ct_ms(2026, 9, 23, 9, 30)
+    seen = []
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_rt_handler({"MU": 1100.25}, lambda: pin - 1000, seen))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => RT.state === 'open' && RT.sym === 'MU'", timeout=8000, polling=100)
+        page.evaluate("stageShow('NVDA')")
+        page.wait_for_function("() => RT.sym === 'NVDA'", timeout=8000, polling=100)
+        page.wait_for_timeout(200)
+        assert {"unsubscribe": ["MU"]} in seen and {"subscribe": ["NVDA"]} in seen, seen
+        page.click('#stagetabs button[data-tab="ov"]')
+        page.wait_for_function("() => RT.ws === null && RT.state === 'idle'", timeout=8000, polling=100)
         assert errs == [], errs
     finally:
         page.close()

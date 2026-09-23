@@ -68,6 +68,13 @@ Never do these. Each one has a live incident or a measurement behind it in
    fresher than `close`. The 30-second poll is how often the page re-reads a
    delayed print, not how fresh the print is. If a keyless real-time source is
    ever found, relabeling is a separate change with its own measurement.
+   **One measured exception (2026-09-23):** the Day trade tab's price from
+   Yahoo's streaming websocket read 0 minutes of lag on SPY, MU, CRWD and NVDA
+   against Robinhood's `nls` last trade while the scanner control read
+   15.3-15.5 (docs/GUARDRAIL-HISTORY.md, "Ban 8 measurement", attempt #2).
+   It is labeled real-time only while its last trade is under `RT_FRESH_MS`
+   (15 s) old, and only in that tab. Every other price on the page, and the
+   tab's own levels, stay delayed. Widening it is a separate change.
 9. **Never skip, disable, or quarantine a test to get CI green**, and never
    push an empty commit or close-and-reopen a PR to kick CI.
 10. **Never let a display-only field feed a board score.** `flow_pct`, the
@@ -951,6 +958,19 @@ feeds a score, a verdict or the fetcher.
 - Hotkeys (`[` `]` `1`–`5` `d`) are inert in inputs, textareas, selects,
   contenteditable elements and while the palette is open. The palette gains
   no "jump to" entries (cut 2026-08-18).
+- **Real-time last trade (`RT`, 2026-09-23)**: the Day trade tab opens
+  `wss://streamer.finance.yahoo.com/?version=2` for its one symbol
+  (`rtWant`; Yahoo symbols swap `.` for `-`), unsubscribes on a symbol
+  change, and closes when the tab closes or the page hides. Frames are
+  base64 protobuf decoded by `rtDecode` (1 id, 2 float32 price, 3 zigzag ms
+  time; varints in Number arithmetic, never 32-bit bit ops); a frame that
+  does not parse is dropped. Reconnect backs off 2 s → 60 s (attempt #1 lost
+  its socket after ~12 minutes). `rtQuote` ages a trade from its own
+  timestamp; past `RT_FRESH_MS` the tab falls back to the delayed price and
+  prints how long the stream has been quiet. Repaints at most once a
+  second. Tests route the websocket to a mock (`page.route_web_socket`) —
+  `page.route` never sees websockets, so a new test page that opens the tab
+  without `_mute_ws` would reach the network (ban 15).
 - Pinned by `tests/test_day_trade.py`.
 
 ## Flow boards
@@ -1483,6 +1503,11 @@ transcripts.
     today's bar included (exact on MU, NVDA, V, SPY). `time` is the 08:30 CT
     start of the session the regular columns describe; `premarket_time` the
     03:00 CT pre-market start; `time|5` the last 5-minute bar's start.
+16. **Yahoo's streaming websocket is real-time** (2026-09-23, attempt #2 of
+    the registered measurement): best shift 0 on all four names, error at
+    zero 0.0015-0.0105% of price, tick age median 1.47 s. Attempt #1 failed
+    on a dropped socket, not on lag. It needs no key and does no Origin
+    check; it is unofficial and personal-use only (DATA_LICENSING).
 
 ---
 

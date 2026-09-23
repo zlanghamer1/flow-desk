@@ -3657,8 +3657,29 @@ UTC) and the probe did not reconnect, so its series froze for the last 18
 minutes. Best shift: MU 0, NVDA 0, CRWD 4.0, SPY 16.8 — the rule fails. While
 connected, 3,527 ticks aged median 1.45 s, p95 3.21 s. Nothing is relabeled.
 
-**Attempt #2, registered here before it ran (started 14:14 UTC):** the same
-pass rule, unchanged. The only change is to the harness: the probe reconnects
+**Attempt #2, registered before its result was read** (the run started 14:14
+UTC; this entry was committed at 14:17 UTC, before any output existed): the
+same pass rule, unchanged. The only change is to the harness: the probe reconnects
 after a drop (2 s wait), counts every drop and reports samples whose last tick
 is over 30 s old. No sample is excluded. A drop is a fact a browser client
 would face too, so the count is part of the result.
+
+**Attempt #2, 14:14–14:44 UTC (09:14–09:44 CT): PASS.** 180 samples, 0
+socket drops, 0 samples with a last tick over 30 s old.
+
+| | SPY | MU | CRWD | NVDA |
+|---|---|---|---|---|
+| candidate best shift (min) | 0 | 0 | 0 | 0 |
+| candidate error at 0, % of price | 0.0015 | 0.0105 | 0.0063 | 0.0041 |
+| control best shift (min) | 15.33 | 15.5 | 15.33 | 15.5 |
+| control error at its best, % | 0.0065 | 0.0366 | 0.0415 | 0.0231 |
+
+Tick age over 8,033 ticks: median 1.47 s, p95 3.04 s. The stream sits closer
+to the real-time reference at zero lag than the scanner does even at its own
+best 15-minute shift. What this measured: a Python client with an explicit
+`Origin: https://zlanghamer1.github.io`, from a cloud sandbox, for four
+liquid names, for 30 minutes. What it did not: a browser on the live page,
+thin names, the whole session, or how often the server drops a socket (one
+drop in ~12 minutes on attempt #1, none in 30 on attempt #2). The page change
+that follows carries reconnect logic, a per-tick age on screen, and a fall
+back to the delayed price, so each of those gaps shows itself when it bites.

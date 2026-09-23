@@ -298,13 +298,19 @@ round 20 without a fresh ask.
 
 ### 00. Day-trade follow-ups (added 2026-09-23)
 Found by the day-trade audit and not fixed in that change:
-- **A real-time price source may exist.** Yahoo's streaming websocket
-  (`wss://streamer.finance.yahoo.com/?version=2`, keyless, no Origin check)
-  delivered overnight ticks 1.2–3.1 s after their own timestamps. Ban 8 needs
-  a market-hours measurement before any price is relabeled:
-  `docs/probes/measure_stream_lag.py` (candidate vs Robinhood `nls` quotes,
-  the TradingView scanner as the 15-16 min control). A pass is its own change,
-  with a DATA_LICENSING row.
+- **Real-time beyond the Day trade tab.** Yahoo's stream passed its ban-8
+  measurement on 2026-09-23 (attempt #2) and now drives that tab's price
+  only. Widening it (stage header, rail, tape) is a separate change; the
+  measurement covered four liquid names for 30 minutes and a Python client,
+  not thin names, a whole session, or a browser on the live page.
+- **Yahoo's daily history can hole a settled session.** On 2026-09-23 the
+  v8 chart API returned null OHLC for 2026-09-22 on MU and SPY across the
+  5d, 1mo and 2y ranges, so the morning's bars.json (built 2026-09-23) ends
+  at 2026-09-21. The fetcher correctly drops the null bar, but the bars gate
+  rebuilds once a day, so a hole Yahoo fills later stays until tomorrow. A
+  fix: re-run the build on later cycles while the previous trading day is
+  absent (bounded retries), or fill it from the intraday file's regular-
+  session bars with volume.
 - **Post-close bad ticks under the 4% repair floor.** SPY's 2026-09-21 15:00
   CT 15m bar carries a low of 762.07 on zero volume against a real day low of
   766.03 (1.5% off), so the 15m chart draws a spike. `_repair_quote_wicks`'s
