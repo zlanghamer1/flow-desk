@@ -553,7 +553,7 @@ decisions log first.
 
 ## Day-trade tools (added 2026-09-23)
 
-The desk's stock prices run 15 minutes behind the market. In the first 15
+Most of the desk's prices run 15 minutes behind the market. In the first 15
 minutes after the open, MU, CRWD and COHR usually move about 3%. A day
 trader's stop is often under 1% away. So these tools help you plan a trade
 and hold yourself to limits. They never tell you when to click buy. Time
@@ -644,10 +644,12 @@ behind, as expected. A second test on three stocks that trade less often
 The tab shows the last trade and how long ago it happened. A stock that has
 not traded for a while keeps showing its last trade, with its age. A trade
 before the open is tagged PRE, one after the close AFT, and one late at
-night OVERNIGHT. The tab also listens to SPY, which trades every few
-seconds, to check that the stream is still working. If nothing at all
+night OVERNIGHT. The tab also listens to SPY, which the stream updates every
+few seconds, to check that the stream is still working. If nothing at all
 arrives for 15 seconds, or nothing about this stock for a minute, the tab
-switches back to the delayed price and says why. The levels in the tab are
+switches back to the delayed price and says why. A stock whose new trades
+arrive more than a minute behind SPY's is never called real-time: the tab
+shows the delayed price and says how late the stream is. The levels in the tab are
 still 15 minutes behind, and so is every other price on the desk. The chart
 header above the tab says "15-min delayed" so the two prices are not mixed
 up.

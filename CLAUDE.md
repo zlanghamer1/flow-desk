@@ -985,30 +985,39 @@ feeds a score, a verdict or the fetcher.
   by `rtDecode` (1 id, 2 float32 price, 3 zigzag ms time with whole-second
   resolution; varints in Number arithmetic, never 32-bit bit ops); a frame
   that does not parse is dropped, and so is one stamped more than
-  `RT_SANE_MS` (a day) from the receive clock or more than `RT_LATE_MS`
-  ahead of the heartbeat. A frame older than the trade on file never
-  replaces it. Field 7 (marketHours) is not read: proto3 leaves its default
-  0, PRE_MARKET, off the wire, and a re-sent trade can belong to an earlier
-  session than its frame.
+  `RT_SANE_MS` (a day) from the receive clock, more than `RT_AHEAD_MAX_MS`
+  (5 min) ahead of it, or more than `RT_LATE_MS` ahead of the heartbeat
+  reference as it stood before that frame (SPY's own frames included, so a
+  bad SPY stamp never becomes the reference). A frame older than the trade
+  on file never replaces it. Field 7 (marketHours) is not read: proto3
+  leaves its default 0, PRE_MARKET, off the wire, and a frame can carry a
+  last-sale trade from an earlier session than the frame itself.
   **`rtQuote(sym).live` is the one rule** (2026-09-23 architect review and
   six-lens verification): the stream is alive (`rtStreamAlive`: a frame from
   any subscription within `RT_FRESH_MS` of the viewer's own receive time),
   the name's own last frame is within `RT_NAME_QUIET_MS`, and the name is
   not `late`. Lateness is judged only when a frame carries a NEW trade time,
   as that frame's receive-minus-trade lag less the heartbeat's minimum lag
-  over the last minute (`rtHbLag`), so device-clock skew cancels. The stream
+  over the last minute (`rtHbLag`), so device-clock skew cancels. Only a SPY
+  frame with a NEW trade time feeds that reference (`rtHbNote`); noting SPY's
+  odd-lot repeats let the minimum climb past 60 s after a minute without a
+  round lot and dropped the viewed name's real trades (architect repro, 42
+  of 100 frames). The newest entry is kept past the window. The stream
   sends a frame for every print, odd lots included, and an odd lot does not
   move the last-sale time, so an old trade time on a live stream is a quiet
   name, never a late feed: the first trade after subscribing is shown with
-  its age however old (WTM's matched Robinhood to the cent while a
-  per-subscription promptness gate showed the 15-minute price). A per-name
+  its age however old (a per-subscription promptness gate showed WTM's and
+  NVR's 15-minute prices while the stream held their last trades; the
+  recorded to-the-cent evidence is TSEM, 24 of 24 old-trade samples equal
+  to Robinhood in attempt #3). A per-name
   15 s test, a per-frame lateness test and a per-subscription promptness
   test were each tried and each mislabeled real trades. The printed age
   alone reads the trade's own timestamp against the device clock. A 1 s
   clock (`rtClockSync` → `rtTick`) repaints the tab, so the age and the
   flip to delayed run off time. `rtWatchdog` closes and reopens a socket
-  that sends nothing for `RT_SILENT_MS` (30 s) while `priceSessionNow` is
-  not closed. Reconnect backs off 2 s → 60 s; the backoff resets on a
+  that sends nothing for `RT_SILENT_MS` (30 s) only while `priceSessionNow`
+  is "open", the one window where SPY's frame gaps are measured. The status
+  words name a stopped stream before a late or quiet name. Reconnect backs off 2 s → 60 s; the backoff resets on a
   decoded frame, never on open, and on a deliberate close. The live line
   carries the trade's own session tag (`rtSessTag`, a thin map over
   `priceSessionNow` of the trade's time: PRE, AFT, OVERNIGHT; a closing-cross
@@ -1558,9 +1567,10 @@ transcripts.
     price, tick age median 1.47 s. Attempt #3: the thin names TSEM, AEHR
     and AXTI, best shift 0 on all three, error at zero 0.0027-0.0059%, the
     control at 15.3-15.5 min. The stream sends a frame for every print, odd
-    lots included (the verification's live probe: 170 of 426 thin-name
-    frames repeated the previous trade time while day volume rose, 124 of
-    them by under 100 shares). An odd lot does not move the last-sale price
+    lots included (the verification's live probe: 170 of 229 thin-name
+    frames, 426 frames in all, repeated the previous trade time while day
+    volume rose, 143 of them by under 100 shares; field 9 is sint64 day
+    volume, zigzag-decoded). An odd lot does not move the last-sale price
     or time, so a quiet name's frames keep carrying its last round-lot trade:
     TSEM's was over 60 s old in up to 24 of 180 samples (13 certain), 145 s
     at the oldest sample, while its frames never paused more than 17 s. An

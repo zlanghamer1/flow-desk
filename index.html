@@ -1601,7 +1601,7 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
         Big-orders rows are whole-day totals per contract. ETF and sector flows chase returns — context, never a signal.
         Auto trend lines and levels are drawn from this page's own pivot math — display only, never a signal.
         Desk verdicts weigh eight readings on this page toward the next 21 trading days; the four price-and-fundamentals weights come from a pre-registered backtest, the four flow and analyst weights are judgment. In past bear markets (S&amp;P 500 below its 200-day) the momentum readings ran backwards and BUY calls carried no edge. While the market priced Fed hikes (Oct 2021–Feb 2022, May–Aug 2026) the calls ranked names backwards.
-        The day-trade tools plan, size and log trades; only the Day trade tab's price is real-time, and its levels are 15 minutes behind like every other number here.
+        The day-trade tools plan, size and log trades; only the Day trade tab's price is real-time, while its stream is live, and its levels are 15 minutes behind like every other number here.
         Day limits and the trade log live in this browser only.
         Nothing here is financial advice.</p></div>
     </div>
@@ -18112,12 +18112,12 @@ function dtCalcUpdate(){
    out: a name whose new trades land RT_LATE_MS later than SPY's is served
    late and is never called real-time.
    Field 3 has whole-second resolution. Field 7 (marketHours) is not read:
-   proto3 leaves the default value 0, PRE_MARKET, off the wire, and a re-sent
-   trade can belong to an earlier session than the frame, so the session tag
-   comes from the trade's own time (rtSessTag).
+   proto3 leaves the default value 0, PRE_MARKET, off the wire, and a frame
+   can carry a last-sale trade from an earlier session than the frame
+   itself, so the session tag comes from the trade's own time (rtSessTag).
    Attempt #1 lost its socket after ~12 minutes, so the client reconnects with
    backoff; a dropped socket forgets every trade it carried, and a socket that
-   stays open but silent during a session is closed and reopened. A name whose
+   stays open but silent during the regular session is closed and reopened. A name whose
    own frames stop for RT_NAME_QUIET_MS while SPY streams is not called
    real-time. */
 var RT_URL = "wss://streamer.finance.yahoo.com/?version=2";
@@ -18130,6 +18130,10 @@ var RT_NAME_QUIET_MS = 60000;
 var RT_HEARTBEAT = "SPY";
 var RT_HB_WINDOW_MS = 60000;
 var RT_SANE_MS = 86400000;
+// Before SPY has spoken there is no reference, so a stamp this far AHEAD of
+// the device clock is dropped outright (a clock more than 5 minutes slow
+// therefore never shows real-time; it falls back, it does not mislabel).
+var RT_AHEAD_MAX_MS = 300000;
 var RT = {ws:null, sym:null, want:null, last:{}, hb:[], lastFrameAt:0, openedAt:0, state:"idle", retry:0, timer:null,
           paintAt:0, paintTimer:null, clock:null};
 function rtYahooSym(sym){ return String(sym||"").toUpperCase().replace(/\./g, "-"); }
@@ -18164,11 +18168,16 @@ function rtDecode(b64){
   return out;
 }
 // The heartbeat's lag (receive time minus trade time) over the last minute:
-// device-clock skew plus the network's best case. Its minimum skips SPY's own
-// odd-lot frames, which repeat an older trade time. null until SPY speaks.
+// device-clock skew plus the network's best case. Only a SPY frame with a
+// NEW trade time is noted: an odd-lot frame repeats an older stamp, and
+// noting those let the minimum climb past RT_LATE_MS once SPY went a minute
+// without a round lot, so every prompt frame of the viewed name was dropped
+// as "ahead" (architect, 2026-09-23). The newest entry is kept past the
+// window: a lag measured once stays a fair estimate of the same clock's skew.
+// null until SPY speaks.
 function rtHbNote(recv, t){
   RT.hb.push({recv:recv, lag:recv - t});
-  while(RT.hb.length && (recv - RT.hb[0].recv > RT_HB_WINDOW_MS || RT.hb.length > 240)) RT.hb.shift();
+  while(RT.hb.length > 1 && (recv - RT.hb[0].recv > RT_HB_WINDOW_MS || RT.hb.length > 240)) RT.hb.shift();
 }
 function rtHbLag(){
   if(!RT.hb.length) return null;
@@ -18190,15 +18199,18 @@ function rtOnMessage(ev){
   RT.lastFrameAt = recv;
   RT.retry = 0;                 // a decoded frame, not an open, ends a failure spell
   var id = d[1];
-  if(id===RT_HEARTBEAT) rtHbNote(recv, t);
   // A frame still on the wire for a name just unsubscribed proves the socket
   // is alive, but its trade must not come back on the next visit.
   if(id!==RT.sym && id!==RT_HEARTBEAT){ rtSchedulePaint(); return; }
+  // A stamp well AHEAD is a bad stamp; kept, it would outrank every real
+  // trade after it. Judged against the reference as it stood BEFORE this
+  // frame, so a bad SPY frame is dropped before it can become the reference.
+  var hb0 = rtHbLag();
+  if(t - recv > RT_AHEAD_MAX_MS || (hb0!=null && (recv - t) < hb0 - RT_LATE_MS)){ rtSchedulePaint(); return; }
+  if(id===RT_HEARTBEAT && !(RT.last[id] && t <= RT.last[id].t)) rtHbNote(recv, t);
   var hb = rtHbLag(), prev = RT.last[id];
-  // A stamp well AHEAD of the heartbeat's is a bad stamp; kept, it would
-  // outrank every real trade after it.
-  if(hb!=null && (recv - t) < hb - RT_LATE_MS){ rtSchedulePaint(); return; }
-  // ...and one that landed before SPY first spoke is dropped once it can be judged.
+  // A record stamped well ahead that landed before SPY first spoke is
+  // replaced once it can be judged.
   if(prev && hb!=null && (prev.recv - prev.t) < hb - RT_LATE_MS) prev = null;
   if(prev && t < prev.t){ rtSchedulePaint(); return; }   // older than the trade on file
   var late = prev ? prev.late : false, lateBy = prev ? prev.lateBy : 0;
@@ -18222,13 +18234,14 @@ function rtClockSync(){
   if(!on && RT.clock){ clearInterval(RT.clock); RT.clock = null; }
 }
 // A socket can stay open and go silent (a network switch, a laptop lid).
-// During a session SPY never pauses long, so RT_SILENT_MS of nothing from
-// any subscription closes it and reconnects through the backoff. Overnight
-// the stream is quiet by nature and is left alone.
+// In the regular session SPY's frames never paused more than 3 s (attempt
+// #3, 10:22-10:52 CT), so RT_SILENT_MS of nothing from any subscription
+// closes it and reconnects through the backoff. Outside the regular session
+// SPY's gaps are unmeasured, so a silent socket is left alone there.
 function rtWatchdog(){
   if(!RT.ws || RT.state!=="open") return;
   var now = Date.now(), since = now - (RT.lastFrameAt || RT.openedAt);
-  if(since <= RT_SILENT_MS || priceSessionNow(new Date(now))==="closed") return;
+  if(since <= RT_SILENT_MS || priceSessionNow(new Date(now))!=="open") return;
   var w = RT.ws;
   RT.ws = null; RT.sym = null; rtForget();
   RT.state = "reconnecting";
@@ -18334,9 +18347,11 @@ function rtAgeWords(ms){
 }
 function rtStatusWords(sym, rq){
   var now = Date.now();
-  if(rq && rq.late) return 'real-time stream is sending '+sym+' trades '+rtAgeWords(rq.lateBy)+' late';
-  if(rq && rq.quiet && rtStreamAlive(now)) return 'no '+sym+' update from the real-time stream for '+rtAgeWords(now - rq.recv);
+  // A stopped stream is named first: "is sending ... late" is a present-tense
+  // claim about a stream that may have stopped.
   if(RT.state==="open" && RT.lastFrameAt>0 && !rtStreamAlive(now)) return 'real-time stream quiet for '+rtAgeWords(now - RT.lastFrameAt);
+  if(rq && rq.late) return 'real-time stream is sending '+sym+' trades '+rtAgeWords(rq.lateBy)+' late';
+  if(rq && rq.quiet) return 'no '+sym+' update from the real-time stream for '+rtAgeWords(now - rq.recv);
   return RT.state==="connecting" ? 'real-time stream connecting'
        : RT.state==="reconnecting" ? 'real-time stream reconnecting'
        : RT.state==="unsupported" ? 'real-time stream unavailable in this browser'

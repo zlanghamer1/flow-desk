@@ -318,9 +318,19 @@ Found by the day-trade audit and not fixed in that change:
   second distinct trade.** Lateness can be judged only on a new trade time;
   a first frame cannot tell a quiet name from a late feed. No late-served
   name has been observed on this stream (seven names measured, all shift 0).
-- **The silent-socket watchdog runs only during sessions.** Overnight, an
-  open socket that stops sending stays open, and the tab reads "quiet" until
-  the reader changes tab or view.
+- **The silent-socket watchdog runs only in the regular session.** SPY's
+  frame gaps are measured 10:22-10:52 CT only. Before the open, after the
+  close and overnight, an open socket that stops sending stays open and the
+  tab reads "quiet" until the reader changes tab or view. The extended-hours
+  reconnect rate is unmeasured.
+- **One late new trade holds "late" until the next prompt one.** Lateness is
+  re-judged on each new trade time, so a single last-sale print reported
+  over a minute late keeps a thin name on the delayed price until its next
+  prompt trade. Works as designed; not observed on this stream.
+- **A device clock more than 5 minutes slow never shows real-time.** With no
+  heartbeat yet, a stamp more than `RT_AHEAD_MAX_MS` ahead of the device
+  clock is dropped outright, so such a clock drops every frame. It falls
+  back to the delayed price; it does not mislabel.
 - **The closing cross reads AFT.** A thin name whose last trade is the
   closing auction print (stamped on the close minute) shows "REAL-TIME AFT"
   after the bell, because `rtSessTag` follows `priceSessionNow`, which puts

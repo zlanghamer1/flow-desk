@@ -3739,11 +3739,14 @@ rule left that leg out, for the reason below.
 frames never paused more than 17 s, yet the trade they carried was over 60 s
 old in up to 24 of 180 samples (13 certain, since a frame can be up to 17 s
 older than the sample that reads it), 145 s at the oldest sample. The
-verification's live probe (16:26-16:30 UTC, 426 frames) found why: the
-stream sends a frame for every print, odd lots included. 170 thin-name
-frames repeated the previous trade time, none byte-identical, each with a
-higher day volume (field 9), 124 of them by under 100 shares; frames with a
-new trade time rose by 200 shares or more. An odd lot does not move the
+verification's live probe (16:26-16:30 UTC, 426 frames, 229 of them on the
+thin names) found why: the stream sends a frame for every print, odd lots
+included. 170 of the 229 thin-name frames repeated the previous trade time,
+none byte-identical, each with a higher day volume, 143 of them by under 100
+shares; frames with a new trade time rose by 100 shares or more. Field 9 is
+sint64 day volume and must be zigzag-decoded: every raw value is even, and
+the first count of this (124 under 100, new-time frames 200 or more) read the
+raw values. The probe now records the decoded value. An odd lot does not move the
 last-sale price or time. So an old trade time on a live stream means "no new
 last-sale print", never a late feed. Field 3 also has whole-second
 resolution (ms remainder 0 on all 426 frames), so every age reads up to 1 s
@@ -3757,8 +3760,17 @@ dropped on 2026-09-23:
    shipped) would have demoted TSEM on the odd-lot frames above.
 3. A per-subscription "one frame arrived within 60 s" test (53d42f8) showed
    WTM's and NVR's 15-minute prices under "no real-time trade yet" while the
-   stream carried their last trades to the cent (the verification's live
-   run, 11:47 CT), and on a device clock over 60 s fast it never went live.
+   stream held their last trades (the verification's live run, 11:47 CT; its
+   Robinhood comparison was not saved), and on a device clock over 60 s fast
+   it never went live. The recorded to-the-cent evidence for old stream
+   trades is TSEM: all 24 attempt-#3 samples with a trade over 60 s old
+   equal Robinhood's last trade.
+4. A heartbeat reference that noted every SPY frame (bbc45d0/0601fbb) climbed
+   past 60 s once SPY went a minute without a round lot, and then dropped
+   the viewed name's real trades as "ahead" (architect repro: 42 of 100 MU
+   frames, "no MU update" printed while MU frames arrived); one SPY frame an
+   hour ahead became the reference. Only a new SPY trade time is noted now,
+   and SPY's own frame is judged against the reference before it is noted.
 The rule that shipped judges lateness only on a NEW trade time, against the
 heartbeat's own minimum lag on the same clock (`rtHbLag`), so skew cancels
 and an odd-lot frame is never judged. The first trade after subscribing is
