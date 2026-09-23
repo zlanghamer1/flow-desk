@@ -97,6 +97,11 @@ class _NoWsBrowser:
         page.route_web_socket(re.compile(r"^wss?://"), lambda ws: None)
         return page
 
+    def new_context(self, **kw):
+        ctx = self._b.new_context(**kw)
+        ctx.route_web_socket(re.compile(r"^wss?://"), lambda ws: None)
+        return ctx
+
     def __getattr__(self, name):
         return getattr(self._b, name)
 

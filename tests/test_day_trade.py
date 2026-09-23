@@ -111,6 +111,11 @@ class _NoWsBrowser:
         page.route_web_socket(re.compile(r"^wss?://"), lambda ws: None)
         return page
 
+    def new_context(self, **kw):
+        ctx = self._b.new_context(**kw)
+        ctx.route_web_socket(re.compile(r"^wss?://"), lambda ws: None)
+        return ctx
+
     def __getattr__(self, name):
         return getattr(self._b, name)
 
@@ -1521,10 +1526,11 @@ def test_rt_dead_stream_falls_back_to_the_delayed_price_on_the_clock(browser, se
 def test_rt_quiet_name_keeps_its_last_trade_while_the_stream_lives(browser, server):
     # A thin name that pauses keeps its last streamed trade, with its age,
     # while SPY's heartbeat shows the stream is alive. The per-name 15 s rule
-    # swapped it for a price 15 minutes older on every pause. Attempt #3 also
-    # showed the stream RE-SENDS a quiet name's last trade (TSEM frames carried
-    # a trade up to 145 s old while arriving every 17 s at most); a resend of
-    # an old trade must not demote a name that already sent a prompt one.
+    # swapped it for a price 15 minutes older on every pause. The stream sends
+    # a frame for every print, odd lots included, and an odd lot does not move
+    # the last-sale time, so a quiet name's frames keep carrying its last
+    # round-lot trade (TSEM's carried one 145 s old at the sample, frames never
+    # more than 17 s apart). Such a frame must not demote the name.
     pin = ct_ms(2026, 9, 23, 9, 30)
     page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
                                   poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
@@ -1533,19 +1539,23 @@ def test_rt_quiet_name_keeps_its_last_trade_while_the_stream_lives(browser, serv
         page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
         _open_dt_tab(page)
         page.wait_for_function("() => !!document.querySelector('#dtmeta .rtlive')", timeout=8000, polling=100)
-        for _ in range(6):
+        for i in range(6):
             page.clock.fast_forward(5000)
             _heartbeat(page)
+            if i % 3 == 2:     # an odd-lot frame repeating MU's last round-lot trade
+                page.evaluate("(m) => rtOnMessage({data: m})", yahoo_frame("MU", 1100.25, pin - 1500))
         page.wait_for_function(
             "() => /last trade (3\\d|4\\d) s ago/.test(document.getElementById('dtmeta').textContent)",
             timeout=8000, polling=100)
         assert page.locator("#dtmeta .rtlive").count() == 1
         assert page.evaluate("DT.entry") == pytest.approx(1100.25)
-        for _ in range(8):
+        for i in range(8):
             page.clock.fast_forward(5000)
             _heartbeat(page)
-        # the same MU trade, re-sent ~70 s after it printed; read the tab only
-        # after a repaint that saw the resend
+            if i % 3 == 2:
+                page.evaluate("(m) => rtOnMessage({data: m})", yahoo_frame("MU", 1100.25, pin - 1500))
+        # the same MU trade again, now ~70 s after it printed; read the tab only
+        # after a repaint that saw it
         page.evaluate("(m) => rtOnMessage({data: m})", yahoo_frame("MU", 1100.25, pin - 1500))
         t_inj = page.evaluate("Date.now()")
         assert page.evaluate("RT.last['MU'].recv - RT.last['MU'].t") > 60000
@@ -1593,31 +1603,154 @@ def test_rt_liveness_ignores_a_skewed_device_clock(browser, server):
         page.close()
 
 
-def test_rt_trade_that_arrives_late_is_never_real_time(browser, server):
-    # A name whose only frames arrived 2 minutes after their trade is either a
-    # name the stream serves late or one that has not traded since the socket
-    # opened. Either way it is not called real-time, whatever the heartbeat
-    # says, until a frame arrives promptly.
+def _inject(page, sym, px, back_ms):
+    """One frame for `sym` whose trade printed `back_ms` before the page's
+    clock (negative = ahead of it)."""
+    t = page.evaluate("Date.now()") - back_ms
+    page.evaluate("(m) => rtOnMessage({data: m})", yahoo_frame(sym, px, t))
+    return t
+
+
+def _paint_after(page):
+    t0 = page.evaluate("Date.now()")
+    page.wait_for_function("(t) => RT.paintAt >= t", arg=t0, timeout=8000, polling=100)
+    return page.locator("#dtmeta").inner_text()
+
+
+def test_rt_first_trade_is_shown_with_its_age_however_old(browser, server):
+    # Live, 2026-09-23 11:47 CT: WTM's stream trade 2053.90 matched Robinhood's
+    # last trade to the cent, yet the tab showed the 15-minute price and "no
+    # real-time trade yet" because that trade was over 60 s old when the tab
+    # opened. An old trade on a live stream is a quiet name, not a late feed.
     pin = ct_ms(2026, 9, 23, 9, 30)
     page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
                                   poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
-                                  ws_handler=_rt_handler({"MU": 1100.25}, lambda: pin - 120000, []))
+                                  ws_handler=_rt_handler({"MU": 1100.25, "SPY": 500.0}, lambda: pin - 600000, []))
     try:
         page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
         _open_dt_tab(page)
         page.wait_for_function("() => !!RT.last['MU']", timeout=8000, polling=100)
         _heartbeat(page)
-        t_inj = page.evaluate("Date.now()")
-        page.wait_for_function("(t) => RT.paintAt >= t", arg=t_inj, timeout=8000, polling=100)
-        assert "no real-time trade yet for MU" in page.locator("#dtmeta").inner_text()
-        meta = page.locator("#dtmeta").inner_text()
+        meta = _paint_after(page)
+        assert page.locator("#dtmeta .rtlive").count() == 1, meta
+        assert re.search(r"last trade 10 min ago", meta), meta
+        assert page.evaluate("DT.entry") == pytest.approx(1100.25)
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_late_served_name_is_never_real_time(browser, server):
+    # A name whose NEW trades land 15 minutes after they print, while SPY's
+    # land at once, is a name the stream serves late. Judged against the
+    # heartbeat on the same clock, on a new trade time only.
+    pin = ct_ms(2026, 9, 23, 9, 30)
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_rt_handler({"MU": 1100.25}, lambda: pin - 900000, []))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!RT.last['MU']", timeout=8000, polling=100)
+        _heartbeat(page)
+        _inject(page, "MU", 1100.5, 895000)          # a new trade, still 15 min late
+        meta = _paint_after(page)
         assert page.locator("#dtmeta .rtlive").count() == 0, meta
-        assert "15-min delayed" in meta, meta
+        assert "15-min delayed" in meta and re.search(r"sending MU trades 14 min late", meta), meta
         assert page.evaluate("DT.entry") == pytest.approx(1050.25)
-        # one prompt frame is the evidence; the name goes live
-        _heartbeat(page, sym="MU", px=1101.5, back_ms=800)
-        page.wait_for_function("() => !!document.querySelector('#dtmeta .rtlive')", timeout=8000, polling=100)
+        # a new trade that lands promptly clears it
+        _inject(page, "MU", 1101.5, 800)
+        _paint_after(page)
+        assert page.locator("#dtmeta .rtlive").count() == 1
         assert page.evaluate("DT.entry") == pytest.approx(1101.5)
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_skewed_device_clock_beyond_the_late_window(browser, server):
+    # Clock 90 s AHEAD: every frame, SPY's too, looks 90 s old. Judged against
+    # the heartbeat the name is prompt and goes live. The per-subscription
+    # gate compared the device clock with the exchange's and never went live.
+    pin = ct_ms(2026, 9, 23, 9, 30)
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_rt_handler({"MU": 1100.25, "SPY": 500.0}, lambda: pin - 90000, []))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!RT.last['MU'] && RT.hb.length > 0", timeout=8000, polling=100)
+        _heartbeat(page, back_ms=90000)
+        _inject(page, "MU", 1101.25, 90000)
+        meta = _paint_after(page)
+        assert page.locator("#dtmeta .rtlive").count() == 1, meta
+        assert page.evaluate("DT.entry") == pytest.approx(1101.25)
+        assert errs == [], errs
+    finally:
+        page.close()
+    # Clock 90 s BEHIND: every trade looks 90 s in the future. A name served
+    # 15 minutes late is still caught, relative to the heartbeat.
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_rt_handler({"MU": 1100.25}, lambda: pin + 90000 - 900000, []))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!RT.last['MU']", timeout=8000, polling=100)
+        _heartbeat(page, back_ms=-90000)
+        _inject(page, "MU", 1100.5, 900000 - 90000 - 5000)
+        meta = _paint_after(page)
+        assert page.locator("#dtmeta .rtlive").count() == 0, meta
+        assert "late" in meta, meta
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_bad_timestamps_never_break_the_tab_or_pin_the_price(browser, server):
+    pin = ct_ms(2026, 9, 23, 9, 30)
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_rt_handler({"MU": 1100.25}, lambda: pin - 1000, []))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!RT.last['MU']", timeout=8000, polling=100)
+        # a stamp in the year 287,000 threw RangeError in the calendar helpers
+        # every repaint and skipped the Day limits refresh
+        page.evaluate("(m) => rtOnMessage({data: m})", yahoo_frame("MU", 1500.0, 9_001_800_000_000_000))
+        assert page.evaluate("RT.last['MU'].px") == pytest.approx(1100.25)
+        _heartbeat(page)
+        # an hour ahead of the heartbeat: dropped, so it cannot outrank real trades
+        _inject(page, "MU", 1234.5, -3600000)
+        _inject(page, "MU", 1101.0, 800)
+        meta = _paint_after(page)
+        assert page.evaluate("RT.last['MU'].px") == pytest.approx(1101.0), meta
+        # an older trade than the one on file never replaces it, but still
+        # counts as a sign of life
+        before = page.evaluate("RT.lastFrameAt")
+        page.clock.fast_forward(500)
+        _inject(page, "MU", 999.0, 60000)
+        assert page.evaluate("RT.last['MU'].px") == pytest.approx(1101.0)
+        assert page.evaluate("RT.lastFrameAt") > before
+        _paint_after(page)
+        assert not [c for c in cerrs if "day-trade" in c or "day limits" in c], cerrs
+        assert errs == [], errs
+    finally:
+        page.close()
+    # A future stamp that landed BEFORE the heartbeat first spoke is dropped
+    # once it can be judged.
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_rt_handler({"MU": 1234.5}, lambda: pin + 3600000, []))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!RT.last['MU']", timeout=8000, polling=100)
+        _heartbeat(page)
+        _inject(page, "MU", 1101.0, 800)
+        _paint_after(page)
+        assert page.evaluate("RT.last['MU'].px") == pytest.approx(1101.0)
         assert errs == [], errs
     finally:
         page.close()
@@ -1663,7 +1796,9 @@ def test_rt_heatmap_view_closes_the_socket_and_the_chart_reopens_it(browser, ser
         assert page.evaluate("RT.ws === null && RT.state === 'idle' && RT.want === null && RT.clock === null")
         # a deliberate close ends a failure spell: the next open starts at 2 s
         assert page.evaluate("RT.retry") == 0
-        page.evaluate("stageSetView('chart')")
+        # on return the tab repaints at once, before any new frame: the
+        # pre-heat real-time line must not linger
+        assert page.evaluate("stageSetView('chart'); document.querySelectorAll('#dtmeta .rtlive').length") == 0
         page.wait_for_function("() => RT.state === 'open' && RT.sym === 'MU' && !!document.querySelector('#dtmeta .rtlive')",
                                timeout=8000, polling=100)
         assert errs == [], errs
@@ -1702,13 +1837,288 @@ def test_rt_follows_the_symbol_and_closes_off_the_tab(browser, server):
         page.wait_for_function("() => RT.state === 'open' && RT.sym === 'MU'", timeout=8000, polling=100)
         page.evaluate("stageShow('NVDA')")
         page.wait_for_function("() => RT.sym === 'NVDA'", timeout=8000, polling=100)
-        page.wait_for_timeout(200)
+        for _ in range(80):
+            if {"unsubscribe": ["MU"]} in seen and {"subscribe": ["NVDA"]} in seen:
+                break
+            page.wait_for_timeout(50)
+        page.wait_for_timeout(300)   # a quiet period before the negative check below
         assert {"unsubscribe": ["MU"]} in seen and {"subscribe": ["NVDA"]} in seen, seen
         assert {"unsubscribe": ["SPY"]} not in seen, seen
-        # MU's last trade stopped updating when MU was unsubscribed
+        # MU's last trade stopped updating when MU was unsubscribed, and a MU
+        # frame still on the wire is not kept for the next visit
         assert page.evaluate("RT.last['MU'] === undefined")
+        page.evaluate("(m) => rtOnMessage({data: m})", yahoo_frame("MU", 1099.0, pin - 300))
+        assert page.evaluate("RT.last['MU'] === undefined")
+        assert page.evaluate("stageShow('MU'); RT.last['MU'] === undefined")
+        page.wait_for_function("() => RT.sym === 'MU' && !!RT.last['MU']", timeout=8000, polling=100)
+        assert page.evaluate("RT.last['MU'].px") == pytest.approx(1100.25)
         page.click('#stagetabs button[data-tab="ov"]')
         page.wait_for_function("() => RT.ws === null && RT.state === 'idle'", timeout=8000, polling=100)
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_honesty_box_states_the_rule_the_tab_runs(browser, server):
+    # The Freshness column kept printing the old per-trade 15 s rule after the
+    # tab stopped running it (2026-09-23 verification).
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()})
+    try:
+        txt = page.locator(".honesty").inner_text()
+        assert "Yahoo's streaming last trade, shown with its age while the stream is sending" in txt, txt
+        assert "under 15 seconds" not in txt
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_live_ticks_keep_focus_and_clicks(browser, server):
+    # A per-second rebuild moved focus from a row's stop button to its entry
+    # button (Enter then set the wrong field), dropped focus on Send to trade
+    # log, and lost a click whose press and release straddled a tick.
+    pin = ct_ms(2026, 9, 23, 9, 30)
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_rt_handler({"MU": 1100.25}, lambda: pin - 1000, []))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!document.querySelector('#dtmeta .rtlive')", timeout=8000, polling=100)
+        page.evaluate("var b = document.querySelector('#dtlev .dtrow[data-lv=\"pmh\"] .dtstop'); b.__mark = 1; b.focus();")
+        for px in (1101.0, 1102.5, 1099.75):
+            _heartbeat(page)
+            _inject(page, "MU", px, 500)
+            _paint_after(page)
+        assert page.evaluate("document.activeElement.__mark === 1 && document.activeElement.classList.contains('dtstop')")
+        # Send to trade log keeps focus across ticks
+        page.fill("#dtacct", "25000")
+        page.click('#dtlev .dtrow[data-lv="pml"] .dtstop')
+        page.wait_for_function("() => !!document.getElementById('dtsendlog')", timeout=8000, polling=100)
+        page.evaluate("var s = document.getElementById('dtsendlog'); s.__mark = 2; s.focus();")
+        for px in (1100.0, 1101.25):
+            _heartbeat(page)
+            _inject(page, "MU", px, 500)
+            _paint_after(page)
+        assert page.evaluate("document.activeElement.__mark === 2"), page.evaluate("document.activeElement.id")
+        # a press and release that straddle a repaint still land
+        page.evaluate("DT.stop = null")
+        page.hover('#dtlev .dtrow[data-lv="open"] .dtstop')
+        page.mouse.down()
+        _heartbeat(page)
+        _inject(page, "MU", 1103.0, 500)
+        _paint_after(page)
+        page.mouse.up()
+        close_px = page.evaluate("dtLevels('MU').rows.filter(function(r){ return r.k==='open'; })[0].px")
+        assert page.evaluate("DT.stop") == pytest.approx(close_px)
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def _counting_handler(conns, frames=None, close_on_subscribe=False):
+    """A mock stream that counts connections; optionally answers each
+    subscribe with frames, or drops the socket on the first subscribe."""
+    def handler(ws):
+        conns.append(ws)
+        def on_msg(m):
+            d = json.loads(m)
+            if close_on_subscribe:
+                ws.close()
+                return
+            for sym in d.get("subscribe", []):
+                if frames and sym in frames:
+                    ws.send(frames[sym]())
+        ws.on_message(on_msg)
+    return handler
+
+
+def test_rt_dropped_socket_reconnects_with_growing_backoff(browser, server):
+    # A server that accepts the socket and drops it at once must not hold the
+    # backoff at 2 s: RT.retry resets on a decoded frame, never on open.
+    pin = ct_ms(2026, 9, 23, 9, 30)
+    conns = []
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_counting_handler(conns, close_on_subscribe=True))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => RT.state === 'reconnecting'", timeout=8000, polling=100)
+        assert len(conns) == 1
+        assert "real-time stream reconnecting" in _paint_after(page)
+        page.clock.fast_forward(2100)
+        page.wait_for_function("() => RT.retry === 2 && RT.state === 'reconnecting'", timeout=8000, polling=100)
+        assert len(conns) == 2
+        page.clock.fast_forward(2100)     # the second wait is 4 s, not 2
+        page.wait_for_timeout(200)
+        assert len(conns) == 2
+        page.clock.fast_forward(2000)
+        page.wait_for_function("() => RT.retry === 3", timeout=8000, polling=100)
+        assert len(conns) == 3
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_silent_open_socket_is_reopened_during_the_session(browser, server):
+    # A socket that stays open with no frames (a network switch, a laptop lid)
+    # read "quiet" forever; during a session it is closed and reopened.
+    pin = ct_ms(2026, 9, 23, 9, 30)
+    conns = []
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_counting_handler(conns, {"MU": lambda: yahoo_frame("MU", 1100.25, pin - 1000)}))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!RT.last['MU']", timeout=8000, polling=100)
+        assert len(conns) == 1
+        page.clock.fast_forward(31000)
+        page.wait_for_function("() => RT.state === 'reconnecting' || RT.retry > 0", timeout=8000, polling=100)
+        page.clock.fast_forward(2100)
+        page.wait_for_function("() => RT.state === 'open'", timeout=8000, polling=100)
+        assert len(conns) == 2
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_hidden_page_closes_the_socket_and_reopens_on_return(browser, server):
+    pin = ct_ms(2026, 9, 23, 9, 30)
+    conns = []
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_counting_handler(conns, {"MU": lambda: yahoo_frame("MU", 1100.25, pin - 1000)}))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!document.querySelector('#dtmeta .rtlive')", timeout=8000, polling=100)
+        page.evaluate("Object.defineProperty(document, 'hidden', {configurable:true, get:function(){ return true; }});"
+                      "document.dispatchEvent(new Event('visibilitychange'));")
+        assert page.evaluate("RT.ws === null && RT.clock === null && RT.want === 'MU'")
+        page.clock.fast_forward(5000)      # no retry opens a socket behind a hidden page
+        assert page.evaluate("RT.ws === null") and len(conns) == 1
+        page.evaluate("Object.defineProperty(document, 'hidden', {configurable:true, get:function(){ return false; }});"
+                      "document.dispatchEvent(new Event('visibilitychange'));")
+        page.wait_for_function("() => RT.state === 'open' && RT.clock !== null && !!document.querySelector('#dtmeta .rtlive')",
+                               timeout=8000, polling=100)
+        assert len(conns) == 2
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_session_tag_reads_the_trades_own_time(browser, server):
+    page, errs = _pure_page(browser, server)
+    try:
+        cases = [
+            (ct_ms(2026, 9, 23, 8, 29) + 50000, "PRE"),        # printed 08:29:50, whatever the clock says
+            (ct_ms(2026, 9, 23, 8, 30), ""),
+            (ct_ms(2026, 9, 23, 2, 30), "OVERNIGHT"),
+            (ct_ms(2026, 9, 23, 15, 0), ""),                   # the closing cross
+            (ct_ms(2026, 9, 23, 15, 0) + 1000, "AFT"),
+            (ct_ms(2026, 9, 23, 18, 30), "AFT"),
+            (ct_ms(2026, 9, 23, 19, 30), "OVERNIGHT"),
+            (ct_ms(2026, 9, 26, 10, 0), "OVERNIGHT"),           # a Saturday
+            (ct_ms(2026, 11, 27, 11, 30, dst=False), ""),       # half day
+            (ct_ms(2026, 11, 27, 12, 0, dst=False), ""),        # half-day closing cross
+            (ct_ms(2026, 11, 27, 12, 30, dst=False), "AFT"),
+        ]
+        got = page.evaluate("(xs) => xs.map(function(t){ return rtSessTag(t); })", [c[0] for c in cases])
+        assert got == [c[1] for c in cases], list(zip(cases, got))
+        words = page.evaluate("[999, 59999, 60000, 89999, 3*3600000, 2*86400000].map(rtAgeWords)")
+        assert words == ["under 1 s", "59 s", "1 min", "1 min", "3 h", "2 days"], words
+        assert page.evaluate("rtYahooSym('brk.b')") == "BRK-B"
+        # float32 cannot hold 12.34 exactly; the stored price rounds back to it
+        px = page.evaluate("(m) => { RT.sym = 'MU'; rtOnMessage({data: m}); return RT.last['MU'].px; }",
+                           yahoo_frame("MU", 12.34, int(page.evaluate("Date.now()")) - 1000))
+        assert px == 12.34
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_header_names_its_scope_and_the_meta_line_holds_its_height(browser, server):
+    pin = ct_ms(2026, 9, 23, 9, 30)
+    for vw in ({"width": 1440, "height": 900}, {"width": 390, "height": 844}):
+        page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                      poll_fixtures={MU_TV: mu_row()}, pin_ms=pin, viewport=vw,
+                                      ws_handler=_rt_handler({"MU": 1100.25}, lambda: pin - 1000, []))
+        try:
+            page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+            _open_dt_tab(page)
+            page.wait_for_function("() => !!document.querySelector('#dtmeta .rtlive')", timeout=8000, polling=100)
+            assert "15-min delayed" in page.locator("#stagehead").inner_text()
+            h_live = page.evaluate("document.getElementById('dtmeta').getBoundingClientRect().height")
+            page.clock.fast_forward(16000)
+            page.wait_for_function("() => !document.querySelector('#dtmeta .rtlive')", timeout=8000, polling=100)
+            h_dead = page.evaluate("document.getElementById('dtmeta').getBoundingClientRect().height")
+            assert abs(h_live - h_dead) < 0.5, (vw, h_live, h_dead)
+            page.click('#stagetabs button[data-tab="ov"]')
+            page.wait_for_function("() => !/15-min delayed/.test(document.getElementById('stagehead').textContent)",
+                                   timeout=8000, polling=100)
+            assert errs == [], errs
+        finally:
+            page.close()
+
+
+def test_no_ws_fixture_mocks_pages_and_contexts(browser, server):
+    # Ban 15, structurally: a page from new_page() or new_context().new_page()
+    # never reaches a real socket, even without _mute_ws.
+    import socket
+    lst = socket.socket()
+    lst.bind(("127.0.0.1", 0))
+    lst.listen(5)
+    lst.settimeout(0.2)
+    port = lst.getsockname()[1]
+    accepts = []
+
+    def serve():
+        for _ in range(15):
+            try:
+                c, _ = lst.accept()
+                accepts.append(1)
+                c.close()
+            except OSError:
+                pass
+    th = threading.Thread(target=serve, daemon=True)
+    th.start()
+    ctx = browser.new_context()
+    try:
+        for page in (browser.new_page(), ctx.new_page()):
+            page.goto(f"{server}/index.html", wait_until="domcontentloaded")
+            page.evaluate("(p) => { window.__w = new WebSocket('ws://127.0.0.1:' + p + '/'); }", port)
+            page.wait_for_timeout(400)
+            page.close()
+        th.join(timeout=4)
+        assert accepts == [], accepts
+    finally:
+        ctx.close()
+        lst.close()
+
+
+def test_rt_name_whose_own_frames_stop_is_not_real_time(browser, server):
+    # SPY keeps the socket alive, but MU sends nothing for over a minute. Even
+    # TSEM's frames never paused more than 17 s (attempt #3), so this is a
+    # subscription that went quiet, and the tab says so.
+    pin = ct_ms(2026, 9, 23, 9, 30)
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_rt_handler({"MU": 1100.25}, lambda: pin - 1000, []))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!document.querySelector('#dtmeta .rtlive')", timeout=8000, polling=100)
+        for _ in range(13):
+            page.clock.fast_forward(5000)
+            _heartbeat(page)
+        meta = _paint_after(page)
+        assert page.locator("#dtmeta .rtlive").count() == 0, meta
+        assert "no MU update from the real-time stream for 1 min" in meta, meta
+        assert page.evaluate("DT.entry") == pytest.approx(1050.25)
+        # the delay wording never breaks at its hyphen
+        assert page.locator("#dtmeta .dtnw").first.inner_text() == "15-min delayed"
         assert errs == [], errs
     finally:
         page.close()

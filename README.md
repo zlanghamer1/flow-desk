@@ -569,7 +569,8 @@ traders watch:
 - the 50-day and 200-day averages
 - the 14-day average true range (ATR)
 
-Each level shows its distance from the current delayed price. Each carries
+Each level shows its distance from the tab's current price: the real-time
+price while the stream is live, the delayed price otherwise. Each carries
 the date of the session it comes from. For about 16 minutes after the open,
 the delayed feed still shows yesterday's numbers, and the tab says so rather
 than calling them today's. The same lag hits the close, so for those minutes
@@ -637,14 +638,19 @@ a real-time price for the stock it is open on, from Yahoo's free price
 stream. Before it went in, a 30-minute test during the open compared it with
 a real-time reference and with the desk's usual feed. The stream came out 0
 minutes behind on SPY, MU, CRWD and NVDA. The usual feed came out 15 minutes
-behind, as expected. A second test did the same on three thinly traded
-names, TSEM, AEHR and AXTI. The tab shows the last trade and how old it is.
-A quiet stock keeps its last trade for as long as the stream itself is
-still sending, because the stream's last trade is still the latest one. A
-pre-market or after-hours trade is tagged PRE or AFT. When the whole stream
-goes quiet for 15 seconds, the tab switches back to the delayed price and
-says so. The levels in the tab are still 15 minutes behind, and so is every
-other price on the desk.
+behind, as expected. A second test on three stocks that trade less often
+(TSEM, AEHR and AXTI) also came out 0 minutes behind.
+
+The tab shows the last trade and how long ago it happened. A stock that has
+not traded for a while keeps showing its last trade, with its age. A trade
+before the open is tagged PRE, one after the close AFT, and one late at
+night OVERNIGHT. The tab also listens to SPY, which trades every few
+seconds, to check that the stream is still working. If nothing at all
+arrives for 15 seconds, or nothing about this stock for a minute, the tab
+switches back to the delayed price and says why. The levels in the tab are
+still 15 minutes behind, and so is every other price on the desk. The chart
+header above the tab says "15-min delayed" so the two prices are not mixed
+up.
 
 **Keys.** Outside a text box: `[` and `]` step through the watchlist, `1`
 to `5` pick the chart interval (15m, 1H, 4H, 1D, 1W), and `d` opens the
@@ -654,8 +660,9 @@ Day trade tab.
 
 - **Options data is 15 minutes delayed.** It's free CBOE data, not a live feed.
 - **Stock prices are 15 minutes delayed, so this is not an execution
-  screen.** The day-trade tools plan, size and log trades. Time the entry
-  and the exit on a real-time broker quote.
+  screen.** The one exception is the Day trade tab's own price, which is
+  real-time while its stream is live. The day-trade tools plan, size and
+  log trades. Time the entry and the exit on a real-time broker quote.
 - **"Net flow" is a proxy, not real order flow.** Free data can't tell you
   whether a trade was a buyer or a seller — it only shows how much option
   premium changed hands and in which direction the volume leaned. Treat it as

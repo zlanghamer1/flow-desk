@@ -3730,15 +3730,38 @@ socket drops, 0 reference or control errors.
 | longest wait between frames (s) | 17.0 | 14.1 | 10.0 | 3.0 |
 | last trade's age at the sample: median / max (s) | 17.3 / 145.3 | 8.2 / 44.3 | 6.2 / 39.3 | 1.3 / 4.3 |
 
-**What it taught.** The stream re-sends a quiet name's last trade. TSEM's
+72 of 180 samples had a last trade over 30 s old on at least one thin name
+(none on SPY), and tick age over all 4,126 frames ran median 2.17 s, p95
+31.3 s, so attempt #3 would fail attempt #2's tick-age leg. Its registered
+rule left that leg out, for the reason below.
+
+**What it taught.** A quiet name's frames keep carrying an old trade. TSEM's
 frames never paused more than 17 s, yet the trade they carried was over 60 s
-old in 24 of 180 samples (tick age p95 31.3 s over all 4,126 frames). So one
-old frame does not mean the stream serves a name late; it means the name has
-not traded. The client change the architect's review proposed was built with
-a per-frame "arrived more than 60 s late" test, and this run showed that test
-would have demoted TSEM to the delayed price about one sample in eight. It
-was changed before shipping: a name is called real-time once any frame on
-its subscription arrived within `RT_LATE_MS` (60 s) of its trade, and stays
-so while the stream is alive (`tests/test_day_trade.py`,
-`test_rt_quiet_name_keeps_its_last_trade_while_the_stream_lives`, fails on
-the per-frame test).
+old in up to 24 of 180 samples (13 certain, since a frame can be up to 17 s
+older than the sample that reads it), 145 s at the oldest sample. The
+verification's live probe (16:26-16:30 UTC, 426 frames) found why: the
+stream sends a frame for every print, odd lots included. 170 thin-name
+frames repeated the previous trade time, none byte-identical, each with a
+higher day volume (field 9), 124 of them by under 100 shares; frames with a
+new trade time rose by 200 shares or more. An odd lot does not move the
+last-sale price or time. So an old trade time on a live stream means "no new
+last-sale print", never a late feed. Field 3 also has whole-second
+resolution (ms remainder 0 on all 426 frames), so every age reads up to 1 s
+old before any network delay.
+
+**Three lateness rules, three mislabels.** Each was built, tested and
+dropped on 2026-09-23:
+1. A per-name 15 s trade-age test (125e0a2) swapped TSEM, AEHR and AXTI for
+   a price 15 minutes older every time they paused.
+2. A per-frame "arrived more than 60 s after it printed" test (built, never
+   shipped) would have demoted TSEM on the odd-lot frames above.
+3. A per-subscription "one frame arrived within 60 s" test (53d42f8) showed
+   WTM's and NVR's 15-minute prices under "no real-time trade yet" while the
+   stream carried their last trades to the cent (the verification's live
+   run, 11:47 CT), and on a device clock over 60 s fast it never went live.
+The rule that shipped judges lateness only on a NEW trade time, against the
+heartbeat's own minimum lag on the same clock (`rtHbLag`), so skew cancels
+and an odd-lot frame is never judged. The first trade after subscribing is
+shown with its age. A name the stream served late from its first frame
+would read real-time until its second distinct trade; no such name has been
+observed (docs/OPEN_ITEMS.md).

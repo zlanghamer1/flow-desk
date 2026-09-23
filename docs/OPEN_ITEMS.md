@@ -308,11 +308,22 @@ Found by the day-trade audit and not fixed in that change:
   never paused more than 3 s in attempt #3 (10:22-10:52 CT). Pre-market, after-hours
   and overnight gaps are not measured; a SPY pause over 15 s (with the open
   name quiet too) flips the tab to the delayed price until the next frame.
-- **The printed trade age follows the device clock.** Liveness no longer
-  does, but "last trade N s ago" is the trade's own timestamp against the
-  viewer's clock, so a clock 20 s fast reads 20 s too old. Estimating the
-  offset from the heartbeat would also hide a real feed delay, so it was
-  left as is.
+- **The printed trade age follows the device clock.** Liveness (receive
+  time) and lateness (against the heartbeat's lag) no longer do, but "last
+  trade N s ago" is the trade's own timestamp against the viewer's clock,
+  so a clock 20 s fast reads 20 s too old. Correcting it by the heartbeat's
+  lag would also hide a delay that hit every name at once, SPY included, so
+  it was left as is.
+- **A name served late from its first frame reads real-time until its
+  second distinct trade.** Lateness can be judged only on a new trade time;
+  a first frame cannot tell a quiet name from a late feed. No late-served
+  name has been observed on this stream (seven names measured, all shift 0).
+- **The silent-socket watchdog runs only during sessions.** Overnight, an
+  open socket that stops sending stays open, and the tab reads "quiet" until
+  the reader changes tab or view.
+- **The closing cross is tagged by its first second.** A trade stamped on
+  the close minute's first second is read as the closing print (no tag);
+  an after-hours trade in that same second would be too.
 - **Yahoo's daily history can hole a settled session.** On 2026-09-23 the
   v8 chart API returned null OHLC for 2026-09-22 on MU and SPY across the
   5d, 1mo and 2y ranges, so the morning's bars.json (built 2026-09-23) ends
