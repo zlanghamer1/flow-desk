@@ -637,10 +637,14 @@ a real-time price for the stock it is open on, from Yahoo's free price
 stream. Before it went in, a 30-minute test during the open compared it with
 a real-time reference and with the desk's usual feed. The stream came out 0
 minutes behind on SPY, MU, CRWD and NVDA. The usual feed came out 15 minutes
-behind, as expected. The tab says "real-time" only while the last trade is
-under 15 seconds old, and it shows that age. When the stream goes quiet, the
-tab switches back to the delayed price and says so. The levels in the tab
-are still 15 minutes behind, and so is every other price on the desk.
+behind, as expected. A second test did the same on three thinly traded
+names, TSEM, AEHR and AXTI. The tab shows the last trade and how old it is.
+A quiet stock keeps its last trade for as long as the stream itself is
+still sending, because the stream's last trade is still the latest one. A
+pre-market or after-hours trade is tagged PRE or AFT. When the whole stream
+goes quiet for 15 seconds, the tab switches back to the delayed price and
+says so. The levels in the tab are still 15 minutes behind, and so is every
+other price on the desk.
 
 **Keys.** Outside a text box: `[` and `]` step through the watchlist, `1`
 to `5` pick the chart interval (15m, 1H, 4H, 1D, 1W), and `d` opens the

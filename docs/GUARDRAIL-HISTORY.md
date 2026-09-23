@@ -3641,6 +3641,11 @@ changes, all adopted), then the build and an adversarial code review.
 
 ## Ban 8 measurement: Yahoo's streaming websocket (2026-09-23, market hours)
 
+The probe's printed summary for every attempt is in `docs/probes/samples/`
+(`2026-09-23_attempt{1,2,3}_summary.json`). The raw per-sample prices stay
+out of the repo: they are three vendors' quotes, and DATA_LICENSING bars
+redistributing them.
+
 Candidate: `wss://streamer.finance.yahoo.com/?version=2` (keyless, no Origin
 check; overnight ticks read 1.2–3.1 s old). Method: the 2026-08-19 method via
 `docs/probes/measure_stream_lag.py` — one clock, 10 s samples, 30 minutes;
@@ -3704,3 +3709,36 @@ best shift 0 min on each of TSEM, AEHR and AXTI, and the control's best shift
 heartbeat and must read shift 0 too. The longest wait between ticks per name
 is reported and has no threshold. If any thin name fails, the page keeps the
 15-second rule and the fix does not ship.
+
+**A first launch of attempt #3 collected nothing.** At 15:14 UTC the probe
+started without the `websocket-client` module installed; its stream thread
+died on the import before any candidate sample, and the main loop kept
+sampling only the reference and the control. It was stopped at 15:21 UTC
+with no output read (the summary is written only at the end), the module
+installed, and the probe changed to fail at start-up rather than inside the
+thread. The relaunch below is attempt #3 under the same registered rule.
+
+**Attempt #3, 15:22–15:52 UTC (10:22–10:52 CT): PASS.** 180 samples, 0
+socket drops, 0 reference or control errors.
+
+| | TSEM | AEHR | AXTI | SPY |
+|---|---|---|---|---|
+| candidate best shift (min) | 0 | 0 | 0 | 0 |
+| candidate error at 0, % of price | 0.0027 | 0.0059 | 0.0034 | 0.0008 |
+| control best shift (min) | 15.5 | 15.5 | 15.33 | 15.33 |
+| control error at its best, % | 0.0286 | 0.0531 | 0.0429 | 0.0047 |
+| longest wait between frames (s) | 17.0 | 14.1 | 10.0 | 3.0 |
+| last trade's age at the sample: median / max (s) | 17.3 / 145.3 | 8.2 / 44.3 | 6.2 / 39.3 | 1.3 / 4.3 |
+
+**What it taught.** The stream re-sends a quiet name's last trade. TSEM's
+frames never paused more than 17 s, yet the trade they carried was over 60 s
+old in 24 of 180 samples (tick age p95 31.3 s over all 4,126 frames). So one
+old frame does not mean the stream serves a name late; it means the name has
+not traded. The client change the architect's review proposed was built with
+a per-frame "arrived more than 60 s late" test, and this run showed that test
+would have demoted TSEM to the delayed price about one sample in eight. It
+was changed before shipping: a name is called real-time once any frame on
+its subscription arrived within `RT_LATE_MS` (60 s) of its trade, and stays
+so while the stream is alive (`tests/test_day_trade.py`,
+`test_rt_quiet_name_keeps_its_last_trade_while_the_stream_lives`, fails on
+the per-frame test).

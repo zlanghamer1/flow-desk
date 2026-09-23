@@ -171,6 +171,7 @@ def main():
                     help="comma list; each needs a TV entry")
     a = ap.parse_args()
     SYMS[:] = [x.strip().upper() for x in a.syms.split(",") if x.strip()]
+    import websocket  # noqa: F401 - fail here, not silently inside the thread
     ys = YahooStream(SYMS); ys.start()
     time.sleep(5)
     samples = []

@@ -84,6 +84,23 @@ def _chromium_path():
     return None
 
 
+class _NoWsBrowser:
+    """Ban 15, made structural (2026-09-23 architect review): every page this
+    fixture opens has every websocket mocked before any test code runs. The
+    Day trade tab opens Yahoo's stream; no smoke test may reach it."""
+
+    def __init__(self, b):
+        self._b = b
+
+    def new_page(self, **kw):
+        page = self._b.new_page(**kw)
+        page.route_web_socket(re.compile(r"^wss?://"), lambda ws: None)
+        return page
+
+    def __getattr__(self, name):
+        return getattr(self._b, name)
+
+
 @pytest.fixture(scope="module")
 def browser():
     with sync_playwright() as p:
@@ -99,7 +116,7 @@ def browser():
             # not a page result; CI installs the browser and runs it.
             pytest.skip(f"no Chromium available to launch: {e}".splitlines()[0])
         try:
-            yield b
+            yield _NoWsBrowser(b)
         finally:
             b.close()
 

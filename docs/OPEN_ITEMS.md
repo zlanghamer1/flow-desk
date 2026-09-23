@@ -301,8 +301,18 @@ Found by the day-trade audit and not fixed in that change:
 - **Real-time beyond the Day trade tab.** Yahoo's stream passed its ban-8
   measurement on 2026-09-23 (attempt #2) and now drives that tab's price
   only. Widening it (stage header, rail, tape) is a separate change; the
-  measurement covered four liquid names for 30 minutes and a Python client,
-  not thin names, a whole session, or a browser on the live page.
+  measurements covered seven names for 30 minutes each (four liquid, three
+  thin) with a Python client, not a whole session or a browser on the live
+  page.
+- **The heartbeat is measured in the regular session only.** SPY's frames
+  never paused more than 3 s in attempt #3 (10:22-10:52 CT). Pre-market, after-hours
+  and overnight gaps are not measured; a SPY pause over 15 s (with the open
+  name quiet too) flips the tab to the delayed price until the next frame.
+- **The printed trade age follows the device clock.** Liveness no longer
+  does, but "last trade N s ago" is the trade's own timestamp against the
+  viewer's clock, so a clock 20 s fast reads 20 s too old. Estimating the
+  offset from the heartbeat would also hide a real feed delay, so it was
+  left as is.
 - **Yahoo's daily history can hole a settled session.** On 2026-09-23 the
   v8 chart API returned null OHLC for 2026-09-22 on MU and SPY across the
   5d, 1mo and 2y ranges, so the morning's bars.json (built 2026-09-23) ends

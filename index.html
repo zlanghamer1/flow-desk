@@ -1373,7 +1373,7 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
 .t-gap tr.dim{opacity:1}
 .dtmeta{font-size:10.5px;margin:-3px 0 6px}
 .dtmeta .rtpx{font-size:12.5px;color:var(--ink)}
-.rtlive{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--acc);
+.rtlive{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--acc);
   border:1px solid color-mix(in srgb, var(--acc) 55%, transparent);border-radius:3px;padding:0 4px}
 @media (min-width:641px){ .t-gap td .nm{display:inline-block;max-width:18ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom} }
 .t-gap .bc{font-size:10px;padding:0 5px;margin-left:4px}
@@ -14709,6 +14709,9 @@ function stageSetView(view){
   if(vc) vc.setAttribute("aria-pressed", view==="chart");
   if(vh) vh.setAttribute("aria-pressed", view==="heat");
   if(view==="heat"){ renderHeatBar(); heatRender(); }
+  // The heatmap hides the stage tabs, so the Day trade tab's socket closes
+  // under it and reopens on the way back (2026-09-23 review).
+  if(typeof rtSync==="function"){ rtSync(); if(view==="chart" && STAGE.tab==="dt" && typeof dtTabUpdate==="function") dtTabUpdate(); }
 }
 
 /* =================== stage controller: header / toolbar / tabs =================== */
@@ -17792,7 +17795,7 @@ function dayCapsSet(caps, now){
 }
 
 /* ---- Day trade tab ---- */
-var DT = {sym:null, entry:null, entryTouched:false, stop:null, side:"long", levHtml:"", outHtml:"", headHtml:""};
+var DT = {sym:null, entry:null, entryTouched:false, stop:null, side:"long", levHtml:"", outHtml:"", headHtml:"", live:false};
 function dtInputVal(v){
   var n = num(v);
   if(n===null) return "";
@@ -17930,7 +17933,7 @@ function dtSendToLog(){
 function dtTabRender(sym){
   var body = document.getElementById("stagetabbody");
   if(!body) return;
-  rtWant(sym);
+  rtSync();
   // A searched name's averages need its daily history; repaint when it
   // lands (or say it failed) instead of waiting for the next poll.
   if(!railHasSym(sym) && !(ADHOC_BARS[sym] && ADHOC_BARS[sym].D) && !DT_HIST_FAIL[sym] && typeof adhocEnsureDaily==="function"){
@@ -17960,17 +17963,21 @@ function dtTabUpdate(){
   if(dq.tag==="PRE" && q0 && dtKeyOfEpoch(q0.pmt)!==L.today){
     dq = {px:(q0.c!=null ? q0.c : q0.px), ch:q0.ch, tag:"PREV", ext:null, prev:true};
   }
-  // The streamed last trade while it is fresh (measured real-time, see the
-  // RT block); the delayed scanner print otherwise. Levels stay delayed.
-  var rq = rtQuote(sym), live = !!(rq && rq.fresh);
+  // The streamed last trade while the stream is alive (measured real-time,
+  // see the RT block); the delayed scanner print otherwise. Levels stay
+  // delayed.
+  var rq = rtQuote(sym), live = !!(rq && rq.live);
   var cur = live ? rq.px : dq.px;
+  DT.live = live;
+  var rtTag = live ? rtSessTag(rq.t) : "";
   var at = (L.asOf ? ctTimeShort(new Date(L.asOf).toISOString())+" CT" : "no quote yet");
   var head = L.phase==="pre" ? ('Levels · pre-market '+esc(dtDayLabel(L.today)))
            : L.phase==="open" ? ('Levels · '+esc(dtDayLabel(L.feedLag ? L.sessKey : L.today))+' session')
            : ('Levels for '+esc(dtDayLabel(L.nextKey))+(L.sessKey ? ' · from the '+esc(dtDayLabel(L.sessKey))+' session' : ''));
   var meta = live
     ? ('<b>'+esc(sym)+'</b> <b class="rtpx tn">'+esc(fmtpx(rq.px))+'</b> <span class="rtlive">real-time</span>'
-       + ' <span class="tn">· trade '+(rq.age < 1000 ? 'under 1 s' : Math.round(rq.age/1000)+' s')+' ago</span>'
+       + (rtTag ? ' '+esc(rtTag) : '')
+       + ' <span class="tn">· last trade '+rtAgeWords(rq.age)+' ago</span>'
        + ' · levels 15-min delayed · '+esc(at))
     : ('<b>'+esc(sym)+'</b> '+(dq.px!=null ? esc(fmtpx(dq.px)) : '—')+(dq.tag ? ' '+esc(dq.tag) : '')
        + (dq.ext && dq.ext.px!=null ? ' · AFT '+esc(fmtpx(dq.ext.px)) : '')
@@ -18044,7 +18051,7 @@ function dtCalcUpdate(){
       + '<div class="kvrow"><span>Loss if the stop fills twice as far away</span><b class="d"><span class="dtres" data-k="slip2">'+esc(dtMoney(-r.slip2))+'</span></b></div>'
       + '<div class="dtfoot"><button type="button" class="fbtn" id="dtsendlog">Send to trade log</button></div>';
   }
-  if(DT.entryTouched) html += '<div class="dtfoot"><button type="button" class="linkbtn" id="dtentryreset">use the delayed price as entry</button></div>';
+  if(DT.entryTouched) html += '<div class="dtfoot"><button type="button" class="linkbtn" id="dtentryreset">use the '+(DT.live ? 'real-time' : 'delayed')+' price as entry</button></div>';
   if(html!==DT.outHtml){ out.innerHTML = html; DT.outHtml = html; }
 }
 
@@ -18055,13 +18062,26 @@ function dtCalcUpdate(){
    median 1.47 s, p95 3.04 s) while the TradingView scanner control read
    15.3-15.5 minutes. Scope: the Day trade tab's price only. Every other price
    on the page is still the 15-minute-delayed scanner print, and the tab's
-   levels are too. A price is called real-time only while its last trade is
-   under RT_FRESH_MS old; past that the tab falls back to the delayed price
-   and says how long the stream has been quiet. Attempt #1 lost its socket
-   after ~12 minutes, so the client reconnects with backoff. */
+   levels are too.
+   The tab shows the last streamed trade, with its age, while the stream is
+   alive: a frame from any subscription inside RT_FRESH_MS, with SPY kept
+   subscribed as the heartbeat (the architect's live probe saw it trade at
+   least every 3 s). Liveness reads the viewer's own receive clock, never the
+   exchange timestamp, so a skewed device clock cannot mark a live stream dead
+   or a dead one live. A name is called real-time only once a frame on this
+   subscription arrived within RT_LATE_MS of its trade: attempt #3 showed the
+   stream re-sends a quiet name's last trade (TSEM's frames carried a trade up
+   to 145 s old while arriving every 17 s at most), so one old frame is a
+   quiet name, while a source that serves a name late never sends a prompt
+   one.
+   Attempt #1 lost its socket after ~12 minutes, so the client reconnects with
+   backoff, and a dropped socket forgets every trade it carried. */
 var RT_URL = "wss://streamer.finance.yahoo.com/?version=2";
 var RT_FRESH_MS = 15000;
-var RT = {ws:null, sym:null, want:null, last:{}, state:"idle", retry:0, timer:null, paintAt:0, paintTimer:null};
+var RT_LATE_MS = 60000;
+var RT_HEARTBEAT = "SPY";
+var RT = {ws:null, sym:null, want:null, last:{}, lastFrameAt:0, state:"idle", retry:0, timer:null,
+          paintAt:0, paintTimer:null, clock:null};
 function rtYahooSym(sym){ return String(sym||"").toUpperCase().replace(/\./g, "-"); }
 // Protobuf varint as a Number: 64-bit timestamps overflow 32-bit bit ops, so
 // this multiplies instead of shifting.
@@ -18100,35 +18120,57 @@ function rtOnMessage(ev){
   if(!d || typeof d[1]!=="string") return;
   var px = num(d[2]), t = (typeof d[3]==="number") ? rtZigzag(d[3]) : null;
   if(px==null || !(px>0) || t==null || !isFinite(t)) return;
+  var recv = Date.now();
+  RT.lastFrameAt = recv;
+  var prev = RT.last[d[1]];
+  var prompt = (recv - t) <= RT_LATE_MS;
+  // A frame older than the trade on file never replaces it.
+  if(prev && t < prev.t){ if(prompt) prev.seenPrompt = true; rtSchedulePaint(); return; }
   // float32 carries ~7 significant digits; round to the cent it came from.
-  RT.last[d[1]] = {px:Math.round(px*10000)/10000, t:t};
+  RT.last[d[1]] = {px:Math.round(px*10000)/10000, t:t, recv:recv, seenPrompt:(prompt || !!(prev && prev.seenPrompt))};
   rtSchedulePaint();
 }
-// Ticks land about once a second per name; the tab repaints at most once a
-// second and only while it is open.
+// The tab repaints at most once a second, only while it is open. The clock
+// below drives it too, so the age and the live-to-delayed flip run off time,
+// not off the next tick (a dead stream read "real-time" until the 30 s poll).
 function rtSchedulePaint(){
   if(RT.paintTimer || STAGE.tab!=="dt") return;
   var wait = Math.max(0, 1000 - (Date.now() - RT.paintAt));
   RT.paintTimer = setTimeout(function(){ RT.paintTimer = null; RT.paintAt = Date.now(); if(STAGE.tab==="dt") dtTabUpdate(); }, wait);
 }
+function rtClockSync(){
+  var on = !!RT.want && !document.hidden;
+  if(on && !RT.clock) RT.clock = setInterval(rtSchedulePaint, 1000);
+  if(!on && RT.clock){ clearInterval(RT.clock); RT.clock = null; }
+}
 function rtSubscribe(){
   if(!RT.ws || RT.ws.readyState!==1 || !RT.want) return;
   try{
-    if(RT.sym && RT.sym!==RT.want) RT.ws.send(JSON.stringify({unsubscribe:[RT.sym]}));
+    if(RT.sym && RT.sym!==RT.want && RT.sym!==RT_HEARTBEAT){
+      RT.ws.send(JSON.stringify({unsubscribe:[RT.sym]}));
+      // An unsubscribed name's last trade goes stale the moment it stops streaming.
+      delete RT.last[RT.sym];
+    }
     if(RT.sym!==RT.want){ RT.ws.send(JSON.stringify({subscribe:[RT.want]})); RT.sym = RT.want; }
   }catch(e){}
 }
+function rtForget(){ RT.last = {}; RT.lastFrameAt = 0; }
 function rtOpen(){
   clearTimeout(RT.timer); RT.timer = null;
   if(typeof WebSocket!=="function"){ RT.state = "unsupported"; return; }
   var ws;
   try{ ws = new WebSocket(RT_URL); }catch(e){ RT.state = "failed"; rtRetry(); return; }
-  RT.ws = ws; RT.state = "connecting"; RT.sym = null;
-  ws.onopen = function(){ if(RT.ws!==ws) return; RT.state = "open"; RT.retry = 0; rtSubscribe(); rtSchedulePaint(); };
+  RT.ws = ws; RT.state = "connecting"; RT.sym = null; rtForget();
+  ws.onopen = function(){
+    if(RT.ws!==ws) return;
+    RT.state = "open"; RT.retry = 0;
+    try{ if(RT.want!==RT_HEARTBEAT) ws.send(JSON.stringify({subscribe:[RT_HEARTBEAT]})); }catch(e){}
+    rtSubscribe(); rtSchedulePaint();
+  };
   ws.onmessage = function(ev){ if(RT.ws===ws) rtOnMessage(ev); };
   ws.onclose = function(){
     if(RT.ws!==ws) return;
-    RT.ws = null; RT.sym = null;
+    RT.ws = null; RT.sym = null; rtForget();
     RT.state = RT.want ? "reconnecting" : "idle";
     if(RT.want) rtRetry();
     rtSchedulePaint();
@@ -18141,39 +18183,68 @@ function rtRetry(){
   var wait = Math.min(60000, 2000*Math.pow(2, RT.retry-1));
   RT.timer = setTimeout(function(){ RT.timer = null; if(RT.want && !document.hidden) rtOpen(); }, wait);
 }
+// A deliberate close also ends a failure spell, so the next open starts at
+// the 2 s step rather than inheriting a 60 s wait.
 function rtClose(){
   clearTimeout(RT.timer); RT.timer = null;
   if(RT.ws){ var w = RT.ws; RT.ws = null; try{ w.close(); }catch(e){} }
-  RT.sym = null; RT.state = "idle";
+  RT.sym = null; RT.state = "idle"; RT.retry = 0; rtForget();
 }
 // The Day trade tab says which name it wants; null closes the socket.
 function rtWant(sym){
   var want = sym ? rtYahooSym(sym) : null;
   RT.want = want;
+  rtClockSync();
   if(!want || document.hidden){ rtClose(); return; }
   if(!RT.ws){ if(!RT.timer) rtOpen(); return; }
   if(RT.ws.readyState===1) rtSubscribe();
 }
-// {px, t, age, fresh} for the name's last streamed trade, or null. Age runs
-// from the trade's own timestamp; a viewer clock ahead of the exchange reads
-// as zero, never negative.
+// The socket is wanted only while the Day trade tab is on screen: not on
+// another tab, not under the heatmap view, not in a hidden page.
+function rtSync(){
+  if(typeof RT==="undefined" || !RT) return;
+  rtWant(STAGE.tab==="dt" && STAGE.view!=="heat" ? STAGE.sym : null);
+}
+function rtStreamAlive(nowMs){
+  var now = (nowMs!=null ? nowMs : Date.now());
+  return !!RT.ws && RT.state==="open" && RT.lastFrameAt>0 && (now - RT.lastFrameAt) <= RT_FRESH_MS;
+}
+// {px, t, age, prompt, live} for the name's last streamed trade, or null.
+// `age` is the trade's own timestamp against the viewer's clock, for display
+// only (a clock ahead of the exchange reads as zero, never negative).
+// `prompt`: some frame on this subscription arrived within RT_LATE_MS of its
+// trade. `live` is the one rule every caller reads.
 function rtQuote(sym, nowMs){
   var r = RT.last[rtYahooSym(sym)];
   if(!r) return null;
-  var age = Math.max(0, (nowMs!=null ? nowMs : Date.now()) - r.t);
-  return {px:r.px, t:r.t, age:age, fresh:(age <= RT_FRESH_MS)};
+  var now = (nowMs!=null ? nowMs : Date.now());
+  return {px:r.px, t:r.t, age:Math.max(0, now - r.t), prompt:!!r.seenPrompt, live:(!!r.seenPrompt && rtStreamAlive(now))};
+}
+// The session a streamed trade printed in, read from the trade's own time.
+function rtSessTag(tMs){
+  var d = new Date(tMs);
+  if(!isTradingDay(d)) return "OVERNIGHT";
+  var m = ctMinutesOfDay(d);
+  if(m < 3*60) return "OVERNIGHT";
+  if(m < 8*60+30) return "PRE";
+  if(m < ctSessionCloseMinute(d)) return "";
+  return m < 19*60 ? "AFT" : "OVERNIGHT";
+}
+function rtAgeWords(ms){
+  return ms < 1000 ? 'under 1 s' : ms < 60000 ? Math.round(ms/1000)+' s' : Math.round(ms/60000)+' min';
 }
 function rtStatusWords(sym, rq){
-  if(rq && !rq.fresh) return 'no real-time trade for '+Math.round(rq.age/1000)+' s';
+  var now = Date.now();
+  if(RT.state==="open" && RT.lastFrameAt>0 && !rtStreamAlive(now)) return 'real-time stream quiet for '+rtAgeWords(now - RT.lastFrameAt);
   return RT.state==="connecting" ? 'real-time stream connecting'
        : RT.state==="reconnecting" ? 'real-time stream reconnecting'
        : RT.state==="unsupported" ? 'real-time stream unavailable in this browser'
-       : RT.state==="open" ? 'no real-time trade yet'
+       : RT.state==="open" ? 'no real-time trade yet for '+sym
        : 'real-time stream not connected';
 }
 document.addEventListener("visibilitychange", function(){
-  if(document.hidden){ var keep = RT.want; rtClose(); RT.want = keep; }
-  else if(RT.want && STAGE.tab==="dt") rtWant(STAGE.sym);
+  if(document.hidden){ var keep = RT.want; rtClose(); RT.want = keep; rtClockSync(); }
+  else if(RT.want) rtSync();
 });
 
 /* ---- Day limits section ---- */
