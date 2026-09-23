@@ -1688,8 +1688,24 @@ def test_rt_skewed_device_clock_beyond_the_late_window(browser, server):
         assert errs == [], errs
     finally:
         page.close()
-    # Clock 90 s BEHIND: every trade looks 90 s in the future. A name served
-    # 15 minutes late is still caught, relative to the heartbeat.
+    # Clock 90 s BEHIND, frames arriving at once: live.
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_rt_handler({"MU": 1100.25, "SPY": 500.0}, lambda: pin + 90000, []))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!RT.last['MU'] && RT.hb.length > 0", timeout=8000, polling=100)
+        _heartbeat(page, back_ms=-90000)
+        _inject(page, "MU", 1101.75, -90000)
+        meta = _paint_after(page)
+        assert page.locator("#dtmeta .rtlive").count() == 1, meta
+        assert page.evaluate("DT.entry") == pytest.approx(1101.75)
+        assert errs == [], errs
+    finally:
+        page.close()
+    # Clock 90 s BEHIND: a name served 15 minutes late is still caught,
+    # relative to the heartbeat.
     page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
                                   poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
                                   ws_handler=_rt_handler({"MU": 1100.25}, lambda: pin + 90000 - 900000, []))
@@ -1891,6 +1907,9 @@ def test_rt_live_ticks_keep_focus_and_clicks(browser, server):
             _inject(page, "MU", px, 500)
             _paint_after(page)
         assert page.evaluate("document.activeElement.__mark === 1 && document.activeElement.classList.contains('dtstop')")
+        page.keyboard.press("Enter")
+        pmh_px = page.evaluate("dtLevels('MU').rows.filter(function(r){ return r.k==='pmh'; })[0].px")
+        assert page.evaluate("DT.stop") == pytest.approx(pmh_px)
         # Send to trade log keeps focus across ticks
         page.fill("#dtacct", "25000")
         page.click('#dtlev .dtrow[data-lv="pml"] .dtstop')
@@ -2016,13 +2035,13 @@ def test_rt_session_tag_reads_the_trades_own_time(browser, server):
             (ct_ms(2026, 9, 23, 8, 29) + 50000, "PRE"),        # printed 08:29:50, whatever the clock says
             (ct_ms(2026, 9, 23, 8, 30), ""),
             (ct_ms(2026, 9, 23, 2, 30), "OVERNIGHT"),
-            (ct_ms(2026, 9, 23, 15, 0), ""),                   # the closing cross
+            (ct_ms(2026, 9, 23, 15, 0), "AFT"),                # the closing cross reads AFT, as priceSessionNow does
             (ct_ms(2026, 9, 23, 15, 0) + 1000, "AFT"),
             (ct_ms(2026, 9, 23, 18, 30), "AFT"),
             (ct_ms(2026, 9, 23, 19, 30), "OVERNIGHT"),
             (ct_ms(2026, 9, 26, 10, 0), "OVERNIGHT"),           # a Saturday
             (ct_ms(2026, 11, 27, 11, 30, dst=False), ""),       # half day
-            (ct_ms(2026, 11, 27, 12, 0, dst=False), ""),        # half-day closing cross
+            (ct_ms(2026, 11, 27, 12, 0, dst=False), "AFT"),     # half-day close
             (ct_ms(2026, 11, 27, 12, 30, dst=False), "AFT"),
         ]
         got = page.evaluate("(xs) => xs.map(function(t){ return rtSessTag(t); })", [c[0] for c in cases])

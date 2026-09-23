@@ -1010,9 +1010,9 @@ feeds a score, a verdict or the fetcher.
   that sends nothing for `RT_SILENT_MS` (30 s) while `priceSessionNow` is
   not closed. Reconnect backs off 2 s → 60 s; the backoff resets on a
   decoded frame, never on open, and on a deliberate close. The live line
-  carries the trade's own session tag (`rtSessTag`, a map over
-  `priceSessionNow` of the trade's time: PRE, AFT, OVERNIGHT; the closing
-  cross's first second is regular), ages floor (`rtAgeWords`: s, min, h,
+  carries the trade's own session tag (`rtSessTag`, a thin map over
+  `priceSessionNow` of the trade's time: PRE, AFT, OVERNIGHT; a closing-cross
+  print on the close minute reads AFT, as that map reads it), ages floor (`rtAgeWords`: s, min, h,
   days), the delayed price is stamped "read HH:MM" (when the page read it,
   not the price's own time), and the entry reset names the price it resets
   to.

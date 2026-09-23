@@ -18319,12 +18319,12 @@ function rtQuote(sym, nowMs){
   return {px:r.px, t:r.t, recv:r.recv, age:Math.max(0, now - r.t), late:!!r.late, lateBy:r.lateBy, quiet:quiet,
           live:(!r.late && !quiet && rtStreamAlive(now))};
 }
-// The session a streamed trade printed in, read from the trade's own time
-// through the page's one session map. The closing cross prints on the close
-// minute's first second and is the session's last regular trade, not AFT.
+// The session a streamed trade printed in: the page's one session map
+// (priceSessionNow) over the trade's own time. A closing-cross print stamped
+// on the close minute reads AFT, as priceSessionNow reads it (architect
+// ruling, 2026-09-23).
 function rtSessTag(tMs){
-  var d = new Date(tMs), s = priceSessionNow(d);
-  if(s==="afterhours" && ctMinutesOfDay(d)===ctSessionCloseMinute(d) && Math.floor(tMs/1000) % 60===0) return "";
+  var s = priceSessionNow(new Date(tMs));
   return s==="premarket" ? "PRE" : s==="open" ? "" : s==="afterhours" ? "AFT" : "OVERNIGHT";
 }
 function rtAgeWords(ms){

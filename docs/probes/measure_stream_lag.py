@@ -89,6 +89,7 @@ class YahooStream(threading.Thread):
         super().__init__(daemon=True)
         self.syms = syms
         self.last: dict[str, tuple[float, float, float]] = {}   # sym -> (px, tick_ms, recv_s)
+        self.dayvol: dict[str, int] = {}    # sym -> field 9 (day volume) of the last frame
         self.ages: list[float] = []
         self.err = None
         self.drops: list[dict] = []
@@ -125,6 +126,10 @@ class YahooStream(threading.Thread):
                     if prev:
                         self.gaps[d.get(1)] = max(self.gaps.get(d.get(1), 0.0), now - prev[2])
                     self.last[d.get(1)] = (float(d.get(2)), tick_ms, now)
+                    if isinstance(d.get(9), int):
+                        # field 9 is sint64 day volume; a frame whose trade time repeats
+                        # while this rises is an odd-lot print (2026-09-23 verification)
+                        self.dayvol[d.get(1)] = zigzag(d[9])
                     self.ages.append(now - tick_ms / 1000.0)
             except Exception as e:  # noqa: BLE001 - recorded, reported
                 self.err = f"{type(e).__name__}: {e}"
@@ -139,8 +144,11 @@ def get_json(url, data=None, headers=None):
 
 
 def robinhood():
+    """Last trade price per symbol, plus Robinhood's own last-trade time."""
     d = get_json("https://api.robinhood.com/quotes/?symbols=" + ",".join(SYMS))
-    return {q["symbol"]: float(q["last_trade_price"]) for q in d.get("results", []) if q}
+    qs = [q for q in d.get("results", []) if q]
+    return ({q["symbol"]: float(q["last_trade_price"]) for q in qs},
+            {q["symbol"]: q.get("venue_last_trade_time") for q in qs})
 
 
 def scanner():
@@ -180,7 +188,7 @@ def main():
         t0 = time.time()
         row = {"t": t0}
         try:
-            row["ref"] = robinhood()
+            row["ref"], row["ref_time"] = robinhood()
         except Exception as e:  # noqa: BLE001
             row["ref_err"] = type(e).__name__
         try:
@@ -189,6 +197,7 @@ def main():
             row["ctl_err"] = type(e).__name__
         row["cand"] = {s: v[0] for s, v in ys.last.items()}
         row["cand_age"] = {s: round(t0 - v[1] / 1000.0, 2) for s, v in ys.last.items()}
+        row["cand_dayvol"] = dict(ys.dayvol)
         samples.append(row)
         time.sleep(max(0.0, a.every - (time.time() - t0)))
     json.dump(samples, open(a.out, "w"))

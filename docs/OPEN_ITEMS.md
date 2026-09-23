@@ -321,9 +321,11 @@ Found by the day-trade audit and not fixed in that change:
 - **The silent-socket watchdog runs only during sessions.** Overnight, an
   open socket that stops sending stays open, and the tab reads "quiet" until
   the reader changes tab or view.
-- **The closing cross is tagged by its first second.** A trade stamped on
-  the close minute's first second is read as the closing print (no tag);
-  an after-hours trade in that same second would be too.
+- **The closing cross reads AFT.** A thin name whose last trade is the
+  closing auction print (stamped on the close minute) shows "REAL-TIME AFT"
+  after the bell, because `rtSessTag` follows `priceSessionNow`, which puts
+  the close minute in after-hours. Accepted by the architect (2026-09-23);
+  changing it means changing the page's one session map.
 - **Yahoo's daily history can hole a settled session.** On 2026-09-23 the
   v8 chart API returned null OHLC for 2026-09-22 on MU and SPY across the
   5d, 1mo and 2y ranges, so the morning's bars.json (built 2026-09-23) ends
