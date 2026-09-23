@@ -315,8 +315,11 @@ Found by the day-trade audit and not fixed in that change:
   lag would also hide a delay that hit every name at once, SPY included, so
   it was left as is.
 - **A name served late from its first frame reads real-time until its
-  second distinct trade.** Lateness can be judged only on a new trade time;
-  a first frame cannot tell a quiet name from a late feed. No late-served
+  first distinct trade after SPY's first new trade** (its second distinct
+  trade in the regular session, where SPY prints within seconds). Lateness
+  can be judged only on a new trade time, against a reference that exists
+  only once SPY has printed live; a first frame cannot tell a quiet name
+  from a late feed. No late-served
   name has been observed on this stream (seven names measured, all shift 0).
 - **The silent-socket watchdog runs only in the regular session.** SPY's
   frame gaps are measured 10:22-10:52 CT only. Before the open, after the

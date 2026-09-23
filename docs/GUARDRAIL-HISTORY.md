@@ -3754,7 +3754,7 @@ last-sale print", never a late feed. Field 3 also has whole-second
 resolution (ms remainder 0 on all 426 frames), so every age reads up to 1 s
 old before any network delay.
 
-**Three lateness rules, three mislabels.** Each was built, tested and
+**Five lateness rules, five mislabels.** Each was built, tested and
 dropped on 2026-09-23:
 1. A per-name 15 s trade-age test (125e0a2) swapped TSEM, AEHR and AXTI for
    a price 15 minutes older every time they paused.
@@ -3788,5 +3788,6 @@ The rule that shipped judges lateness only on a NEW trade time, against the
 heartbeat's own minimum lag on the same clock (`rtHbLag`), so skew cancels
 and an odd-lot frame is never judged. The first trade after subscribing is
 shown with its age. A name the stream served late from its first frame
-would read real-time until its second distinct trade; no such name has been
-observed (docs/OPEN_ITEMS.md).
+would read real-time until its first distinct trade after SPY's first new
+trade (its second distinct trade in the regular session, where SPY prints
+within seconds); no such name has been observed (docs/OPEN_ITEMS.md).
