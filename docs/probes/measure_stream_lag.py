@@ -80,14 +80,19 @@ def zigzag(n: int) -> int:
 
 
 class YahooStream(threading.Thread):
+    """Attempt #2 (2026-09-23): reconnects when the server drops the socket.
+    Attempt #1 lost its only connection after ~12 minutes and froze the
+    candidate series for the rest of the run. Every drop is counted and the
+    time without ticks is reported; nothing is excluded from the series."""
     def __init__(self, syms):
         super().__init__(daemon=True)
         self.syms = syms
         self.last: dict[str, tuple[float, float, float]] = {}   # sym -> (px, tick_ms, recv_s)
         self.ages: list[float] = []
         self.err = None
+        self.drops: list[dict] = []
 
-    def run(self):
+    def _connect(self):
         import websocket  # websocket-client
         kw = {"origin": "https://zlanghamer1.github.io", "timeout": 20}
         proxy = os.environ.get("HTTPS_PROXY")
@@ -96,22 +101,30 @@ class YahooStream(threading.Thread):
             kw.update(http_proxy_host=p.hostname, http_proxy_port=p.port, proxy_type="http")
         if CA:
             kw["sslopt"] = {"ca_certs": CA}
-        try:
-            ws = websocket.create_connection("wss://streamer.finance.yahoo.com/?version=2", **kw)
-            ws.send(json.dumps({"subscribe": self.syms}))
-            ws.settimeout(5)
-            while True:
-                try:
-                    m = json.loads(ws.recv())
-                except websocket.WebSocketTimeoutException:
-                    continue
-                d = decode_pricing(m["message"])
-                now = time.time()
-                tick_ms = zigzag(d.get(3, 0))
-                self.last[d.get(1)] = (float(d.get(2)), tick_ms, now)
-                self.ages.append(now - tick_ms / 1000.0)
-        except Exception as e:  # noqa: BLE001 - recorded, reported
-            self.err = f"{type(e).__name__}: {e}"
+        ws = websocket.create_connection("wss://streamer.finance.yahoo.com/?version=2", **kw)
+        ws.send(json.dumps({"subscribe": self.syms}))
+        ws.settimeout(5)
+        return ws
+
+    def run(self):
+        import websocket  # websocket-client
+        while True:
+            try:
+                ws = self._connect()
+                while True:
+                    try:
+                        m = json.loads(ws.recv())
+                    except websocket.WebSocketTimeoutException:
+                        continue
+                    d = decode_pricing(m["message"])
+                    now = time.time()
+                    tick_ms = zigzag(d.get(3, 0))
+                    self.last[d.get(1)] = (float(d.get(2)), tick_ms, now)
+                    self.ages.append(now - tick_ms / 1000.0)
+            except Exception as e:  # noqa: BLE001 - recorded, reported
+                self.err = f"{type(e).__name__}: {e}"
+                self.drops.append({"at": time.time(), "err": self.err})
+                time.sleep(2)
 
 
 def get_json(url, data=None, headers=None):
@@ -170,7 +183,9 @@ def main():
         samples.append(row)
         time.sleep(max(0.0, a.every - (time.time() - t0)))
     json.dump(samples, open(a.out, "w"))
-    summary = {"samples": len(samples), "stream_error": ys.err, "per_symbol": {}}
+    summary = {"samples": len(samples), "stream_error": ys.err, "stream_drops": len(ys.drops),
+               "stale_samples_over_30s": sum(1 for r in samples if r.get("cand_age") and max(r["cand_age"].values()) > 30),
+               "per_symbol": {}}
     if ys.ages:
         ages = sorted(ys.ages)
         summary["tick_age_s"] = {"n": len(ages), "median": round(statistics.median(ages), 2),

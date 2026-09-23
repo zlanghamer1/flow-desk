@@ -3638,3 +3638,27 @@ changes, all adopted), then the build and an adversarial code review.
   its $25,000 minimum effective 2026-06-04; Fidelity's own page confirms it
   has discontinued the rule and keeps a $2,000 margin minimum. Nothing
   outside the trader's own caps limits trade count now.
+
+## Ban 8 measurement: Yahoo's streaming websocket (2026-09-23, market hours)
+
+Candidate: `wss://streamer.finance.yahoo.com/?version=2` (keyless, no Origin
+check; overnight ticks read 1.2–3.1 s old). Method: the 2026-08-19 method via
+`docs/probes/measure_stream_lag.py` — one clock, 10 s samples, 30 minutes;
+reference Robinhood `last_trade_price` (`nls`); control the TradingView
+scanner. **Pass rule, registered 2026-09-23 02:05 UTC before any market-hours
+sample:** best shift 0 min on all four of SPY, MU, CRWD, NVDA; tick-age median
+under 5 s and p95 under 30 s; and the control's best shift 13–18 min, else the
+run is broken.
+
+**Attempt #1, 13:41–14:11 UTC (08:41–09:11 CT): FAIL.** The control came out
+at 15.3–15.5 min on all four (the run is valid). The candidate's only socket
+dropped after ~12 minutes (`WebSocketConnectionClosedException` at ~13:53:40
+UTC) and the probe did not reconnect, so its series froze for the last 18
+minutes. Best shift: MU 0, NVDA 0, CRWD 4.0, SPY 16.8 — the rule fails. While
+connected, 3,527 ticks aged median 1.45 s, p95 3.21 s. Nothing is relabeled.
+
+**Attempt #2, registered here before it ran (started 14:14 UTC):** the same
+pass rule, unchanged. The only change is to the harness: the probe reconnects
+after a drop (2 s wait), counts every drop and reports samples whose last tick
+is over 30 s old. No sample is excluded. A drop is a fact a browser client
+would face too, so the count is part of the result.
