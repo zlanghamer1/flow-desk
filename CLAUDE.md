@@ -167,7 +167,8 @@ kind.
   (S/R color and position word), `taTrendFlipped` (trend-line role),
   `fedLegPct` (Fed-odds rounding), `vpWords` (volume-profile wording),
   `flowCpMismatchHTML`, `sessionsBehind`, `earnCountdownDays`, `newsForSym`,
-  `ntDuration`, `newsIssuerNoteHTML`, `chaseChipHTML`. Add to this list rather
+  `ntDuration`, `newsIssuerNoteHTML`, `chaseChipHTML`, `dtPhase`,
+  `dtLevels`, `dtSize`, `dayState`, `gapMerge`. Add to this list rather
   than re-deriving a rule inline.
 - **Two numbers describing the same thing on one screen must agree.** If two
   counting rules differ, each gets its own sentence naming its own scope.
@@ -846,6 +847,112 @@ Payload shape: DATA_CONTRACT.md → Scorecard and verdict_history.json.
 - Pinned by `fetcher/test_scorecard.py` and three page tests in
   `tests/test_page_smoke.py`.
 
+## Day-trade tools (added 2026-09-23)
+Zach's `/goal`: "easy to use tools to be a day trader." Design record and
+the architect review: `docs/superpowers/specs/2026-09-23-day-trade-tools-design.md`.
+**The desk plans and referees; the broker's real-time quote times the
+trade.** Nothing here fires a price alert, relabels a delayed price, or
+feeds a score, a verdict or the fetcher.
+
+- **One phase function.** `dtPhase(now)` is a thin map over
+  `priceSessionNow` (premarket → `pre`, open → `open`, else `plan`);
+  `gapMode(now)` is the same map with the after-hours window split out.
+  Never re-derive a session from the clock in this code.
+- **Every regular-column level is dated from the row's own `time`**, never
+  the clock. For ~16 minutes after the bell the delayed feed still carries
+  yesterday; during `open`, a `time` that is not today prints "today not in
+  the feed yet" and every level carries that session's date. Pre-market
+  levels gate on `premarket_time`'s CT date; VWAP on `time|5`'s. **The
+  evening has the same lag**: after the close the session's "close" is final
+  only once `time|5` + 5 min reaches the bell (`dtSessionFinal`); until then
+  the rows read "high so far" / "last" and the tab says the close is not in
+  the feed yet. The header's PRE price is shown only when `premarket_time`
+  is today.
+- **VWAP is `VWAP|5`, never the plain `VWAP` column** (settled question 14).
+- **The prior session's high/low reads the daily row dated the previous
+  trading day** (`dtDailyBarOn`), never a position in the array; a missing
+  row prints "<date> bar not on file yet". Its close is `close −
+  change_abs` while the session runs. No level reads an intraday bar's
+  high or low.
+- **`ensureBars` does not mark a stale bars.json as today's fetch.** On a
+  trading day a file whose `built` is before today is re-checked every
+  `BARS_STALE_RECHECK_MS` (10 min) until a current file lands; `tick()`'s
+  refetch reads the same gate.
+- **`dtSize` is the only sizing math** and refuses (returns a reason, never
+  a number) on a missing, non-finite or non-positive account, risk, entry or
+  stop, a stop on the wrong side, a zero distance, and a budget under one
+  share's risk. Shares floor; the journal accepts fractional shares. **Shares
+  stop at what the account's cash can buy** (`capped`, with the risk-only
+  count printed beside it): a tight stop sized 500 shares, $548K, on a $25K
+  account. DONE withholds the size entirely.
+- **`#dtwrap` carries `data-dtsym`, never `data-sym`.** The page-wide row
+  delegate calls `setFocus` for any `[data-sym]` ancestor that is not a
+  button, input or link, so a click on the tab's plain text re-charted the
+  symbol and reset the zoom. A restored or stored journal row with a bad `t`
+  is rejected by `dtRowValid` and printed through `dtRowTime`; `dayInit` and
+  `gapInit` run inside try/catch in `start()` so the block can never stop
+  the boot.
+- **The Day trade tab is built once per symbol and updated in place**
+  (`dtTabRender` / `dtTabUpdate`), so the calculator's inputs survive the
+  30-second repaint. Levels rewrite only when their HTML changed, with focus
+  restored by `data-lv`. The entry follows the delayed price until the
+  reader types one.
+- **Day limits referee rules** (`dayState`, `dayCapsSet`): DONE when
+  realized P&L ≤ −cap or trades ≥ cap, and it latches for the CT day
+  (`caps.doneOn`). Budget left = cap − max(0, −realized); a profit never
+  enlarges it; a $0 trade is neither a win nor a loss. A cap is raised only
+  before 08:30 CT on a trading day and only before today's first logged
+  trade (a voided row counts as logged), so "locked until tomorrow" is
+  literal; lowering is always allowed. The loss cap is stored in dollars, so
+  a larger account never raises it.
+- **Rows are voided, never erased, and a voided row still counts against
+  the day**: its trade toward the trade cap, its loss (never its gain)
+  toward the loss cap. Refunding them let log → void → log run four trades
+  and −$1,349 against a $500 / 3-trade cap while the panel read OPEN. A void
+  only removes the row from the stats, and only within `DT_VOID_WINDOW_MS`
+  (10 min) of logging. A typo that would reach the loss cap is caught before
+  it counts — that trade needs a second click (`dtWouldReachCap`); a
+  confirmed typo still locks the day, and that cost is accepted (architect
+  ruling, 2026-09-23).
+  Restore is merge-by-id only and never removes, edits or un-voids a row;
+  caps are never restored.
+- **Settled question 10 ruling (architect, 2026-09-23):** the journal is not
+  Position Guard. It holds closed trades only (entry and exit required),
+  never marks anything to a delayed price, never reads `desk_private`, never
+  shows an open position. Keep it that way.
+- **Per browser, disclosed.** `desk.day.journal`, `desk.day.caps`,
+  `desk.dt.acct`, `desk.dt.risk`, `desk.gap.*`; the state line and header
+  print "this browser"; `DT_MEM.saveFailed` prints a warning.
+- **Gappers rank by |move| with two scans** (gainers desc, losers asc)
+  merged in `gapMerge`; the scanner has no absolute-value sort. The `pre`
+  scan filters `premarket_time` ≥ today 03:00 CT, the post scan
+  `postmarket_time` ≥ today's close. "Stocks only" is `type` = stock AND
+  `typespecs` containing `common` (preferreds are type stock too).
+- **An empty scan is a miss** (`scan returned no rows`): the last good rows
+  and their as-of stay; rows from another filter or mode are never shown
+  under the current one, and a scan answering a filter that changed while it
+  was in flight is dropped and re-asked (`GAP.requery`). Refresh is 60 s
+  while the section is open, backing off 30 s → 5 min on failure; the
+  backoff keys on the ATTEMPTED filter (`GAP.tryKey`), since `GAP.key` moves
+  only on success. A closed section polls nothing. The price floor filters
+  on the column the table shows (`premarket_close` / `postmarket_close` /
+  `close`). Gapper rows are exempt from focus dimming. **At the bell the list
+  stays on the pre-market scan** until most rows' `time` is today
+  (`gapSessKeyOf`, `GAP.lag`), since the delayed feed's "day %" is
+  yesterday's for ~16 minutes.
+- **A move of 100% or more carries "check for a split"** (JAGX +1190% on
+  2026-09-22 was a reverse split against the old price). A disclosure, never
+  a drop.
+- **"× avg day" is `relative_volume_10d_calc`** and is shown only in the
+  open and last-session modes; in pre-market it divides yesterday's volume.
+- **Phone headers.** `.sh .st` is hidden under 640px page-wide; `#s-gap`
+  and `#s-day` override it onto its own line because their stat carries the
+  as-of stamp, the delay and "this browser".
+- Hotkeys (`[` `]` `1`–`5` `d`) are inert in inputs, textareas, selects,
+  contenteditable elements and while the palette is open. The palette gains
+  no "jump to" entries (cut 2026-08-18).
+- Pinned by `tests/test_day_trade.py`.
+
 ## Flow boards
 - **Biggest Orders ranks on `vs_normal`, never raw premium** — `premium /
   normal_prem`, where `normal_prem` averages the ticker's near-money 0-7 DTE
@@ -899,7 +1006,9 @@ Payload shape: DATA_CONTRACT.md → Scorecard and verdict_history.json.
   Its PRE branch gates on `prepx` alone; a null `prech` renders a price with no
   percentage, never yesterday's change beside this morning's price.
 - Direction pills are outline. **FIRING, NEW and the verdict call (BUY / SELL)
-  are the only filled badges on a board.** The call pill uses the tinted-fill
+  are the only filled badges on a board.** Off the boards, the Day limits
+  DONE badge (`.pill.done`, `--dnbg` behind `--dn`) is the one other filled
+  badge. The call pill uses the tinted-fill
   convention FIRING already uses (`--upbg` / `--dnbg` behind `--up` / `--dn`
   text); HOLD is a quiet outline; no verdict renders nothing.
 - Live price sits on its own line in the Name cell (`.livepx`, its own class —
@@ -1359,6 +1468,21 @@ transcripts.
 13. **EMA and RSI overlays were removed from the chart.** The Fundamentals grid
     still shows a daily RSI(14) snapshot from the scanner — a different,
     unrelated reading. Do not conflate them.
+
+14. **The scanner's plain `VWAP` column is (high + low + close) / 3 of the
+    daily bar, not a volume-weighted average** — exact to the cent on MU,
+    SPY, NVDA, V and CRWD (2026-09-22). **`VWAP|5` and `VWAP|15` are the real
+    regular-session VWAP** on 5- and 15-minute bars: `VWAP|15` matched a
+    hand VWAP over the desk's own 15m file within 0.02% on all five.
+15. **Scanner volume and range semantics, measured 2026-09-22:**
+    `relative_volume_10d_calc` = today's running volume ÷ the average full
+    session of the prior 10 (MU 1.1571 vs 1.1577 from bars.json), so it
+    climbs through the day and is labeled "× avg day" / "Volume vs avg day";
+    `relative_volume_intraday|5` does not reduce to that at the close and
+    is unused until measured in session. `ATR` is Wilder's ATR(14) with
+    today's bar included (exact on MU, NVDA, V, SPY). `time` is the 08:30 CT
+    start of the session the regular columns describe; `premarket_time` the
+    03:00 CT pre-market start; `time|5` the last 5-minute bar's start.
 
 ---
 

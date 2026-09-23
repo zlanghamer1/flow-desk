@@ -296,6 +296,32 @@ round 20 without a fresh ask.
 
 ## Open — in the order they are worth doing
 
+### 00. Day-trade follow-ups (added 2026-09-23)
+Found by the day-trade audit and not fixed in that change:
+- **A real-time price source may exist.** Yahoo's streaming websocket
+  (`wss://streamer.finance.yahoo.com/?version=2`, keyless, no Origin check)
+  delivered overnight ticks 1.2–3.1 s after their own timestamps. Ban 8 needs
+  a market-hours measurement before any price is relabeled:
+  `docs/probes/measure_stream_lag.py` (candidate vs Robinhood `nls` quotes,
+  the TradingView scanner as the 15-16 min control). A pass is its own change,
+  with a DATA_LICENSING row.
+- **Post-close bad ticks under the 4% repair floor.** SPY's 2026-09-21 15:00
+  CT 15m bar carries a low of 762.07 on zero volume against a real day low of
+  766.03 (1.5% off), so the 15m chart draws a spike. `_repair_quote_wicks`'s
+  4% floor lets it through; a zero-volume extended-hours bar outside the
+  session's own range is the signature.
+- **Intraday bars can trail ~40 minutes**: the 15m file rebuilds on a
+  25-minute gate on top of the 15-minute feed delay, and raw.githubusercontent
+  caches 5 minutes. Splitting the i15 gate to every cycle would roughly halve
+  the worst case at ~70 more Yahoo calls per cycle.
+- **235 long tooltips still render** (the audit's count of distinct `data-tip`
+  texts of 40+ characters on a full render), many of them explanation under
+  the 2026-09-05 ruling. A sweep needs the per-tab rendered-DOM check that
+  ruling describes, not a source grep alone.
+- **On a phone the chart starts ~3,700px down** because the watchlist opens
+  the page expanded by default (the 2026-08-21 ruling: "toward the top for
+  easier functionality"). Revisit only on a fresh ask.
+
 ### 0. Fund-flow monthly series is a static seed (added 2026-09-21)
 The weekly ICI series accumulates on its own. The monthly actuals come from
 `fetcher/seed/ici_flows_seed.json`, read once from
