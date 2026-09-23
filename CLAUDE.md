@@ -862,7 +862,12 @@ feeds a score, a verdict or the fetcher.
   the clock. For ~16 minutes after the bell the delayed feed still carries
   yesterday; during `open`, a `time` that is not today prints "today not in
   the feed yet" and every level carries that session's date. Pre-market
-  levels gate on `premarket_time`'s CT date; VWAP on `time|5`'s.
+  levels gate on `premarket_time`'s CT date; VWAP on `time|5`'s. **The
+  evening has the same lag**: after the close the session's "close" is final
+  only once `time|5` + 5 min reaches the bell (`dtSessionFinal`); until then
+  the rows read "high so far" / "last" and the tab says the close is not in
+  the feed yet. The header's PRE price is shown only when `premarket_time`
+  is today.
 - **VWAP is `VWAP|5`, never the plain `VWAP` column** (settled question 14).
 - **The prior session's high/low reads the daily row dated the previous
   trading day** (`dtDailyBarOn`), never a position in the array; a missing
@@ -876,7 +881,17 @@ feeds a score, a verdict or the fetcher.
 - **`dtSize` is the only sizing math** and refuses (returns a reason, never
   a number) on a missing, non-finite or non-positive account, risk, entry or
   stop, a stop on the wrong side, a zero distance, and a budget under one
-  share's risk. Shares floor; the journal accepts fractional shares.
+  share's risk. Shares floor; the journal accepts fractional shares. **Shares
+  stop at what the account's cash can buy** (`capped`, with the risk-only
+  count printed beside it): a tight stop sized 500 shares, $548K, on a $25K
+  account. DONE withholds the size entirely.
+- **`#dtwrap` carries `data-dtsym`, never `data-sym`.** The page-wide row
+  delegate calls `setFocus` for any `[data-sym]` ancestor that is not a
+  button, input or link, so a click on the tab's plain text re-charted the
+  symbol and reset the zoom. A restored or stored journal row with a bad `t`
+  is rejected by `dtRowValid` and printed through `dtRowTime`; `dayInit` and
+  `gapInit` run inside try/catch in `start()` so the block can never stop
+  the boot.
 - **The Day trade tab is built once per symbol and updated in place**
   (`dtTabRender` / `dtTabUpdate`), so the calculator's inputs survive the
   30-second repaint. Levels rewrite only when their HTML changed, with focus
@@ -886,11 +901,19 @@ feeds a score, a verdict or the fetcher.
   realized P&L ≤ −cap or trades ≥ cap, and it latches for the CT day
   (`caps.doneOn`). Budget left = cap − max(0, −realized); a profit never
   enlarges it; a $0 trade is neither a win nor a loss. A cap is raised only
-  in `plan`/`pre` and only before today's first logged trade (a voided row
-  counts as logged); lowering is always allowed. The loss cap is stored in
-  dollars, so a larger account never raises it.
-- **Rows are voided, never erased**; restore is merge-by-id only and never
-  removes, edits or un-voids a row; caps are never restored.
+  before 08:30 CT on a trading day and only before today's first logged
+  trade (a voided row counts as logged), so "locked until tomorrow" is
+  literal; lowering is always allowed. The loss cap is stored in dollars, so
+  a larger account never raises it.
+- **Rows are voided, never erased, and a voided row still counts against
+  the day**: its trade toward the trade cap, its loss (never its gain)
+  toward the loss cap. Refunding them let log → void → log run four trades
+  and −$1,349 against a $500 / 3-trade cap while the panel read OPEN. A void
+  only removes the row from the stats, and only within `DT_VOID_WINDOW_MS`
+  (10 min) of logging. Typos are caught before they count instead: a trade
+  that would reach the loss cap needs a second click (`dtWouldReachCap`).
+  Restore is merge-by-id only and never removes, edits or un-voids a row;
+  caps are never restored.
 - **Settled question 10 ruling (architect, 2026-09-23):** the journal is not
   Position Guard. It holds closed trades only (entry and exit required),
   never marks anything to a delayed price, never reads `desk_private`, never
@@ -905,8 +928,13 @@ feeds a score, a verdict or the fetcher.
   `typespecs` containing `common` (preferreds are type stock too).
 - **An empty scan is a miss** (`scan returned no rows`): the last good rows
   and their as-of stay; rows from another filter or mode are never shown
-  under the current one. Refresh is 60 s while the section is open, backing
-  off 30 s → 5 min on failure; a closed section polls nothing.
+  under the current one, and a scan answering a filter that changed while it
+  was in flight is dropped and re-asked (`GAP.requery`). Refresh is 60 s
+  while the section is open, backing off 30 s → 5 min on failure; the
+  backoff keys on the ATTEMPTED filter (`GAP.tryKey`), since `GAP.key` moves
+  only on success. A closed section polls nothing. The price floor filters
+  on the column the table shows (`premarket_close` / `postmarket_close` /
+  `close`). Gapper rows are exempt from focus dimming.
 - **A move of 100% or more carries "check for a split"** (JAGX +1190% on
   2026-09-22 was a reverse split against the old price). A disclosure, never
   a drop.
@@ -973,7 +1001,9 @@ feeds a score, a verdict or the fetcher.
   Its PRE branch gates on `prepx` alone; a null `prech` renders a price with no
   percentage, never yesterday's change beside this morning's price.
 - Direction pills are outline. **FIRING, NEW and the verdict call (BUY / SELL)
-  are the only filled badges on a board.** The call pill uses the tinted-fill
+  are the only filled badges on a board.** Off the boards, the Day limits
+  DONE badge (`.pill.done`, `--dnbg` behind `--dn`) is the one other filled
+  badge. The call pill uses the tinted-fill
   convention FIRING already uses (`--upbg` / `--dnbg` behind `--up` / `--dn`
   text); HOLD is a quiet outline; no verdict renders nothing.
 - Live price sits on its own line in the Name cell (`.livepx`, its own class —

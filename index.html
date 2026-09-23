@@ -1313,7 +1313,7 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
 .wr:hover .nwm,.wr.foc .nwm,.wr:focus-within .nwm{color:var(--acc);border-color:color-mix(in srgb, var(--acc) 55%, transparent)}
 /* ---- day-trade tools (2026-09-23): Day trade tab, Day limits, Gappers ---- */
 .dtlev{display:grid}
-.dtrow{display:grid;grid-template-columns:minmax(0,1fr) auto 7.5ch auto;align-items:center;column-gap:10px;
+.dtrow{display:grid;grid-template-columns:minmax(0,1fr) 10ch 7.5ch 92px;align-items:center;column-gap:10px;
   padding:4px 0;border-bottom:1px solid var(--edge2);font-size:11.5px;min-width:0}
 .dtrow:last-child{border-bottom:none}
 .dtrow .lbl{color:var(--ink2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1321,7 +1321,6 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
 .dtrow .dist{font-size:10.5px;text-align:right;white-space:nowrap}
 .dtrow.miss{grid-template-columns:minmax(0,1fr) auto}
 .dtrow .why{color:var(--ink3);font-size:10.5px;text-align:right;min-width:0}
-.dtrow .dtsp{width:1px}
 .dtstop{font-size:10.5px;border:1px solid var(--edge);border-radius:4px;padding:2px 8px;color:var(--ink2);min-height:24px}
 .dtstop:hover,.dtstop:focus-visible{color:var(--acc);border-color:var(--acc)}
 .dtcopy{margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -1360,6 +1359,18 @@ footer{background-image:linear-gradient(180deg, transparent, var(--srf2))}
 .dayrestore{position:relative;overflow:hidden;cursor:pointer;display:inline-flex;align-items:center}
 .dayrestore input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 #s-gap .filters{align-items:center}
+.dtbtns{display:inline-flex;gap:4px;justify-content:flex-end}
+.dtentry{font-size:10.5px;border:1px solid var(--edge);border-radius:4px;padding:2px 8px;color:var(--ink2);min-height:24px}
+.dtentry:hover,.dtentry:focus-visible{color:var(--acc);border-color:var(--acc)}
+.dtcap{font-size:10.5px;color:var(--hi);padding:0 0 4px}
+.daystate .pill,.dtdone .pill{font-size:10.5px}
+.dayrestore:focus-within{outline:2px solid var(--acc);outline-offset:1px}
+.t-day td,.t-day th{text-align:right}
+.t-day td:first-child,.t-day th:first-child{text-align:left}
+.t-day .dnote{font-size:10.5px;max-width:22ch;white-space:normal}
+/* A gapper list is not a board of one focused name: dimming every row but
+   the focused one left 29 of 30 rows at ~2.3:1 contrast (2026-09-23 review). */
+.t-gap tr.dim{opacity:1}
 .dtmeta{font-size:10.5px;margin:-3px 0 6px}
 @media (min-width:641px){ .t-gap td .nm{display:inline-block;max-width:18ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom} }
 .t-gap .bc{font-size:10px;padding:0 5px;margin-left:4px}
@@ -2795,7 +2806,13 @@ function ensureBars(){
       else { BARS_FETCHED_KEY = null; BARS_STALE_UNTIL = Date.now() + BARS_STALE_RECHECK_MS; }
       return BARS_CACHE;
     })
-    .catch(function(){ if(!BARS_CACHE) BARS_CACHE = {bars:{}}; return BARS_CACHE; });
+    .catch(function(){
+      if(!BARS_CACHE) BARS_CACHE = {bars:{}};
+      // A failed re-check of a stale file waits the same 10 minutes; it used
+      // to retry on every 30-second tick.
+      else if(!barsFileCurrent(BARS_CACHE)) BARS_STALE_UNTIL = Date.now() + BARS_STALE_RECHECK_MS;
+      return BARS_CACHE;
+    });
 }
 function barsRaw(sym){ return (BARS_CACHE && BARS_CACHE.bars && BARS_CACHE.bars[sym]) || []; }
 /* bars_intraday.json (2026-08-18): {built, v, i15:{sym:[[t,o,h,l,c,v],...]},
@@ -16901,8 +16918,7 @@ function refreshLiveUI(){
   stageLivePoke();      // its first act is stageHeader(), so no second call here
   // Day-trade tools re-derive from the poll that just landed (a level's
   // distance moves with price; the day's caps roll at CT midnight).
-  if(STAGE.tab==="dt") dtTabUpdate();
-  dayRender();
+  try{ if(STAGE.tab==="dt") dtTabUpdate(); dayRender(); }catch(e){}
   applyFocus();
   updatePricesTimestamp();
   if(typeof markScrollables === "function") markScrollables();
@@ -17508,7 +17524,10 @@ function dtLevels(sym, now){
   function vwapRow(forKey, label){
     var ok = q && vKey===forKey && num(q.vwap5)!=null;
     var thru = ok ? ctTimeShort(new Date((num(q.t5)+300)*1000).toISOString()) : null;
-    row("vwap", label, ok ? q.vwap5 : null, "no VWAP for "+dtDayLabel(forKey)+" on the feed", ok ? {sub:"to "+thru} : null);
+    // "to 2:50 PM" says how far a RUNNING session's VWAP reaches; a finished
+    // session's needs no stamp.
+    var running = ok && !dtSessionFinal(q, forKey, now);
+    row("vwap", label, ok ? q.vwap5 : null, "no VWAP for "+dtDayLabel(forKey)+" on the feed", running ? {sub:"to "+thru} : null);
   }
   if(phase==="open" && sessKey===today){
     row("open", "Open", q.o, "no open on the feed");
@@ -17531,19 +17550,50 @@ function dtLevels(sym, now){
     // describe sessKey, and are labeled with it.
     if(phase==="open") out.feedLag = true;
     var L = dtDayLabel(sessKey);
-    row("hi", L+" high", q.h, "no "+L+" high on the feed");
-    row("lo", L+" low", q.l, "no "+L+" low on the feed");
-    row("close", L+" close", q.c, "no "+L+" close on the feed");
+    // The evening mirror of the morning lag: for ~16 minutes after the close
+    // the delayed feed is still printing the session's last minutes, so its
+    // "close" is a running price. Final only once the feed's last 5-minute
+    // bar reaches the closing bell (or, with no bar stamp, 17 minutes after
+    // it) — never claim a settled close that cannot be shown.
+    var fin = dtSessionFinal(q, sessKey, now);
+    out.closePending = !fin;
+    row("hi", L+(fin ? " high" : " high so far"), q.h, "no "+L+" high on the feed");
+    row("lo", L+(fin ? " low" : " low so far"), q.l, "no "+L+" low on the feed");
+    row("close", L+(fin ? " close" : " last"), q.c, "no "+L+" close on the feed");
     vwapRow(sessKey, L+" VWAP");
   } else {
     row("hi", "Session high", null, q ? "no session date on the feed" : "no quote for "+sym+" yet");
     row("lo", "Session low", null, q ? "no session date on the feed" : "no quote for "+sym+" yet");
   }
   var st = statsOf(sym);
-  row("m50", "50-day average", st.m50, "under 50 sessions of history");
-  row("m200", "200-day average", st.m200, "under 200 sessions of history");
-  row("atr", "ATR 14 days", q && q.atr, "no ATR on the feed");
+  row("m50", "50-day average", st.m50, dtHistReason(sym, 50));
+  row("m200", "200-day average", st.m200, dtHistReason(sym, 200));
+  row("atr", "Typical daily range", q && q.atr, "no ATR on the feed", {sub:"(ATR, 14 days)"});
   return out;
+}
+function dtSessionFinal(q, key, now){
+  var noon = Date.parse(String(key)+"T12:00:00Z");
+  if(!isFinite(noon)) return false;
+  var closeEp = dtCtEpochAt(key, ctSessionCloseMinute(new Date(noon)));
+  if(closeEp==null) return false;
+  var t5 = q ? num(q.t5) : null;
+  if(t5!=null && dtKeyOfEpoch(t5)===key) return t5 + 300 >= closeEp;
+  return (now || new Date()).getTime()/1000 >= closeEp + 17*60;
+}
+// Why an average is missing, as the fact it is: a name whose history has not
+// arrived is not a young listing (VICR read "under 200 sessions" while its
+// history was still loading).
+var DT_HIST_FAIL = {};
+function dtHistCount(sym){
+  var n = barsOf(sym).length;
+  if(!n && ADHOC_BARS[sym] && ADHOC_BARS[sym].D) n = ADHOC_BARS[sym].D.rows.length;
+  return n;
+}
+function dtHistReason(sym, need){
+  var n = dtHistCount(sym);
+  if(n) return n+" sessions of history";
+  if(railHasSym(sym)) return "no daily bars on file";
+  return DT_HIST_FAIL[sym] ? "daily history did not load" : "daily history loading";
 }
 
 /* ---- position size: one pure function, every refusal a reason ---- */
@@ -17569,10 +17619,17 @@ function dtSize(p){
   var per = Math.abs(e - s), budget = acct*rp/100;
   var shares = Math.floor(budget/per + 1e-9);
   if(shares < 1) return {ok:false, err:"Your risk budget of "+dtMoney(budget)+" is under one share's risk of "+dtMoney(per)+"."};
+  // A tight stop sizes far past the cash on hand (entry 1096, stop 1095.50,
+  // $25K account: 500 shares, $548K). The size stops at what the account
+  // can pay for, and the result says it was capped and by how much.
+  var riskShares = shares, cashShares = Math.floor(acct/e + 1e-9);
+  var capped = shares > cashShares;
+  if(capped) shares = cashShares;
+  if(shares < 1) return {ok:false, err:"One share at "+dtMoney(e)+" costs more than the account."};
   var dir = side==="long" ? 1 : -1;
   var tg = [1,2,3].map(function(k){ var v = e + dir*k*per; return v>0 ? v : null; });
-  return {ok:true, side:side, shares:shares, per:per, budget:budget, risk:shares*per,
-          pos:shares*e, mult:(shares*e)/acct, targets:tg, slip2:shares*per*2};
+  return {ok:true, side:side, shares:shares, riskShares:riskShares, capped:capped, per:per, budget:budget,
+          risk:shares*per, pos:shares*e, mult:(shares*e)/acct, targets:tg, slip2:shares*per*2};
 }
 
 /* ---- the closed-trade log and the day's caps (per browser) ----
@@ -17583,7 +17640,9 @@ function dtSize(p){
    browser whose setItem throws still works for the visit and says so. */
 var DT_MEM = {journal:undefined, caps:undefined, saveFailed:false};
 function dtRowValid(r){
+  var t = r ? num(r.t) : null;
   return !!(r && typeof r.id==="string" && /^\d{4}-\d{2}-\d{2}$/.test(String(r.day||""))
+    && t!=null && t>=0 && t<8.64e15
     && typeof r.sym==="string" && r.sym && (r.side==="long" || r.side==="short")
     && num(r.shares)>0 && num(r.entry)>0 && num(r.exit)>0);
 }
@@ -17623,18 +17682,39 @@ function dtJournalAdd(row, now){
   dayState(now);            // latches DONE the moment this trade crosses a cap
   return {ok:true, id:id};
 }
-// Today's rows are voided, never erased, so a deleted loser cannot hand the
-// day's loss budget back (architect review #8a). A voided row leaves the
-// totals and stays on screen struck through; a DONE already reached holds.
+// Rows are voided, never erased (architect review #8a). A voided row leaves
+// the stats and stays on screen struck through, but still counts against the
+// day's caps (dayState), so a void can never hand a loss budget back.
+// A void is a typo fix, open for DT_VOID_WINDOW_MS after logging; the row is
+// final after that.
+var DT_VOID_WINDOW_MS = 10 * 60 * 1000;
+function dtCanVoid(r, now){
+  return !!r && !r.void && ((now || new Date()).getTime() - (num(r.t)||0)) <= DT_VOID_WINDOW_MS;
+}
 function dtJournalVoid(id, now){
-  var hit = false;
+  now = now || new Date();
+  var hit = false, late = false;
   var list = dtJournal().map(function(r){
-    if(r.id===id && !r.void){ hit = true; var c = {}; for(var k in r) c[k] = r[k]; c.void = true; return c; }
+    if(r.id===id && !r.void){
+      if(!dtCanVoid(r, now)){ late = true; return r; }
+      hit = true; var c = {}; for(var k in r) c[k] = r[k]; c.void = true; return c;
+    }
     return r;
   });
+  if(late) return {ok:false, err:"final after 10 minutes"};
   if(!hit) return {ok:false, err:"No such trade."};
   dtSaveJournal(list);
   return {ok:true};
+}
+// Would logging this row reach the loss cap? The log form asks for a second
+// click first, since a mistyped exit would otherwise lock the day.
+function dtWouldReachCap(row, now){
+  var ds = dayState(now || new Date());
+  if(!ds.caps || ds.done) return null;
+  var sh = num(row.shares), en = num(row.entry), ex = num(row.exit);
+  if(!(sh>0 && en>0 && ex>0)) return null;
+  var p = dtPnl({side:(row.side==="short" ? "short" : "long"), shares:sh, entry:en, exit:ex});
+  return (p < 0 && -p >= ds.budgetLeft - 1e-9) ? p : null;
 }
 function dtJournalStats(rows){
   rows = (rows || dtJournal()).filter(function(r){ return !r.void; });
@@ -17656,16 +17736,23 @@ function dtJournalStats(rows){
 function dayState(now){
   now = now || new Date();
   var today = ctDateKey(now), caps = dtCaps();
-  var live = dayRowsOn(today).filter(function(r){ return !r.void; });
-  var pnl = live.reduce(function(a, r){ return a + dtPnl(r); }, 0);
+  // A voided row still counts against the day: its trade toward the trade
+  // cap and its loss (never its gain) toward the loss cap. Refunding them let
+  // log -> void -> log run four trades and -$1,349 against a $500 / 3-trade
+  // cap while the panel read OPEN (2026-09-23 correctness review). A typo
+  // that would reach the cap is caught before it is logged instead
+  // (dtWouldReachCap).
+  var all = dayRowsOn(today);
+  var pnl = all.reduce(function(a, r){ var p = dtPnl(r); return a + (r.void ? Math.min(0, p) : p); }, 0);
+  var nVoid = all.filter(function(r){ return r.void; }).length;
   var res = {today:today, caps:(caps ? {loss:num(caps.loss), trades:num(caps.trades)} : null),
-             n:live.length, pnl:pnl, budgetLeft:null, done:false, reason:null};
+             n:all.length, nVoid:nVoid, pnl:pnl, budgetLeft:null, done:false, reason:null};
   if(!caps) return res;
   res.budgetLeft = Math.max(0, num(caps.loss) - Math.max(0, -pnl));
   if(caps.doneOn===today && (caps.doneWhy==="loss" || caps.doneWhy==="trades")){
     res.done = true; res.reason = caps.doneWhy; return res;
   }
-  var why = (pnl <= -num(caps.loss) + 1e-9) ? "loss" : (live.length >= num(caps.trades) ? "trades" : null);
+  var why = (pnl <= -num(caps.loss) + 1e-9) ? "loss" : (all.length >= num(caps.trades) ? "trades" : null);
   if(why){
     res.done = true; res.reason = why;
     var c2 = {}; for(var k in caps) c2[k] = caps[k];
@@ -17686,8 +17773,11 @@ function dayCapsSet(caps, now){
   var cur = dtCaps(), today = ctDateKey(now);
   var raising = !!cur && (loss > num(cur.loss) + 1e-9 || trades > num(cur.trades));
   if(raising){
+    // Locked from the bell to CT midnight on a trading day, and from the
+    // first logged trade of the day — so "locked until tomorrow" is literal.
     var logged = dayRowsOn(today).length > 0;
-    if(logged || dtPhase(now)==="open") return {ok:false, err:"locked until tomorrow"};
+    var belled = isTradingDay(now) && ctMinutesOfDay(now) >= 8*60+30;
+    if(logged || belled) return {ok:false, err:"locked until tomorrow"};
   }
   var next = {loss:loss, trades:trades, set:today};
   if(cur && cur.doneOn===today){ next.doneOn = cur.doneOn; next.doneWhy = cur.doneWhy; }
@@ -17703,17 +17793,26 @@ function dtInputVal(v){
   if(n===null) return "";
   return (Math.abs(n) < 1 && n!==0) ? n.toFixed(4) : n.toFixed(2);
 }
-function dtReadAcct(){ return num(read("desk.dt.acct")); }
-function dtReadRisk(){ var v = num(read("desk.dt.risk")); return v==null ? 1 : v; }
+// Settings ride the same memory-first pattern as WL_MEM: written to memory
+// before storage, so a browser whose storage throws still keeps them for
+// the visit (2026-09-23 regression review).
+var DT_SET = {};
+function dtSetting(k){ return Object.prototype.hasOwnProperty.call(DT_SET, k) ? DT_SET[k] : read(k); }
+function dtStoreSetting(k, v){ DT_SET[k] = v; if(!store(k, v)) DT_MEM.saveFailed = true; }
+function dtReadAcct(){ return num(dtSetting("desk.dt.acct")); }
+function dtReadRisk(){ var v = num(dtSetting("desk.dt.risk")); return v==null ? 1 : v; }
 function dtTabHTML(sym){
   var acct = dtReadAcct(), risk = dtReadRisk();
-  return '<div id="dtwrap" data-sym="'+esc(sym)+'">'
+  // data-dtsym, never data-sym: the page-wide row delegate calls setFocus for
+  // any [data-sym] ancestor, so a click on this tab's plain text re-charted
+  // the symbol and reset the zoom (2026-09-23 regression review).
+  return '<div id="dtwrap" data-dtsym="'+esc(sym)+'">'
     + '<div class="dsec" id="dtlevsec"><h3 id="dthead"></h3><div class="dtmeta m" id="dtmeta"></div><div id="dtnote"></div><div id="dtlev" class="dtlev"></div>'
     +   '<div class="dtcopy"><button class="fbtn" id="dtcopy" type="button">Copy levels</button> <span class="m" id="dtcopymsg" aria-live="polite"></span></div></div>'
     + '<div class="dsec" id="dtcalc"><h3>Position size</h3>'
     +   '<div class="dtform">'
     +     '<label>Account $<input id="dtacct" inputmode="decimal" autocomplete="off" spellcheck="false" value="'+esc(acct!=null ? String(acct) : "")+'"></label>'
-    +     '<label>Risk %<input id="dtrisk" inputmode="decimal" autocomplete="off" spellcheck="false" value="'+esc(String(risk))+'"></label>'
+    +     '<label>Risk per trade %<input id="dtrisk" inputmode="decimal" autocomplete="off" spellcheck="false" value="'+esc(String(risk))+'"></label>'
     +     '<div class="seg" id="dtside" role="group" aria-label="Side">'
     +       '<button type="button" data-side="long" aria-pressed="'+(DT.side==="long")+'">Long</button>'
     +       '<button type="button" data-side="short" aria-pressed="'+(DT.side==="short")+'">Short</button></div>'
@@ -17727,16 +17826,19 @@ function dtRowHTML(r, cur){
   var head = '<span class="lbl">'+esc(r.label)+(r.sub ? ' <span class="m">'+esc(r.sub)+'</span>' : '')+'</span>';
   if(r.px==null) return '<div class="dtrow miss" data-lv="'+r.k+'">'+head+'<span class="why">'+esc(r.miss)+'</span></div>';
   var pxTxt = fmtpx(r.px);
-  var extra = '';
   if(r.k==="atr"){
+    // A range, not a price: its share of the price sits in the distance
+    // column, and the button cells stay empty so the column lines up.
     var pct = (cur!=null && cur>0) ? (r.px/cur*100) : null;
-    extra = '<span class="dist tn m">'+(pct!=null ? pct.toFixed(1)+'% of price' : '')+'</span>';
-    return '<div class="dtrow" data-lv="atr">'+head+'<b class="px tn">'+esc(pxTxt)+'</b>'+extra+'<span class="dtsp"></span></div>';
+    return '<div class="dtrow" data-lv="atr">'+head+'<b class="px tn">'+esc(pxTxt)+'</b>'
+      + '<span class="dist tn m">'+(pct!=null ? pct.toFixed(1)+'%' : '')+'</span><span class="dtbtns"></span></div>';
   }
   var d = (cur!=null && cur>0) ? ((r.px/cur - 1)*100) : null;
+  var lab = esc(r.label)+' '+esc(pxTxt);
   return '<div class="dtrow" data-lv="'+r.k+'">'+head+'<b class="px tn">'+esc(pxTxt)+'</b>'
     + '<span class="dist tn m">'+(d!=null ? esc(fm2(d))+'%' : '')+'</span>'
-    + '<button class="dtstop" type="button" data-px="'+esc(String(r.px))+'" aria-label="Use '+esc(r.label)+' '+esc(pxTxt)+' as the stop">stop</button></div>';
+    + '<span class="dtbtns"><button class="dtentry" type="button" data-px="'+esc(String(r.px))+'" aria-label="Use '+lab+' as the entry">entry</button>'
+    + '<button class="dtstop" type="button" data-px="'+esc(String(r.px))+'" aria-label="Use '+lab+' as the stop">stop</button></span></div>';
 }
 function dtWire(){
   var wrap = document.getElementById("dtwrap");
@@ -17745,8 +17847,8 @@ function dtWire(){
     var el = document.getElementById(id);
     if(el) el.addEventListener("input", function(){ fn(el.value); dtCalcUpdate(); });
   }
-  onNum("dtacct", function(v){ var n = num(String(v).replace(/[$,\s]/g, "")); if(n!=null) store("desk.dt.acct", String(n)); else store("desk.dt.acct", ""); });
-  onNum("dtrisk", function(v){ var n = num(String(v).replace(/[%\s]/g, "")); if(n!=null) store("desk.dt.risk", String(n)); });
+  onNum("dtacct", function(v){ var n = num(String(v).replace(/[$,\s]/g, "")); dtStoreSetting("desk.dt.acct", n!=null ? String(n) : ""); });
+  onNum("dtrisk", function(v){ var n = num(String(v).replace(/[%\s]/g, "")); if(n!=null) dtStoreSetting("desk.dt.risk", String(n)); });
   onNum("dtentry", function(v){ DT.entryTouched = true; DT.entry = num(String(v).replace(/[$,\s]/g, "")); });
   onNum("dtstopin", function(v){ DT.stop = num(String(v).replace(/[$,\s]/g, "")); });
   $$("#dtside button", wrap).forEach(function(b){
@@ -17760,18 +17862,24 @@ function dtWire(){
   // prices move, and a listener per button would die with it.
   var lev = document.getElementById("dtlev");
   if(lev) lev.addEventListener("click", function(e){
-    var b = e.target.closest("button.dtstop");
+    var b = e.target.closest("button.dtstop, button.dtentry");
     if(!b) return;
-    DT.stop = num(b.dataset.px);
+    var v = num(b.dataset.px);
+    if(b.classList.contains("dtentry")){
+      DT.entry = v; DT.entryTouched = true;
+      var ei = document.getElementById("dtentry"); if(ei) ei.value = dtInputVal(v);
+      dtTabUpdate();
+      return;
+    }
+    DT.stop = v;
     var si = document.getElementById("dtstopin");
     if(si) si.value = dtInputVal(DT.stop);
     dtCalcUpdate();
   });
   var out = document.getElementById("dtout");
   if(out) out.addEventListener("click", function(e){
-    if(!e.target.closest("#dtentryreset")) return;
-    DT.entryTouched = false; DT.entry = null;
-    dtTabUpdate();
+    if(e.target.closest("#dtentryreset")){ DT.entryTouched = false; DT.entry = null; dtTabUpdate(); return; }
+    if(e.target.closest("#dtsendlog")) dtSendToLog();
   });
   var cp = document.getElementById("dtcopy");
   if(cp) cp.addEventListener("click", dtCopyLevels);
@@ -17779,14 +17887,16 @@ function dtWire(){
 function dtCopyText(sym, L){
   var q = liveBySym(sym);
   var at = (q && q.at) ? ctTimeShort(new Date(q.at).toISOString()) : "—";
-  var parts = [sym, dtDayLabel(L.today)+" "+at+" CT", "15-min delayed"];
-  L.rows.forEach(function(r){ if(r.px!=null && r.k!=="atr") parts.push(r.label+" "+fmtpx(r.px)); });
-  return parts.join(" · ");
+  // One level per line, the price bare (no thousands comma), so each line
+  // pastes straight into one TradingView alert's price field.
+  var lines = [sym+" · "+dtDayLabel(L.today)+" "+at+" CT · 15-min delayed"];
+  L.rows.forEach(function(r){ if(r.px!=null && r.k!=="atr") lines.push(r.label+": "+dtInputVal(r.px)); });
+  return lines.join("\n");
 }
 function dtCopyLevels(){
   var wrap = document.getElementById("dtwrap"), msg = document.getElementById("dtcopymsg");
   if(!wrap) return;
-  var txt = dtCopyText(wrap.dataset.sym, dtLevels(wrap.dataset.sym, new Date()));
+  var txt = dtCopyText(wrap.dataset.dtsym, dtLevels(wrap.dataset.dtsym, new Date()));
   function say(s){ if(msg) msg.textContent = s; }
   try{
     if(navigator.clipboard && navigator.clipboard.writeText){
@@ -17794,11 +17904,35 @@ function dtCopyLevels(){
     } else say("copy failed");
   }catch(e){ say("copy failed"); }
 }
+// Fills the Day limits log form from the calculator (ticker, side, shares,
+// entry) and moves there; the exit is typed once the trade is closed.
+function dtSendToLog(){
+  var wrap = document.getElementById("dtwrap");
+  if(!wrap) return;
+  var ai = document.getElementById("dtacct"), ri = document.getElementById("dtrisk");
+  var r = dtSize({acct:ai ? num(String(ai.value).replace(/[$,\s]/g, "")) : null, riskPct:ri ? num(String(ri.value).replace(/[%\s]/g, "")) : null,
+                  side:DT.side, entry:DT.entry, stop:DT.stop});
+  if(!r.ok) return;
+  var sec = document.getElementById("s-day");
+  if(sec && sec.classList.contains("closed")){ var sh = sec.querySelector(".sh"); if(sh) sh.click(); }
+  function set(id, v){ var el = document.getElementById(id); if(el) el.value = v; }
+  set("dtl-sym", wrap.dataset.dtsym); set("dtl-side", r.side); set("dtl-sh", String(r.shares)); set("dtl-en", dtInputVal(DT.entry)); set("dtl-ex", "");
+  var ex = document.getElementById("dtl-ex");
+  if(sec) sec.scrollIntoView({block:"start", behavior:"smooth"});
+  if(ex) ex.focus({preventScroll:true});
+  var msg = document.getElementById("dtl-msg"); if(msg) msg.textContent = "type the exit once the trade is closed";
+}
 function dtTabRender(sym){
   var body = document.getElementById("stagetabbody");
   if(!body) return;
+  // A searched name's averages need its daily history; repaint when it
+  // lands (or say it failed) instead of waiting for the next poll.
+  if(!railHasSym(sym) && !(ADHOC_BARS[sym] && ADHOC_BARS[sym].D) && !DT_HIST_FAIL[sym] && typeof adhocEnsureDaily==="function"){
+    adhocEnsureDaily(sym).then(function(){ bumpStatsMemo(); if(STAGE.sym===sym && STAGE.tab==="dt") dtTabUpdate(); },
+      function(){ DT_HIST_FAIL[sym] = true; if(STAGE.sym===sym && STAGE.tab==="dt") dtTabUpdate(); });
+  }
   var wrap = document.getElementById("dtwrap");
-  if(!wrap || wrap.dataset.sym!==sym || !body.contains(wrap)){
+  if(!wrap || wrap.dataset.dtsym!==sym || !body.contains(wrap)){
     if(DT.sym!==sym){ DT.sym = sym; DT.entry = null; DT.entryTouched = false; DT.stop = null; DT.side = "long"; }
     DT.levHtml = ""; DT.outHtml = ""; DT.headHtml = "";
     body.innerHTML = dtTabHTML(sym);
@@ -17809,15 +17943,25 @@ function dtTabRender(sym){
 function dtTabUpdate(){
   var wrap = document.getElementById("dtwrap");
   if(!wrap || STAGE.tab!=="dt") return;
-  var sym = wrap.dataset.sym, now = new Date();
+  var sym = wrap.dataset.dtsym, now = new Date();
   var L = dtLevels(sym, now);
-  var dq = dispQuote(liveBySym(sym));
+  var q0 = liveBySym(sym);
+  var dq = dispQuote(q0);
+  // A PRE price from a pre-market session that is not today's is yesterday's
+  // pre-market close; the sheet's own dated check already says "no
+  // pre-market print today", so the header must not show it as this
+  // morning's price.
+  if(dq.tag==="PRE" && q0 && dtKeyOfEpoch(q0.pmt)!==L.today){
+    dq = {px:(q0.c!=null ? q0.c : q0.px), ch:q0.ch, tag:"PREV", ext:null, prev:true};
+  }
   var cur = dq.px;
   var at = (L.asOf ? ctTimeShort(new Date(L.asOf).toISOString())+" CT" : "no quote yet");
   var head = L.phase==="pre" ? ('Levels · pre-market '+esc(dtDayLabel(L.today)))
            : L.phase==="open" ? ('Levels · '+esc(dtDayLabel(L.feedLag ? L.sessKey : L.today))+' session')
            : ('Levels for '+esc(dtDayLabel(L.nextKey))+(L.sessKey ? ' · from the '+esc(dtDayLabel(L.sessKey))+' session' : ''));
-  var meta = '<b>'+esc(sym)+'</b> '+(cur!=null ? esc(fmtpx(cur)) : '—')+(dq.tag ? ' '+esc(dq.tag) : '')+' · 15-min delayed · '+esc(at);
+  var meta = '<b>'+esc(sym)+'</b> '+(cur!=null ? esc(fmtpx(cur)) : '—')+(dq.tag ? ' '+esc(dq.tag) : '')
+    + (dq.ext && dq.ext.px!=null ? ' · AFT '+esc(fmtpx(dq.ext.px)) : '')
+    + ' · 15-min delayed · '+esc(at);
   if(head+meta!==DT.headHtml){
     var h = document.getElementById("dthead"), mt = document.getElementById("dtmeta");
     if(h) h.innerHTML = head; if(mt) mt.innerHTML = meta;
@@ -17827,7 +17971,8 @@ function dtTabUpdate(){
   if(note){
     var nt = [];
     if(L.feedLag) nt.push(esc(dtDayLabel(L.sessKey))+' session · today not in the feed yet');
-    if(L.rangeUsed!=null) nt.push('range used '+Math.round(L.rangeUsed*100)+'% of ATR');
+    if(L.closePending) nt.push(esc(dtDayLabel(L.sessKey))+' close not in the feed yet');
+    if(L.rangeUsed!=null) nt.push('today’s range so far is '+Math.round(L.rangeUsed*100)+'% of an average day’s');
     var ntH = nt.length ? '<span class="m">'+nt.join(' · ')+'</span>' : '';
     if(note.innerHTML!==ntH) note.innerHTML = ntH;
   }
@@ -17843,14 +17988,19 @@ function dtTabUpdate(){
     DT.levHtml = html;
     if(fk && lev){ var again = lev.querySelector('.dtrow[data-lv="'+fk+'"] button'); if(again) again.focus(); }
   }
-  if(!DT.entryTouched){
+  var ei = document.getElementById("dtentry");
+  if(!DT.entryTouched && !(ei && document.activeElement===ei)){
     DT.entry = cur;
-    var ei = document.getElementById("dtentry");
-    if(ei && document.activeElement!==ei){ var v = dtInputVal(cur); if(ei.value!==v) ei.value = v; }
+    if(ei){ var v = dtInputVal(cur); if(ei.value!==v) ei.value = v; }
   }
   var tag = document.getElementById("dtentrytag");
   if(tag){
-    var tt = DT.entryTouched ? '' : (cur!=null ? ('entry = delayed price'+(L.asOf ? ' '+ctTimeShort(new Date(L.asOf).toISOString()) : '')) : 'no delayed price yet');
+    var tt = DT.entryTouched ? ''
+      : cur==null ? 'no delayed price yet'
+      : dq.tag==="PRE" ? ('entry = pre-market price '+(L.asOf ? ctTimeShort(new Date(L.asOf).toISOString()) : ''))
+      : (L.phase==="plan" && L.sessKey) ? ('entry = '+dtDayLabel(L.sessKey)+' close')
+      : dq.tag==="PREV" ? ('entry = '+dtDayLabel(L.sessKey)+' close')
+      : ('entry = delayed price '+(L.asOf ? ctTimeShort(new Date(L.asOf).toISOString()) : ''));
     if(tag.textContent!==tt) tag.textContent = tt;
   }
   dtCalcUpdate();
@@ -17864,16 +18014,21 @@ function dtCalcUpdate(){
   var r = dtSize({acct:acct, riskPct:risk, side:DT.side, entry:DT.entry, stop:DT.stop});
   var ds = dayState(new Date());
   var html = '';
-  if(ds.done) html += '<div class="dtdone"><span class="pill done">DONE</span> '+(ds.reason==="loss" ? 'daily loss cap reached' : 'trade cap reached')+' · '+esc(dtDayLabel(ds.today))+'</div>';
-  if(!r.ok){
+  if(ds.done){
+    // DONE withholds the size: a share count under "daily loss cap reached"
+    // reads as permission (2026-09-23 review).
+    html += '<div class="dtdone"><span class="pill done">DONE</span> '+(ds.reason==="loss" ? 'daily loss cap reached' : 'trade cap reached')+' · '+esc(dtDayLabel(ds.today))+'</div>';
+  } else if(!r.ok){
     html += '<div class="dterr">'+esc(r.err)+'</div>';
   } else {
     var tg = r.targets.map(function(v, i){ return '<span class="dtres" data-k="r'+(i+1)+'">'+(v!=null ? esc(fmtpx(v)) : '—')+'</span>'; });
     html += '<div class="kvrow"><span>Shares</span><b><span class="dtres big" data-k="shares">'+r.shares.toLocaleString("en-US")+'</span></b></div>'
-      + '<div class="kvrow"><span>At risk</span><b><span class="dtres" data-k="risk">'+esc(dtMoney(r.risk))+'</span> <span class="m">of '+esc(dtMoney(r.budget))+'</span></b></div>'
-      + '<div class="kvrow"><span>Position</span><b><span class="dtres" data-k="pos">'+esc(dtMoney(r.pos))+'</span> <span class="'+(r.mult>1 ? 'dtwarn' : 'm')+'">'+r.mult.toFixed(2)+'× account</span></b></div>'
-      + '<div class="kvrow"><span>1R · 2R · 3R</span><b>'+tg.join(' · ')+'</b></div>'
-      + '<div class="kvrow"><span>Loss at 2× stop distance</span><b class="d"><span class="dtres" data-k="slip2">'+esc(dtMoney(-r.slip2))+'</span></b></div>';
+      + (r.capped ? '<div class="dtcap">capped at what the account can pay for · the risk budget alone would buy '+r.riskShares.toLocaleString("en-US")+'</div>' : '')
+      + '<div class="kvrow"><span>At risk</span><b><span class="dtres" data-k="risk">'+esc(dtMoney(r.risk))+'</span> <span class="m">of '+esc(dtMoney(r.budget))+' budget</span></b></div>'
+      + '<div class="kvrow"><span>Position</span><b><span class="dtres" data-k="pos">'+esc(dtMoney(r.pos))+'</span> <span class="m">'+Math.round(r.mult*100)+'% of the account</span></b></div>'
+      + '<div class="kvrow"><span>Targets at 1×, 2×, 3× risk</span><b>'+tg.join(' · ')+'</b></div>'
+      + '<div class="kvrow"><span>Loss if the stop fills twice as far away</span><b class="d"><span class="dtres" data-k="slip2">'+esc(dtMoney(-r.slip2))+'</span></b></div>'
+      + '<div class="dtfoot"><button type="button" class="fbtn" id="dtsendlog">Send to trade log</button></div>';
   }
   if(DT.entryTouched) html += '<div class="dtfoot"><button type="button" class="linkbtn" id="dtentryreset">use the delayed price as entry</button></div>';
   if(html!==DT.outHtml){ out.innerHTML = html; DT.outHtml = html; }
@@ -17898,7 +18053,7 @@ function dayInit(){
     +   '<label>Shares<input id="dtl-sh" inputmode="decimal" autocomplete="off"></label>'
     +   '<label>Entry<input id="dtl-en" inputmode="decimal" autocomplete="off"></label>'
     +   '<label>Exit<input id="dtl-ex" inputmode="decimal" autocomplete="off"></label>'
-    +   '<label class="chk"><input type="checkbox" id="dtl-plan" checked> followed plan</label>'
+    +   '<label class="chk"><input type="checkbox" id="dtl-plan"> followed my plan</label>'
     +   '<label class="wide">Note<input id="dtl-note" maxlength="200" autocomplete="off"></label>'
     +   '<button class="fbtn" id="dtl-add" type="button">Log trade</button>'
     +   '<span class="m" id="dtl-msg" aria-live="polite"></span></div>'
@@ -17916,22 +18071,39 @@ function dayInit(){
     if(!res.ok){ var c = dtCaps(); if(c){ document.getElementById("daycaploss").value = String(num(c.loss)); document.getElementById("daycaptrades").value = String(num(c.trades)); } }
     dayRender(); if(STAGE.tab==="dt") dtCalcUpdate();
   });
+  var pendingSig = null, pendingAt = 0;
   document.getElementById("dtl-add").addEventListener("click", function(){
-    var res = dtJournalAdd({sym:val("dtl-sym"), side:val("dtl-side"), shares:clean(val("dtl-sh")), entry:clean(val("dtl-en")),
-                            exit:clean(val("dtl-ex")), plan:document.getElementById("dtl-plan").checked, note:val("dtl-note")}, new Date());
+    var row = {sym:val("dtl-sym"), side:val("dtl-side"), shares:clean(val("dtl-sh")), entry:clean(val("dtl-en")),
+               exit:clean(val("dtl-ex")), plan:document.getElementById("dtl-plan").checked, note:val("dtl-note")};
     var msg = document.getElementById("dtl-msg");
+    var hit = dtWouldReachCap(row, new Date());
+    var sig = JSON.stringify([row.sym, row.side, row.shares, row.entry, row.exit]);
+    if(hit!=null && !(pendingSig===sig && Date.now()-pendingAt < 15000)){
+      pendingSig = sig; pendingAt = Date.now();
+      msg.textContent = dtMoney(hit, true)+" reaches today's loss cap · click Log trade again to confirm";
+      return;
+    }
+    pendingSig = null;
+    var res = dtJournalAdd(row, new Date());
     if(res.ok){
       msg.textContent = "logged";
       ["dtl-sh","dtl-en","dtl-ex","dtl-note"].forEach(function(id){ document.getElementById(id).value = ""; });
     } else msg.textContent = res.err;
     dayRender(); if(STAGE.tab==="dt") dtCalcUpdate();
   });
+  document.getElementById("daylog").addEventListener("keydown", function(e){
+    if(e.key==="Enter" && e.target.matches("input")){ e.preventDefault(); document.getElementById("dtl-add").click(); }
+  });
   document.getElementById("daytoday").addEventListener("click", function(e){
     var b = e.target.closest("button.dvoid");
     if(!b) return;
     var tr = b.closest("tr[data-id]");
-    if(tr) dtJournalVoid(tr.dataset.id, new Date());
+    var res = tr ? dtJournalVoid(tr.dataset.id, new Date()) : {ok:false};
+    if(!res.ok && res.err){ var m = document.getElementById("dtl-msg"); if(m) m.textContent = res.err; }
     dayRender(); if(STAGE.tab==="dt") dtCalcUpdate();
+    // The voided row loses its button; keep the keyboard in the table.
+    var nb = document.querySelector("#daytoday button.dvoid") || document.getElementById("dtl-sym");
+    if(nb) nb.focus();
   });
   document.getElementById("dayexport").addEventListener("click", function(){ dayDownload("day-trades.csv", "text/csv", dayCsv()); });
   document.getElementById("daybackup").addEventListener("click", function(){
@@ -17958,7 +18130,7 @@ function dayCsv(){
   function q(v){ var s = String(v==null ? "" : v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g, '""')+'"' : s; }
   var lines = [head.join(",")];
   dtJournal().forEach(function(r){
-    var t = ctTimeShort(new Date(num(r.t)||0).toISOString());
+    var t = dtRowTime(r);
     lines.push([r.day, t, r.sym, r.side, r.shares, r.entry, r.exit, dtPnl(r).toFixed(2), r.plan ? "yes" : "no", r.note||"", r.void ? "yes" : "no"].map(q).join(","));
   });
   return lines.join("\n")+"\n";
@@ -17985,7 +18157,7 @@ function dayRestore(text, now){
   list.forEach(function(r){ have[r.id] = true; });
   rows.forEach(function(r){
     if(!dtRowValid(r) || have[r.id]){ skipped++; return; }
-    list.push({id:r.id, day:r.day, t:num(r.t)||0, sym:String(r.sym).toUpperCase().slice(0,12), side:r.side,
+    list.push({id:r.id, day:r.day, t:num(r.t), sym:String(r.sym).toUpperCase().slice(0,12), side:r.side,
                shares:num(r.shares), entry:num(r.entry), exit:num(r.exit), plan:!!r.plan,
                note:String(r.note||"").slice(0,200), void:!!r.void});
     have[r.id] = true; added++;
@@ -17999,9 +18171,9 @@ function dayRender(){
   var stat = document.getElementById("daystat");
   if(!stat || !document.getElementById("daystate")) return;
   var now = new Date(), ds = dayState(now);
-  var capTxt = ds.caps ? (ds.n+' of '+ds.caps.trades+' trades · '+dtMoney(ds.pnl, true)+' · '+dtMoney(ds.budgetLeft)+' of '+dtMoney(ds.caps.loss)+' loss budget left') : 'no caps set';
-  var sH = 'this browser · '+esc(dtDayLabel(ds.today))+' · '+(ds.done ? '<span class="pill done">DONE</span> ' : (ds.caps ? '<b>OPEN</b> · ' : ''))+esc(capTxt)
-    + (DT_MEM.saveFailed ? ' · <span class="dtwarn">this browser is not saving — entries last until the tab closes</span>' : '');
+  var sH = 'this browser · '+esc(dtDayLabel(ds.today))+' · '
+    + (ds.done ? '<span class="pill done">DONE</span>' : (ds.caps ? 'within limits' : 'no caps set'))
+    + (DT_MEM.saveFailed ? ' · <span class="dtwarn">not saving — entries last until the tab closes</span>' : '');
   if(sH!==DAY.statHtml){ stat.innerHTML = sH; DAY.statHtml = sH; }
   var li = document.getElementById("daycaploss");
   if(li && !ds.caps && !li.value && document.activeElement!==li){ var ac = dtReadAcct(); if(ac) li.value = String(Math.round(ac*0.02)); }
@@ -18009,26 +18181,29 @@ function dayRender(){
   var big = ds.done
     ? ('<span class="pill done">DONE</span> <b>'+(ds.reason==="loss" ? 'Daily loss cap reached' : 'Trade cap reached')+'</b> <span class="m">· '+esc(dtMoney(ds.pnl, true))+' on '+ds.n+' trade'+(ds.n===1?'':'s')+'</span>')
     : ds.caps
-      ? ('<b>'+esc(dtMoney(ds.pnl, true))+'</b> <span class="m">realized today · '+ds.n+' of '+ds.caps.trades+' trades · '+esc(dtMoney(ds.budgetLeft))+' of '+esc(dtMoney(ds.caps.loss))+' loss budget left</span>')
+      ? ('<b>'+esc(dtMoney(ds.pnl, true))+'</b> <span class="m">realized today · '+ds.n+' of '+ds.caps.trades+' trades · '+esc(dtMoney(ds.budgetLeft))+' of '+esc(dtMoney(ds.caps.loss))+' loss budget left'
+         + (ds.nVoid ? ' · '+ds.nVoid+' voided, still counted' : '')+'</span>')
       : ('<b>'+esc(dtMoney(ds.pnl, true))+'</b> <span class="m">realized today · '+ds.n+' trade'+(ds.n===1?'':'s')+' · no caps set</span>');
-  big += ' <span class="m">· this browser</span>';
   if(big!==DAY.stateHtml){ st.innerHTML = big; st.classList.toggle("isdone", ds.done); DAY.stateHtml = big; }
   var rows = dayRowsOn(ds.today);
   var tH;
   if(!rows.length){
     tH = '<div class="boardmsg">No trades logged for '+esc(dtDayLabel(ds.today))+'.</div>';
   } else {
-    tH = '<table class="tn t-day"><thead><tr><th>Time</th><th>Name</th><th>Side</th><th>Shares</th><th>Entry</th><th>Exit</th><th>P&amp;L</th><th>Plan</th><th></th></tr></thead><tbody>'
+    tH = '<table class="tn t-day"><thead><tr><th>Name</th><th>P&amp;L</th><th>Side</th><th>Shares</th><th>Entry</th><th>Exit</th><th>Plan</th><th>Logged</th><th></th></tr></thead><tbody>'
       + rows.map(function(r){
           var p = dtPnl(r);
+          var act = r.void ? '<span class="m">voided</span>'
+            : dtCanVoid(r, now) ? '<button class="dvoid" type="button" aria-label="Void the '+esc(r.sym)+' trade">void</button>'
+            : '<span class="m">final</span>';
           return '<tr data-id="'+esc(r.id)+'"'+(r.void ? ' class="void"' : '')+'>'
-            + '<td class="m">'+esc(ctTimeShort(new Date(num(r.t)||0).toISOString()))+'</td>'
-            + '<td><span class="sy2">'+esc(r.sym)+'</span>'+(r.note ? ' <span class="m">'+esc(r.note)+'</span>' : '')+'</td>'
+            + '<td><span class="sy2">'+esc(r.sym)+'</span>'+(r.note ? '<div class="m dnote">'+esc(r.note)+'</div>' : '')+'</td>'
+            + '<td class="'+(r.void ? 'm' : (p>0.005 ? 'u' : p<-0.005 ? 'd' : 'm'))+'">'+esc(dtMoney(p, true))+'</td>'
             + '<td>'+(r.side==="short" ? 'short' : 'long')+'</td>'
             + '<td>'+esc(String(r.shares))+'</td><td>'+esc(fmtpx(r.entry))+'</td><td>'+esc(fmtpx(r.exit))+'</td>'
-            + '<td class="'+(r.void ? 'm' : (p>0.005 ? 'u' : p<-0.005 ? 'd' : 'm'))+'">'+esc(dtMoney(p, true))+'</td>'
             + '<td>'+(r.plan ? 'yes' : 'no')+'</td>'
-            + '<td>'+(r.void ? '<span class="m">voided</span>' : '<button class="dvoid" type="button" aria-label="Void the '+esc(r.sym)+' trade">void</button>')+'</td></tr>';
+            + '<td class="m">'+esc(dtRowTime(r))+'</td>'
+            + '<td>'+act+'</td></tr>';
         }).join("") + '</tbody></table>';
   }
   if(tH!==DAY.todayHtml){ document.getElementById("daytoday").innerHTML = tH; DAY.todayHtml = tH; }
@@ -18039,7 +18214,7 @@ function dayRender(){
       + ' · avg win '+(s.avgWin!=null ? esc(dtMoney(s.avgWin, true)) : '—')
       + ' · avg loss '+(s.avgLoss!=null ? esc(dtMoney(s.avgLoss, true)) : '—')
       + ' · plan followed '+(s.planShare!=null ? Math.round(s.planShare*100)+'%' : '—')
-      + (s.n < 30 ? ' · <span class="bc">'+s.n+' of 30 trades</span>' : ''));
+      + (s.n < 30 ? ' · <span class="bc">only '+s.n+' trade'+(s.n===1?'':'s')+' on file</span>' : ''));
   if(sT!==DAY.statsHtml){ document.getElementById("daystats").innerHTML = sT; DAY.statsHtml = sT; }
 }
 
@@ -18049,7 +18224,7 @@ function dayRender(){
    "both" is two scans — the top gainers and the top losers — merged here
    (architect review #5). A 200 with no rows is a miss: the last good rows and
    their as-of stamp stay, and the reason prints (review #6). */
-var GAP = {rows:null, at:0, mode:null, sessKey:null, key:null, lastAttempt:0, fails:0, err:null, inflight:null, showAll:false, requery:false};
+var GAP = {rows:null, at:0, mode:null, sessKey:null, key:null, lastAttempt:0, fails:0, err:null, inflight:null, showAll:false, requery:false, tryKey:null};
 var GAP_FETCH = 40, GAP_SHOW = 12, GAP_MAX = 30;
 var GAP_VOL_FLOOR = {pre:50000, open:500000, post:50000, last:500000};
 var GAP_COLS = ["name","description","close","change","premarket_close","premarket_change","premarket_volume",
@@ -18061,7 +18236,7 @@ function gapMode(now){
   return s==="premarket" ? "pre" : s==="open" ? "open" : s==="afterhours" ? "post" : "last";
 }
 function gapFilters(){
-  var dir = read("desk.gap.dir"), px = num(read("desk.gap.px")), stk = read("desk.gap.stk");
+  var dir = dtSetting("desk.gap.dir"), px = num(dtSetting("desk.gap.px")), stk = dtSetting("desk.gap.stk");
   return {dir:(dir==="up" || dir==="down") ? dir : "all", px:(px===1 || px===20) ? px : 5, stk:(stk!=="0")};
 }
 function gapMoveCol(mode){ return mode==="pre" ? "premarket_change" : mode==="post" ? "postmarket_change" : "change"; }
@@ -18073,7 +18248,9 @@ function gapScanBodies(mode, f, now){
   var base = [
     {left:"exchange", operation:"in_range", right:["NASDAQ","NYSE","AMEX"]},
     {left:"is_primary", operation:"equal", right:true},
-    {left:"close", operation:"egreater", right:f.px},
+    // The floor reads the price the column shows: in pre-market `close` is
+    // the prior close, so a $6 name trading $4.22 passed "$5+".
+    {left:(mode==="pre" ? "premarket_close" : mode==="post" ? "postmarket_close" : "close"), operation:"egreater", right:f.px},
     {left:vcol, operation:"egreater", right:GAP_VOL_FLOOR[mode]}
   ];
   if(f.stk) base.push({left:"type", operation:"equal", right:"stock"});
@@ -18121,6 +18298,10 @@ function gapKey(mode, f){ return mode+"|"+f.dir+"|"+f.px+"|"+(f.stk ? 1 : 0); }
 function gapFetch(){
   if(GAP.inflight) return GAP.inflight;
   var now = new Date(), mode = gapMode(now), f = gapFilters(), key = gapKey(mode, f);
+  // Backoff is per attempted key: GAP.key moves only on success, so gating
+  // on it refetched every tick after a failed first scan (40 requests in 10
+  // minutes against an HTTP 500, 2026-09-23 correctness review).
+  if(GAP.tryKey!==key){ GAP.tryKey = key; GAP.fails = 0; }
   GAP.lastAttempt = Date.now();
   var bodies = gapScanBodies(mode, f, now);
   function fail(msg){
@@ -18160,7 +18341,7 @@ function gapTick(nowMs){
   var now = nowMs || Date.now();
   var wait = GAP.fails ? Math.min(300000, 30000*Math.pow(2, Math.max(0, GAP.fails-1))) : 60000;
   var f = gapFilters(), key = gapKey(gapMode(new Date()), f);
-  if(key!==GAP.key || now - GAP.lastAttempt >= wait - 500) gapFetch();
+  if(key!==GAP.tryKey || now - GAP.lastAttempt >= wait - 500) gapFetch();
 }
 var GAP_MODE_WORDS = {pre:"Pre-market gappers", open:"Movers today", post:"After-hours movers", last:"Last session's movers"};
 function gapFiltersHTML(){
@@ -18179,11 +18360,17 @@ function gapInit(){
   fl.addEventListener("click", function(e){
     var b = e.target.closest("button");
     if(!b) return;
-    if(b.dataset.gdir) store("desk.gap.dir", b.dataset.gdir);
-    else if(b.dataset.gpx) store("desk.gap.px", b.dataset.gpx);
-    else if(b.dataset.gstk) store("desk.gap.stk", gapFilters().stk ? "0" : "1");
+    if(b.dataset.gdir) dtStoreSetting("desk.gap.dir", b.dataset.gdir);
+    else if(b.dataset.gpx) dtStoreSetting("desk.gap.px", b.dataset.gpx);
+    else if(b.dataset.gstk) dtStoreSetting("desk.gap.stk", gapFilters().stk ? "0" : "1");
     else return;
-    fl.innerHTML = gapFiltersHTML();
+    // Flip the pressed state in place: rebuilding the buttons dropped
+    // keyboard focus to BODY on every filter change.
+    var f2 = gapFilters();
+    $$("button", fl).forEach(function(x){
+      var on = x.dataset.gdir ? x.dataset.gdir===f2.dir : x.dataset.gpx ? (+x.dataset.gpx)===f2.px : x.dataset.gstk ? f2.stk : null;
+      if(on!==null) x.setAttribute("aria-pressed", String(on));
+    });
     GAP.showAll = false;
     GAP.rows = null; GAP.at = 0; GAP.err = null;
     renderGap(); gapFetch();
@@ -18204,9 +18391,19 @@ function gapInit(){
     body.addEventListener("keydown", function(e){ if(e.key==="Enter" || e.key===" ") toDt(e); });
   }
   var sh = document.querySelector('#s-gap .sh');
-  if(sh) sh.addEventListener("click", function(){ setTimeout(function(){ gapTick(); }, 0); });
+  if(sh){
+    sh.addEventListener("click", function(){ setTimeout(function(){ renderGap(); gapTick(); }, 0); });
+    sh.addEventListener("keydown", function(e){ if(e.key==="Enter" || e.key===" ") setTimeout(function(){ renderGap(); gapTick(); }, 0); });
+  }
   renderGap();
   gapTick();
+}
+// The logged time of a row. A restored file is outside data; a bad stamp
+// must print a dash, never throw (a throw here once stopped the boot).
+function dtRowTime(r){
+  var t = num(r && r.t);
+  if(t==null || t<0 || t>=8.64e15) return "—";
+  return ctTimeShort(new Date(t).toISOString());
 }
 // Share counts (volume, float): one compact format for both columns.
 function gapCountTxt(v){
@@ -18262,7 +18459,7 @@ function renderGap(){
            : (r.erNext!=null && erTodayKeys[dtKeyOfEpoch(r.erNext)]) ? dtKeyOfEpoch(r.erNext) : null;
     var chips = (er ? ' <span class="bc">earnings '+esc(dtDayLabel(er))+'</span>' : '')
       + (r.absMove >= 100 ? ' <span class="bc warn">check for a split</span>' : '')
-      + (railHasSym(r.sym) ? ' <span class="bc">desk</span>' : '');
+      + (railHasSym(r.sym) ? ' <span class="bc">on watchlist</span>' : '');
     return '<tr class="rw" data-sym="'+esc(r.sym)+'" role="button" tabindex="0">'
       + '<td><span class="sy2">'+esc(r.sym)+'</span> <span class="nm">'+esc(r.name)+'</span>'+chips+'</td>'
       + '<td>'+esc(fmtpx(r.px))+'</td>'
@@ -18304,7 +18501,9 @@ document.addEventListener("keydown", function(e){
   } else if(k==="d"){
     if(!STAGE.sym) return;
     e.preventDefault();
-    STAGE.tab = "dt"; stageTabsRender(); renderStageTab();
+    STAGE.tab = "dt";
+    if(STAGE.view!=="chart") stageSetView("chart");
+    stageTabsRender(); renderStageTab();
   }
 });
 
@@ -18451,8 +18650,10 @@ function start(){
   });
   updatePricesTimestamp();
   renderMarketState(null);
-  dayInit();
-  gapInit();
+  // The day-trade block must never stop the boot: a bad restored row once
+  // threw here, before fetchData, on every reload.
+  try{ dayInit(); }catch(e){ var dEl = document.getElementById("day"); if(dEl) dEl.innerHTML = '<div class="boardmsg">Day limits could not load: '+esc(String(e && e.message || e))+'</div>'; }
+  try{ gapInit(); }catch(e){ var gEl = document.getElementById("gap"); if(gEl) gEl.innerHTML = '<div class="boardmsg">Gappers could not load: '+esc(String(e && e.message || e))+'</div>'; }
   syncScrollTabStops();
   lastDataFetchTs = Date.now();
   fetchData().then(function(){

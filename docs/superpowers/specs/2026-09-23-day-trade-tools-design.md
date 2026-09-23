@@ -275,7 +275,7 @@ Storage keys: `desk.dt.acct`, `desk.dt.risk`, `desk.day.journal`,
 
 DOM:
 - Stage tab button `#stagetabs button[data-tab="dt"]`, label "Day trade".
-  Body: `#dtwrap[data-sym]`; levels `#dtlev` with one `.dtrow[data-lv=<k>]`
+  Body: `#dtwrap[data-dtsym]` (never `data-sym`: the page-wide row delegate charts any `[data-sym]` ancestor on click — found by the regression review); levels `#dtlev` with one `.dtrow[data-lv=<k>]`
   per level (`.miss` class when missing) each carrying a
   `button.dtstop[data-px]` unless missing or `atr`; `#dtcopy`, `#dtcopymsg`.
   Calculator `#dtcalc`: inputs `#dtacct`, `#dtrisk`, `#dtentry`, `#dtstopin`;

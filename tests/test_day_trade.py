@@ -342,7 +342,11 @@ def _dt_page(browser, server, bars_payload=None, poll_fixtures=None, gappers=Non
         server, data_payload=DT_DATA, bars_payload=bars_payload,
         scan_handler=make_scan_handler(poll_fixtures=poll_fixtures, gappers=gappers)))
     if pin_ms is not None:
-        page.clock.install(time=pin_ms)
+        # Playwright's Python clock takes a number as SECONDS since the epoch
+        # (a datetime works too). Passing milliseconds put every pinned page
+        # in the year 58698 — a "closed" day — so no DOM test ran in the
+        # session phase it named. Pinned by test_pinned_clock_lands_on_the_ct_time.
+        page.clock.install(time=pin_ms / 1000)
     page.goto(f"{server}/index.html", wait_until="load")
     return page, page_errors, console_errors
 
@@ -351,7 +355,7 @@ def _open_dt_tab(page, sym="MU"):
     page.evaluate("stageShow(%r)" % sym)
     page.click('#stagetabs button[data-tab="dt"]')
     page.wait_for_function(
-        "(s) => { var w=document.getElementById('dtwrap'); return w && w.dataset.sym===s; }",
+        "(s) => { var w=document.getElementById('dtwrap'); return w && w.dataset.dtsym===s; }",
         arg=sym, timeout=8000, polling=100)
 
 
@@ -849,6 +853,15 @@ def test_day_limits_dom_log_form_and_done_badge(browser, server):
         page.fill("#dtl-sh", "10")
         page.fill("#dtl-en", "100")
         page.fill("#dtl-ex", "90")
+        # This trade reaches the $200 cap, so the first click only asks for a
+        # confirmation (the typo guard: a mistyped exit would otherwise lock
+        # the day, and a void never refunds the cap).
+        page.click("#dtl-add")
+        page.wait_for_function(
+            "() => /confirm/.test(document.getElementById('dtl-msg').textContent||'')",
+            timeout=5000, polling=100)
+        assert page.evaluate("document.querySelectorAll('#daytoday tr[data-id]').length") == 1, \
+            "a cap-reaching trade must not log on the first click"
         page.click("#dtl-add")
         page.wait_for_function(
             "() => document.querySelectorAll('#daytoday tr[data-id]').length >= 2",
@@ -1049,5 +1062,263 @@ def test_no_long_explanation_data_tips_in_new_sections(browser, server):
         assert long_tips == [], f"explanation-length data-tip attributes found: {long_tips}"
         assert errs == [], errs
         assert cerrs == [], cerrs
+    finally:
+        page.close()
+
+
+# =============================================================================
+# 10. Review findings (2026-09-23 adversarial code review) — each fix pinned
+# =============================================================================
+
+def test_void_never_refunds_the_caps(browser, server):
+    """A voided row still counts: its trade toward the trade cap and its loss
+    (never its gain) toward the loss cap. log -> void -> log used to run four
+    trades and -$1,349 against a $500 / 3-trade cap while the panel read OPEN."""
+    page, errs = _pure_page(browser, server)
+    try:
+        now = now_js(2026, 9, 23, 7, 0)
+        assert page.evaluate("dayCapsSet({loss:500, trades:3}, %s)" % now)["ok"] is True
+        a = page.evaluate("dtJournalAdd({sym:'MU', side:'long', shares:10, entry:100, exit:55, plan:false, note:''}, %s)" % now)
+        assert page.evaluate("dtJournalVoid(%r, %s)" % (a["id"], now))["ok"] is True
+        st = page.evaluate("dayState(%s)" % now)
+        assert st["budgetLeft"] == pytest.approx(50), st
+        assert st["n"] == 1 and st["nVoid"] == 1, st
+        # A voided WIN never counts toward the budget.
+        b = page.evaluate("dtJournalAdd({sym:'MU', side:'long', shares:10, entry:100, exit:110, plan:false, note:''}, %s)" % now)
+        page.evaluate("dtJournalVoid(%r, %s)" % (b["id"], now))
+        st2 = page.evaluate("dayState(%s)" % now)
+        assert st2["pnl"] == pytest.approx(-450), st2
+        assert st2["n"] == 2, st2
+        # The stats drop voided rows entirely.
+        stats = page.evaluate("dtJournalStats()")
+        assert stats["n"] == 0, stats
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_void_window_closes_after_ten_minutes(browser, server):
+    page, errs = _pure_page(browser, server)
+    try:
+        a = page.evaluate("dtJournalAdd({sym:'MU', side:'long', shares:1, entry:100, exit:101, plan:false, note:''}, %s)"
+                          % now_js(2026, 9, 23, 7, 0))
+        late = page.evaluate("dtJournalVoid(%r, %s)" % (a["id"], now_js(2026, 9, 23, 7, 11)))
+        assert late["ok"] is False and "final" in late["err"], late
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_dt_size_caps_at_the_account_cash(browser, server):
+    """A tight stop sized 500 shares ($548K) on a $25K account; the size stops
+    at what the account can pay for and says so."""
+    page, errs = _pure_page(browser, server)
+    try:
+        r = page.evaluate("dtSize({acct:25000, riskPct:1, side:'long', entry:1096, stop:1095.5})")
+        assert r["ok"] is True, r
+        assert r["capped"] is True and r["shares"] == 22 and r["riskShares"] == 500, r
+        assert r["pos"] <= 25000, r
+        un = page.evaluate("dtSize({acct:10000, riskPct:1, side:'long', entry:100, stop:98})")
+        assert un["capped"] is False and un["shares"] == 50, un
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize("t5_hhmm,final", [((14, 45), False), ((14, 55), True)])
+def test_levels_after_close_lag_never_calls_a_running_price_the_close(browser, server, t5_hhmm, final):
+    """For ~16 minutes after the close the delayed feed still prints the
+    session's last minutes; its `close` is a running price until the feed's
+    last 5-minute bar reaches the bell."""
+    fx = mu_row(**{"time|5": ct_s(2026, 9, 23, *t5_hhmm)})
+    page, errs = _boot_levels_page(browser, server, build_bars_payload(), fx)
+    try:
+        lv = page.evaluate("dtLevels('MU', %s)" % now_js(2026, 9, 23, 15, 5))
+        assert lv["phase"] == "plan", lv
+        rows = {r["k"]: r for r in lv["rows"]}
+        if final:
+            assert rows["close"]["label"].endswith("close"), rows["close"]
+            assert not lv.get("closePending"), lv
+        else:
+            assert "last" in rows["close"]["label"] and "close" not in rows["close"]["label"], rows["close"]
+            assert "so far" in rows["hi"]["label"], rows["hi"]
+            assert lv.get("closePending") is True, lv
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_gap_backoff_holds_after_a_failed_first_scan(browser, server):
+    """GAP.key moves only on success, so gating on it refetched every tick
+    after a failed first scan (40 requests in 10 minutes against an HTTP 500)."""
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()},
+                                  gappers=lambda n, body: None, pin_ms=ct_ms(2026, 9, 23, 9, 30))
+    try:
+        page.wait_for_function("() => GAP.fails >= 1 && !GAP.inflight", timeout=8000, polling=100)
+        refired = page.evaluate("(function(){ gapTick(GAP.lastAttempt + 20000); return !!GAP.inflight; })()")
+        assert refired is False, "a failed scan must back off, not refetch on the next tick"
+        refired2 = page.evaluate("(function(){ gapTick(GAP.lastAttempt + 31000); return !!GAP.inflight; })()")
+        assert refired2 is True, "after the backoff window the scan should retry"
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_gap_price_floor_reads_the_price_the_column_shows(browser, server):
+    page, errs = _pure_page(browser, server)
+    try:
+        def floor_col(mode, hh):
+            return page.evaluate(
+                "(function(){ var b = gapScanBodies(%r, {dir:'up', px:5, stk:true}, %s)[0];"
+                " return b.filter.filter(function(f){ return f.operation==='egreater' && f.right===5; }).map(function(f){ return f.left; }); })()"
+                % (mode, now_js(2026, 9, 23, hh, 0)))
+        assert floor_col("pre", 7) == ["premarket_close"]
+        assert floor_col("post", 16) == ["postmarket_close"]
+        assert floor_col("open", 10) == ["close"]
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_entry_does_not_move_while_the_reader_edits_it(browser, server):
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=ct_ms(2026, 9, 23, 9, 30))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.focus("#dtentry")
+        before = page.evaluate("DT.entry")
+        page.evaluate("liveBySym('MU').px = 999.99; dtTabUpdate();")
+        assert page.evaluate("DT.entry") == before, "the entry changed under a focused field"
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_d_hotkey_from_the_heatmap_switches_to_the_chart(browser, server):
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=ct_ms(2026, 9, 23, 9, 30))
+    try:
+        page.evaluate("stageShow('MU'); stageSetView('heat');")
+        page.evaluate("document.activeElement && document.activeElement.blur()")
+        page.keyboard.press("d")
+        st = page.evaluate("({view: STAGE.view, tab: STAGE.tab, wrap: !!document.getElementById('dtwrap')})")
+        assert st == {"view": "chart", "tab": "dt", "wrap": True}, st
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_bars_file_current_rule(browser, server):
+    """bars.json built before today (on a trading day) lacks yesterday's bar;
+    it is not today's fetch and is re-checked on a timer."""
+    page, errs = _pure_page(browser, server)
+    try:
+        assert page.evaluate("barsFileCurrent({built:'2026-09-22'}, %s)" % now_js(2026, 9, 23, 10, 0)) is False
+        assert page.evaluate("barsFileCurrent({built:'2026-09-23'}, %s)" % now_js(2026, 9, 23, 10, 0)) is True
+        assert page.evaluate("barsFileCurrent({built:'2026-09-25'}, %s)" % now_js(2026, 9, 26, 10, 0)) is True
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_pinned_clock_lands_on_the_ct_time(browser, server):
+    """Guards the harness itself: every DOM test above names a CT session, and
+    a mis-scaled pin silently ran them all on a closed day in the year 58698."""
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=ct_ms(2026, 9, 23, 9, 30))
+    try:
+        st = page.evaluate("({key: ctDateKey(new Date()), min: ctMinutesOfDay(new Date()), sess: priceSessionNow()})")
+        assert st == {"key": "2026-09-23", "min": 9*60 + 30, "sess": "open"}, st
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_click_inside_the_day_trade_tab_does_not_rechart(browser, server):
+    """#dtwrap once carried data-sym, so the page-wide row delegate re-charted
+    the symbol (zoom reset, focus lost) on a click at any plain text in it."""
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=ct_ms(2026, 9, 23, 9, 30))
+    try:
+        # start() charts its boot symbol once data.json lands; wait for that
+        # first, so the count below sees only what the clicks cause.
+        page.wait_for_function("() => !!liveBySym('MU') && !!STATE.data && STAGE.sym", timeout=8000, polling=100)
+        page.wait_for_timeout(300)
+        _open_dt_tab(page)
+        page.evaluate("window.__shows = 0; var _ss = stageShow; stageShow = function(){ window.__shows++; return _ss.apply(this, arguments); }; 0;")
+        page.click("#dtcalc h3")
+        page.click("#dthead")
+        assert page.evaluate("window.__shows") == 0, "a click inside the Day trade tab re-charted the symbol"
+        assert page.locator("#dtwrap[data-sym]").count() == 0, "#dtwrap must not carry data-sym"
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_restore_rejects_a_bad_time_and_a_stored_one_cannot_stop_the_boot(browser, server):
+    page, errs = _pure_page(browser, server)
+    try:
+        bad = json.dumps({"journal": [{"id": "r9", "day": "2026-09-23", "t": 9e15, "sym": "MU", "side": "long",
+                                       "shares": 1, "entry": 1, "exit": 2}]})
+        r = page.evaluate("(t) => dayRestore(t, %s)" % now_js(2026, 9, 23, 7, 0), bad)
+        assert r["ok"] is True and r["added"] == 0 and r["skipped"] == 1, r
+        assert errs == [], errs
+    finally:
+        page.close()
+    # A bad row already in storage (from before the validation) must not stop start().
+    page = browser.new_page()
+    errs2 = []
+    page.on("pageerror", lambda e: errs2.append(str(e)))
+    page.add_init_script("try{ localStorage.setItem('desk.day.journal', JSON.stringify([{id:'x', day:'2026-09-23', t:9e15, sym:'MU', side:'long', shares:1, entry:1, exit:2}])); }catch(e){}")
+    page.route("**/*", make_route(server, data_payload=DT_DATA))
+    try:
+        page.goto(f"{server}/index.html", wait_until="load")
+        page.wait_for_function("() => !!STATE.data", timeout=8000, polling=100)
+        assert errs2 == [], errs2
+    finally:
+        page.close()
+
+
+def test_settings_stick_when_storage_throws(browser, server):
+    page = browser.new_page()
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.add_init_script("Storage.prototype.setItem = function(){ throw new Error('blocked'); };"
+                         "Storage.prototype.getItem = function(){ throw new Error('blocked'); };")
+    page.route("**/*", make_route(server, data_payload=DT_DATA, bars_payload=build_bars_payload(),
+                                  scan_handler=make_scan_handler(poll_fixtures={MU_TV: mu_row()},
+                                                                 gappers=_gappers_provider(GAPPERS_GOOD))))
+    try:
+        page.goto(f"{server}/index.html", wait_until="load")
+        page.wait_for_function("() => !!document.querySelector('#gapfilters button[data-gdir=\"up\"]')", timeout=8000, polling=100)
+        page.click('#gapfilters button[data-gdir="up"]')
+        assert page.evaluate("gapFilters().dir") == "up"
+        assert page.get_attribute('#gapfilters button[data-gdir="up"]', "aria-pressed") == "true"
+        page.evaluate("dtStoreSetting('desk.dt.acct', '25000')")
+        assert page.evaluate("dtReadAcct()") == 25000
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_opening_gappers_with_the_keyboard_scans(browser, server):
+    page = browser.new_page()
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.add_init_script("try{ localStorage.setItem('desk.s-gap', '1'); }catch(e){}")
+    page.route("**/*", make_route(server, data_payload=DT_DATA, bars_payload=build_bars_payload(),
+                                  scan_handler=make_scan_handler(poll_fixtures={MU_TV: mu_row()},
+                                                                 gappers=_gappers_provider(GAPPERS_GOOD))))
+    try:
+        page.goto(f"{server}/index.html", wait_until="load")
+        page.wait_for_function("() => document.getElementById('s-gap').classList.contains('closed')", timeout=8000, polling=100)
+        assert page.evaluate("GAP.lastAttempt") == 0, "a closed section must not scan"
+        page.focus("#s-gap .sh")
+        page.keyboard.press("Enter")
+        page.wait_for_function("() => GAP.lastAttempt > 0", timeout=8000, polling=100)
+        page.wait_for_function("() => document.querySelectorAll('#gap tr.rw[data-sym]').length > 0", timeout=8000, polling=100)
+        assert errs == [], errs
     finally:
         page.close()

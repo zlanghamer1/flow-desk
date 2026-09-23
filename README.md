@@ -570,15 +570,16 @@ traders watch:
 - the 14-day average true range (ATR)
 
 Each level shows its distance from the current delayed price. Each carries
-the date of the session it comes from. For about 16 minutes after the bell,
+the date of the session it comes from. For about 16 minutes after the open,
 the delayed feed still shows yesterday's numbers, and the tab says so rather
-than calling them today's. **Copy levels** puts the whole list on the
-clipboard so you can paste it into TradingView alerts, which fire in real
-time.
+than calling them today's. The same lag hits the close, so for those minutes
+the tab says "last" instead of "close". **Copy levels** puts the list on the
+clipboard, one level per line, ready to paste one price at a time into
+TradingView alerts, which fire in real time.
 
 The bottom half sizes a trade. Enter your account size, the percent you are
 willing to lose (1% to start), long or short, the entry and the stop. Any
-level's **stop** button fills in the stop. The tab shows:
+level's **entry** or **stop** button fills in that price. The tab shows:
 
 - how many shares to buy
 - the dollars at risk
@@ -586,7 +587,11 @@ level's **stop** button fills in the stop. The tab shows:
 - the prices one, two and three times your risk away
 - the loss if the fill slips to twice the stop distance
 
-It refuses to answer without a stop, or with a stop on the wrong side.
+It refuses to answer without a stop, or with a stop on the wrong side. It
+never sizes past what your account can pay for, and it says when it cut the
+size for that reason. **Send to trade log** copies the ticker, side, shares
+and entry into the Day limits log, so after you close the trade you only
+type the exit.
 
 **Day limits.** Before the open, set a daily loss cap in dollars and a
 maximum number of trades. Log each trade after you close it: ticker, side,
@@ -595,16 +600,20 @@ your realized profit and loss, trades used and loss budget left. At either
 cap it reads DONE for the rest of the day.
 
 You can lower a cap any time. You can raise one only before the open and
-before your first trade of the day. A trade logged by mistake can be voided.
-A voided trade stays on screen struck through and does not undo a DONE.
-Under 30 trades, the stats say how many are on file, because a short streak
-is luck more often than skill.
+before your first trade of the day. A trade that would hit the loss cap asks
+you to click **Log trade** a second time, which catches a mistyped price. A
+trade logged by mistake can be voided within 10 minutes. It stays on screen
+struck through and leaves the stats, but it still counts against the day's
+caps, so a void never buys back loss room. Under 30 trades the stats say how
+few trades are on file, because a short streak is luck more often than
+skill.
 
 The log lives in this browser only. Your phone and your PC keep separate
 logs. **Export CSV** and **Back up** save a copy. **Restore** adds trades
-from a backup and never removes any. The pattern-day-trader rule and its
-$25,000 minimum ended on 2026-06-04 (FINRA Notice 26-10), so these caps are
-now the only limit on how often you trade.
+from a backup and never removes any. FINRA replaced the pattern-day-trader
+rule and its $25,000 minimum on 2026-06-04 (Notice 26-10). Brokers have
+until 2027-10-20 to switch over, and Fidelity already has. So at Fidelity
+these caps are the only limit on how often you trade.
 
 **Gappers & movers.** This is a whole-market list, not just the watchlist.
 Before the open it ranks the biggest pre-market gaps. During the session it
