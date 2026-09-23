@@ -327,6 +327,13 @@ Found by the day-trade audit and not fixed in that change:
   re-judged on each new trade time, so a single last-sale print reported
   over a minute late keeps a thin name on the delayed price until its next
   prompt trade. Works as designed; not observed on this stream.
+- **A SPY stamp 1-5 minutes ahead can be the reference for up to a
+  minute.** If it arrives as a new SPY trade time it is noted; the viewed
+  name then reads late for up to 60 s, and while viewing SPY the bad price
+  shows for up to 60 s and then reads quiet. Not observed on this stream.
+- **One late-reported SPY print after a minute-long quiet spell** drops the
+  viewed name's prompt frames as "ahead" until SPY's next prompt print. Not
+  observed on this stream.
 - **A device clock more than 5 minutes slow never shows real-time.** With no
   heartbeat yet, a stamp more than `RT_AHEAD_MAX_MS` ahead of the device
   clock is dropped outright, so such a clock drops every frame. It falls

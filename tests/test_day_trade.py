@@ -1652,7 +1652,9 @@ def test_rt_late_served_name_is_never_real_time(browser, server):
         page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
         _open_dt_tab(page)
         page.wait_for_function("() => !!RT.last['MU']", timeout=8000, polling=100)
-        _heartbeat(page)
+        _heartbeat(page)                              # SPY's first frame: a replay, never the reference
+        page.clock.fast_forward(1000)
+        _heartbeat(page)                              # SPY's first NEW trade builds the reference
         _inject(page, "MU", 1100.5, 895000)          # a new trade, still 15 min late
         meta = _paint_after(page)
         assert page.locator("#dtmeta .rtlive").count() == 0, meta
@@ -1686,7 +1688,8 @@ def test_rt_skewed_device_clock_beyond_the_late_window(browser, server):
     try:
         page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
         _open_dt_tab(page)
-        page.wait_for_function("() => !!RT.last['MU'] && RT.hb.length > 0", timeout=8000, polling=100)
+        page.wait_for_function("() => !!RT.last['MU'] && !!RT.last['SPY']", timeout=8000, polling=100)
+        page.clock.fast_forward(1000)
         _heartbeat(page, back_ms=90000)
         _inject(page, "MU", 1101.25, 90000)
         meta = _paint_after(page)
@@ -1702,7 +1705,8 @@ def test_rt_skewed_device_clock_beyond_the_late_window(browser, server):
     try:
         page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
         _open_dt_tab(page)
-        page.wait_for_function("() => !!RT.last['MU'] && RT.hb.length > 0", timeout=8000, polling=100)
+        page.wait_for_function("() => !!RT.last['MU'] && !!RT.last['SPY']", timeout=8000, polling=100)
+        page.clock.fast_forward(1000)
         _heartbeat(page, back_ms=-90000)
         _inject(page, "MU", 1101.75, -90000)
         meta = _paint_after(page)
@@ -1720,6 +1724,8 @@ def test_rt_skewed_device_clock_beyond_the_late_window(browser, server):
         page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
         _open_dt_tab(page)
         page.wait_for_function("() => !!RT.last['MU']", timeout=8000, polling=100)
+        _heartbeat(page, back_ms=-90000)
+        page.clock.fast_forward(1000)
         _heartbeat(page, back_ms=-90000)
         _inject(page, "MU", 1100.5, 900000 - 90000 - 5000)
         meta = _paint_after(page)
@@ -1771,6 +1777,8 @@ def test_rt_bad_timestamps_never_break_the_tab_or_pin_the_price(browser, server)
         page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
         _open_dt_tab(page)
         page.wait_for_function("() => !!RT.last['MU']", timeout=8000, polling=100)
+        _heartbeat(page)
+        page.clock.fast_forward(1000)
         _heartbeat(page)
         _inject(page, "MU", 1101.0, 800)
         _paint_after(page)
@@ -2312,6 +2320,103 @@ def test_day_limits_refresh_even_when_the_tab_throws(browser, server):
         _open_dt_tab(page)
         page.evaluate("window.dtTabUpdate = function(){ throw new Error('boom'); }; DAY.statHtml = 'sentinel'; refreshLiveUI();")
         assert page.evaluate("DAY.statHtml") != "sentinel"
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def _count_dropped(page, rounds, spy_px0, mu_px0=None, step_ms=2000):
+    """Send `rounds` prompt SPY trades (and MU trades when mu_px0 is given),
+    each 0.5 s old on arrival, and count how many never became the trade on
+    file."""
+    dropped_spy = dropped_mu = 0
+    for i in range(rounds):
+        page.clock.fast_forward(step_ms)
+        spx = round(spy_px0 + i * 0.01, 2)
+        _heartbeat(page, px=spx, back_ms=500)
+        if abs(page.evaluate("RT.last.SPY.px") - spx) > 0.001:
+            dropped_spy += 1
+        if mu_px0 is not None:
+            mpx = round(mu_px0 + i * 0.05, 2)
+            _inject(page, "MU", mpx, 500)
+            if abs(page.evaluate("RT.last.MU.px") - mpx) > 0.001:
+                dropped_mu += 1
+    return dropped_spy, dropped_mu
+
+
+@pytest.mark.parametrize("when", [(2026, 9, 23, 4, 0), (2026, 9, 23, 9, 30)])
+def test_rt_old_spy_replay_on_subscribe_never_locks_the_reference(browser, server, when):
+    # Architect X5: SPY's first frame after subscribing replays its last trade
+    # (3 min old early in pre-market), MU's replay is 5 min old. Judging SPY
+    # against a reference built from that replay dropped 39 of 40 later prompt
+    # frames from BOTH names and printed "no MU update" while MU frames arrived.
+    pin = ct_ms(*when)
+    stamps = {"SPY": pin - 180000, "MU": pin - 300000}
+    prices = {"SPY": 500.0, "MU": 1100.25}
+
+    def handler(ws):
+        def on_msg(m):
+            for sym in json.loads(m).get("subscribe", []):
+                if sym in prices:
+                    ws.send(yahoo_frame(sym, prices[sym], stamps[sym]))
+        ws.on_message(on_msg)
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin, ws_handler=handler)
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!RT.last['MU'] && !!RT.last['SPY']", timeout=8000, polling=100)
+        d_spy, d_mu = _count_dropped(page, 40, 500.0, 1100.0)
+        meta = _paint_after(page)
+        assert (d_spy, d_mu) == (0, 0), (d_spy, d_mu, page.evaluate("rtHbLag()"), meta)
+        assert page.locator("#dtmeta .rtlive").count() == 1, meta
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_old_spy_replay_viewing_spy(browser, server):
+    # Architect X5b: the same replay while the tab is open on SPY itself.
+    pin = ct_ms(2026, 9, 23, 4, 0)
+
+    def handler(ws):
+        def on_msg(m):
+            for sym in json.loads(m).get("subscribe", []):
+                if sym == "SPY":
+                    ws.send(yahoo_frame("SPY", 500.0, pin - 180000))
+        ws.on_message(on_msg)
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin, ws_handler=handler)
+    try:
+        _open_dt_tab(page, "SPY")
+        page.wait_for_function("() => !!RT.last['SPY']", timeout=8000, polling=100)
+        d_spy, _ = _count_dropped(page, 40, 500.0)
+        meta = _paint_after(page)
+        assert d_spy == 0, (d_spy, page.evaluate("rtHbLag()"), meta)
+        assert page.locator("#dtmeta .rtlive").count() == 1, meta
+        assert errs == [], errs
+    finally:
+        page.close()
+
+
+def test_rt_one_late_spy_print_after_a_quiet_spell_does_not_lock(browser, server):
+    # Architect X6: pre-market (the watchdog sits out), a live reference, SPY
+    # and MU quiet for 100 s, one SPY print reported 90 s late, then prompt
+    # prints. The reference must fall back; no MU frame may be dropped.
+    pin = ct_ms(2026, 9, 23, 4, 0)
+    page, errs, cerrs = _dt_page(browser, server, bars_payload=build_bars_payload(),
+                                  poll_fixtures={MU_TV: mu_row()}, pin_ms=pin,
+                                  ws_handler=_rt_handler({"MU": 1100.25, "SPY": 500.0}, lambda: pin - 1000, []))
+    try:
+        page.wait_for_function("() => !!liveBySym('MU')", timeout=8000, polling=100)
+        _open_dt_tab(page)
+        page.wait_for_function("() => !!RT.last['MU'] && !!RT.last['SPY']", timeout=8000, polling=100)
+        _count_dropped(page, 3, 500.0, 1100.0, step_ms=1000)     # a live reference
+        page.clock.fast_forward(100000)
+        _heartbeat(page, px=501.0, back_ms=90000)                # one late-reported SPY print
+        _, d_mu = _count_dropped(page, 10, 502.0, 1200.0)
+        meta = _paint_after(page)
+        assert d_mu == 0, (d_mu, page.evaluate("rtHbLag()"), meta)
         assert errs == [], errs
     finally:
         page.close()

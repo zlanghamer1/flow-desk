@@ -3743,7 +3743,9 @@ verification's live probe (16:26-16:30 UTC, 426 frames, 229 of them on the
 thin names) found why: the stream sends a frame for every print, odd lots
 included. 170 of the 229 thin-name frames repeated the previous trade time,
 none byte-identical, each with a higher day volume, 143 of them by under 100
-shares; frames with a new trade time rose by 100 shares or more. Field 9 is
+shares; the 55 frames with a newer trade time rose by 100 shares or more,
+and one AXTI frame arrived 0.06 s out of order carrying an older stamp and a
+lower day volume. Field 9 is
 sint64 day volume and must be zigzag-decoded: every raw value is even, and
 the first count of this (124 under 100, new-time frames 200 or more) read the
 raw values. The probe now records the decoded value. An odd lot does not move the
@@ -3769,8 +3771,19 @@ dropped on 2026-09-23:
    past 60 s once SPY went a minute without a round lot, and then dropped
    the viewed name's real trades as "ahead" (architect repro: 42 of 100 MU
    frames, "no MU update" printed while MU frames arrived); one SPY frame an
-   hour ahead became the reference. Only a new SPY trade time is noted now,
-   and SPY's own frame is judged against the reference before it is noted.
+   hour ahead became the reference.
+5. The fix for 4 as first specified (e8a9601) judged SPY's own frame against
+   the reference before noting it. The reference is built from SPY's first
+   frame after subscribing, a replay of its last trade whose lag is that
+   trade's age, so whenever SPY's last trade was over a minute old at
+   connect (early pre-market, the evening) every later prompt SPY frame read
+   "ahead" and was dropped, and the reference could never fall (architect
+   repro X5: 39 of 40 prompt frames dropped from SPY and MU at 04:00 and
+   09:30 CT; X6: one late-reported SPY print after a quiet spell, 10 of 10).
+   Now SPY is never judged against the reference it defines, only a SPY
+   trade newer than the one on file is noted (never the first frame after
+   subscribing), and any stamp more than 5 min ahead of the device clock is
+   dropped outright.
 The rule that shipped judges lateness only on a NEW trade time, against the
 heartbeat's own minimum lag on the same clock (`rtHbLag`), so skew cancels
 and an odd-lot frame is never judged. The first trade after subscribing is

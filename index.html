@@ -18168,13 +18168,14 @@ function rtDecode(b64){
   return out;
 }
 // The heartbeat's lag (receive time minus trade time) over the last minute:
-// device-clock skew plus the network's best case. Only a SPY frame with a
-// NEW trade time is noted: an odd-lot frame repeats an older stamp, and
-// noting those let the minimum climb past RT_LATE_MS once SPY went a minute
-// without a round lot, so every prompt frame of the viewed name was dropped
-// as "ahead" (architect, 2026-09-23). The newest entry is kept past the
-// window: a lag measured once stays a fair estimate of the same clock's skew.
-// null until SPY speaks.
+// device-clock skew plus the network's best case. Only a SPY trade newer
+// than the one on file is noted (rtOnMessage): an odd-lot frame repeats an
+// older stamp, and noting those let the minimum climb past RT_LATE_MS once
+// SPY went a minute without a round lot, so every prompt frame of the viewed
+// name was dropped as "ahead" (architect, 2026-09-23). The newest entry is
+// kept past the window: a lag measured once stays a fair estimate of the
+// same clock's skew. null until SPY's first new trade after subscribing;
+// until then lateness is not judged.
 function rtHbNote(recv, t){
   RT.hb.push({recv:recv, lag:recv - t});
   while(RT.hb.length > 1 && (recv - RT.hb[0].recv > RT_HB_WINDOW_MS || RT.hb.length > 240)) RT.hb.shift();
@@ -18203,11 +18204,19 @@ function rtOnMessage(ev){
   // is alive, but its trade must not come back on the next visit.
   if(id!==RT.sym && id!==RT_HEARTBEAT){ rtSchedulePaint(); return; }
   // A stamp well AHEAD is a bad stamp; kept, it would outrank every real
-  // trade after it. Judged against the reference as it stood BEFORE this
-  // frame, so a bad SPY frame is dropped before it can become the reference.
+  // trade after it. Any stamp more than RT_AHEAD_MAX_MS ahead of the device
+  // clock is dropped. The viewed name is also judged against the heartbeat
+  // reference; SPY never is, because SPY defines it: judging SPY against a
+  // reference that started high (SPY's replayed last trade on subscribe, or
+  // one late-reported print) dropped every later prompt SPY frame, so the
+  // reference could never fall (architect repro X5/X6, 39 of 40 dropped).
   var hb0 = rtHbLag();
-  if(t - recv > RT_AHEAD_MAX_MS || (hb0!=null && (recv - t) < hb0 - RT_LATE_MS)){ rtSchedulePaint(); return; }
-  if(id===RT_HEARTBEAT && !(RT.last[id] && t <= RT.last[id].t)) rtHbNote(recv, t);
+  if(t - recv > RT_AHEAD_MAX_MS){ rtSchedulePaint(); return; }
+  if(id!==RT_HEARTBEAT && hb0!=null && (recv - t) < hb0 - RT_LATE_MS){ rtSchedulePaint(); return; }
+  // Only a SPY trade seen arriving live feeds the reference: never the
+  // first frame after (re)subscribing, which replays SPY's last trade with
+  // that trade's age as its lag, and never an odd-lot repeat of an old stamp.
+  if(id===RT_HEARTBEAT && RT.last[id] && t > RT.last[id].t) rtHbNote(recv, t);
   var hb = rtHbLag(), prev = RT.last[id];
   // A record stamped well ahead that landed before SPY first spoke is
   // replaced once it can be judged.

@@ -985,10 +985,15 @@ feeds a score, a verdict or the fetcher.
   by `rtDecode` (1 id, 2 float32 price, 3 zigzag ms time with whole-second
   resolution; varints in Number arithmetic, never 32-bit bit ops); a frame
   that does not parse is dropped, and so is one stamped more than
-  `RT_SANE_MS` (a day) from the receive clock, more than `RT_AHEAD_MAX_MS`
-  (5 min) ahead of it, or more than `RT_LATE_MS` ahead of the heartbeat
-  reference as it stood before that frame (SPY's own frames included, so a
-  bad SPY stamp never becomes the reference). A frame older than the trade
+  `RT_SANE_MS` (a day) from the receive clock or more than `RT_AHEAD_MAX_MS`
+  (5 min) ahead of it; the viewed name's frame is also dropped when it is
+  more than `RT_LATE_MS` ahead of the heartbeat reference. SPY's own frame
+  is never judged against the reference, because SPY defines it: judging it
+  there let a reference that started high (SPY's replayed last trade on
+  subscribe, or one late-reported print) drop every later prompt SPY frame,
+  so it could never fall (architect repro X5/X6: 39 of 40 prompt frames
+  dropped from SPY and MU alike, "no MU update" printed while MU frames
+  arrived). A frame older than the trade
   on file never replaces it. Field 7 (marketHours) is not read: proto3
   leaves its default 0, PRE_MARKET, off the wire, and a frame can carry a
   last-sale trade from an earlier session than the frame itself.
@@ -999,10 +1004,13 @@ feeds a score, a verdict or the fetcher.
   not `late`. Lateness is judged only when a frame carries a NEW trade time,
   as that frame's receive-minus-trade lag less the heartbeat's minimum lag
   over the last minute (`rtHbLag`), so device-clock skew cancels. Only a SPY
-  frame with a NEW trade time feeds that reference (`rtHbNote`); noting SPY's
-  odd-lot repeats let the minimum climb past 60 s after a minute without a
-  round lot and dropped the viewed name's real trades (architect repro, 42
-  of 100 frames). The newest entry is kept past the window. The stream
+  trade newer than the one on file feeds that reference (`rtHbNote`): never
+  the first frame after (re)subscribing, which replays SPY's last trade with
+  that trade's age as its lag, and never an odd-lot repeat of an old stamp
+  (noting those let the minimum climb past 60 s after a minute without a
+  round lot and dropped the viewed name's real trades, 42 of 100 frames).
+  The reference is null until SPY's first new trade, and lateness is not
+  judged until then. The newest entry is kept past the window. The stream
   sends a frame for every print, odd lots included, and an odd lot does not
   move the last-sale time, so an old trade time on a live stream is a quiet
   name, never a late feed: the first trade after subscribing is shown with
