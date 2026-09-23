@@ -3645,10 +3645,15 @@ Candidate: `wss://streamer.finance.yahoo.com/?version=2` (keyless, no Origin
 check; overnight ticks read 1.2–3.1 s old). Method: the 2026-08-19 method via
 `docs/probes/measure_stream_lag.py` — one clock, 10 s samples, 30 minutes;
 reference Robinhood `last_trade_price` (`nls`); control the TradingView
-scanner. **Pass rule, registered 2026-09-23 02:05 UTC before any market-hours
-sample:** best shift 0 min on all four of SPY, MU, CRWD, NVDA; tick-age median
-under 5 s and p95 under 30 s; and the control's best shift 13–18 min, else the
-run is broken.
+scanner. **Pass rule:** best shift 0 min on all four of SPY, MU, CRWD, NVDA;
+tick-age median under 5 s and p95 under 30 s; and the control's best shift
+13–18 min, else the run is broken. **Where each part was recorded, and when**
+(corrected 2026-09-23 after the architect review): the whole rule was written
+at 02:05:40 UTC, before any market-hours sample, but only in the session's
+scheduled market-open message, not in git. Git at 02:07 (`78f89eb`, the probe
+docstring) holds only "shift 0" and "control near 15–16 minutes". The tick-age
+thresholds and the 13–18 band first reach git at 14:15:05 UTC (`7e4d2db`),
+after attempt #1 had run.
 
 **Attempt #1, 13:41–14:11 UTC (08:41–09:11 CT): FAIL.** The control came out
 at 15.3–15.5 min on all four (the run is valid). The candidate's only socket
@@ -3657,14 +3662,15 @@ UTC) and the probe did not reconnect, so its series froze for the last 18
 minutes. Best shift: MU 0, NVDA 0, CRWD 4.0, SPY 16.8 — the rule fails. While
 connected, 3,527 ticks aged median 1.45 s, p95 3.21 s. Nothing is relabeled.
 
-**Attempt #2, registered before its result was read** (the run started 14:14
-UTC; this entry was committed at 14:17 UTC, before any output existed): the
-same pass rule, unchanged. The only change is to the harness: the probe reconnects
+**Attempt #2, registered before its result was read** (the run's first sample
+was 14:13:13 UTC; this entry was committed at 14:15:05 UTC, two minutes into
+the run and 28 minutes before any output existed): the same pass rule,
+unchanged. The only change is to the harness: the probe reconnects
 after a drop (2 s wait), counts every drop and reports samples whose last tick
 is over 30 s old. No sample is excluded. A drop is a fact a browser client
 would face too, so the count is part of the result.
 
-**Attempt #2, 14:14–14:44 UTC (09:14–09:44 CT): PASS.** 180 samples, 0
+**Attempt #2, 14:13–14:43 UTC (09:13–09:43 CT): PASS.** 180 samples, 0
 socket drops, 0 samples with a last tick over 30 s old.
 
 | | SPY | MU | CRWD | NVDA |
@@ -3683,3 +3689,18 @@ thin names, the whole session, or how often the server drops a socket (one
 drop in ~12 minutes on attempt #1, none in 30 on attempt #2). The page change
 that follows carries reconnect logic, a per-tick age on screen, and a fall
 back to the delayed price, so each of those gaps shows itself when it bites.
+
+**Attempt #3, thin names, registered before the run** (this entry is committed
+before its first sample). The architect review found the 15-second freshness
+rule trips on desk names that trade in bursts: over 100 s at ~10:00 CT, TSEM
+went quiet twice for over 15 s (longest 41 s), AEHR three times (34 s), AXTI
+once (27 s). Each trip swapped the shown price for one 15 minutes older. The
+proposed fix keeps the last streamed trade, with its age, for as long as the
+socket itself is alive. That is only honest if the stream's last trade on a
+thin name is the current last trade, so it gets its own run. Same method and
+harness (`--syms TSEM,AEHR,AXTI,SPY`), 30 minutes, 10 s samples. **Pass rule:**
+best shift 0 min on each of TSEM, AEHR and AXTI, and the control's best shift
+13–18 min on each, else that name's run is broken. SPY rides along as the
+heartbeat and must read shift 0 too. The longest wait between ticks per name
+is reported and has no threshold. If any thin name fails, the page keeps the
+15-second rule and the fix does not ship.

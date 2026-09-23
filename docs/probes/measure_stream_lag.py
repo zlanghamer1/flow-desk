@@ -36,7 +36,8 @@ import urllib.request
 from urllib.parse import urlparse
 
 SYMS = ["SPY", "MU", "CRWD", "NVDA"]
-TV = {"SPY": "AMEX:SPY", "MU": "NASDAQ:MU", "CRWD": "NASDAQ:CRWD", "NVDA": "NASDAQ:NVDA"}
+TV = {"SPY": "AMEX:SPY", "MU": "NASDAQ:MU", "CRWD": "NASDAQ:CRWD", "NVDA": "NASDAQ:NVDA",
+      "TSEM": "NASDAQ:TSEM", "AEHR": "NASDAQ:AEHR", "AXTI": "NASDAQ:AXTI"}
 CA = os.environ.get("SSL_CERT_FILE") or ("/root/.ccr/ca-bundle.crt" if os.path.exists("/root/.ccr/ca-bundle.crt") else None)
 CTX = ssl.create_default_context(cafile=CA) if CA else ssl.create_default_context()
 UA = "Mozilla/5.0"
@@ -91,6 +92,7 @@ class YahooStream(threading.Thread):
         self.ages: list[float] = []
         self.err = None
         self.drops: list[dict] = []
+        self.gaps: dict[str, float] = {}    # sym -> longest wait between ticks, s
 
     def _connect(self):
         import websocket  # websocket-client
@@ -119,6 +121,9 @@ class YahooStream(threading.Thread):
                     d = decode_pricing(m["message"])
                     now = time.time()
                     tick_ms = zigzag(d.get(3, 0))
+                    prev = self.last.get(d.get(1))
+                    if prev:
+                        self.gaps[d.get(1)] = max(self.gaps.get(d.get(1), 0.0), now - prev[2])
                     self.last[d.get(1)] = (float(d.get(2)), tick_ms, now)
                     self.ages.append(now - tick_ms / 1000.0)
             except Exception as e:  # noqa: BLE001 - recorded, reported
@@ -162,7 +167,10 @@ def main():
     ap.add_argument("--minutes", type=float, default=30)
     ap.add_argument("--every", type=float, default=10)
     ap.add_argument("--out", default="stream_lag_samples.json")
+    ap.add_argument("--syms", default=",".join(SYMS),
+                    help="comma list; each needs a TV entry")
     a = ap.parse_args()
+    SYMS[:] = [x.strip().upper() for x in a.syms.split(",") if x.strip()]
     ys = YahooStream(SYMS); ys.start()
     time.sleep(5)
     samples = []
@@ -185,6 +193,7 @@ def main():
     json.dump(samples, open(a.out, "w"))
     summary = {"samples": len(samples), "stream_error": ys.err, "stream_drops": len(ys.drops),
                "stale_samples_over_30s": sum(1 for r in samples if r.get("cand_age") and max(r["cand_age"].values()) > 30),
+               "longest_tick_gap_s": {k: round(v, 1) for k, v in ys.gaps.items()},
                "per_symbol": {}}
     if ys.ages:
         ages = sorted(ys.ages)
