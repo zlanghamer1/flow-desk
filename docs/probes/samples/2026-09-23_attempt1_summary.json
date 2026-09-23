@@ -1,0 +1,59 @@
+{
+  "samples": 180,
+  "stream_error": "WebSocketConnectionClosedException: Connection to remote host was lost.",
+  "per_symbol": {
+    "SPY": {
+      "cand": {
+        "best_shift_min": 16.83,
+        "mae_pct_at_best": 0.0504,
+        "mae_pct_at_0": 0.0532
+      },
+      "ctl": {
+        "best_shift_min": 15.33,
+        "mae_pct_at_best": 0.007,
+        "mae_pct_at_0": 0.1488
+      }
+    },
+    "MU": {
+      "cand": {
+        "best_shift_min": 0.0,
+        "mae_pct_at_best": 0.1056,
+        "mae_pct_at_0": 0.1056
+      },
+      "ctl": {
+        "best_shift_min": 15.33,
+        "mae_pct_at_best": 0.0569,
+        "mae_pct_at_0": 0.4084
+      }
+    },
+    "CRWD": {
+      "cand": {
+        "best_shift_min": 4.0,
+        "mae_pct_at_best": 0.3454,
+        "mae_pct_at_0": 0.3545
+      },
+      "ctl": {
+        "best_shift_min": 15.33,
+        "mae_pct_at_best": 0.0586,
+        "mae_pct_at_0": 0.8301
+      }
+    },
+    "NVDA": {
+      "cand": {
+        "best_shift_min": 0.0,
+        "mae_pct_at_best": 0.0698,
+        "mae_pct_at_0": 0.0698
+      },
+      "ctl": {
+        "best_shift_min": 15.5,
+        "mae_pct_at_best": 0.0279,
+        "mae_pct_at_0": 0.2108
+      }
+    }
+  },
+  "tick_age_s": {
+    "n": 3527,
+    "median": 1.45,
+    "p95": 3.21
+  }
+}

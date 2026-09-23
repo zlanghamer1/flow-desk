@@ -3638,3 +3638,156 @@ changes, all adopted), then the build and an adversarial code review.
   its $25,000 minimum effective 2026-06-04; Fidelity's own page confirms it
   has discontinued the rule and keeps a $2,000 margin minimum. Nothing
   outside the trader's own caps limits trade count now.
+
+## Ban 8 measurement: Yahoo's streaming websocket (2026-09-23, market hours)
+
+The probe's printed summary for every attempt is in `docs/probes/samples/`
+(`2026-09-23_attempt{1,2,3}_summary.json`). The raw per-sample prices stay
+out of the repo: they are three vendors' quotes, and DATA_LICENSING bars
+redistributing them.
+
+Candidate: `wss://streamer.finance.yahoo.com/?version=2` (keyless, no Origin
+check; overnight ticks read 1.2–3.1 s old). Method: the 2026-08-19 method via
+`docs/probes/measure_stream_lag.py` — one clock, 10 s samples, 30 minutes;
+reference Robinhood `last_trade_price` (`nls`); control the TradingView
+scanner. **Pass rule:** best shift 0 min on all four of SPY, MU, CRWD, NVDA;
+tick-age median under 5 s and p95 under 30 s; and the control's best shift
+13–18 min, else the run is broken. **Where each part was recorded, and when**
+(corrected 2026-09-23 after the architect review): the whole rule was written
+at 02:05:40 UTC, before any market-hours sample, but only in the session's
+scheduled market-open message, not in git. Git at 02:07 (`78f89eb`, the probe
+docstring) holds only "shift 0" and "control near 15–16 minutes". The tick-age
+thresholds and the 13–18 band first reach git at 14:15:05 UTC (`7e4d2db`),
+after attempt #1 had run.
+
+**Attempt #1, 13:41–14:11 UTC (08:41–09:11 CT): FAIL.** The control came out
+at 15.3–15.5 min on all four (the run is valid). The candidate's only socket
+dropped after ~12 minutes (`WebSocketConnectionClosedException` at ~13:53:40
+UTC) and the probe did not reconnect, so its series froze for the last 18
+minutes. Best shift: MU 0, NVDA 0, CRWD 4.0, SPY 16.8 — the rule fails. While
+connected, 3,527 ticks aged median 1.45 s, p95 3.21 s. Nothing is relabeled.
+
+**Attempt #2, registered before its result was read** (the run's first sample
+was 14:13:13 UTC; this entry was committed at 14:15:05 UTC, two minutes into
+the run and 28 minutes before any output existed): the same pass rule,
+unchanged. The only change is to the harness: the probe reconnects
+after a drop (2 s wait), counts every drop and reports samples whose last tick
+is over 30 s old. No sample is excluded. A drop is a fact a browser client
+would face too, so the count is part of the result.
+
+**Attempt #2, 14:13–14:43 UTC (09:13–09:43 CT): PASS.** 180 samples, 0
+socket drops, 0 samples with a last tick over 30 s old.
+
+| | SPY | MU | CRWD | NVDA |
+|---|---|---|---|---|
+| candidate best shift (min) | 0 | 0 | 0 | 0 |
+| candidate error at 0, % of price | 0.0015 | 0.0105 | 0.0063 | 0.0041 |
+| control best shift (min) | 15.33 | 15.5 | 15.33 | 15.5 |
+| control error at its best, % | 0.0065 | 0.0366 | 0.0415 | 0.0231 |
+
+Tick age over 8,033 ticks: median 1.47 s, p95 3.04 s. The stream sits closer
+to the real-time reference at zero lag than the scanner does even at its own
+best 15-minute shift. What this measured: a Python client with an explicit
+`Origin: https://zlanghamer1.github.io`, from a cloud sandbox, for four
+liquid names, for 30 minutes. What it did not: a browser on the live page,
+thin names, the whole session, or how often the server drops a socket (one
+drop in ~12 minutes on attempt #1, none in 30 on attempt #2). The page change
+that follows carries reconnect logic, a per-tick age on screen, and a fall
+back to the delayed price, so each of those gaps shows itself when it bites.
+
+**Attempt #3, thin names, registered before the run** (this entry is committed
+before its first sample). The architect review found the 15-second freshness
+rule trips on desk names that trade in bursts: over 100 s at ~10:00 CT, TSEM
+went quiet twice for over 15 s (longest 41 s), AEHR three times (34 s), AXTI
+once (27 s). Each trip swapped the shown price for one 15 minutes older. The
+proposed fix keeps the last streamed trade, with its age, for as long as the
+socket itself is alive. That is only honest if the stream's last trade on a
+thin name is the current last trade, so it gets its own run. Same method and
+harness (`--syms TSEM,AEHR,AXTI,SPY`), 30 minutes, 10 s samples. **Pass rule:**
+best shift 0 min on each of TSEM, AEHR and AXTI, and the control's best shift
+13–18 min on each, else that name's run is broken. SPY rides along as the
+heartbeat and must read shift 0 too. The longest wait between ticks per name
+is reported and has no threshold. If any thin name fails, the page keeps the
+15-second rule and the fix does not ship.
+
+**A first launch of attempt #3 collected nothing.** At 15:14 UTC the probe
+started without the `websocket-client` module installed; its stream thread
+died on the import before any candidate sample, and the main loop kept
+sampling only the reference and the control. It was stopped at 15:21 UTC
+with no output read (the summary is written only at the end), the module
+installed, and the probe changed to fail at start-up rather than inside the
+thread. The relaunch below is attempt #3 under the same registered rule.
+
+**Attempt #3, 15:22–15:52 UTC (10:22–10:52 CT): PASS.** 180 samples, 0
+socket drops, 0 reference or control errors.
+
+| | TSEM | AEHR | AXTI | SPY |
+|---|---|---|---|---|
+| candidate best shift (min) | 0 | 0 | 0 | 0 |
+| candidate error at 0, % of price | 0.0027 | 0.0059 | 0.0034 | 0.0008 |
+| control best shift (min) | 15.5 | 15.5 | 15.33 | 15.33 |
+| control error at its best, % | 0.0286 | 0.0531 | 0.0429 | 0.0047 |
+| longest wait between frames (s) | 17.0 | 14.1 | 10.0 | 3.0 |
+| last trade's age at the sample: median / max (s) | 17.3 / 145.3 | 8.2 / 44.3 | 6.2 / 39.3 | 1.3 / 4.3 |
+
+72 of 180 samples had a last trade over 30 s old on at least one thin name
+(none on SPY), and tick age over all 4,126 frames ran median 2.17 s, p95
+31.3 s, so attempt #3 would fail attempt #2's tick-age leg. Its registered
+rule left that leg out, for the reason below.
+
+**What it taught.** A quiet name's frames keep carrying an old trade. TSEM's
+frames never paused more than 17 s, yet the trade they carried was over 60 s
+old in up to 24 of 180 samples (13 certain, since a frame can be up to 17 s
+older than the sample that reads it), 145 s at the oldest sample. The
+verification's live probe (16:26-16:30 UTC, 426 frames, 229 of them on the
+thin names) found why: the stream sends a frame for every print, odd lots
+included. 170 of the 229 thin-name frames repeated the previous trade time,
+none byte-identical, each with a higher day volume, 143 of them by under 100
+shares; the 55 frames with a newer trade time rose by 100 shares or more,
+and one AXTI frame arrived 0.06 s out of order carrying an older stamp and a
+lower day volume. Field 9 is
+sint64 day volume and must be zigzag-decoded: every raw value is even, and
+the first count of this (124 under 100, new-time frames 200 or more) read the
+raw values. The probe now records the decoded value. An odd lot does not move the
+last-sale price or time. So an old trade time on a live stream means "no new
+last-sale print", never a late feed. Field 3 also has whole-second
+resolution (ms remainder 0 on all 426 frames), so every age reads up to 1 s
+old before any network delay.
+
+**Five lateness rules, five mislabels.** Each was built, tested and
+dropped on 2026-09-23:
+1. A per-name 15 s trade-age test (125e0a2) swapped TSEM, AEHR and AXTI for
+   a price 15 minutes older every time they paused.
+2. A per-frame "arrived more than 60 s after it printed" test (built, never
+   shipped) would have demoted TSEM on the odd-lot frames above.
+3. A per-subscription "one frame arrived within 60 s" test (53d42f8) showed
+   WTM's and NVR's 15-minute prices under "no real-time trade yet" while the
+   stream held their last trades (the verification's live run, 11:47 CT; its
+   Robinhood comparison was not saved), and on a device clock over 60 s fast
+   it never went live. The recorded to-the-cent evidence for old stream
+   trades is TSEM: all 24 attempt-#3 samples with a trade over 60 s old
+   equal Robinhood's last trade.
+4. A heartbeat reference that noted every SPY frame (bbc45d0/0601fbb) climbed
+   past 60 s once SPY went a minute without a round lot, and then dropped
+   the viewed name's real trades as "ahead" (architect repro: 42 of 100 MU
+   frames, "no MU update" printed while MU frames arrived); one SPY frame an
+   hour ahead became the reference.
+5. The fix for 4 as first specified (e8a9601) judged SPY's own frame against
+   the reference before noting it. The reference is built from SPY's first
+   frame after subscribing, a replay of its last trade whose lag is that
+   trade's age, so whenever SPY's last trade was over a minute old at
+   connect (early pre-market, the evening) every later prompt SPY frame read
+   "ahead" and was dropped, and the reference could never fall (architect
+   repro X5: 39 of 40 prompt frames dropped from SPY and MU at 04:00 and
+   09:30 CT; X6: one late-reported SPY print after a quiet spell, 10 of 10).
+   Now SPY is never judged against the reference it defines, only a SPY
+   trade newer than the one on file is noted (never the first frame after
+   subscribing), and any stamp more than 5 min ahead of the device clock is
+   dropped outright.
+The rule that shipped judges lateness only on a NEW trade time, against the
+heartbeat's own minimum lag on the same clock (`rtHbLag`), so skew cancels
+and an odd-lot frame is never judged. The first trade after subscribing is
+shown with its age. A name the stream served late from its first frame
+would read real-time until its first distinct trade after SPY's first new
+trade (its second distinct trade in the regular session, where SPY prints
+within seconds); no such name has been observed (docs/OPEN_ITEMS.md).

@@ -68,6 +68,19 @@ Never do these. Each one has a live incident or a measurement behind it in
    fresher than `close`. The 30-second poll is how often the page re-reads a
    delayed print, not how fresh the print is. If a keyless real-time source is
    ever found, relabeling is a separate change with its own measurement.
+   **One measured exception (2026-09-23):** the Day trade tab's price from
+   Yahoo's streaming websocket read 0 minutes of lag on SPY, MU, CRWD and NVDA
+   against Robinhood's `nls` last trade while the scanner control read
+   15.3-15.5 (docs/GUARDRAIL-HISTORY.md, "Ban 8 measurement", attempt #2;
+   attempt #3 repeated it on the thin names TSEM, AEHR and AXTI). It is
+   labeled real-time only in that tab, only while the stream is alive (a
+   frame from any subscription inside `RT_FRESH_MS`, 15 s, on the viewer's
+   own receive clock, with SPY subscribed as the heartbeat), only while the
+   name's own frames keep arriving (`RT_NAME_QUIET_MS`, 60 s), and never for
+   a name whose new trades land more than `RT_LATE_MS` (60 s) later than
+   SPY's. Every other price on the page, and the tab's own levels, stay
+   delayed; the stage header says "15-min delayed" while the tab is open.
+   Widening it is a separate change.
 9. **Never skip, disable, or quarantine a test to get CI green**, and never
    push an empty commit or close-and-reopen a PR to kick CI.
 10. **Never let a display-only field feed a board score.** `flow_pct`, the
@@ -168,7 +181,7 @@ kind.
   `fedLegPct` (Fed-odds rounding), `vpWords` (volume-profile wording),
   `flowCpMismatchHTML`, `sessionsBehind`, `earnCountdownDays`, `newsForSym`,
   `ntDuration`, `newsIssuerNoteHTML`, `chaseChipHTML`, `dtPhase`,
-  `dtLevels`, `dtSize`, `dayState`, `gapMerge`. Add to this list rather
+  `dtLevels`, `dtSize`, `dayState`, `gapMerge`, `rtQuote`, `rtSessTag`. Add to this list rather
   than re-deriving a rule inline.
 - **Two numbers describing the same thing on one screen must agree.** If two
   counting rules differ, each gets its own sentence naming its own scope.
@@ -894,8 +907,15 @@ feeds a score, a verdict or the fetcher.
   the boot.
 - **The Day trade tab is built once per symbol and updated in place**
   (`dtTabRender` / `dtTabUpdate`), so the calculator's inputs survive the
-  30-second repaint. Levels rewrite only when their HTML changed, with focus
-  restored by `data-lv`. The entry follows the delayed price until the
+  repaint. The level rows rebuild only when a level itself changes
+  (`DT.levKey`), with focus restored by `data-lv` AND the button's class;
+  the calculator rebuilds only when its shape changes (`DT.outShape`), with
+  focus restored by id. A price move patches the distances (`dtDistText`)
+  and the `.dtres` numbers in place. The real-time price repaints every
+  second, and a per-second rebuild moved focus from a row's stop button to
+  its entry button and dropped about one click in seven (2026-09-23
+  verification). `#dtout` carries no `aria-live`. The entry follows the
+  tab's current price (real-time while live, delayed otherwise) until the
   reader types one.
 - **Day limits referee rules** (`dayState`, `dayCapsSet`): DONE when
   realized P&L ≤ −cap or trades ≥ cap, and it latches for the CT day
@@ -951,6 +971,72 @@ feeds a score, a verdict or the fetcher.
 - Hotkeys (`[` `]` `1`–`5` `d`) are inert in inputs, textareas, selects,
   contenteditable elements and while the palette is open. The palette gains
   no "jump to" entries (cut 2026-08-18).
+- **Real-time last trade (`RT`, 2026-09-23)**: the Day trade tab opens
+  `wss://streamer.finance.yahoo.com/?version=2` for its one symbol plus
+  `RT_HEARTBEAT` (SPY). `rtSync` decides the socket is wanted (the tab is
+  open, the chart view is showing, the page is visible); `renderStageTab`
+  and `stageSetView` route through it, and the visibility handler closes the
+  socket on hide and calls it on return. Yahoo symbols swap `.` for `-`. A
+  symbol change unsubscribes the old name (never the heartbeat) and forgets
+  its trade; a new subscription starts clean; a frame for a name that is
+  neither the subscribed one nor SPY (one still on the wire after an
+  unsubscribe) counts as a sign of life and is otherwise dropped; a closed
+  or dropped socket forgets every trade. Frames are base64 protobuf decoded
+  by `rtDecode` (1 id, 2 float32 price, 3 zigzag ms time with whole-second
+  resolution; varints in Number arithmetic, never 32-bit bit ops); a frame
+  that does not parse is dropped, and so is one stamped more than
+  `RT_SANE_MS` (a day) from the receive clock or more than `RT_AHEAD_MAX_MS`
+  (5 min) ahead of it; the viewed name's frame is also dropped when it is
+  more than `RT_LATE_MS` ahead of the heartbeat reference. SPY's own frame
+  is never judged against the reference, because SPY defines it: judging it
+  there let a reference that started high (SPY's replayed last trade on
+  subscribe, or one late-reported print) drop every later prompt SPY frame,
+  so it could never fall (architect repro X5/X6: 39 of 40 prompt frames
+  dropped from SPY and MU alike, "no MU update" printed while MU frames
+  arrived). A frame older than the trade
+  on file never replaces it. Field 7 (marketHours) is not read: proto3
+  leaves its default 0, PRE_MARKET, off the wire, and a frame can carry a
+  last-sale trade from an earlier session than the frame itself.
+  **`rtQuote(sym).live` is the one rule** (2026-09-23 architect review and
+  six-lens verification): the stream is alive (`rtStreamAlive`: a frame from
+  any subscription within `RT_FRESH_MS` of the viewer's own receive time),
+  the name's own last frame is within `RT_NAME_QUIET_MS`, and the name is
+  not `late`. Lateness is judged only when a frame carries a NEW trade time,
+  as that frame's receive-minus-trade lag less the heartbeat's minimum lag
+  over the last minute (`rtHbLag`), so device-clock skew cancels. Only a SPY
+  trade newer than the one on file feeds that reference (`rtHbNote`): never
+  the first frame after (re)subscribing, which replays SPY's last trade with
+  that trade's age as its lag, and never an odd-lot repeat of an old stamp
+  (noting those let the minimum climb past 60 s after a minute without a
+  round lot and dropped the viewed name's real trades, 42 of 100 frames).
+  The reference is null until SPY's first new trade, and lateness is not
+  judged until then. The newest entry is kept past the window. The stream
+  sends a frame for every print, odd lots included, and an odd lot does not
+  move the last-sale time, so an old trade time on a live stream is a quiet
+  name, never a late feed: the first trade after subscribing is shown with
+  its age however old (a per-subscription promptness gate showed WTM's and
+  NVR's 15-minute prices while the stream held their last trades; the
+  recorded to-the-cent evidence is TSEM, 24 of 24 old-trade samples equal
+  to Robinhood in attempt #3). A per-name
+  15 s test, a per-frame lateness test and a per-subscription promptness
+  test were each tried and each mislabeled real trades. The printed age
+  alone reads the trade's own timestamp against the device clock. A 1 s
+  clock (`rtClockSync` → `rtTick`) repaints the tab, so the age and the
+  flip to delayed run off time. `rtWatchdog` closes and reopens a socket
+  that sends nothing for `RT_SILENT_MS` (30 s) only while `priceSessionNow`
+  is "open", the one window where SPY's frame gaps are measured. The status
+  words name a stopped stream before a late or quiet name. Reconnect backs off 2 s → 60 s; the backoff resets on a
+  decoded frame, never on open, and on a deliberate close. The live line
+  carries the trade's own session tag (`rtSessTag`, a thin map over
+  `priceSessionNow` of the trade's time: PRE, AFT, OVERNIGHT; a closing-cross
+  print on the close minute reads AFT, as that map reads it), ages floor (`rtAgeWords`: s, min, h,
+  days), the delayed price is stamped "read HH:MM" (when the page read it,
+  not the price's own time), and the entry reset names the price it resets
+  to.
+  Tests route the websocket to a mock (`page.route_web_socket`) —
+  `page.route` never sees websockets. Both test files' `browser` fixtures
+  mock every websocket on every page they open (`_NoWsBrowser`), so ban 15
+  holds even for a test that forgets `_mute_ws`.
 - Pinned by `tests/test_day_trade.py`.
 
 ## Flow boards
@@ -1483,6 +1569,26 @@ transcripts.
     today's bar included (exact on MU, NVDA, V, SPY). `time` is the 08:30 CT
     start of the session the regular columns describe; `premarket_time` the
     03:00 CT pre-market start; `time|5` the last 5-minute bar's start.
+16. **Yahoo's streaming websocket is real-time for the seven names
+    measured over 30 minutes each** (2026-09-23). Attempt #2: SPY, MU, CRWD
+    and NVDA, best shift 0 on all four, error at zero 0.0015-0.0105% of
+    price, tick age median 1.47 s. Attempt #3: the thin names TSEM, AEHR
+    and AXTI, best shift 0 on all three, error at zero 0.0027-0.0059%, the
+    control at 15.3-15.5 min. The stream sends a frame for every print, odd
+    lots included (the verification's live probe: 170 of 229 thin-name
+    frames, 426 frames in all, repeated the previous trade time while day
+    volume rose, 143 of them by under 100 shares; field 9 is sint64 day
+    volume, zigzag-decoded). An odd lot does not move the last-sale price
+    or time, so a quiet name's frames keep carrying its last round-lot trade:
+    TSEM's was over 60 s old in up to 24 of 180 samples (13 certain), 145 s
+    at the oldest sample, while its frames never paused more than 17 s. An
+    old trade time on a live stream means "no new last-sale print", not a
+    late feed. Field 3 has whole-second resolution, so every age reads up to
+    1 s old before any network delay. Attempt #3 would fail attempt #2's
+    tick-age leg (p95 31.3 s, 72 samples over 30 s) for that reason; its
+    registered rule left that leg out. Attempt #1 failed on a dropped
+    socket, not on lag. It needs no key and does no Origin check; it is unofficial and
+    personal-use only (DATA_LICENSING).
 
 ---
 

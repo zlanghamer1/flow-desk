@@ -36,7 +36,8 @@ import urllib.request
 from urllib.parse import urlparse
 
 SYMS = ["SPY", "MU", "CRWD", "NVDA"]
-TV = {"SPY": "AMEX:SPY", "MU": "NASDAQ:MU", "CRWD": "NASDAQ:CRWD", "NVDA": "NASDAQ:NVDA"}
+TV = {"SPY": "AMEX:SPY", "MU": "NASDAQ:MU", "CRWD": "NASDAQ:CRWD", "NVDA": "NASDAQ:NVDA",
+      "TSEM": "NASDAQ:TSEM", "AEHR": "NASDAQ:AEHR", "AXTI": "NASDAQ:AXTI"}
 CA = os.environ.get("SSL_CERT_FILE") or ("/root/.ccr/ca-bundle.crt" if os.path.exists("/root/.ccr/ca-bundle.crt") else None)
 CTX = ssl.create_default_context(cafile=CA) if CA else ssl.create_default_context()
 UA = "Mozilla/5.0"
@@ -80,14 +81,21 @@ def zigzag(n: int) -> int:
 
 
 class YahooStream(threading.Thread):
+    """Attempt #2 (2026-09-23): reconnects when the server drops the socket.
+    Attempt #1 lost its only connection after ~12 minutes and froze the
+    candidate series for the rest of the run. Every drop is counted and the
+    time without ticks is reported; nothing is excluded from the series."""
     def __init__(self, syms):
         super().__init__(daemon=True)
         self.syms = syms
         self.last: dict[str, tuple[float, float, float]] = {}   # sym -> (px, tick_ms, recv_s)
+        self.dayvol: dict[str, int] = {}    # sym -> field 9 (day volume) of the last frame
         self.ages: list[float] = []
         self.err = None
+        self.drops: list[dict] = []
+        self.gaps: dict[str, float] = {}    # sym -> longest wait between ticks, s
 
-    def run(self):
+    def _connect(self):
         import websocket  # websocket-client
         kw = {"origin": "https://zlanghamer1.github.io", "timeout": 20}
         proxy = os.environ.get("HTTPS_PROXY")
@@ -96,22 +104,37 @@ class YahooStream(threading.Thread):
             kw.update(http_proxy_host=p.hostname, http_proxy_port=p.port, proxy_type="http")
         if CA:
             kw["sslopt"] = {"ca_certs": CA}
-        try:
-            ws = websocket.create_connection("wss://streamer.finance.yahoo.com/?version=2", **kw)
-            ws.send(json.dumps({"subscribe": self.syms}))
-            ws.settimeout(5)
-            while True:
-                try:
-                    m = json.loads(ws.recv())
-                except websocket.WebSocketTimeoutException:
-                    continue
-                d = decode_pricing(m["message"])
-                now = time.time()
-                tick_ms = zigzag(d.get(3, 0))
-                self.last[d.get(1)] = (float(d.get(2)), tick_ms, now)
-                self.ages.append(now - tick_ms / 1000.0)
-        except Exception as e:  # noqa: BLE001 - recorded, reported
-            self.err = f"{type(e).__name__}: {e}"
+        ws = websocket.create_connection("wss://streamer.finance.yahoo.com/?version=2", **kw)
+        ws.send(json.dumps({"subscribe": self.syms}))
+        ws.settimeout(5)
+        return ws
+
+    def run(self):
+        import websocket  # websocket-client
+        while True:
+            try:
+                ws = self._connect()
+                while True:
+                    try:
+                        m = json.loads(ws.recv())
+                    except websocket.WebSocketTimeoutException:
+                        continue
+                    d = decode_pricing(m["message"])
+                    now = time.time()
+                    tick_ms = zigzag(d.get(3, 0))
+                    prev = self.last.get(d.get(1))
+                    if prev:
+                        self.gaps[d.get(1)] = max(self.gaps.get(d.get(1), 0.0), now - prev[2])
+                    self.last[d.get(1)] = (float(d.get(2)), tick_ms, now)
+                    if isinstance(d.get(9), int):
+                        # field 9 is sint64 day volume; a frame whose trade time repeats
+                        # while this rises is an odd-lot print (2026-09-23 verification)
+                        self.dayvol[d.get(1)] = zigzag(d[9])
+                    self.ages.append(now - tick_ms / 1000.0)
+            except Exception as e:  # noqa: BLE001 - recorded, reported
+                self.err = f"{type(e).__name__}: {e}"
+                self.drops.append({"at": time.time(), "err": self.err})
+                time.sleep(2)
 
 
 def get_json(url, data=None, headers=None):
@@ -121,8 +144,11 @@ def get_json(url, data=None, headers=None):
 
 
 def robinhood():
+    """Last trade price per symbol, plus Robinhood's own last-trade time."""
     d = get_json("https://api.robinhood.com/quotes/?symbols=" + ",".join(SYMS))
-    return {q["symbol"]: float(q["last_trade_price"]) for q in d.get("results", []) if q}
+    qs = [q for q in d.get("results", []) if q]
+    return ({q["symbol"]: float(q["last_trade_price"]) for q in qs},
+            {q["symbol"]: q.get("venue_last_trade_time") for q in qs})
 
 
 def scanner():
@@ -149,7 +175,11 @@ def main():
     ap.add_argument("--minutes", type=float, default=30)
     ap.add_argument("--every", type=float, default=10)
     ap.add_argument("--out", default="stream_lag_samples.json")
+    ap.add_argument("--syms", default=",".join(SYMS),
+                    help="comma list; each needs a TV entry")
     a = ap.parse_args()
+    SYMS[:] = [x.strip().upper() for x in a.syms.split(",") if x.strip()]
+    import websocket  # noqa: F401 - fail here, not silently inside the thread
     ys = YahooStream(SYMS); ys.start()
     time.sleep(5)
     samples = []
@@ -158,7 +188,7 @@ def main():
         t0 = time.time()
         row = {"t": t0}
         try:
-            row["ref"] = robinhood()
+            row["ref"], row["ref_time"] = robinhood()
         except Exception as e:  # noqa: BLE001
             row["ref_err"] = type(e).__name__
         try:
@@ -167,10 +197,14 @@ def main():
             row["ctl_err"] = type(e).__name__
         row["cand"] = {s: v[0] for s, v in ys.last.items()}
         row["cand_age"] = {s: round(t0 - v[1] / 1000.0, 2) for s, v in ys.last.items()}
+        row["cand_dayvol"] = dict(ys.dayvol)
         samples.append(row)
         time.sleep(max(0.0, a.every - (time.time() - t0)))
     json.dump(samples, open(a.out, "w"))
-    summary = {"samples": len(samples), "stream_error": ys.err, "per_symbol": {}}
+    summary = {"samples": len(samples), "stream_error": ys.err, "stream_drops": len(ys.drops),
+               "stale_samples_over_30s": sum(1 for r in samples if r.get("cand_age") and max(r["cand_age"].values()) > 30),
+               "longest_tick_gap_s": {k: round(v, 1) for k, v in ys.gaps.items()},
+               "per_symbol": {}}
     if ys.ages:
         ages = sorted(ys.ages)
         summary["tick_age_s"] = {"n": len(ages), "median": round(statistics.median(ages), 2),

@@ -298,13 +298,62 @@ round 20 without a fresh ask.
 
 ### 00. Day-trade follow-ups (added 2026-09-23)
 Found by the day-trade audit and not fixed in that change:
-- **A real-time price source may exist.** Yahoo's streaming websocket
-  (`wss://streamer.finance.yahoo.com/?version=2`, keyless, no Origin check)
-  delivered overnight ticks 1.2–3.1 s after their own timestamps. Ban 8 needs
-  a market-hours measurement before any price is relabeled:
-  `docs/probes/measure_stream_lag.py` (candidate vs Robinhood `nls` quotes,
-  the TradingView scanner as the 15-16 min control). A pass is its own change,
-  with a DATA_LICENSING row.
+- **Real-time beyond the Day trade tab.** Yahoo's stream passed its ban-8
+  measurement on 2026-09-23 (attempt #2) and now drives that tab's price
+  only. Widening it (stage header, rail, tape) is a separate change; the
+  measurements covered seven names for 30 minutes each (four liquid, three
+  thin) with a Python client, not a whole session or a browser on the live
+  page.
+- **The heartbeat is measured in the regular session only.** SPY's frames
+  never paused more than 3 s in attempt #3 (10:22-10:52 CT). Pre-market, after-hours
+  and overnight gaps are not measured; a SPY pause over 15 s (with the open
+  name quiet too) flips the tab to the delayed price until the next frame.
+- **The printed trade age follows the device clock.** Liveness (receive
+  time) and lateness (against the heartbeat's lag) no longer do, but "last
+  trade N s ago" is the trade's own timestamp against the viewer's clock,
+  so a clock 20 s fast reads 20 s too old. Correcting it by the heartbeat's
+  lag would also hide a delay that hit every name at once, SPY included, so
+  it was left as is.
+- **A name served late from its first frame reads real-time until its
+  first distinct trade after SPY's first new trade** (its second distinct
+  trade in the regular session, where SPY prints within seconds). Lateness
+  can be judged only on a new trade time, against a reference that exists
+  only once SPY has printed live; a first frame cannot tell a quiet name
+  from a late feed. No late-served
+  name has been observed on this stream (seven names measured, all shift 0).
+- **The silent-socket watchdog runs only in the regular session.** SPY's
+  frame gaps are measured 10:22-10:52 CT only. Before the open, after the
+  close and overnight, an open socket that stops sending stays open and the
+  tab reads "quiet" until the reader changes tab or view. The extended-hours
+  reconnect rate is unmeasured.
+- **One late new trade holds "late" until the next prompt one.** Lateness is
+  re-judged on each new trade time, so a single last-sale print reported
+  over a minute late keeps a thin name on the delayed price until its next
+  prompt trade. Works as designed; not observed on this stream.
+- **A SPY stamp 1-5 minutes ahead can be the reference for up to a
+  minute.** If it arrives as a new SPY trade time it is noted; the viewed
+  name then reads late for up to 60 s, and while viewing SPY the bad price
+  shows for up to 60 s and then reads quiet. Not observed on this stream.
+- **One late-reported SPY print after a minute-long quiet spell** drops the
+  viewed name's prompt frames as "ahead" until SPY's next prompt print. Not
+  observed on this stream.
+- **A device clock more than 5 minutes slow never shows real-time.** With no
+  heartbeat yet, a stamp more than `RT_AHEAD_MAX_MS` ahead of the device
+  clock is dropped outright, so such a clock drops every frame. It falls
+  back to the delayed price; it does not mislabel.
+- **The closing cross reads AFT.** A thin name whose last trade is the
+  closing auction print (stamped on the close minute) shows "REAL-TIME AFT"
+  after the bell, because `rtSessTag` follows `priceSessionNow`, which puts
+  the close minute in after-hours. Accepted by the architect (2026-09-23);
+  changing it means changing the page's one session map.
+- **Yahoo's daily history can hole a settled session.** On 2026-09-23 the
+  v8 chart API returned null OHLC for 2026-09-22 on MU and SPY across the
+  5d, 1mo and 2y ranges, so the morning's bars.json (built 2026-09-23) ends
+  at 2026-09-21. The fetcher correctly drops the null bar, but the bars gate
+  rebuilds once a day, so a hole Yahoo fills later stays until tomorrow. A
+  fix: re-run the build on later cycles while the previous trading day is
+  absent (bounded retries), or fill it from the intraday file's regular-
+  session bars with volume.
 - **Post-close bad ticks under the 4% repair floor.** SPY's 2026-09-21 15:00
   CT 15m bar carries a low of 762.07 on zero volume against a real day low of
   766.03 (1.5% off), so the 15m chart draws a spike. `_repair_quote_wicks`'s
