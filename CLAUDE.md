@@ -991,9 +991,7 @@ feeds a score, a verdict or the fetcher.
   is never judged against the reference, because SPY defines it: judging it
   there let a reference that started high (SPY's replayed last trade on
   subscribe, or one late-reported print) drop every later prompt SPY frame,
-  so it could never fall (architect repro X5/X6: 39 of 40 prompt frames
-  dropped from SPY and MU alike, "no MU update" printed while MU frames
-  arrived). A frame older than the trade
+  so it could never fall. A frame older than the trade
   on file never replaces it. Field 7 (marketHours) is not read: proto3
   leaves its default 0, PRE_MARKET, off the wire, and a frame can carry a
   last-sale trade from an earlier session than the frame itself.
@@ -1008,7 +1006,7 @@ feeds a score, a verdict or the fetcher.
   the first frame after (re)subscribing, which replays SPY's last trade with
   that trade's age as its lag, and never an odd-lot repeat of an old stamp
   (noting those let the minimum climb past 60 s after a minute without a
-  round lot and dropped the viewed name's real trades, 42 of 100 frames).
+  round lot and dropped the viewed name's real trades).
   The reference is null until SPY's first new trade, and lateness is not
   judged until then. The newest entry is kept past the window. The stream
   sends a frame for every print, odd lots included, and an odd lot does not
