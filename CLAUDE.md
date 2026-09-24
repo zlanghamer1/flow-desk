@@ -1590,6 +1590,19 @@ transcripts.
     socket, not on lag. It needs no key and does no Origin check; it is unofficial and
     personal-use only (DATA_LICENSING).
 
+17. **VIX and credit spreads do not earn a bear-risk chip** (2026-09-24,
+    vault `market-data/results/bear_signal_backtest_2026-09.md`). A
+    registered backtest with four adversarial reviews tested VIX ≥ 25, VIX
+    trend, VIX vs VIX3M, and four HY OAS rules as early warnings of an S&P
+    bear market against the regime chip. None passed. VIX ≥ 25 fired before
+    a 10% loss in all four modern bears but flags swings, mostly rebounds,
+    above the 200-day line; S&P realized volatility warned as early. Credit
+    widening warned in time only in 2007. The regime chip (`verdicts.regime`)
+    ties them on modern timing and caught 6 of 7 older bears. Do not add a
+    bear-risk, VIX or credit warning chip without a new registered attempt in
+    the vault's decisions log; the HY spread trend is a forward-only
+    candidate there.
+
 ---
 
 ## Decision history
