@@ -22,8 +22,9 @@ closed — see "Settled questions" below.
   rejected and why. Read it before re-litigating any decision below.
 
 ## Model-role convention for work on this repo
-- **Fable** — architect; rules on scope and gives final approval.
-- **Opus** — directs traffic; synthesizes reviews into build specs.
+- **Opus** — architect and director: rules on scope, gives final approval,
+  and synthesizes reviews into build specs. Run architect work at high or max
+  effort. Records dated before 2026-09-25 name Fable as the architect.
 - **Sonnet** — builds (writes the code and docs).
 - **Haiku** — mechanical grunt work.
 
