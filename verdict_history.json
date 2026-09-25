@@ -1,0 +1,2340 @@
+{
+  "v": 1,
+  "sessions": {
+    "2026-09-14": {
+      "calls": {
+        "AAOI": {
+          "call": "SELL",
+          "score": -38,
+          "spot": 96.305
+        },
+        "AEHR": {
+          "call": "HOLD",
+          "score": -9,
+          "spot": 85.66
+        },
+        "AMAT": {
+          "call": "HOLD",
+          "score": -13,
+          "spot": 425.9595
+        },
+        "AMKR": {
+          "call": "SELL",
+          "score": -39,
+          "spot": 48.295
+        },
+        "AMZN": {
+          "call": "HOLD",
+          "score": 17,
+          "spot": 253.54
+        },
+        "APLD": {
+          "call": "SELL",
+          "score": -71,
+          "spot": 24.39
+        },
+        "AVGO": {
+          "call": "HOLD",
+          "score": -1,
+          "spot": 344.72
+        },
+        "AXTI": {
+          "call": "SELL",
+          "score": -40,
+          "spot": 57.98
+        },
+        "BE": {
+          "call": "BUY",
+          "score": 46,
+          "spot": 256.78
+        },
+        "CAMT": {
+          "call": "SELL",
+          "score": -88,
+          "spot": 137.18
+        },
+        "CIFR": {
+          "call": "SELL",
+          "score": -54,
+          "spot": 15.69
+        },
+        "CLSK": {
+          "call": "HOLD",
+          "score": 17,
+          "spot": 13.265
+        },
+        "COHR": {
+          "call": "SELL",
+          "score": -79,
+          "spot": 270.815
+        },
+        "CORZ": {
+          "call": "SELL",
+          "score": -72,
+          "spot": 16.9
+        },
+        "CRWD": {
+          "call": "BUY",
+          "score": 75,
+          "spot": 236.225
+        },
+        "GOOGL": {
+          "call": "BUY",
+          "score": 41,
+          "spot": 348.97
+        },
+        "KLAC": {
+          "call": "SELL",
+          "score": -69,
+          "spot": 170.305
+        },
+        "LITE": {
+          "call": "HOLD",
+          "score": 25,
+          "spot": 837.1137
+        },
+        "LLY": {
+          "call": "HOLD",
+          "score": 26,
+          "spot": 1140.05
+        },
+        "MOD": {
+          "call": "SELL",
+          "score": -62,
+          "spot": 179.02
+        },
+        "MRVL": {
+          "call": "HOLD",
+          "score": 14,
+          "spot": 219.3
+        },
+        "MSFT": {
+          "call": "HOLD",
+          "score": 34,
+          "spot": 505.41
+        },
+        "MU": {
+          "call": "HOLD",
+          "score": 26,
+          "spot": 924.44
+        },
+        "NBIS": {
+          "call": "HOLD",
+          "score": 16,
+          "spot": 211.7
+        },
+        "NVDA": {
+          "call": "HOLD",
+          "score": 23,
+          "spot": 211.0528
+        },
+        "ONTO": {
+          "call": "HOLD",
+          "score": -2,
+          "spot": 281.26
+        },
+        "QQQ": {
+          "call": "HOLD",
+          "score": 19,
+          "spot": 709.49
+        },
+        "RIOT": {
+          "call": "HOLD",
+          "score": 13,
+          "spot": 20.86
+        },
+        "SMCI": {
+          "call": "BUY",
+          "score": 59,
+          "spot": 36.75
+        },
+        "SMH": {
+          "call": "HOLD",
+          "score": -31,
+          "spot": 541.5
+        },
+        "SNDK": {
+          "call": "HOLD",
+          "score": 12,
+          "spot": 1554.0865
+        },
+        "STM": {
+          "call": "SELL",
+          "score": -42,
+          "spot": 48.13
+        },
+        "STRL": {
+          "call": "HOLD",
+          "score": -15,
+          "spot": 512.0
+        },
+        "TSEM": {
+          "call": "HOLD",
+          "score": -34,
+          "spot": 194.33
+        },
+        "TSM": {
+          "call": "HOLD",
+          "score": 19,
+          "spot": 418.01
+        },
+        "V": {
+          "call": "HOLD",
+          "score": 8,
+          "spot": 375.96
+        },
+        "VSH": {
+          "call": "SELL",
+          "score": -47,
+          "spot": 33.25
+        },
+        "XLC": {
+          "call": "BUY",
+          "score": 45,
+          "spot": 114.94
+        },
+        "XLE": {
+          "call": "BUY",
+          "score": 53,
+          "spot": 64.61
+        },
+        "XLF": {
+          "call": "HOLD",
+          "score": 22,
+          "spot": 57.015
+        },
+        "XLK": {
+          "call": "BUY",
+          "score": 47,
+          "spot": 184.87
+        },
+        "XLP": {
+          "call": "HOLD",
+          "score": -4,
+          "spot": 84.455
+        },
+        "XLV": {
+          "call": "BUY",
+          "score": 59,
+          "spot": 167.76
+        },
+        "XOM": {
+          "call": "HOLD",
+          "score": 27,
+          "spot": 164.56
+        },
+        "XLU": {
+          "call": "SELL",
+          "score": -63,
+          "spot": 41.825
+        },
+        "XLI": {
+          "call": "SELL",
+          "score": -60,
+          "spot": 169.94
+        },
+        "XLB": {
+          "call": "HOLD",
+          "score": 0,
+          "spot": 50.515
+        },
+        "XLY": {
+          "call": "SELL",
+          "score": -44,
+          "spot": 112.945
+        }
+      },
+      "spy_spot": 760.66
+    },
+    "2026-09-15": {
+      "calls": {
+        "AAOI": {
+          "call": "SELL",
+          "score": -38,
+          "spot": 95.67
+        },
+        "AEHR": {
+          "call": "SELL",
+          "score": -38,
+          "spot": 81.56
+        },
+        "AMAT": {
+          "call": "HOLD",
+          "score": -12,
+          "spot": 419.375
+        },
+        "AMKR": {
+          "call": "SELL",
+          "score": -38,
+          "spot": 46.3
+        },
+        "AMZN": {
+          "call": "HOLD",
+          "score": 8,
+          "spot": 248.4801
+        },
+        "APLD": {
+          "call": "SELL",
+          "score": -73,
+          "spot": 23.465
+        },
+        "AVGO": {
+          "call": "HOLD",
+          "score": -5,
+          "spot": 339.065
+        },
+        "AXTI": {
+          "call": "SELL",
+          "score": -41,
+          "spot": 58.4
+        },
+        "BE": {
+          "call": "HOLD",
+          "score": 27,
+          "spot": 259.455
+        },
+        "CAMT": {
+          "call": "SELL",
+          "score": -82,
+          "spot": 133.84
+        },
+        "CIFR": {
+          "call": "SELL",
+          "score": -74,
+          "spot": 15.11
+        },
+        "CLSK": {
+          "call": "SELL",
+          "score": -52,
+          "spot": 12.61
+        },
+        "COHR": {
+          "call": "SELL",
+          "score": -80,
+          "spot": 270.84
+        },
+        "CORZ": {
+          "call": "SELL",
+          "score": -73,
+          "spot": 16.125
+        },
+        "CRWD": {
+          "call": "BUY",
+          "score": 80,
+          "spot": 242.06
+        },
+        "GOOGL": {
+          "call": "HOLD",
+          "score": 22,
+          "spot": 345.0
+        },
+        "KLAC": {
+          "call": "SELL",
+          "score": -68,
+          "spot": 167.07
+        },
+        "LITE": {
+          "call": "HOLD",
+          "score": 18,
+          "spot": 839.145
+        },
+        "LLY": {
+          "call": "HOLD",
+          "score": 31,
+          "spot": 1141.8149
+        },
+        "MOD": {
+          "call": "SELL",
+          "score": -63,
+          "spot": 182.18
+        },
+        "MRVL": {
+          "call": "HOLD",
+          "score": 12,
+          "spot": 221.47
+        },
+        "MSFT": {
+          "call": "HOLD",
+          "score": 34,
+          "spot": 496.78
+        },
+        "MU": {
+          "call": "BUY",
+          "score": 35,
+          "spot": 927.04
+        },
+        "NBIS": {
+          "call": "HOLD",
+          "score": -18,
+          "spot": 207.51
+        },
+        "NVDA": {
+          "call": "HOLD",
+          "score": 29,
+          "spot": 212.19
+        },
+        "ONTO": {
+          "call": "SELL",
+          "score": -46,
+          "spot": 240.76
+        },
+        "QQQ": {
+          "call": "HOLD",
+          "score": -21,
+          "spot": 704.22
+        },
+        "RIOT": {
+          "call": "HOLD",
+          "score": -23,
+          "spot": 19.57
+        },
+        "SMCI": {
+          "call": "BUY",
+          "score": 56,
+          "spot": 35.675
+        },
+        "SMH": {
+          "call": "SELL",
+          "score": -41,
+          "spot": 541.695
+        },
+        "SNDK": {
+          "call": "HOLD",
+          "score": -11,
+          "spot": 1530.74
+        },
+        "STM": {
+          "call": "SELL",
+          "score": -44,
+          "spot": 47.97
+        },
+        "STRL": {
+          "call": "HOLD",
+          "score": -24,
+          "spot": 464.42
+        },
+        "TSEM": {
+          "call": "SELL",
+          "score": -35,
+          "spot": 194.43
+        },
+        "TSM": {
+          "call": "HOLD",
+          "score": 6,
+          "spot": 413.745
+        },
+        "V": {
+          "call": "HOLD",
+          "score": 9,
+          "spot": 376.16
+        },
+        "VSH": {
+          "call": "SELL",
+          "score": -47,
+          "spot": 33.25
+        },
+        "XLB": {
+          "call": "HOLD",
+          "score": -3,
+          "spot": 50.49
+        },
+        "XLC": {
+          "call": "HOLD",
+          "score": 32,
+          "spot": 114.29
+        },
+        "XLE": {
+          "call": "BUY",
+          "score": 71,
+          "spot": 65.895
+        },
+        "XLI": {
+          "call": "SELL",
+          "score": -62,
+          "spot": 169.01
+        },
+        "XLK": {
+          "call": "BUY",
+          "score": 46,
+          "spot": 183.58
+        },
+        "XLP": {
+          "call": "HOLD",
+          "score": -21,
+          "spot": 83.795
+        },
+        "XLU": {
+          "call": "SELL",
+          "score": -68,
+          "spot": 41.435
+        },
+        "XLV": {
+          "call": "BUY",
+          "score": 64,
+          "spot": 167.545
+        },
+        "XLY": {
+          "call": "SELL",
+          "score": -61,
+          "spot": 110.61
+        },
+        "XOM": {
+          "call": "HOLD",
+          "score": 28,
+          "spot": 168.85
+        },
+        "XLF": {
+          "call": "HOLD",
+          "score": 16,
+          "spot": 56.8
+        }
+      },
+      "spy_spot": 756.935
+    },
+    "2026-09-16": {
+      "calls": {
+        "AAOI": {
+          "call": "SELL",
+          "score": -37,
+          "spot": 95.22
+        },
+        "AEHR": {
+          "call": "HOLD",
+          "score": -28,
+          "spot": 82.28
+        },
+        "AMAT": {
+          "call": "HOLD",
+          "score": -22,
+          "spot": 413.72
+        },
+        "AMKR": {
+          "call": "HOLD",
+          "score": -34,
+          "spot": 46.92
+        },
+        "AMZN": {
+          "call": "HOLD",
+          "score": 5,
+          "spot": 245.96
+        },
+        "APLD": {
+          "call": "SELL",
+          "score": -54,
+          "spot": 24.39
+        },
+        "AVGO": {
+          "call": "HOLD",
+          "score": -6,
+          "spot": 339.6
+        },
+        "AXTI": {
+          "call": "HOLD",
+          "score": -9,
+          "spot": 63.515
+        },
+        "BE": {
+          "call": "HOLD",
+          "score": 24,
+          "spot": 270.02
+        },
+        "CAMT": {
+          "call": "SELL",
+          "score": -88,
+          "spot": 134.66
+        },
+        "CIFR": {
+          "call": "SELL",
+          "score": -52,
+          "spot": 16.72
+        },
+        "CLSK": {
+          "call": "HOLD",
+          "score": -24,
+          "spot": 12.745
+        },
+        "COHR": {
+          "call": "SELL",
+          "score": -46,
+          "spot": 283.36
+        },
+        "CORZ": {
+          "call": "SELL",
+          "score": -72,
+          "spot": 16.88
+        },
+        "CRWD": {
+          "call": "BUY",
+          "score": 79,
+          "spot": 241.36
+        },
+        "GOOGL": {
+          "call": "HOLD",
+          "score": 21,
+          "spot": 342.87
+        },
+        "KLAC": {
+          "call": "SELL",
+          "score": -62,
+          "spot": 166.8
+        },
+        "LITE": {
+          "call": "HOLD",
+          "score": 18,
+          "spot": 921.23
+        },
+        "LLY": {
+          "call": "HOLD",
+          "score": 27,
+          "spot": 1133.91
+        },
+        "MOD": {
+          "call": "SELL",
+          "score": -63,
+          "spot": 178.87
+        },
+        "MRVL": {
+          "call": "HOLD",
+          "score": 14,
+          "spot": 229.71
+        },
+        "MSFT": {
+          "call": "HOLD",
+          "score": 34,
+          "spot": 490.3
+        },
+        "MU": {
+          "call": "HOLD",
+          "score": 28,
+          "spot": 926.55
+        },
+        "NBIS": {
+          "call": "SELL",
+          "score": -49,
+          "spot": 209.58
+        },
+        "NVDA": {
+          "call": "BUY",
+          "score": 40,
+          "spot": 213.9
+        },
+        "ONTO": {
+          "call": "HOLD",
+          "score": -19,
+          "spot": 248.8
+        },
+        "QQQ": {
+          "call": "HOLD",
+          "score": -22,
+          "spot": 704.6
+        },
+        "RIOT": {
+          "call": "HOLD",
+          "score": -29,
+          "spot": 20.35
+        },
+        "SMCI": {
+          "call": "BUY",
+          "score": 66,
+          "spot": 36.8077
+        },
+        "SMH": {
+          "call": "SELL",
+          "score": -44,
+          "spot": 544.64
+        },
+        "SNDK": {
+          "call": "HOLD",
+          "score": -10,
+          "spot": 1519.97
+        },
+        "STM": {
+          "call": "SELL",
+          "score": -44,
+          "spot": 48.9
+        },
+        "STRL": {
+          "call": "HOLD",
+          "score": -24,
+          "spot": 464.01
+        },
+        "TSEM": {
+          "call": "SELL",
+          "score": -35,
+          "spot": 198.67
+        },
+        "TSM": {
+          "call": "HOLD",
+          "score": 14,
+          "spot": 418.02
+        },
+        "V": {
+          "call": "HOLD",
+          "score": 11,
+          "spot": 371.51
+        },
+        "VSH": {
+          "call": "SELL",
+          "score": -41,
+          "spot": 32.08
+        },
+        "XLC": {
+          "call": "HOLD",
+          "score": 33,
+          "spot": 114.03
+        },
+        "XLE": {
+          "call": "BUY",
+          "score": 68,
+          "spot": 64.03
+        },
+        "XLF": {
+          "call": "HOLD",
+          "score": 22,
+          "spot": 55.93
+        },
+        "XLI": {
+          "call": "SELL",
+          "score": -64,
+          "spot": 168.37
+        },
+        "XLK": {
+          "call": "BUY",
+          "score": 43,
+          "spot": 183.81
+        },
+        "XLP": {
+          "call": "SELL",
+          "score": -36,
+          "spot": 83.32
+        },
+        "XLU": {
+          "call": "SELL",
+          "score": -68,
+          "spot": 41.32
+        },
+        "XLV": {
+          "call": "BUY",
+          "score": 70,
+          "spot": 167.43
+        },
+        "XLY": {
+          "call": "SELL",
+          "score": -61,
+          "spot": 110.88
+        },
+        "XOM": {
+          "call": "HOLD",
+          "score": 28,
+          "spot": 163.31
+        }
+      },
+      "spy_spot": 754.05
+    },
+    "2026-09-17": {
+      "calls": {
+        "AAOI": {
+          "call": "SELL",
+          "score": -49,
+          "spot": 97.73
+        },
+        "AEHR": {
+          "call": "HOLD",
+          "score": -21,
+          "spot": 90.8051
+        },
+        "AMAT": {
+          "call": "HOLD",
+          "score": -11,
+          "spot": 417.21
+        },
+        "AMKR": {
+          "call": "SELL",
+          "score": -37,
+          "spot": 48.6291
+        },
+        "AMZN": {
+          "call": "HOLD",
+          "score": 16,
+          "spot": 250.9217
+        },
+        "APLD": {
+          "call": "SELL",
+          "score": -54,
+          "spot": 26.345
+        },
+        "AVGO": {
+          "call": "HOLD",
+          "score": -2,
+          "spot": 347.16
+        },
+        "AXTI": {
+          "call": "HOLD",
+          "score": 9,
+          "spot": 67.77
+        },
+        "BE": {
+          "call": "HOLD",
+          "score": 27,
+          "spot": 279.2132
+        },
+        "CAMT": {
+          "call": "SELL",
+          "score": -88,
+          "spot": 138.59
+        },
+        "CIFR": {
+          "call": "SELL",
+          "score": -69,
+          "spot": 16.93
+        },
+        "CLSK": {
+          "call": "HOLD",
+          "score": 1,
+          "spot": 13.355
+        },
+        "COHR": {
+          "call": "SELL",
+          "score": -45,
+          "spot": 294.235
+        },
+        "CORZ": {
+          "call": "SELL",
+          "score": -54,
+          "spot": 17.31
+        },
+        "CRWD": {
+          "call": "BUY",
+          "score": 79,
+          "spot": 245.5806
+        },
+        "GOOGL": {
+          "call": "BUY",
+          "score": 42,
+          "spot": 346.94
+        },
+        "KLAC": {
+          "call": "SELL",
+          "score": -67,
+          "spot": 169.23
+        },
+        "LITE": {
+          "call": "HOLD",
+          "score": 32,
+          "spot": 891.2425
+        },
+        "LLY": {
+          "call": "BUY",
+          "score": 36,
+          "spot": 1145.51
+        },
+        "MOD": {
+          "call": "SELL",
+          "score": -63,
+          "spot": 187.22
+        },
+        "MRVL": {
+          "call": "HOLD",
+          "score": 17,
+          "spot": 241.4
+        },
+        "MSFT": {
+          "call": "BUY",
+          "score": 35,
+          "spot": 497.15
+        },
+        "MU": {
+          "call": "BUY",
+          "score": 49,
+          "spot": 977.585
+        },
+        "NBIS": {
+          "call": "HOLD",
+          "score": 6,
+          "spot": 217.39
+        },
+        "NVDA": {
+          "call": "BUY",
+          "score": 55,
+          "spot": 219.125
+        },
+        "ONTO": {
+          "call": "HOLD",
+          "score": -18,
+          "spot": 248.8
+        },
+        "QQQ": {
+          "call": "BUY",
+          "score": 42,
+          "spot": 716.77
+        },
+        "RIOT": {
+          "call": "HOLD",
+          "score": 13,
+          "spot": 21.925
+        },
+        "SMCI": {
+          "call": "BUY",
+          "score": 74,
+          "spot": 40.38
+        },
+        "SMH": {
+          "call": "SELL",
+          "score": -36,
+          "spot": 560.6
+        },
+        "SNDK": {
+          "call": "HOLD",
+          "score": 7,
+          "spot": 1617.21
+        },
+        "STM": {
+          "call": "SELL",
+          "score": -42,
+          "spot": 48.81
+        },
+        "STRL": {
+          "call": "HOLD",
+          "score": -25,
+          "spot": 495.6
+        },
+        "TSEM": {
+          "call": "HOLD",
+          "score": -28,
+          "spot": 215.495
+        },
+        "TSM": {
+          "call": "HOLD",
+          "score": 31,
+          "spot": 429.9
+        },
+        "V": {
+          "call": "HOLD",
+          "score": 7,
+          "spot": 371.43
+        },
+        "VSH": {
+          "call": "SELL",
+          "score": -40,
+          "spot": 32.08
+        },
+        "XLC": {
+          "call": "HOLD",
+          "score": 10,
+          "spot": 113.0
+        },
+        "XLE": {
+          "call": "BUY",
+          "score": 81,
+          "spot": 64.57
+        },
+        "XLF": {
+          "call": "HOLD",
+          "score": 13,
+          "spot": 55.965
+        },
+        "XLI": {
+          "call": "SELL",
+          "score": -65,
+          "spot": 169.16
+        },
+        "XLK": {
+          "call": "BUY",
+          "score": 50,
+          "spot": 188.18
+        },
+        "XLP": {
+          "call": "SELL",
+          "score": -37,
+          "spot": 83.455
+        },
+        "XLU": {
+          "call": "SELL",
+          "score": -72,
+          "spot": 41.695
+        },
+        "XLV": {
+          "call": "BUY",
+          "score": 69,
+          "spot": 168.665
+        },
+        "XLY": {
+          "call": "SELL",
+          "score": -66,
+          "spot": 111.555
+        },
+        "XOM": {
+          "call": "HOLD",
+          "score": 33,
+          "spot": 162.84
+        }
+      },
+      "spy_spot": 762.49
+    },
+    "2026-09-18": {
+      "calls": {
+        "AAOI": {
+          "call": "SELL",
+          "score": -36,
+          "spot": 103.835
+        },
+        "AEHR": {
+          "call": "HOLD",
+          "score": -22,
+          "spot": 91.32
+        },
+        "AMAT": {
+          "call": "HOLD",
+          "score": 0,
+          "spot": 444.62
+        },
+        "AMKR": {
+          "call": "HOLD",
+          "score": -33,
+          "spot": 49.81
+        },
+        "AMZN": {
+          "call": "HOLD",
+          "score": 20,
+          "spot": 253.8
+        },
+        "APLD": {
+          "call": "HOLD",
+          "score": -17,
+          "spot": 28.187
+        },
+        "AVGO": {
+          "call": "HOLD",
+          "score": 4,
+          "spot": 357.98
+        },
+        "AXTI": {
+          "call": "HOLD",
+          "score": 10,
+          "spot": 69.73
+        },
+        "BE": {
+          "call": "HOLD",
+          "score": 30,
+          "spot": 265.79
+        },
+        "CAMT": {
+          "call": "SELL",
+          "score": -81,
+          "spot": 145.0
+        },
+        "CIFR": {
+          "call": "SELL",
+          "score": -52,
+          "spot": 18.23
+        },
+        "CLSK": {
+          "call": "HOLD",
+          "score": 20,
+          "spot": 14.315
+        },
+        "COHR": {
+          "call": "HOLD",
+          "score": 8,
+          "spot": 313.63
+        },
+        "CORZ": {
+          "call": "SELL",
+          "score": -52,
+          "spot": 18.04
+        },
+        "CRWD": {
+          "call": "BUY",
+          "score": 81,
+          "spot": 237.65
+        },
+        "GOOGL": {
+          "call": "BUY",
+          "score": 44,
+          "spot": 349.95
+        },
+        "KLAC": {
+          "call": "SELL",
+          "score": -45,
+          "spot": 174.525
+        },
+        "LITE": {
+          "call": "BUY",
+          "score": 43,
+          "spot": 922.215
+        },
+        "LLY": {
+          "call": "BUY",
+          "score": 38,
+          "spot": 1154.345
+        },
+        "MOD": {
+          "call": "SELL",
+          "score": -62,
+          "spot": 188.32
+        },
+        "MRVL": {
+          "call": "HOLD",
+          "score": 16,
+          "spot": 243.6
+        },
+        "MSFT": {
+          "call": "BUY",
+          "score": 35,
+          "spot": 494.18
+        },
+        "MU": {
+          "call": "BUY",
+          "score": 51,
+          "spot": 1014.76
+        },
+        "NBIS": {
+          "call": "HOLD",
+          "score": 7,
+          "spot": 222.61
+        },
+        "NVDA": {
+          "call": "BUY",
+          "score": 58,
+          "spot": 221.86
+        },
+        "ONTO": {
+          "call": "HOLD",
+          "score": -13,
+          "spot": 260.27
+        },
+        "QQQ": {
+          "call": "BUY",
+          "score": 45,
+          "spot": 721.991
+        },
+        "RIOT": {
+          "call": "HOLD",
+          "score": 14,
+          "spot": 24.055
+        },
+        "SMCI": {
+          "call": "BUY",
+          "score": 74,
+          "spot": 39.0826
+        },
+        "SMH": {
+          "call": "HOLD",
+          "score": 23,
+          "spot": 572.44
+        },
+        "SNDK": {
+          "call": "HOLD",
+          "score": 9,
+          "spot": 1788.97
+        },
+        "STM": {
+          "call": "HOLD",
+          "score": -34,
+          "spot": 49.495
+        },
+        "STRL": {
+          "call": "HOLD",
+          "score": -16,
+          "spot": 509.91
+        },
+        "TSEM": {
+          "call": "SELL",
+          "score": -37,
+          "spot": 220.765
+        },
+        "TSM": {
+          "call": "HOLD",
+          "score": 29,
+          "spot": 434.0
+        },
+        "V": {
+          "call": "HOLD",
+          "score": 6,
+          "spot": 369.84
+        },
+        "VSH": {
+          "call": "SELL",
+          "score": -40,
+          "spot": 32.08
+        },
+        "XLC": {
+          "call": "HOLD",
+          "score": 11,
+          "spot": 112.35
+        },
+        "XLE": {
+          "call": "BUY",
+          "score": 80,
+          "spot": 64.35
+        },
+        "XLF": {
+          "call": "HOLD",
+          "score": 9,
+          "spot": 55.88
+        },
+        "XLI": {
+          "call": "SELL",
+          "score": -70,
+          "spot": 169.0
+        },
+        "XLK": {
+          "call": "BUY",
+          "score": 50,
+          "spot": 188.785
+        },
+        "XLP": {
+          "call": "SELL",
+          "score": -58,
+          "spot": 82.985
+        },
+        "XLU": {
+          "call": "SELL",
+          "score": -70,
+          "spot": 41.1801
+        },
+        "XLV": {
+          "call": "BUY",
+          "score": 69,
+          "spot": 168.775
+        },
+        "XLY": {
+          "call": "SELL",
+          "score": -63,
+          "spot": 111.19
+        },
+        "XOM": {
+          "call": "HOLD",
+          "score": 31,
+          "spot": 161.913
+        }
+      },
+      "spy_spot": 762.54
+    },
+    "2026-09-21": {
+      "calls": {
+        "AAOI": {
+          "call": "HOLD",
+          "score": -11,
+          "spot": 108.35
+        },
+        "AEHR": {
+          "call": "HOLD",
+          "score": 12,
+          "spot": 96.685
+        },
+        "AMAT": {
+          "call": "HOLD",
+          "score": -2,
+          "spot": 467.42
+        },
+        "AMKR": {
+          "call": "HOLD",
+          "score": -29,
+          "spot": 51.65
+        },
+        "AMZN": {
+          "call": "BUY",
+          "score": 40,
+          "spot": 258.45
+        },
+        "APLD": {
+          "call": "HOLD",
+          "score": -21,
+          "spot": 28.29
+        },
+        "AVGO": {
+          "call": "HOLD",
+          "score": 4,
+          "spot": 362.35
+        },
+        "AXTI": {
+          "call": "HOLD",
+          "score": 9,
+          "spot": 80.055
+        },
+        "BE": {
+          "call": "HOLD",
+          "score": -1,
+          "spot": 273.33
+        },
+        "CAMT": {
+          "call": "SELL",
+          "score": -42,
+          "spot": 149.12
+        },
+        "CIFR": {
+          "call": "HOLD",
+          "score": 15,
+          "spot": 18.94
+        },
+        "CLSK": {
+          "call": "HOLD",
+          "score": 19,
+          "spot": 14.78
+        },
+        "COHR": {
+          "call": "HOLD",
+          "score": 4,
+          "spot": 324.2625
+        },
+        "CORZ": {
+          "call": "SELL",
+          "score": -56,
+          "spot": 18.45
+        },
+        "CRWD": {
+          "call": "BUY",
+          "score": 80,
+          "spot": 249.0798
+        },
+        "GOOGL": {
+          "call": "BUY",
+          "score": 44,
+          "spot": 354.73
+        },
+        "KLAC": {
+          "call": "SELL",
+          "score": -37,
+          "spot": 184.83
+        },
+        "LITE": {
+          "call": "BUY",
+          "score": 54,
+          "spot": 967.18
+        },
+        "LLY": {
+          "call": "BUY",
+          "score": 40,
+          "spot": 1163.7275
+        },
+        "MOD": {
+          "call": "SELL",
+          "score": -57,
+          "spot": 192.1
+        },
+        "MRVL": {
+          "call": "HOLD",
+          "score": 14,
+          "spot": 256.3239
+        },
+        "MSFT": {
+          "call": "BUY",
+          "score": 36,
+          "spot": 501.35
+        },
+        "MU": {
+          "call": "BUY",
+          "score": 45,
+          "spot": 1043.96
+        },
+        "NBIS": {
+          "call": "HOLD",
+          "score": 2,
+          "spot": 232.95
+        },
+        "NVDA": {
+          "call": "BUY",
+          "score": 57,
+          "spot": 227.44
+        },
+        "ONTO": {
+          "call": "HOLD",
+          "score": -13,
+          "spot": 267.47
+        },
+        "QQQ": {
+          "call": "BUY",
+          "score": 43,
+          "spot": 741.11
+        },
+        "RIOT": {
+          "call": "HOLD",
+          "score": 14,
+          "spot": 24.14
+        },
+        "SMCI": {
+          "call": "BUY",
+          "score": 73,
+          "spot": 41.0651
+        },
+        "SMH": {
+          "call": "HOLD",
+          "score": 18,
+          "spot": 595.83
+        },
+        "SNDK": {
+          "call": "HOLD",
+          "score": 6,
+          "spot": 1765.425
+        },
+        "STM": {
+          "call": "SELL",
+          "score": -35,
+          "spot": 51.125
+        },
+        "STRL": {
+          "call": "HOLD",
+          "score": -20,
+          "spot": 520.5859
+        },
+        "TSEM": {
+          "call": "HOLD",
+          "score": -1,
+          "spot": 235.265
+        },
+        "TSM": {
+          "call": "HOLD",
+          "score": 24,
+          "spot": 444.4708
+        },
+        "V": {
+          "call": "HOLD",
+          "score": 7,
+          "spot": 369.95
+        },
+        "VSH": {
+          "call": "SELL",
+          "score": -39,
+          "spot": 33.31
+        },
+        "XLE": {
+          "call": "BUY",
+          "score": 85,
+          "spot": 62.549
+        },
+        "XLF": {
+          "call": "HOLD",
+          "score": 11,
+          "spot": 55.95
+        },
+        "XLU": {
+          "call": "SELL",
+          "score": -71,
+          "spot": 40.86
+        },
+        "XLV": {
+          "call": "BUY",
+          "score": 70,
+          "spot": 167.61
+        },
+        "XOM": {
+          "call": "HOLD",
+          "score": 26,
+          "spot": 158.69
+        },
+        "XLK": {
+          "call": "BUY",
+          "score": 49,
+          "spot": 194.925
+        },
+        "XLP": {
+          "call": "SELL",
+          "score": -56,
+          "spot": 82.03
+        }
+      },
+      "spy_spot": 773.27
+    },
+    "2026-09-22": {
+      "calls": {
+        "AAOI": {
+          "call": "HOLD",
+          "score": -11,
+          "spot": 106.515
+        },
+        "AEHR": {
+          "call": "HOLD",
+          "score": 16,
+          "spot": 99.63
+        },
+        "AMAT": {
+          "call": "HOLD",
+          "score": -3,
+          "spot": 472.27
+        },
+        "AMKR": {
+          "call": "HOLD",
+          "score": -7,
+          "spot": 54.37
+        },
+        "AMZN": {
+          "call": "HOLD",
+          "score": 20,
+          "spot": 254.98
+        },
+        "APLD": {
+          "call": "HOLD",
+          "score": -18,
+          "spot": 28.32
+        },
+        "AVGO": {
+          "call": "HOLD",
+          "score": 9,
+          "spot": 364.4
+        },
+        "AXTI": {
+          "call": "HOLD",
+          "score": 13,
+          "spot": 76.94
+        },
+        "BE": {
+          "call": "HOLD",
+          "score": 0,
+          "spot": 276.53
+        },
+        "CAMT": {
+          "call": "SELL",
+          "score": -79,
+          "spot": 146.64
+        },
+        "CIFR": {
+          "call": "HOLD",
+          "score": 17,
+          "spot": 19.09
+        },
+        "CLSK": {
+          "call": "HOLD",
+          "score": 18,
+          "spot": 15.075
+        },
+        "COHR": {
+          "call": "HOLD",
+          "score": 8,
+          "spot": 305.755
+        },
+        "CORZ": {
+          "call": "SELL",
+          "score": -64,
+          "spot": 18.84
+        },
+        "CRWD": {
+          "call": "BUY",
+          "score": 80,
+          "spot": 250.06
+        },
+        "GOOGL": {
+          "call": "BUY",
+          "score": 49,
+          "spot": 351.35
+        },
+        "KLAC": {
+          "call": "SELL",
+          "score": -38,
+          "spot": 186.52
+        },
+        "LITE": {
+          "call": "HOLD",
+          "score": 33,
+          "spot": 943.365
+        },
+        "LLY": {
+          "call": "HOLD",
+          "score": 25,
+          "spot": 1170.515
+        },
+        "MOD": {
+          "call": "SELL",
+          "score": -65,
+          "spot": 197.15
+        },
+        "MRVL": {
+          "call": "HOLD",
+          "score": 15,
+          "spot": 262.4614
+        },
+        "MSFT": {
+          "call": "BUY",
+          "score": 36,
+          "spot": 498.0
+        },
+        "MU": {
+          "call": "BUY",
+          "score": 39,
+          "spot": 1094.844
+        },
+        "NBIS": {
+          "call": "HOLD",
+          "score": 3,
+          "spot": 236.1
+        },
+        "NVDA": {
+          "call": "BUY",
+          "score": 59,
+          "spot": 228.8494
+        },
+        "ONTO": {
+          "call": "HOLD",
+          "score": -30,
+          "spot": 275.98
+        },
+        "QQQ": {
+          "call": "BUY",
+          "score": 46,
+          "spot": 747.33
+        },
+        "RIOT": {
+          "call": "HOLD",
+          "score": 15,
+          "spot": 24.98
+        },
+        "SMCI": {
+          "call": "BUY",
+          "score": 64,
+          "spot": 41.51
+        },
+        "SMH": {
+          "call": "HOLD",
+          "score": 22,
+          "spot": 607.3
+        },
+        "SNDK": {
+          "call": "HOLD",
+          "score": 8,
+          "spot": 1885.0
+        },
+        "STM": {
+          "call": "SELL",
+          "score": -35,
+          "spot": 52.9223
+        },
+        "STRL": {
+          "call": "HOLD",
+          "score": -19,
+          "spot": 514.975
+        },
+        "TSEM": {
+          "call": "HOLD",
+          "score": -5,
+          "spot": 231.93
+        },
+        "TSM": {
+          "call": "BUY",
+          "score": 38,
+          "spot": 451.5269
+        },
+        "V": {
+          "call": "HOLD",
+          "score": -3,
+          "spot": 363.58
+        },
+        "VSH": {
+          "call": "SELL",
+          "score": -40,
+          "spot": 32.915
+        },
+        "XLE": {
+          "call": "BUY",
+          "score": 55,
+          "spot": 61.8
+        },
+        "XLF": {
+          "call": "HOLD",
+          "score": -12,
+          "spot": 54.83
+        },
+        "XLK": {
+          "call": "BUY",
+          "score": 48,
+          "spot": 196.29
+        },
+        "XLP": {
+          "call": "SELL",
+          "score": -60,
+          "spot": 82.05
+        },
+        "XOM": {
+          "call": "HOLD",
+          "score": 16,
+          "spot": 158.86
+        },
+        "XLU": {
+          "call": "SELL",
+          "score": -79,
+          "spot": 40.575
+        },
+        "XLV": {
+          "call": "BUY",
+          "score": 69,
+          "spot": 170.33
+        }
+      },
+      "spy_spot": 773.49
+    },
+    "2026-09-23": {
+      "calls": {
+        "AAOI": {
+          "call": "HOLD",
+          "score": -11,
+          "spot": 107.0192
+        },
+        "AEHR": {
+          "call": "HOLD",
+          "score": 15,
+          "spot": 100.06
+        },
+        "AMAT": {
+          "call": "HOLD",
+          "score": -3,
+          "spot": 472.97
+        },
+        "AMKR": {
+          "call": "HOLD",
+          "score": -8,
+          "spot": 54.83
+        },
+        "AMZN": {
+          "call": "HOLD",
+          "score": 24,
+          "spot": 255.43
+        },
+        "APLD": {
+          "call": "HOLD",
+          "score": -18,
+          "spot": 28.61
+        },
+        "AVGO": {
+          "call": "HOLD",
+          "score": 8,
+          "spot": 366.12
+        },
+        "AXTI": {
+          "call": "HOLD",
+          "score": 12,
+          "spot": 78.54
+        },
+        "BE": {
+          "call": "HOLD",
+          "score": -2,
+          "spot": 277.38
+        },
+        "CAMT": {
+          "call": "SELL",
+          "score": -41,
+          "spot": 151.52
+        },
+        "CIFR": {
+          "call": "HOLD",
+          "score": 16,
+          "spot": 19.08
+        },
+        "CLSK": {
+          "call": "HOLD",
+          "score": 18,
+          "spot": 15.1361
+        },
+        "COHR": {
+          "call": "HOLD",
+          "score": 7,
+          "spot": 312.06
+        },
+        "CORZ": {
+          "call": "SELL",
+          "score": -65,
+          "spot": 18.7201
+        },
+        "CRWD": {
+          "call": "BUY",
+          "score": 80,
+          "spot": 249.72
+        },
+        "GOOGL": {
+          "call": "BUY",
+          "score": 49,
+          "spot": 351.8011
+        },
+        "KLAC": {
+          "call": "SELL",
+          "score": -39,
+          "spot": 188.46
+        },
+        "LITE": {
+          "call": "HOLD",
+          "score": 32,
+          "spot": 949.89
+        },
+        "LLY": {
+          "call": "BUY",
+          "score": 39,
+          "spot": 1170.2349
+        },
+        "MOD": {
+          "call": "SELL",
+          "score": -56,
+          "spot": 197.15
+        },
+        "MRVL": {
+          "call": "HOLD",
+          "score": 13,
+          "spot": 263.4155
+        },
+        "MSFT": {
+          "call": "BUY",
+          "score": 36,
+          "spot": 501.48
+        },
+        "MU": {
+          "call": "BUY",
+          "score": 37,
+          "spot": 1097.72
+        },
+        "NBIS": {
+          "call": "HOLD",
+          "score": 2,
+          "spot": 236.5
+        },
+        "NVDA": {
+          "call": "BUY",
+          "score": 59,
+          "spot": 228.56
+        },
+        "ONTO": {
+          "call": "HOLD",
+          "score": -13,
+          "spot": 275.98
+        },
+        "QQQ": {
+          "call": "BUY",
+          "score": 45,
+          "spot": 748.32
+        },
+        "RIOT": {
+          "call": "HOLD",
+          "score": 12,
+          "spot": 24.9965
+        },
+        "SMCI": {
+          "call": "BUY",
+          "score": 63,
+          "spot": 41.512
+        },
+        "SMH": {
+          "call": "HOLD",
+          "score": 20,
+          "spot": 606.4772
+        },
+        "SNDK": {
+          "call": "HOLD",
+          "score": 6,
+          "spot": 1898.59
+        },
+        "STM": {
+          "call": "HOLD",
+          "score": -9,
+          "spot": 53.6296
+        },
+        "STRL": {
+          "call": "HOLD",
+          "score": -19,
+          "spot": 516.57
+        },
+        "TSEM": {
+          "call": "HOLD",
+          "score": -5,
+          "spot": 231.93
+        },
+        "TSM": {
+          "call": "HOLD",
+          "score": 23,
+          "spot": 451.4134
+        },
+        "V": {
+          "call": "HOLD",
+          "score": -23,
+          "spot": 362.6452
+        },
+        "VSH": {
+          "call": "SELL",
+          "score": -38,
+          "spot": 32.915
+        },
+        "XLE": {
+          "call": "BUY",
+          "score": 55,
+          "spot": 61.78
+        },
+        "XLF": {
+          "call": "HOLD",
+          "score": -10,
+          "spot": 54.8
+        },
+        "XLK": {
+          "call": "BUY",
+          "score": 46,
+          "spot": 196.27
+        },
+        "XLU": {
+          "call": "SELL",
+          "score": -79,
+          "spot": 40.53
+        },
+        "XLV": {
+          "call": "BUY",
+          "score": 68,
+          "spot": 170.33
+        },
+        "XOM": {
+          "call": "HOLD",
+          "score": 19,
+          "spot": 158.92
+        }
+      },
+      "spy_spot": 773.38
+    },
+    "2026-09-24": {
+      "calls": {
+        "AAOI": {
+          "call": "SELL",
+          "score": -38,
+          "spot": 101.2
+        },
+        "AEHR": {
+          "call": "BUY",
+          "score": 43,
+          "spot": 97.5
+        },
+        "AMAT": {
+          "call": "HOLD",
+          "score": -4,
+          "spot": 473.58
+        },
+        "AMKR": {
+          "call": "SELL",
+          "score": -38,
+          "spot": 52.765
+        },
+        "AMZN": {
+          "call": "HOLD",
+          "score": 18,
+          "spot": 249.49
+        },
+        "APLD": {
+          "call": "SELL",
+          "score": -70,
+          "spot": 27.135
+        },
+        "AVGO": {
+          "call": "HOLD",
+          "score": -2,
+          "spot": 350.131
+        },
+        "AXTI": {
+          "call": "BUY",
+          "score": 43,
+          "spot": 76.62
+        },
+        "BE": {
+          "call": "HOLD",
+          "score": -1,
+          "spot": 266.501
+        },
+        "CAMT": {
+          "call": "SELL",
+          "score": -54,
+          "spot": 147.06
+        },
+        "CIFR": {
+          "call": "SELL",
+          "score": -55,
+          "spot": 18.15
+        },
+        "CLSK": {
+          "call": "HOLD",
+          "score": 24,
+          "spot": 14.08
+        },
+        "COHR": {
+          "call": "SELL",
+          "score": -43,
+          "spot": 291.16
+        },
+        "CORZ": {
+          "call": "SELL",
+          "score": -63,
+          "spot": 18.1924
+        },
+        "CRWD": {
+          "call": "BUY",
+          "score": 80,
+          "spot": 259.67
+        },
+        "GOOGL": {
+          "call": "HOLD",
+          "score": 24,
+          "spot": 342.4205
+        },
+        "KLAC": {
+          "call": "SELL",
+          "score": -39,
+          "spot": 186.49
+        },
+        "LITE": {
+          "call": "BUY",
+          "score": 53,
+          "spot": 928.82
+        },
+        "LLY": {
+          "call": "BUY",
+          "score": 58,
+          "spot": 1183.76
+        },
+        "MOD": {
+          "call": "SELL",
+          "score": -56,
+          "spot": 195.37
+        },
+        "MRVL": {
+          "call": "HOLD",
+          "score": 26,
+          "spot": 259.01
+        },
+        "MSFT": {
+          "call": "BUY",
+          "score": 35,
+          "spot": 497.5
+        },
+        "MU": {
+          "call": "BUY",
+          "score": 58,
+          "spot": 1080.99
+        },
+        "NBIS": {
+          "call": "HOLD",
+          "score": 9,
+          "spot": 242.47
+        },
+        "NVDA": {
+          "call": "BUY",
+          "score": 62,
+          "spot": 224.54
+        },
+        "ONTO": {
+          "call": "HOLD",
+          "score": -9,
+          "spot": 278.58
+        },
+        "QQQ": {
+          "call": "BUY",
+          "score": 52,
+          "spot": 740.97
+        },
+        "RIOT": {
+          "call": "HOLD",
+          "score": 22,
+          "spot": 23.48
+        },
+        "SMCI": {
+          "call": "BUY",
+          "score": 74,
+          "spot": 41.6088
+        },
+        "SMH": {
+          "call": "BUY",
+          "score": 36,
+          "spot": 600.52
+        },
+        "SNDK": {
+          "call": "HOLD",
+          "score": 7,
+          "spot": 1754.62
+        },
+        "STM": {
+          "call": "HOLD",
+          "score": -33,
+          "spot": 50.91
+        },
+        "STRL": {
+          "call": "HOLD",
+          "score": -19,
+          "spot": 515.54
+        },
+        "TSEM": {
+          "call": "HOLD",
+          "score": -31,
+          "spot": 218.27
+        },
+        "TSM": {
+          "call": "HOLD",
+          "score": 28,
+          "spot": 450.296
+        },
+        "V": {
+          "call": "HOLD",
+          "score": -11,
+          "spot": 367.68
+        },
+        "VSH": {
+          "call": "SELL",
+          "score": -37,
+          "spot": 31.935
+        },
+        "XLE": {
+          "call": "BUY",
+          "score": 71,
+          "spot": 62.62
+        },
+        "XLF": {
+          "call": "HOLD",
+          "score": -16,
+          "spot": 54.53
+        },
+        "XLK": {
+          "call": "BUY",
+          "score": 55,
+          "spot": 194.93
+        },
+        "XLU": {
+          "call": "SELL",
+          "score": -88,
+          "spot": 39.37
+        },
+        "XLV": {
+          "call": "BUY",
+          "score": 63,
+          "spot": 170.15
+        },
+        "XOM": {
+          "call": "HOLD",
+          "score": 31,
+          "spot": 162.07
+        },
+        "XLI": {
+          "call": "SELL",
+          "score": -71,
+          "spot": 168.83
+        }
+      },
+      "spy_spot": 767.26
+    },
+    "2026-09-25": {
+      "calls": {
+        "AAOI": {
+          "call": "SELL",
+          "score": -36,
+          "spot": 101.53
+        },
+        "AEHR": {
+          "call": "BUY",
+          "score": 39,
+          "spot": 103.41
+        },
+        "AMAT": {
+          "call": "HOLD",
+          "score": -2,
+          "spot": 487.19
+        },
+        "AMKR": {
+          "call": "HOLD",
+          "score": -7,
+          "spot": 53.74
+        },
+        "AMZN": {
+          "call": "HOLD",
+          "score": 23,
+          "spot": 249.755
+        },
+        "APLD": {
+          "call": "SELL",
+          "score": -73,
+          "spot": 26.105
+        },
+        "AVGO": {
+          "call": "HOLD",
+          "score": 8,
+          "spot": 353.0145
+        },
+        "AXTI": {
+          "call": "BUY",
+          "score": 54,
+          "spot": 79.33
+        },
+        "BE": {
+          "call": "HOLD",
+          "score": 4,
+          "spot": 289.62
+        },
+        "CAMT": {
+          "call": "SELL",
+          "score": -76,
+          "spot": 145.12
+        },
+        "CIFR": {
+          "call": "SELL",
+          "score": -52,
+          "spot": 17.75
+        },
+        "CLSK": {
+          "call": "HOLD",
+          "score": 28,
+          "spot": 13.91
+        },
+        "COHR": {
+          "call": "HOLD",
+          "score": -24,
+          "spot": 296.7
+        },
+        "CORZ": {
+          "call": "SELL",
+          "score": -53,
+          "spot": 17.315
+        },
+        "CRWD": {
+          "call": "BUY",
+          "score": 74,
+          "spot": 252.245
+        },
+        "GOOGL": {
+          "call": "BUY",
+          "score": 37,
+          "spot": 343.9
+        },
+        "KLAC": {
+          "call": "SELL",
+          "score": -37,
+          "spot": 188.17
+        },
+        "LITE": {
+          "call": "BUY",
+          "score": 49,
+          "spot": 943.15
+        },
+        "LLY": {
+          "call": "BUY",
+          "score": 59,
+          "spot": 1186.905
+        },
+        "MOD": {
+          "call": "SELL",
+          "score": -57,
+          "spot": 197.345
+        },
+        "MRVL": {
+          "call": "HOLD",
+          "score": 24,
+          "spot": 262.4019
+        },
+        "MSFT": {
+          "call": "BUY",
+          "score": 37,
+          "spot": 516.465
+        },
+        "MU": {
+          "call": "BUY",
+          "score": 41,
+          "spot": 1083.1863
+        },
+        "NBIS": {
+          "call": "HOLD",
+          "score": 23,
+          "spot": 237.435
+        },
+        "NVDA": {
+          "call": "BUY",
+          "score": 65,
+          "spot": 225.42
+        },
+        "ONTO": {
+          "call": "HOLD",
+          "score": 16,
+          "spot": 287.81
+        },
+        "QQQ": {
+          "call": "BUY",
+          "score": 52,
+          "spot": 744.8
+        },
+        "RIOT": {
+          "call": "HOLD",
+          "score": -3,
+          "spot": 23.015
+        },
+        "SMCI": {
+          "call": "BUY",
+          "score": 76,
+          "spot": 43.275
+        },
+        "SMH": {
+          "call": "BUY",
+          "score": 35,
+          "spot": 607.42
+        },
+        "SNDK": {
+          "call": "HOLD",
+          "score": 8,
+          "spot": 1778.215
+        },
+        "STM": {
+          "call": "HOLD",
+          "score": -32,
+          "spot": 51.83
+        },
+        "STRL": {
+          "call": "HOLD",
+          "score": -19,
+          "spot": 513.06
+        },
+        "TSEM": {
+          "call": "HOLD",
+          "score": 2,
+          "spot": 232.0
+        },
+        "TSM": {
+          "call": "HOLD",
+          "score": 32,
+          "spot": 451.6
+        },
+        "V": {
+          "call": "HOLD",
+          "score": -11,
+          "spot": 367.4
+        },
+        "VSH": {
+          "call": "SELL",
+          "score": -39,
+          "spot": 32.51
+        },
+        "XLF": {
+          "call": "HOLD",
+          "score": 4,
+          "spot": 54.825
+        },
+        "XLI": {
+          "call": "SELL",
+          "score": -76,
+          "spot": 170.09
+        },
+        "XLK": {
+          "call": "BUY",
+          "score": 56,
+          "spot": 196.37
+        },
+        "XLP": {
+          "call": "SELL",
+          "score": -64,
+          "spot": 82.14
+        },
+        "XLU": {
+          "call": "SELL",
+          "score": -68,
+          "spot": 39.54
+        },
+        "XLV": {
+          "call": "BUY",
+          "score": 61,
+          "spot": 170.83
+        },
+        "XOM": {
+          "call": "HOLD",
+          "score": 32,
+          "spot": 160.6128
+        },
+        "XLE": {
+          "call": "BUY",
+          "score": 54,
+          "spot": 62.04
+        }
+      },
+      "spy_spot": 771.5907
+    }
+  }
+}
