@@ -23,10 +23,19 @@ closed — see "Settled questions" below.
 
 ## Model-role convention for work on this repo
 - **Opus** — architect and director: rules on scope, gives final approval,
-  and synthesizes reviews into build specs. Run architect work at high or max
-  effort. Records dated before 2026-09-25 name Fable as the architect.
-- **Sonnet** — builds (writes the code and docs).
-- **Haiku** — mechanical grunt work.
+  and synthesizes reviews into build specs. Run architect work at high
+  effort, and xhigh for rulings Zach acts on. Records dated before 2026-09-25
+  name Fable as the architect.
+- **Sonnet** — builds (writes the code and docs) at high effort, never the
+  medium default. If a build fails its tests or review once, Opus high takes
+  over.
+- **Haiku** — mechanical grunt work at default effort.
+
+These effort levels follow the per-job value picks in the vault's model
+picker (Artificial Analysis data, 2026-10-09). On Terminal-Bench 4.0, Sonnet
+high costs about $5 per solved coding task against $9 for Opus high. Past
+Opus high, each extra coding point costs 4 to 5 times more. Max is never the
+value pick.
 
 ---
 
